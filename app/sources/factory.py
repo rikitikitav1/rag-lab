@@ -9,6 +9,7 @@ from sources import (  # noqa: F401
     developer_roadmap,
     interview,
     notes,
+    redis_docs,
     system_design_primer,
 )
 from sources.base import Base
