@@ -4,7 +4,7 @@ A RAG system over a personal knowledge base and external IT repositories. It ans
 
 This is a **showcase lab**: a bench for practicing LLM/RAG engineering approaches by hand (retrieval, LLM-as-judge eval, model lifecycle, reranking, async queues) and showing results as numbers. Not a production service, a playground for approaches.
 
-> Русская версия: [docs/README_ru.md](docs/README_ru.md) · Hands-on scenarios and full command reference: [docs/use_cases.md](docs/use_cases.md)
+> Русская версия: [docs/README_ru.md](docs/README_ru.md) · Hands-on scenarios and commands: [docs/use_cases.md](docs/use_cases.md) · Experiments log: [docs/experiments.md](docs/experiments.md)
 
 ## What it is
 
