@@ -1,0 +1,14 @@
+# не тащим в build context (ускоряет сборку, не пускаем хостовый venv в образ)
+.venv/
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+temp_files/
+*.log
+.pytest_cache/
+.coverage
+.env
+.idea/
+.vscode/
+.DS_Store

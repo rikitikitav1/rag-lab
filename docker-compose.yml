@@ -1,0 +1,89 @@
+services:
+  rag-lab:
+    depends_on:
+      dbmate:
+        condition: service_completed_successfully
+    build:
+      dockerfile: Dockerfile
+    command:
+      ["uvicorn", "server:app",
+       "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ${HOME}/working_docs/notes:/notes:ro
+      - repos_data:/repos
+      - hf_cache:/root/.cache/huggingface
+
+  postgresql:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+  dbmate:
+    image: ghcr.io/amacneil/dbmate:2.34.1
+    command: ["up"]
+    user: "${UID:-1000}:${GID:-1000}"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://postgres@postgresql:5432/postgres?sslmode=disable"
+    volumes:
+      - ./db:/db
+
+  seed:
+    build:
+      dockerfile: Dockerfile
+    command: ["python", "app/seed.py"]
+    depends_on:
+      dbmate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+
+  worker:
+    build:
+      dockerfile: Dockerfile
+    command: ["python", "app/worker.py"]
+    depends_on:
+      dbmate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+      - repos_data:/repos
+      - ${HOME}/working_docs/notes:/notes:ro
+      - hf_cache:/root/.cache/huggingface
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_KEEP_ALIVE: "-1"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  ollama_data:
+  repos_data:
+  pg_data:
+  hf_cache:

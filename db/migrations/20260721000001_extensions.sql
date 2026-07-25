@@ -1,0 +1,7 @@
+-- migrate:up
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS ltree;
+
+-- migrate:down
+DROP EXTENSION IF EXISTS ltree;
+DROP EXTENSION IF EXISTS vector;

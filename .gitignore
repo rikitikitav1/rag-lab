@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# venv (uv.lock коммитим, .venv — нет)
+.venv/
+
+# env / secrets
+.env
+
+# временные файлы (правило проекта)
+temp_files/
+
+# логи
+*.log
+
+# тесты
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# internal / not for public repo
+PROGRESS.md
+resume
+creds-shared.db
+.claude/
+/log
+
+# generated / third-party-derived eval data (regenerate via evals/build_questions.py)
+answers_interview.jsonl
+questions_interview.md
+
+# taxonomy scratch dumps (dev artifacts, not used at runtime)
+categories_1
+categories_1_sdp
+categories_raw_sdp
