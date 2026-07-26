@@ -2,9 +2,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from models.eval import Question, QuestionLog
+from models.registry import Pipeline
 from orm.async_db import get_session
 from pydantic import BaseModel
-from query_utils import apply_sort_limit_offset
+from query_utils import Page, apply_sort_limit_offset
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -75,17 +76,14 @@ async def list_question_logs(
     text: str | None = Query(default=None, description="substring in question text"),
     set_name: list[str] | None = Query(default=None),
     run_name: list[str] | None = Query(default=None),
-    pipeline: list[str] | None = Query(default=None),
+    pipeline: list[Pipeline] | None = Query(default=None),
     answered: bool | None = Query(default=None),
     faithfulness: list[str] | None = Query(default=None),
     relevance: list[str] | None = Query(default=None),
     completeness: list[str] | None = Query(default=None),
     created_from: datetime | None = Query(default=None),
     created_to: datetime | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    sort_by: str = Query(default="created_at"),
-    sort_order: str = Query(default="desc"),
+    page: Page = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(QuestionLog).options(selectinload(QuestionLog.question))
@@ -119,10 +117,10 @@ async def list_question_logs(
     stmt = apply_sort_limit_offset(
         stmt=stmt,
         sort_map=SORT_MAP,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        limit=limit,
-        offset=offset,
+        sort_by=page.sort_by,
+        sort_order=page.sort_order,
+        limit=page.limit,
+        offset=page.offset,
         default_sort="created_at",
     )
 

@@ -39,10 +39,9 @@ def _serialize_trace(messages) -> list[dict]:
 
 @router.post("/question", response_model=AgentResponse)
 def ask(request: AgentRequest) -> AgentResponse:
-    if request.max_hops is not None:
-        res = agent.run(request.text, max_hops=request.max_hops, language=request.language)
-    else:
-        res = agent.run(request.text, language=request.language)
+    res = agent.run(
+        request.text, max_hops=request.max_hops, language=request.language
+    )
     return AgentResponse(
         text=res.text,
         success=res.success,

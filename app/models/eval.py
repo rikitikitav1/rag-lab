@@ -6,6 +6,8 @@ from sqlalchemy import ARRAY, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from models.registry import Pipeline
+
 
 class Question(Base):
     __tablename__ = "questions"
@@ -32,7 +34,7 @@ class QuestionLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     run_name: Mapped[str | None]
-    pipeline: Mapped[str] = mapped_column(default="single_shot")
+    pipeline: Mapped[str] = mapped_column(default=Pipeline.single_shot.value)
     question_id: Mapped[int | None] = mapped_column(ForeignKey("questions.id"))
     answered: Mapped[bool]
     answer: Mapped[str | None]

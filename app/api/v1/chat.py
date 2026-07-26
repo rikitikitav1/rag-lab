@@ -16,7 +16,6 @@ class QuestionOptions(BaseModel):
 
 class QuestionFilter(BaseModel):
     category: str | None = None
-    language: str | None = None
     tags: list[str] = []
 
 
