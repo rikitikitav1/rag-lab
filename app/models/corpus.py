@@ -14,6 +14,7 @@ class DataSource(Base):
     kind: Mapped[str] = mapped_column(String(32))
     git_url: Mapped[str | None]
     path: Mapped[str | None]
+    active: Mapped[bool] = mapped_column(default=True)
     chunks: Mapped[list["DataChunk"]] = relationship(
         back_populates="data_source", cascade="all, delete-orphan"
     )

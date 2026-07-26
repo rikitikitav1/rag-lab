@@ -4,7 +4,7 @@ A RAG system over a personal knowledge base and external IT repositories. It ans
 
 This is a **showcase lab**: a bench for practicing LLM/RAG engineering approaches by hand (retrieval, LLM-as-judge eval, model lifecycle, reranking, async queues) and showing results as numbers. Not a production service, a playground for approaches.
 
-> Русская версия: [docs/README_ru.md](docs/README_ru.md) · Hands-on scenarios and full command reference: [docs/use_cases.md](docs/use_cases.md)
+> Русская версия: [docs/README_ru.md](docs/README_ru.md) · Hands-on scenarios and commands: [docs/use_cases.md](docs/use_cases.md) · Experiments log: [docs/experiments.md](docs/experiments.md)
 
 ## What it is
 
@@ -80,12 +80,14 @@ Chat and search:
 Model lifecycle:
 - `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (create enqueues a pull), `DELETE /v1/model/{id}` (409 if assigned to a role)
 - `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role)
+- `GET /v1/source`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index — ablation / source-of-truth scoping)
 
 Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
 - `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge)
+- `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `POST /v1/questions/import` (upload a questions file; optional chained run)
 
 Observability:

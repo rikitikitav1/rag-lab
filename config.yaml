@@ -195,9 +195,6 @@ service:
         - xamarin-interview-questions
         - xgboost-interview-questions
         - xml-interview-questions
-  questions:
-    path: questions.md
-
 llm:
   base_url: http://ollama:11434
   roles:

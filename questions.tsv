@@ -1,37 +1,4 @@
 set_name	language	kind	marked_sources	original_text
-curated	ru	in_corpus	notes/languages/ruby/concurrency-gvl.md	GVL это что?
-curated	ru	in_corpus	notes/databases/postgresql/locks.md	Локи в PG?
-curated	ru	in_corpus	notes/languages/ruby/ruby-2-vs-3.md	Разница между руби  2 и 3
-curated	ru	in_corpus	notes/messaging/comparison.md,notes/messaging/kafka.md,notes/messaging/rabbitmq.md	разница между кафкой и кроликом?
-curated	ru	in_corpus	notes/databases/postgresql/pg-tips.md	топ 3 фишки PG?
-curated	ru	in_corpus	notes/databases/postgresql/pg-tips.md	кеширование в PG?
-curated	ru	in_corpus	developer-roadmap/src/data/roadmaps/backend/content/clickhouse	расскажи о кликхаусе
-curated	ru	in_corpus	notes/databases/postgresql/mvcc-vacuum.md,developer-roadmap/src/data/roadmaps/postgresql-dba/content/mvcc	как работает MVCC в постгресе?
-curated	ru	in_corpus	notes/databases/postgresql/mvcc-vacuum.md,developer-roadmap/src/data/roadmaps/postgresql-dba/content/vacuums,developer-roadmap/src/data/roadmaps/postgresql-dba/content/vacuum-processing	зачем нужен vacuum?
-curated	ru	in_corpus	notes/databases/postgresql/window-functions.md,developer-roadmap/src/data/roadmaps/bi-analyst/content/window-functions	объясни оконные функции в sql
-curated	ru	in_corpus	notes/databases/postgresql/cte.md,developer-roadmap/src/data/roadmaps/postgresql-dba/content/cte,developer-roadmap/src/data/roadmaps/sql/content/common-table-expressions	что такое CTE и зачем?
-curated	ru	in_corpus	notes/databases/postgresql/isolation-levels.md,developer-roadmap/src/data/roadmaps/sql/content/transaction-isolation-levels	уровни изоляции транзакций в pg
-curated	ru	in_corpus	notes/databases/postgresql/migrations-without-locks.md	как накатить миграцию без блокировки таблицы?
-curated	ru	in_corpus	notes/databases/postgresql/full-text-search.md	как устроен полнотекстовый поиск в postgres?
-curated	ru	in_corpus	notes/databases/postgresql/ltree.md	зачем нужен ltree?
-curated	ru	in_corpus	notes/languages/ruby/metaprogramming.md	метапрограммирование в ruby на пальцах
-curated	ru	in_corpus	notes/languages/ruby/blocks-procs-lambdas.md	чем proc отличается от lambda?
-curated	ru	in_corpus	notes/messaging/nats.md,notes/messaging/comparison.md	чем nats отличается от кафки?
-curated	ru	in_corpus	notes/messaging/sidekiq.md	что делает sidekiq?
-curated	ru	in_corpus	notes/protocols/grpc.md,developer-roadmap/src/data/roadmaps/api-design/content/grpc-apis,developer-roadmap/src/data/roadmaps/server-side-game-developer/content/rpc--rest	grpc против rest, в чём разница
-curated	ru	in_corpus	notes/protocols/protobuf.md,developer-roadmap/src/data/roadmaps/cpp/content/protobuf,developer-roadmap/src/data/roadmaps/server-side-game-developer/content/protobuf	зачем нужен protobuf?
-curated	ru	in_corpus	notes/protocols/websockets.md,notes/protocols/http.md,developer-roadmap/src/data/roadmaps/flutter/content/web-sockets,developer-roadmap/src/data/roadmaps/aspnet-core/content/web-sockets	websocket или http, когда что?
-curated	ru	in_corpus	notes/llm/rag-concepts.md,developer-roadmap/src/data/roadmaps/ai-agents/content/understand-the-basics-of-rag,developer-roadmap/src/data/roadmaps/ai-agents/content/rag-and-vector-databases,developer-roadmap/src/data/roadmaps/forward-deployed-engineer/content/rags	что такое RAG простыми словами?
-curated	ru	in_corpus	notes/llm/hybrid-retrieval.md	как работает гибридный поиск и RRF?
-curated	ru	in_corpus	system-design-primer/solutions/system_design/twitter/README.md	как задизайнить твиттер по системному дизайну?
-curated	ru	in_corpus	system-design-primer/README.md,system-design-primer/solutions/system_design/scaling_aws/README.md	как масштабировать сервис под миллионы пользователей?
-curated	ru	in_corpus	cheatsheets/docker.md,developer-roadmap/src/data/roadmaps/docker/content/basics-of-docker	базовые команды docker
-curated	ru	in_corpus	developer-roadmap/src/data/roadmaps/kubernetes/content/pods	что такое pod в kubernetes?
-curated	ru	in_corpus	developer-roadmap/src/data/roadmaps/react/content/hooks,cheatsheets/react.md	как работают хуки в react?
-curated	ru	in_corpus	notes/interview/honesty-line.md	как честно говорить про свои факапы на собеседовании?
-curated	ru	out_of_corpus		как приготовить карбонару?
-curated	ru	out_of_corpus		что такое язык zig?
-curated	ru	out_of_corpus		объясни квантовую запутанность
 interview	eng	in_corpus	ado-net-interview-questions/README.md	What is ADO.NET and what are its main components?
 interview	eng	in_corpus	ado-net-interview-questions/README.md	How does ADO.NET differ from classic ADO?
 interview	eng	in_corpus	ado-net-interview-questions/README.md	What is the role of the DataSet in ADO.NET?

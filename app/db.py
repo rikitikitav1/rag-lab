@@ -48,19 +48,20 @@ def hybrid_search(
     limit=None,
 ):
     limit = limit or config.settings.retrieval.results_limit
-    cat_filter = "AND category ~ :category::lquery" if category else ""
+    cat_filter = "AND category ~ (:category)::lquery" if category else ""
+    src_filter = "AND source_id IN (SELECT id FROM data_sources WHERE active)"
     query = f"""WITH vector_search AS (
                     SELECT id,
                            embedding <=> CAST(:embedding AS vector) AS distance,
                            ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:embedding AS vector) ASC) AS rank
-                    FROM data_chunks WHERE embedding <=> CAST(:embedding AS vector) <= :distance_threshold {cat_filter}
+                    FROM data_chunks WHERE embedding <=> CAST(:embedding AS vector) <= :distance_threshold {cat_filter} {src_filter}
                     ORDER BY distance
                     LIMIT :limit_vector
                 ),
                 keyword_search AS (
                     SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank(content_tsv, q) DESC) AS rank
                     FROM data_chunks, plainto_tsquery((:ts_config)::regconfig, :question) q
-                    WHERE content_tsv @@ q {cat_filter}
+                    WHERE content_tsv @@ q {cat_filter} {src_filter}
                     LIMIT :limit_keyword
                 )
                 SELECT d.content, d.source, d.category, d.chunk_index,

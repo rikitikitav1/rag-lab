@@ -6,9 +6,9 @@ import config
 import logging_setup
 from sources import (  # noqa: F401
     cheatsheets,
-    developer_roadmap,
     interview,
     notes,
+    redis_docs,
     system_design_primer,
 )
 from sources.base import Base

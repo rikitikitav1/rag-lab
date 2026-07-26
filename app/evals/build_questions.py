@@ -26,16 +26,6 @@ def _qa_pairs(text):
         yield _clean(match.group(1)), text[match.end() : end].strip()
 
 
-def build(out_path="questions_interview.md"):
-    lines = [
-        f"{question} | {source}"
-        for source, text in _readmes()
-        for question, _ in _qa_pairs(text)
-    ]
-    Path(out_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return len(lines)
-
-
 def build_answers(out_path="answers_interview.jsonl"):
     count = 0
     with open(out_path, "w", encoding="utf-8") as out:
@@ -68,28 +58,11 @@ def _interview_records(path="answers_interview.jsonl"):
         }
 
 
-def _curated_records(path="questions.md"):
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        question, _, raw = line.partition("|")
-        marked = [] if raw.strip() == "NONE" else [x.strip() for x in raw.split(",") if x.strip()]
-        yield {
-            "original_text": question.strip(),
-            "set_name": "curated",
-            "language": "ru",
-            "marked_sources": marked,
-            "reference_answer": None,
-            "kind": "in_corpus" if marked else "out_of_corpus",
-        }
-
-
 DATASET_COLUMNS = ["set_name", "language", "kind", "marked_sources", "original_text"]
 
 
 def build_dataset(out_path="questions.tsv"):
-    records = list(_curated_records()) + list(_interview_records())
+    records = list(_interview_records())
     with open(out_path, "w", encoding="utf-8") as out:
         out.write("\t".join(DATASET_COLUMNS) + "\n")
         for r in records:
@@ -109,6 +82,5 @@ def build_dataset(out_path="questions.tsv"):
 
 
 if __name__ == "__main__":
-    print("questions:", build())
     print("answers:", build_answers())
     print("dataset:", build_dataset())
