@@ -3,7 +3,7 @@ from crud import get_or_404
 from fastapi import APIRouter, Depends, HTTPException, Query
 from models.registry import Model, ModelRole, Status
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from query_utils import apply_sort_limit_offset
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,7 +56,7 @@ async def show_model(id: int, session: AsyncSession = Depends(get_session)):
 
 
 class ModelCreateRequest(BaseModel):
-    name: str
+    name: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+)?$")
 
 
 @router.post("", response_model=ModelResponse)

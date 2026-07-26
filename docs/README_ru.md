@@ -11,9 +11,10 @@ RAG-система над личной базой знаний и внешним
 - **Гибридный retrieval**: векторный поиск (pgvector) + полнотекстовый (Postgres FTS с per-language стеммингом), слияние через **RRF** (Reciprocal Rank Fusion). Фильтр по иерархическим категориям (ltree), distance-порог с честным отказом на вопросах вне корпуса.
 - **Локальные модели** через Ollama по ролям: генерация, эмбеддинги (`bge-m3`), LLM-судья. Роль отвязана от конкретной модели: какая модель обслуживает роль, хранится в БД и меняется на лету.
 - **Мультиисточник**, единая таксономия: личные заметки (rus) + interview-репозитории Devinterview-io (eng, ~170 репо). Per-source стратегии ingestion.
-- **Eval-стенд, 4 оси качества**: retrieval (hit@k / MRR), faithfulness (грунтован ли ответ в контексте), relevance (отвечает ли по существу), refusal-accuracy — через **LLM-as-judge** со structured output.
+- **Eval-стенд, 5 осей качества**: retrieval (hit@k / MRR), faithfulness (грунтован ли ответ в контексте), relevance (отвечает ли по существу), completeness (покрывает ли эталонный ответ), refusal-accuracy — через **LLM-as-judge** со structured output.
 - **Асинхронный job-queue**: тяжёлые операции (pull/delete моделей, индексация корпуса, эмбеддинг банка вопросов) уходят в очередь на Postgres, их разбирает воркер. Сервис зависит только от Postgres: Ollama может быть недоступна на старте, джобы дефёрятся/ретраятся, приложение не падает.
 - **Reranking (opt-in)**: cross-encoder `bge-reranker-v2-m3` поверх гибрида (retrieve-wide → rerank → narrow), включается флагом (per-request / per-run); A/B-протестирован на кросс-язычном наборе.
+- **Агент (ReAct, из примитивов)**: рукописный tool-calling цикл, где модель сама решает когда искать по корпусу, может переформулировать запрос и сделать несколько хопов, затем отвечает. Выбирается как eval-пайплайн (`pipeline: agent`) и меряется в лоб против single-shot RAG (см. лог экспериментов).
 - **Route-driven eval-платформа**: генерация не-циркулярных наборов (LLM-парафраз interview-вопросов + перевод на ru), импорт вопросов файлом, прогоны и оценка судьёй — всё булково через очередь; наблюдаемость через лог запросов (`question-log`) и джобы с `elapsed`.
 - **Слоёвка**: транспортно-нейтральные `use_cases` → тонкие адаптеры (CLI / FastAPI REST).
 
@@ -34,6 +35,7 @@ Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg)
 - `llm.roles` — модель + `options` на каждую роль (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` — модели, которые тоже скачать, но не назначить.
 - `service.retrieval` — `distance_threshold`, `results_limit`, `rrf_k`, лимиты кандидатов.
 - `service.rerank` — `enabled`, `model`, `candidates`, `top`.
+- `service.agent` — `max_hops` (кап хопов ReAct).
 - `service.ingestion` — `chunk_max_size`, `batch_size`, `commit_size`.
 - `service.sources` — источники (interview-репозитории и их base_url).
 - `postgres` — подключение к БД.
@@ -73,8 +75,9 @@ Health:
 - `GET /liveness`, `GET /readiness`
 
 Чат и поиск:
-- `POST /v1/chat/question` (полный RAG-ответ; опц. флаг `rerank`)
+- `POST /v1/chat/question` (полный RAG-ответ; опц. флаг `rerank`; опц. override языка `language` `ru`/`en`)
 - `POST /v1/chat/fast_question` (только retrieval, без генерации)
+- `POST /v1/agent/question` (ответ ReAct-агента; опц. `max_hops`, `language`, `debug` для полного трейса сообщений)
 - `GET /v1/categories` (дерево категорий с числом чанков)
 
 Lifecycle моделей:
@@ -85,7 +88,7 @@ Lifecycle моделей:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval-платформа:
-- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья)
+- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, опц. `rerank`)
 - `POST /v1/questions/import` (залить файл вопросов; опц. цепочка run)
 
 Наблюдаемость:
@@ -103,8 +106,9 @@ Eval-платформа:
 - `app/bootstrap.py` — idempotent-инициализация на старте.
 - `app/sources/` — per-source ingestion (reader-паттерн: `Base` ABC + источники).
 - `app/db.py` — гибридный поиск (сырой SQL: pgvector `<=>`, FTS, ltree, RRF).
-- `app/use_cases/` — `chat` (retrieve/answer), `index` (сбор корпуса), `judge` (оценка ответа).
-- `app/api/` — REST-адаптеры (health + v1: chat / categories / model / role / prompt / eval / questions / question-log / job).
+- `app/use_cases/` — `chat` (retrieve/answer), `agent` (ReAct tool-calling цикл), `index` (сбор корпуса), `judge` (оценка ответа).
+- `app/agent_tools.py` — реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
+- `app/api/` — REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
 - `app/seed.py`, `app/console.py` — сид промптов/банка вопросов; REPL-консоль.
 - `app/evals/` — eval-стенд (runner + метрики retrieval + generation через judge).
 - `tests/` — unit-тесты (чистая логика, без DB/Ollama): `docker compose exec rag-lab pytest -q`.

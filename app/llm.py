@@ -11,7 +11,9 @@ from sqlalchemy import select
 
 LLM_BASE = config.settings.llm.base_url
 
-_client = OpenAI(base_url=f"{LLM_BASE}/v1", api_key="ollama")
+_client = OpenAI(
+    base_url=f"{LLM_BASE}/v1", api_key="ollama", timeout=120.0, max_retries=1
+)
 
 log = logging_setup.get_logger(__name__)
 
@@ -21,6 +23,16 @@ class Completion:
     text: str
     prompt_tokens: int
     completion_tokens: int
+
+
+@dataclass
+class ChatTurn:
+    text: str | None
+    tool_calls: list
+    message: Any
+    prompt_tokens: int
+    completion_tokens: int
+    finish_reason: str | None = None
 
 
 def resolve_name(role: str) -> str:
@@ -61,6 +73,42 @@ def ask(system, user, role="generation", schema=None) -> Completion:
         text=resp.choices[0].message.content,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
+    )
+
+
+def chat(messages, tools=None, role="generation") -> ChatTurn:
+    name = resolve_name(role)
+    params = _params(role, None)
+    if tools:
+        params["tools"] = tools
+    try:
+        resp = _client.chat.completions.create(
+            model=name,
+            messages=messages,
+            **params,
+        )
+    except OpenAIError as e:
+        log.error("llm.chat_failed", model=name, error=str(e))
+        raise RuntimeError(f"LLM chat failed ({name}): {e}") from e
+
+    choice = resp.choices[0]
+    message = choice.message
+    usage = resp.usage
+    log.info(
+        "llm.chat_tools",
+        model=name,
+        tool_calls=len(message.tool_calls or []),
+        finish_reason=choice.finish_reason,
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+    )
+    return ChatTurn(
+        text=message.content,
+        tool_calls=message.tool_calls or [],
+        message=message,
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        finish_reason=choice.finish_reason,
     )
 
 

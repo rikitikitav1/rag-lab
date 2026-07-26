@@ -35,7 +35,9 @@ def load_prompt_files(prompts_dir=config.settings.prompts_dir) -> list[PromptFil
         try:
             purpose = Purpose[match.group("purpose")]
         except KeyError:
-            raise ValueError(f"unknown prompt purpose in filename: {path.name}")
+            raise ValueError(
+                f"unknown prompt purpose in filename: {path.name}"
+            ) from None
         result.append(
             PromptFile(
                 purpose=purpose,
@@ -115,7 +117,7 @@ def _question_rows() -> list[dict]:
     for line in lines[1:]:
         if not line.strip():
             continue
-        row = dict(zip(header, line.split("\t")))
+        row = dict(zip(header, line.split("\t"), strict=False))
         text = row["original_text"]
         text_hash = _text_hash(text)
         if text_hash in seen:

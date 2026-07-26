@@ -30,7 +30,7 @@ def embed_questions(options: dict) -> None:
         for i in range(0, len(pending), size):
             batch = pending[i : i + size]
             vectors = llm.request_embeddings_batch([q.original_text for q in batch])
-            for question, vector in zip(batch, vectors):
+            for question, vector in zip(batch, vectors, strict=True):
                 question.embedding = vector
             session.commit()
     log.info("worker.embed_questions", embedded=len(pending))

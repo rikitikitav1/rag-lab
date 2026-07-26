@@ -11,9 +11,10 @@ This is a **showcase lab**: a bench for practicing LLM/RAG engineering approache
 - **Hybrid retrieval**: vector search (pgvector) + full-text (Postgres FTS with per-language stemming), fused via **RRF** (Reciprocal Rank Fusion). Filter by hierarchical categories (ltree), a distance threshold with an honest refusal on out-of-corpus questions.
 - **Local models** through Ollama, keyed by role: generation, embeddings (`bge-m3`), LLM judge. A role is decoupled from a concrete model: which model serves a role lives in the DB and can be switched at runtime.
 - **Multi-source**, one taxonomy: personal notes (ru) + Devinterview-io interview repos (en, ~170 repos). Per-source ingestion strategies.
-- **Eval bench, 4 quality axes**: retrieval (hit@k / MRR), faithfulness (is the answer grounded in the context), relevance (does it answer to the point), refusal accuracy, all via **LLM-as-judge** with structured output.
+- **Eval bench, 5 quality axes**: retrieval (hit@k / MRR), faithfulness (is the answer grounded in the context), relevance (does it answer to the point), completeness (does it cover the reference answer), refusal accuracy, all via **LLM-as-judge** with structured output.
 - **Async job queue**: heavy operations (model pull/delete, corpus indexing, embedding the question bank) go to a Postgres-backed queue processed by a worker. The service depends only on Postgres: Ollama may be unavailable at startup, jobs defer/retry, the app does not crash.
 - **Reranking (opt-in)**: a cross-encoder (`bge-reranker-v2-m3`) on top of hybrid retrieval (retrieve-wide → rerank → narrow), toggled by a flag (per-request / per-run); A/B tested on a cross-lingual set.
+- **Agent (ReAct, from primitives)**: a hand-rolled tool-calling loop where the model decides when to search the corpus, may refine the query and multi-hop, then answers. Selectable as an eval pipeline (`pipeline: agent`) and benchmarked head-to-head against single-shot RAG (see the experiments log).
 - **Route-driven eval platform**: generating non-circular eval sets (LLM paraphrase of interview questions + translation to ru), importing questions from a file, runs and judging, all bulk through the queue; observability via the request log (`question-log`) and jobs with `elapsed`.
 - **Layering**: transport-neutral `use_cases` → thin adapters (CLI / FastAPI REST).
 
@@ -34,6 +35,7 @@ Everything tunable lives in **`config.yaml`** (mounted into the container):
 - `llm.roles` - model + `options` per role (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` - models to pull but not assign.
 - `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, candidate limits.
 - `service.rerank` - `enabled`, `model`, `candidates`, `top`.
+- `service.agent` - `max_hops` (ReAct hop cap).
 - `service.ingestion` - `chunk_max_size`, `batch_size`, `commit_size`.
 - `service.sources` - sources (interview repos and their base_url).
 - `postgres` - DB connection.
@@ -73,8 +75,9 @@ Health:
 - `GET /liveness`, `GET /readiness`
 
 Chat and search:
-- `POST /v1/chat/question` (full RAG answer; optional `rerank` flag)
+- `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
 - `POST /v1/chat/fast_question` (retrieval only, no generation)
+- `POST /v1/agent/question` (ReAct agent answer; optional `max_hops`, `language`, and `debug` for the full message trace)
 - `GET /v1/categories` (category tree with chunk counts)
 
 Model lifecycle:
@@ -86,7 +89,7 @@ Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
-- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge)
+- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, optional `rerank`)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `POST /v1/questions/import` (upload a questions file; optional chained run)
 
@@ -105,8 +108,9 @@ Observability:
 - `app/bootstrap.py` - idempotent startup init.
 - `app/sources/` - per-source ingestion (reader pattern: `Base` ABC + sources).
 - `app/db.py` - hybrid search (raw SQL: pgvector `<=>`, FTS, ltree, RRF).
-- `app/use_cases/` - `chat` (retrieve/answer), `index` (corpus build), `judge` (answer scoring).
-- `app/api/` - REST adapters (health + v1: chat / categories / model / role / prompt / eval / questions / question-log / job).
+- `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling loop), `index` (corpus build), `judge` (answer scoring).
+- `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
+- `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
 - `app/evals/` - eval bench (runner + retrieval and generation metrics via the judge).
 - `tests/` - unit tests (pure logic, no DB/Ollama): `docker compose exec rag-lab pytest -q`.

@@ -65,7 +65,7 @@ def _flush(session, chunks: list[DataChunk], embed_size: int) -> int:
     for i in range(0, len(chunks), embed_size):
         batch = chunks[i : i + embed_size]
         vectors = llm.request_embeddings_batch([c.content for c in batch])
-        for chunk, vector in zip(batch, vectors):
+        for chunk, vector in zip(batch, vectors, strict=True):
             chunk.embedding = vector
     session.add_all(chunks)
     session.commit()

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 from use_cases import chat
@@ -23,6 +25,7 @@ class QuestionRequest(BaseModel):
     filter: QuestionFilter | None = None
     options: QuestionOptions | None = None
     rerank: bool | None = None
+    language: Literal["ru", "en"] | None = None
 
 
 class AnswerMetrics(BaseModel):
@@ -56,7 +59,12 @@ class RetrievalResponse(BaseModel):
 @router.post("/question", response_model=QuestionResponse)
 def ask(question: QuestionRequest) -> QuestionResponse:
     category = question.filter.category if question.filter else None
-    res = chat.answer(question.text, category, use_rerank=question.rerank)
+    res = chat.answer(
+        question.text,
+        category,
+        use_rerank=question.rerank,
+        language=question.language,
+    )
     return QuestionResponse(
         text=res.text,
         metrics=AnswerMetrics(

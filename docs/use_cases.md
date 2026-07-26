@@ -35,7 +35,7 @@ curl -s "localhost:8000/v1/job?sort_by=id&sort_order=desc&limit=5" | python3 -m 
 
 # 4. once demo_run is judged, read the metrics
 docker compose exec rag-lab python -m evals.retrieval_metrics demo_run    # hit@k / MRR
-docker compose exec rag-lab python -m evals.generation_metrics demo_run   # faithfulness / relevance / refusal
+docker compose exec rag-lab python -m evals.generation_metrics demo_run   # faithfulness / relevance / completeness / refusal
 ```
 
 ## Scenario 3: reranking A/B
@@ -99,6 +99,24 @@ docker compose run --rm seed                                  # loads new prompt
 curl -s localhost:8000/v1/prompt | python3 -m json.tool       # find the new version id
 curl -sX POST localhost:8000/v1/prompt/<id>/activate          # switch active (deactivates siblings)
 ```
+
+## Scenario 8: agentic answer and agent vs single-shot
+
+The agent decides its own retrieval (a ReAct tool-calling loop): it can search, refine the query, and multi-hop before answering. `debug=true` returns the full message trace; `max_hops` and `language` are optional.
+
+```bash
+# one agentic answer with the trace
+curl -sX POST localhost:8000/v1/agent/question -H 'Content-Type: application/json' \
+  -d '{"text":"What is a Redis sorted set and when would you use it?","debug":true}' | python3 -m json.tool
+
+# A/B: run the same set through the agent pipeline, then compare to a single_shot run
+curl -sX POST localhost:8000/v1/eval/run -H 'Content-Type: application/json' \
+  -d '{"set_name":"paraphrased_ru","run_name":"agent_ru","pipeline":"agent"}'
+
+docker compose exec rag-lab python -m evals.retrieval_metrics agent_ru
+docker compose exec rag-lab python -m evals.generation_metrics agent_ru
+```
+Caveat: retrieval hit@k/MRR are computed the same way for both pipelines, but for the agent the source list is a union across hops (recall-flavoured), so read it as a caveat, not a head-to-head with single-shot precision@k. See [experiments.md](experiments.md) for the measured result.
 
 ## Command reference
 

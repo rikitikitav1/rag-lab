@@ -20,16 +20,23 @@ class RelevantVerdictOption(StrEnum):
     IRRELEVANT = "irrelevant"
 
 
+class CompleteVerdictOption(StrEnum):
+    COMPLETE = "complete"
+    PARTIALLY = "partially"
+    INCOMPLETE = "incomplete"
+
+
 VERDICTS = {
     "faithful": ["faithful", "partially", "unfaithful"],
     "relevance": ["relevant", "partially", "irrelevant"],
+    "completeness": ["complete", "partially", "incomplete"],
 }
 
 
 @dataclass
 class Verdict:
     reason: str
-    verdict: FaithfulVerdictOption | RelevantVerdictOption
+    verdict: FaithfulVerdictOption | RelevantVerdictOption | CompleteVerdictOption
     elapsed: float = 0.0
     model: str = field(default_factory=lambda: llm.resolve_name("judging"))
 
@@ -57,6 +64,16 @@ def relevance_verdict(question, answer) -> Verdict:
         user,
         response_schema("relevance"),
         RelevantVerdictOption,
+    )
+
+
+def completeness_verdict(question, answer, reference) -> Verdict:
+    system, user = completeness_prompts(question, answer, reference)
+    return judge(
+        system,
+        user,
+        response_schema("completeness"),
+        CompleteVerdictOption,
     )
 
 
@@ -93,6 +110,19 @@ def relevance_prompts(question, answer) -> tuple[str, str]:
             [
                 f"QUESTION:\n{question}",
                 f"ANSWER:{answer}\n---",
+            ]
+        ),
+    )
+
+
+def completeness_prompts(question, answer, reference) -> tuple[str, str]:
+    return (
+        prompt_repo.active_template(Purpose.judge_completeness),
+        "\n\n---\n\n".join(
+            [
+                f"QUESTION:\n{question}",
+                f"REFERENCE:\n{reference}",
+                f"ANSWER:\n{answer}\n---",
             ]
         ),
     )

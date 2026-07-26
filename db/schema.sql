@@ -231,7 +231,7 @@ CREATE TABLE public.prompts (
     template text NOT NULL,
     active boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT prompts_purpose_check CHECK ((purpose = ANY (ARRAY['generate.answer'::text, 'judge.faithfulness'::text, 'judge.relevance'::text, 'paraphrase.question'::text, 'translate.question'::text])))
+    CONSTRAINT prompts_purpose_check CHECK ((purpose = ANY (ARRAY['generate.answer'::text, 'judge.faithfulness'::text, 'judge.relevance'::text, 'judge.completeness'::text, 'paraphrase.question'::text, 'translate.question'::text, 'agent.system'::text])))
 );
 
 
@@ -275,7 +275,9 @@ CREATE TABLE public.question_logs (
     relevance text,
     metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    context text
+    context text,
+    pipeline text DEFAULT 'single_shot'::text NOT NULL,
+    completeness text
 );
 
 
@@ -537,6 +539,13 @@ CREATE INDEX idx_jobs_apply_since_status ON public.jobs USING btree (apply_since
 
 
 --
+-- Name: idx_question_logs_pipeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_question_logs_pipeline ON public.question_logs USING btree (pipeline);
+
+
+--
 -- Name: one_active_prompt_per_purpose; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -610,4 +619,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260725000002'),
     ('20260725000003'),
     ('20260725000004'),
-    ('20260726000001');
+    ('20260726000001'),
+    ('20260726000002'),
+    ('20260726000003'),
+    ('20260726000004');

@@ -8,6 +8,7 @@ import llm
 import prompt_repo
 import seed
 import sources.factory
+import use_cases.agent
 import use_cases.chat as chat
 import use_cases.index
 import use_cases.judge
@@ -44,6 +45,7 @@ def start() -> None:
         "llm": llm,
         "index": use_cases.index,
         "judge": use_cases.judge,
+        "agent": use_cases.agent,
         "sources": sources.factory,
         **entities,
     }

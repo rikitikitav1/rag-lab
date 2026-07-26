@@ -2,7 +2,7 @@ import hashlib
 import time
 
 import job_queue
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from models.eval import Question
 from orm.async_db import get_session
 from pydantic import BaseModel
@@ -10,6 +10,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/questions", tags=["questions"])
+
+_MAX_UPLOAD = 5 * 1024 * 1024
 
 
 def _text_hash(text: str) -> str:
@@ -55,7 +57,13 @@ async def import_questions(
     run_name: str | None = Form(default=None),
     session: AsyncSession = Depends(get_session),
 ):
-    content = (await file.read()).decode("utf-8")
+    raw = await file.read(_MAX_UPLOAD + 1)
+    if len(raw) > _MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="file too large")
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="file must be UTF-8") from None
     parsed = _parse(content)
 
     inserted = 0

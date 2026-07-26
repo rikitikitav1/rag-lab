@@ -5,6 +5,7 @@ import bootstrap
 import logging_setup
 from api import health
 from api.v1 import (
+    agent,
     categories,
     chat,
     eval,
@@ -31,6 +32,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.include_router(health.router)
 app.include_router(chat.router, prefix="/v1")
+app.include_router(agent.router, prefix="/v1")
 app.include_router(categories.router, prefix="/v1")
 app.include_router(llm_model.router, prefix="/v1")
 app.include_router(model_role.router, prefix="/v1")

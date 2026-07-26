@@ -32,6 +32,7 @@ class QuestionLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     run_name: Mapped[str | None]
+    pipeline: Mapped[str] = mapped_column(default="single_shot")
     question_id: Mapped[int | None] = mapped_column(ForeignKey("questions.id"))
     answered: Mapped[bool]
     answer: Mapped[str | None]
@@ -44,6 +45,7 @@ class QuestionLog(Base):
     elapsed: Mapped[float | None]
     faithfulness: Mapped[str | None]
     relevance: Mapped[str | None]
+    completeness: Mapped[str | None]
     metrics: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
