@@ -14,6 +14,7 @@ from api.v1 import (
     prompt,
     question_log,
     questions,
+    source,
 )
 from fastapi import FastAPI
 
@@ -36,5 +37,6 @@ app.include_router(model_role.router, prefix="/v1")
 app.include_router(prompt.router, prefix="/v1")
 app.include_router(question_log.router, prefix="/v1")
 app.include_router(eval.router, prefix="/v1")
+app.include_router(source.router, prefix="/v1")
 app.include_router(questions.router, prefix="/v1")
 app.include_router(job.router, prefix="/v1")

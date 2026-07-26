@@ -114,7 +114,8 @@ CREATE TABLE public.data_sources (
     name character varying(256) NOT NULL,
     kind character varying(32) NOT NULL,
     git_url text,
-    path text
+    path text,
+    active boolean DEFAULT true NOT NULL
 );
 
 
@@ -608,4 +609,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260725000001'),
     ('20260725000002'),
     ('20260725000003'),
-    ('20260725000004');
+    ('20260725000004'),
+    ('20260726000001');
