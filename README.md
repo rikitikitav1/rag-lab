@@ -86,6 +86,7 @@ Prompts:
 
 Eval platform:
 - `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge)
+- `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `POST /v1/questions/import` (upload a questions file; optional chained run)
 
 Observability:
