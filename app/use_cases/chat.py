@@ -17,9 +17,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from timing_wrappers import measure_elapsed
 
-log = logging_setup.get_logger(__name__)
-
 import db
+
+log = logging_setup.get_logger(__name__)
 
 IGNORED_SOURCES = config.settings.ignored_sources
 
@@ -141,9 +141,10 @@ def answer(
     add_context=False,
     run_name: str | None = None,
     use_rerank: bool | None = None,
+    language: str | None = None,
 ) -> Answer:
     start = time.perf_counter()
-    lang = _detect_language(question)
+    lang = _resolve_language(question, language)
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
     rows = _retrieve_rows(question, category, k, use_rerank)
@@ -157,9 +158,12 @@ def answer(
             for content, src, *_ in rows
             if not is_ignored_source(src)
         )
+        user = f"{context}\n\nQuestion: {question}"
+        if language:
+            user += f"\n\n{_language_directive(language)}"
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
-            user=f"{context}\n\nQuestion: {question}",
+            user=user,
         )
         ans = Answer(
             text=response.text,
@@ -183,11 +187,22 @@ def answer(
     return ans
 
 
+_LANG_NAMES = {"ru": "Russian", "en": "English"}
+
+
 def _detect_language(text) -> str:
     try:
         return detect(text)
     except LangDetectException:
         return "en"
+
+
+def _resolve_language(question: str, language: str | None) -> str:
+    return language or _detect_language(question)
+
+
+def _language_directive(language: str) -> str:
+    return f"Respond in {_LANG_NAMES.get(language, language)}."
 
 
 def _log_answer(
