@@ -75,6 +75,26 @@ def test_context_from_messages_joins_only_tool_contents():
     assert agent._context_from_messages(messages) == "chunk A\n\nchunk B"
 
 
+def test_context_from_messages_excludes_sentinel_and_errors():
+    from use_cases import chat
+
+    messages = [
+        {"role": "tool", "tool_call_id": "a", "content": "chunk A"},
+        {"role": "tool", "tool_call_id": "b", "content": chat.NO_RESULTS},
+        {"role": "tool", "tool_call_id": "c", "content": f"{chat.ERROR_PREFIX}boom"},
+        {"role": "tool", "tool_call_id": "d", "content": "chunk B"},
+    ]
+    assert agent._context_from_messages(messages) == "chunk A\n\nchunk B"
+
+
+def test_unique_sources_dedups_by_source():
+    a1 = SimpleNamespace(source="a.md")
+    a2 = SimpleNamespace(source="a.md")
+    b = SimpleNamespace(source="b.md")
+    out = agent._unique_sources([a1, a2, b])
+    assert [s.source for s in out] == ["a.md", "b.md"]
+
+
 def test_apply_turn_accumulates_across_multiple_calls(monkeypatch):
     monkeypatch.setattr(
         agent_tools,
