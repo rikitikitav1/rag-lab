@@ -42,10 +42,6 @@ class SourcesCfg(BaseModel):
     interview: InterviewCfg
 
 
-class QuestionsCfg(BaseModel):
-    path: str
-
-
 class LlmCfg(BaseModel):
     base_url: str
     roles: dict[str, RoleCfg]
@@ -71,7 +67,6 @@ class AppConfig(BaseModel):
     repos_dir: str
     prompts_dir: str
     sources: SourcesCfg
-    questions: QuestionsCfg
     llm: LlmCfg
     postgres: PostgresCfg
 
@@ -88,7 +83,6 @@ def _load(path: str) -> AppConfig:
         repos_dir=service["repos_dir"],
         prompts_dir=service["prompts_dir"],
         sources=service["sources"],
-        questions=service["questions"],
         llm=raw["llm"],
         postgres=raw["postgres"],
     )
