@@ -15,6 +15,7 @@ router = APIRouter(prefix="/question-log", tags=["question-logs"])
 class QuestionLogItem(BaseModel):
     id: int
     run_name: str | None
+    pipeline: str
     question_id: int | None
     question_text: str | None
     set_name: str | None
@@ -28,6 +29,7 @@ class QuestionLogItem(BaseModel):
     elapsed: float | None
     faithfulness: str | None
     relevance: str | None
+    completeness: str | None
     metrics: dict
     created_at: datetime
 
@@ -47,6 +49,7 @@ def _item(ql: QuestionLog) -> dict:
     return {
         "id": ql.id,
         "run_name": ql.run_name,
+        "pipeline": ql.pipeline,
         "question_id": ql.question_id,
         "question_text": ql.question.original_text if ql.question else None,
         "set_name": ql.question.set_name if ql.question else None,
@@ -60,6 +63,7 @@ def _item(ql: QuestionLog) -> dict:
         "elapsed": ql.elapsed,
         "faithfulness": ql.faithfulness,
         "relevance": ql.relevance,
+        "completeness": ql.completeness,
         "metrics": ql.metrics,
         "created_at": ql.created_at,
     }
@@ -71,9 +75,11 @@ async def list_question_logs(
     text: str | None = Query(default=None, description="substring in question text"),
     set_name: list[str] | None = Query(default=None),
     run_name: list[str] | None = Query(default=None),
+    pipeline: list[str] | None = Query(default=None),
     answered: bool | None = Query(default=None),
     faithfulness: list[str] | None = Query(default=None),
     relevance: list[str] | None = Query(default=None),
+    completeness: list[str] | None = Query(default=None),
     created_from: datetime | None = Query(default=None),
     created_to: datetime | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
@@ -95,12 +101,16 @@ async def list_question_logs(
         stmt = stmt.where(QuestionLog.question_id == question_id)
     if run_name is not None:
         stmt = stmt.where(QuestionLog.run_name.in_(run_name))
+    if pipeline is not None:
+        stmt = stmt.where(QuestionLog.pipeline.in_(pipeline))
     if answered is not None:
         stmt = stmt.where(QuestionLog.answered.is_(answered))
     if faithfulness is not None:
         stmt = stmt.where(QuestionLog.faithfulness.in_(faithfulness))
     if relevance is not None:
         stmt = stmt.where(QuestionLog.relevance.in_(relevance))
+    if completeness is not None:
+        stmt = stmt.where(QuestionLog.completeness.in_(completeness))
     if created_from is not None:
         stmt = stmt.where(QuestionLog.created_at >= created_from)
     if created_to is not None:

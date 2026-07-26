@@ -1,9 +1,9 @@
 import logging_setup
 import use_cases.judge as judge
-from models.eval import QuestionLog
+from models.eval import Question, QuestionLog
 from models.registry import Role
 from orm.sync_db import Session
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from .base import register, require_role_ready
 
@@ -15,7 +15,15 @@ def _target_log_ids(session, options) -> list[int]:
     if options.get("log_ids"):
         stmt = stmt.where(QuestionLog.id.in_(options["log_ids"]))
     else:
-        stmt = stmt.where(QuestionLog.relevance.is_(None))
+        stmt = stmt.join(Question, QuestionLog.question_id == Question.id).where(
+            or_(
+                QuestionLog.relevance.is_(None),
+                and_(
+                    QuestionLog.completeness.is_(None),
+                    Question.reference_answer.isnot(None),
+                ),
+            )
+        )
         if options.get("run_name"):
             stmt = stmt.where(QuestionLog.run_name == options["run_name"])
     return list(session.scalars(stmt))
@@ -49,17 +57,42 @@ def _judge_log(log_id: int) -> None:
             return
 
         question = ql.question.original_text
+        reference = ql.question.reference_answer
         metrics = dict(ql.metrics)
 
-        rv = judge.relevance_verdict(question, ql.answer)
-        ql.relevance = rv.verdict.value
-        metrics["relevance"] = {"reason": rv.reason, "elapsed": rv.elapsed}
+        if ql.relevance is None:
+            v = _run_axis(log_id, "relevance", judge.relevance_verdict, question, ql.answer)
+            if v:
+                ql.relevance = v.verdict.value
+                metrics["relevance"] = _axis_metric(v)
 
-        if ql.context:
-            fv = judge.faithful_verdict(question, ql.answer, ql.context)
-            ql.faithfulness = fv.verdict.value
-            metrics["faithfulness"] = {"reason": fv.reason, "elapsed": fv.elapsed}
+        if ql.faithfulness is None and ql.context:
+            v = _run_axis(
+                log_id, "faithfulness", judge.faithful_verdict, question, ql.answer, ql.context
+            )
+            if v:
+                ql.faithfulness = v.verdict.value
+                metrics["faithfulness"] = _axis_metric(v)
 
-        metrics["judge_model"] = rv.model
+        if ql.completeness is None and reference:
+            v = _run_axis(
+                log_id, "completeness", judge.completeness_verdict, question, ql.answer, reference
+            )
+            if v:
+                ql.completeness = v.verdict.value
+                metrics["completeness"] = _axis_metric(v)
+
         ql.metrics = metrics
         session.commit()
+
+
+def _run_axis(log_id, axis, verdict_fn, *args):
+    try:
+        return verdict_fn(*args)
+    except Exception as e:
+        log.error("judge.axis_failed", axis=axis, log_id=log_id, error=str(e))
+        return None
+
+
+def _axis_metric(verdict) -> dict:
+    return {"reason": verdict.reason, "elapsed": verdict.elapsed, "model": verdict.model}

@@ -11,17 +11,20 @@ def evaluate(run_name=None, verbose=False) -> dict:
 
     faith = Counter()
     relevance = Counter()
+    completeness = Counter()
     for ql in in_corpus:
         if ql.faithfulness:
             faith[ql.faithfulness] += 1
         if ql.relevance:
             relevance[ql.relevance] += 1
+        if ql.completeness:
+            completeness[ql.completeness] += 1
         if verbose:
             print(
                 f"Q: {ql.question.original_text}\n"
                 f"  answer: {(ql.answer or '')[:90]}\n"
-                f"  faith: {ql.faithfulness} | relevance: {ql.relevance}\n"
-                f"  reasons: {ql.metrics.get('faithfulness')} | {ql.metrics.get('relevance')}\n"
+                f"  faith: {ql.faithfulness} | relevance: {ql.relevance} | complete: {ql.completeness}\n"
+                f"  reasons: {ql.metrics.get('faithfulness')} | {ql.metrics.get('relevance')} | {ql.metrics.get('completeness')}\n"
             )
 
     correct = sum(
@@ -31,6 +34,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
     return {
         "faithfulness": dict(faith),
         "relevance": dict(relevance),
+        "completeness": dict(completeness),
         "refusal_accuracy": f"{correct}/{len(out_of_corpus)}",
     }
 
