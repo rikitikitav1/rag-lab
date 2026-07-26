@@ -26,6 +26,10 @@ class RerankCfg(BaseModel):
     top: int = 3
 
 
+class AgentCfg(BaseModel):
+    max_hops: int = 4
+
+
 class IngestionCfg(BaseModel):
     batch_size: int
     commit_size: int
@@ -62,6 +66,7 @@ class PostgresCfg(BaseModel):
 class AppConfig(BaseModel):
     retrieval: RetrievalCfg
     rerank: RerankCfg
+    agent: AgentCfg
     ingestion: IngestionCfg
     ignored_sources: set[str]
     repos_dir: str
@@ -78,6 +83,7 @@ def _load(path: str) -> AppConfig:
     return AppConfig(
         retrieval=service["retrieval"],
         rerank=service.get("rerank", {}),
+        agent=service.get("agent", {}),
         ingestion=service["ingestion"],
         ignored_sources=service["ignored_sources"],
         repos_dir=service["repos_dir"],

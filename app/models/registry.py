@@ -17,14 +17,21 @@ class Purpose(StrEnum):
     generate_answer = "generate.answer"
     judge_faithfulness = "judge.faithfulness"
     judge_relevance = "judge.relevance"
+    judge_completeness = "judge.completeness"
     paraphrase_question = "paraphrase.question"
     translate_question = "translate.question"
+    agent_system = "agent.system"
 
 
 class Status(StrEnum):
     available = "available"
     loading = "loading"
     ready = "ready"
+
+
+class Pipeline(StrEnum):
+    single_shot = "single_shot"
+    agent = "agent"
 
 
 class Model(Base):
