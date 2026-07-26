@@ -48,7 +48,7 @@ def hybrid_search(
     limit=None,
 ):
     limit = limit or config.settings.retrieval.results_limit
-    cat_filter = "AND category ~ :category::lquery" if category else ""
+    cat_filter = "AND category ~ (:category)::lquery" if category else ""
     query = f"""WITH vector_search AS (
                     SELECT id,
                            embedding <=> CAST(:embedding AS vector) AS distance,
