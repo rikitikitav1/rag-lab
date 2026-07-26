@@ -47,16 +47,21 @@ def schemas() -> list[dict]:
 def dispatch(name: str, arguments: str) -> ToolResult:
     tool = _REGISTRY.get(name)
     if tool is None:
-        return ToolResult(content=f"error: unknown tool '{name}'")
+        return ToolResult(content=f"{chat.ERROR_PREFIX}unknown tool '{name}'")
     try:
-        kwargs = json.loads(arguments or "{}")
-    except json.JSONDecodeError as e:
-        return ToolResult(content=f"error: invalid arguments json: {e}")
+        raw = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return ToolResult(content=f"{chat.ERROR_PREFIX}tool '{name}' got invalid arguments")
+    allowed = tool.parameters.get("properties", {})
+    kwargs = {k: v for k, v in raw.items() if k in allowed}
+    dropped = [k for k in raw if k not in allowed]
+    if dropped:
+        log.warning("tool.dropped_args", tool=name, dropped=dropped)
     try:
         return tool.run(**kwargs)
     except Exception as e:
         log.error("tool.failed", tool=name, error=str(e))
-        return ToolResult(content=f"error: tool '{name}' failed")
+        return ToolResult(content=f"{chat.ERROR_PREFIX}tool '{name}' failed")
 
 
 def _search_corpus(
@@ -72,7 +77,7 @@ def _search_corpus(
 
     if not rows:
         return ToolResult(
-            content="No relevant documents found.",
+            content=chat.NO_RESULTS,
             meta={"sources": []},
         )
 
@@ -83,7 +88,7 @@ def _search_corpus(
     )
 
     return ToolResult(
-        content=content or "No relevant documents found.",
+        content=content or chat.NO_RESULTS,
         meta={
             "sources": chat.take_sources(rows),
         },

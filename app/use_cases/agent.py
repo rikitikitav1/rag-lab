@@ -8,7 +8,7 @@ import llm
 import logging_setup
 import prompt_repo
 from models.eval import QuestionLog
-from models.registry import Purpose
+from models.registry import Pipeline, Purpose
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import chat
@@ -31,11 +31,13 @@ class AgentResult:
 def run(
     question: str,
     role: str = "generation",
-    max_hops: int = config.settings.agent.max_hops,
+    max_hops: int | None = None,
     run_name: str | None = None,
     language: str | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
+    if max_hops is None:
+        max_hops = config.settings.agent.max_hops
     system = prompt_repo.active_template(Purpose.agent_system)
     if language:
         system += f"\n\n{chat._language_directive(language)}"
@@ -48,19 +50,38 @@ def run(
 
     for hop in range(1, max_hops + 1):
         result.hops = hop
-        turn = llm.chat(messages, tools=tools, role=role)
+        try:
+            turn = llm.chat(messages, tools=tools, role=role)
+        except RuntimeError as e:
+            log.error("agent.hop_failed", hop=hop, error=str(e))
+            break
         result.prompt_tokens += turn.prompt_tokens
         result.completion_tokens += turn.completion_tokens
         if _apply_turn(turn, messages, result):
             break
 
-    if not result.success:
-        log.warning("agent.hops_exhausted", hops=result.hops)
-        final = llm.chat(messages, role=role)
-        result.prompt_tokens += final.prompt_tokens
-        result.completion_tokens += final.completion_tokens
-        result.text = final.text or ""
+    result.sources = _unique_sources(result.sources)
+
+    if not result.success and result.sources:
+        log.info("agent.forcing_final", hops=result.hops)
+        try:
+            final = llm.chat(messages, role=role)
+        except RuntimeError as e:
+            log.error("agent.final_failed", error=str(e))
+        else:
+            result.hops += 1
+            result.prompt_tokens += final.prompt_tokens
+            result.completion_tokens += final.completion_tokens
+            result.text = final.text or ""
+            if final.finish_reason == "length":
+                log.warning("agent.truncated", hops=result.hops)
+
+    if result.sources:
         result.success = bool(result.text)
+    else:
+        result.success = False
+        if not result.text:
+            result.text = chat.NO_RESULTS
 
     result.elapsed = round(time.perf_counter() - start, 3)
     log.info(
@@ -87,6 +108,7 @@ def _apply_turn(turn: llm.ChatTurn, messages: list[dict], result: AgentResult) -
     messages.append(turn.message)
 
     for tc in turn.tool_calls:
+        log.info("agent.tool_call", tool=tc.function.name, arguments=tc.function.arguments)
         res = agent_tools.dispatch(tc.function.name, tc.function.arguments)
         result.sources.extend(res.meta.get("sources", []))
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": res.content})
@@ -94,11 +116,24 @@ def _apply_turn(turn: llm.ChatTurn, messages: list[dict], result: AgentResult) -
     return False
 
 
+def _unique_sources(sources: list) -> list:
+    seen: set[str] = set()
+    out = []
+    for s in sources:
+        if s.source not in seen:
+            seen.add(s.source)
+            out.append(s)
+    return out
+
+
 def _context_from_messages(messages) -> str:
     return "\n\n".join(
         m["content"]
         for m in messages
-        if isinstance(m, dict) and m.get("role") == "tool"
+        if isinstance(m, dict)
+        and m.get("role") == "tool"
+        and not m["content"].startswith(chat.ERROR_PREFIX)
+        and m["content"] != chat.NO_RESULTS
     )
 
 
@@ -116,15 +151,24 @@ def _log_answer(
             question_id=question.id,
             answered=result.success,
             answer=result.text,
-            context=_context_from_messages(result.messages),
+            context=_context_from_messages(result.messages) or None,
             sources=[asdict(s) for s in result.sources],
-            pipeline="agent",
+            pipeline=Pipeline.agent.value,
             models={
                 "generation": llm.resolve_name("generation"),
                 "embedding": llm.resolve_name("embedding"),
             },
             prompts={"agent_system": prompt_repo.active_version(Purpose.agent_system)},
-            metrics={"hops": result.hops},
+            metrics={
+                "hops": result.hops,
+                "no_evidence": not bool(result.sources),
+                "config": {
+                    "rerank": config.settings.rerank.enabled,
+                    "distance_threshold": round(
+                        config.settings.retrieval.distance_threshold, 3
+                    ),
+                },
+            },
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             elapsed=result.elapsed,
