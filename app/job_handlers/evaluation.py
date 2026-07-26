@@ -16,5 +16,6 @@ def eval_run(options: dict) -> None:
         set_name=options.get("set_name"),
         question_ids=options.get("question_ids"),
         use_rerank=options.get("rerank"),
+        pipeline=options.get("pipeline", "single_shot"),
     )
     log.info("eval_run.done", run_name=options["run_name"], answered=answered)

@@ -1,8 +1,9 @@
 import time
 
 import job_queue
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from models.eval import QuestionLog
+from models.registry import Pipeline
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -29,6 +30,7 @@ class EvalRunRequest(BaseModel):
     set_name: str | None = None
     question_ids: list[int] | None = None
     rerank: bool | None = None
+    pipeline: Pipeline = Pipeline.single_shot
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -116,6 +118,10 @@ async def enqueue_eval_run(
     request: EvalRunRequest,
     session: AsyncSession = Depends(get_session),
 ):
+    if request.rerank is not None and request.pipeline == Pipeline.agent:
+        raise HTTPException(
+            status_code=400, detail="rerank is not supported with the agent pipeline"
+        )
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
     return await _enqueue(
         session,
@@ -125,5 +131,6 @@ async def enqueue_eval_run(
             "set_name": request.set_name,
             "question_ids": request.question_ids,
             "rerank": request.rerank,
+            "pipeline": request.pipeline.value,
         },
     )
