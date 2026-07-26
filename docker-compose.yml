@@ -9,7 +9,7 @@ services:
       ["uvicorn", "server:app",
        "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - .:/app
       - ${HOME}/working_docs/notes:/notes:ro
@@ -19,7 +19,7 @@ services:
   postgresql:
     image: pgvector/pgvector:pg17
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_HOST_AUTH_METHOD: trust
@@ -68,7 +68,7 @@ services:
   ollama:
     image: ollama/ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     environment:
       OLLAMA_MAX_LOADED_MODELS: "2"
       OLLAMA_KEEP_ALIVE: "-1"
