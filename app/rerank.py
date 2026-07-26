@@ -40,6 +40,6 @@ def rerank[R: Sequence](
     if isinstance(scores, float):
         scores = [scores]
 
-    ranked = sorted(zip(rows, scores), key=itemgetter(1), reverse=True)
+    ranked = sorted(zip(rows, scores, strict=True), key=itemgetter(1), reverse=True)
 
     return [row for row, _ in ranked[:top]]
