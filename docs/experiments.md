@@ -128,6 +128,22 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 
 **Revised conclusion:** "agent is strictly worse" was an artifact of the category bug, not a property of agentic RAG. With the trap removed the agent **beats single-shot on retrieval (84 vs 80, MRR 0.773 vs 0.652), relevance (70 vs 57), and completeness (incomplete 9 vs 14)** — its query reformulation (often ru→en) retrieves better cross-lingually than embedding the raw Russian question. The one axis it loses is **faithfulness (37 vs 50 faithful, 32 vs 24 unfaithful)**: answering more fully from a multi-hop context union yields more assertions the judge marks ungrounded (the completeness-vs-grounding tradeoff, plus a different context denominator than single-shot's top-3). **Takeaway: measuring caught a bug the naive read would have shipped as a conclusion.** Open follow-up: close the faithfulness gap (tighter grounding instruction; or judge the agent against a deduped/narrowed context).
 
+**Post-remediation re-run (`agent_v2_ru`).** After a second review round the agent/judge path was hardened: `answered` now follows retrieved evidence (honest refusal on empty), the judged context excludes the "No relevant documents found." / tool-error sentinels, judging is per-axis, and `dispatch` drops any hallucinated `category`. Re-running the same set validated the fixes and moved the faithfulness gap the predicted follow-up direction:
+
+| axis | v3_ru (single-shot) | agent_nocat_ru | agent_v2_ru (hardened) |
+|------|---------------------|----------------|------------------------|
+| retrieval hit@k | 80% | 84% | **87%** |
+| retrieval MRR | 0.652 | 0.773 | **0.779** |
+| faithful | 50 | 37 | 39 |
+| unfaithful | 24 | 32 | **29** |
+| relevant | 57 | 70 | 68 |
+| complete / partially / incomplete | 1/85/14 | 2/89/9 | **5/90/5** |
+| empty-source answers | — | 0 | 0 |
+
+Filtering non-evidence out of the faithfulness context (the round-2 fix) is what nudged unfaithful 32 → 29 and faithful 37 → 39: the judge was previously scoring some answers against a context that literally said "No relevant documents found." The overall conclusion stands — the agent beats single-shot on retrieval, relevance, and completeness, and trails on faithfulness, with the gap now narrower. The fix improved measurement validity, not the model.
+
+**Metric caveats (post round-3 hardening).** Three numbers here shifted meaning and are not strictly comparable across rounds: (1) agent MRR reflects cross-hop source dedup added in `24fae88`, so pre-dedup agent MRR (`agent_nocat_ru` 0.773) is not directly comparable to `agent_v2_ru` 0.779 (hit@k is unaffected — membership is unchanged). (2) The agent's `hops` now includes the forced synthesis turn, so a run capped at N can report N+1. (3) faithfulness and relevance are counted over in-corpus logs; completeness is counted over all logs (in-corpus plus the out-of-corpus refusal probes), so the three axes do not share a denominator.
+
 ---
 
 ## 2026-07-26 — Corpus ablation: disable developer-roadmap

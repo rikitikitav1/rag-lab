@@ -71,6 +71,8 @@ curl -X POST localhost:8000/v1/chat/question \
 
 Полный интерактивный справочник в Swagger: `/docs`.
 
+Листинговые эндпоинты (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) используют общую пагинацию: `limit` (по умолчанию 100, максимум 1000), `offset`, `sort_by`, `sort_order` (`asc`/`desc`, по умолчанию `desc`).
+
 Health:
 - `GET /liveness`, `GET /readiness`
 
@@ -88,11 +90,12 @@ Lifecycle моделей:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval-платформа:
-- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, опц. `rerank`)
-- `POST /v1/questions/import` (залить файл вопросов; опц. цепочка run)
+- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, опц. `rerank`; 400 если `rerank` вместе с `pipeline: agent`)
+- `GET /v1/eval/misses?run_name=X` (retrieval-промахи прогона: in-corpus вопросы, где ожидаемый источник не найден, expected vs retrieved)
+- `POST /v1/questions/import` (залить файл вопросов, ≤5 МБ; опц. цепочка run)
 
 Наблюдаемость:
-- `GET /v1/question-log`, `GET /v1/question-log/{id}` (логи ответов с фильтрами + детально с context)
+- `GET /v1/question-log`, `GET /v1/question-log/{id}` (логи ответов; фильтры вкл. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; детально с context)
 - `GET /v1/job`, `GET /v1/job/{id}` (джобы + elapsed)
 
 ## Как это устроено

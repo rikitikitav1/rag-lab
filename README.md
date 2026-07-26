@@ -71,6 +71,8 @@ Full hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own
 
 Full interactive reference in Swagger at `/docs`.
 
+List endpoints (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) share pagination: `limit` (default 100, max 1000), `offset`, `sort_by`, `sort_order` (`asc`/`desc`, default `desc`).
+
 Health:
 - `GET /liveness`, `GET /readiness`
 
@@ -89,12 +91,12 @@ Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
-- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, optional `rerank`)
+- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, optional `rerank`; 400 if `rerank` is combined with `pipeline: agent`)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
-- `POST /v1/questions/import` (upload a questions file; optional chained run)
+- `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 
 Observability:
-- `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs with filters + detail with context)
+- `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs; filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; detail with context)
 - `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed)
 
 ## How it is built
