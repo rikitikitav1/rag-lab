@@ -1,5 +1,7 @@
 # rag-lab
 
+[![CI](https://github.com/rikitikitav1/rag-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/rikitikitav1/rag-lab/actions/workflows/ci.yml)
+
 A RAG system over a personal knowledge base and external IT repositories. It answers technical questions and returns the sources it retrieved. Built **from primitives** (no LangChain/LlamaIndex) on **local inference** (Ollama on a single GPU, via the OpenAI-compatible protocol).
 
 This is a **showcase lab**: a bench for practicing LLM/RAG engineering approaches by hand (retrieval, LLM-as-judge eval, model lifecycle, reranking, async queues) and showing results as numbers. Not a production service, a playground for approaches.
