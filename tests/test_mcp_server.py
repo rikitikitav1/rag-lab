@@ -2,10 +2,10 @@ import asyncio
 from types import SimpleNamespace
 
 import mcp_server
+import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from models.registry import Pipeline
-from sqlalchemy.exc import SQLAlchemyError
-from use_cases import chat
 
 
 def test_search_corpus_returns_content(monkeypatch):
@@ -21,21 +21,28 @@ def test_search_corpus_forwards_category(monkeypatch):
         return ("c", [])
 
     monkeypatch.setattr(mcp_server.chat, "search_chunks", fake)
-    mcp_server.search_corpus("redis", category="databases")
-    assert seen["category"] == "databases"
+    mcp_server.search_corpus("redis", category="databases.redis")
+    assert seen["category"] == "databases.redis"
 
 
-def test_search_corpus_error_is_generic(monkeypatch):
-    def boom(q, category=None):
-        raise RuntimeError("SELECT ... FROM data_chunks; embedding=[0.1] secret")
-
-    monkeypatch.setattr(mcp_server.chat, "search_chunks", boom)
-    out = mcp_server.search_corpus("x")
-    assert out.startswith(chat.ERROR_PREFIX)
-    assert "secret" not in out
+def test_search_corpus_empty_query_raises():
+    with pytest.raises(ToolError):
+        mcp_server.search_corpus("   ")
 
 
-def test_search_corpus_error_masked_through_client(monkeypatch):
+def test_search_corpus_too_long_query_raises():
+    with pytest.raises(ToolError):
+        mcp_server.search_corpus("x" * (mcp_server._MAX_QUERY_LEN + 1))
+
+
+@pytest.mark.parametrize("bad", ["(", "*", "databases|interview", "!databases", "a b"])
+def test_search_corpus_rejects_bad_category(bad):
+    with pytest.raises(ToolError) as ei:
+        mcp_server.search_corpus("x", category=bad)
+    assert "invalid category" in str(ei.value)
+
+
+def test_search_corpus_masks_unexpected_through_client(monkeypatch):
     def boom(q, category=None):
         raise RuntimeError("SELECT secret_sql FROM data_chunks; embedding=[0.1]")
 
@@ -45,36 +52,38 @@ def test_search_corpus_error_masked_through_client(monkeypatch):
         async with Client(mcp_server.mcp) as c:
             return await c.call_tool("search_corpus", {"query": "x"})
 
-    res = asyncio.run(go())
-    text = res.content[0].text if res.content else ""
-    assert "secret_sql" not in text
+    with pytest.raises(ToolError) as ei:
+        asyncio.run(go())
+    assert "secret_sql" not in str(ei.value)
 
 
 def test_answer_question_agent_pipeline(monkeypatch):
     seen = {}
 
-    def fake_run(question, run_name=None, language=None):
-        seen["arm"] = "agent"
+    def fake_run(q, run_name=None, language=None):
         seen["run_name"] = run_name
-        return SimpleNamespace(text="agent answer", sources=[])
+        return SimpleNamespace(text="agent answer", success=True, sources=[])
 
     monkeypatch.setattr(mcp_server.agent, "run", fake_run)
-    assert mcp_server.answer_question("q") == {"answer": "agent answer", "sources": []}
-    assert seen["arm"] == "agent"
+    out = mcp_server.answer_question("q")
+    assert out.answer == "agent answer"
+    assert out.retrieved is True
+    assert out.sources == []
     assert seen["run_name"] == "mcp"
 
 
-def test_answer_question_single_shot_pipeline(monkeypatch):
-    seen = {}
-
-    def fake_answer(question, run_name=None, language=None):
-        seen["arm"] = "single"
-        return SimpleNamespace(text="single answer", sources=[])
-
-    monkeypatch.setattr(mcp_server.chat, "answer", fake_answer)
-    out = mcp_server.answer_question("q", pipeline=Pipeline.single_shot)
-    assert out == {"answer": "single answer", "sources": []}
-    assert seen["arm"] == "single"
+def test_answer_question_retrieved_false_no_evidence(monkeypatch):
+    monkeypatch.setattr(
+        mcp_server.agent,
+        "run",
+        lambda q, run_name=None, language=None: SimpleNamespace(
+            text="fabricated", success=False, sources=[]
+        ),
+    )
+    out = mcp_server.answer_question("q")
+    assert out.retrieved is False
+    assert out.sources == []
+    assert out.answer == "fabricated"
 
 
 def test_answer_question_returns_sources(monkeypatch):
@@ -82,29 +91,65 @@ def test_answer_question_returns_sources(monkeypatch):
     monkeypatch.setattr(
         mcp_server.agent,
         "run",
-        lambda question, run_name=None, language=None: SimpleNamespace(text="ans", sources=srcs),
+        lambda q, run_name=None, language=None: SimpleNamespace(
+            text="ans", success=True, sources=srcs
+        ),
     )
-    assert mcp_server.answer_question("q") == {"answer": "ans", "sources": ["a.md", "b.md"]}
+    assert mcp_server.answer_question("q").sources == ["a.md", "b.md"]
+
+
+def test_answer_question_single_shot_forwards_category(monkeypatch):
+    seen = {}
+
+    def fake_answer(text, category=None, run_name=None, language=None):
+        seen["category"] = category
+        return SimpleNamespace(text="a", success=True, sources=[])
+
+    monkeypatch.setattr(mcp_server.chat, "answer", fake_answer)
+    mcp_server.answer_question("q", pipeline=Pipeline.single_shot, category="redis")
+    assert seen["category"] == "redis"
+
+
+def test_answer_question_empty_text_raises():
+    with pytest.raises(ToolError):
+        mcp_server.answer_question("  ")
+
+
+def test_answer_question_agent_rejects_category():
+    with pytest.raises(ToolError):
+        mcp_server.answer_question("q", pipeline=Pipeline.agent, category="redis")
+
+
+def test_answer_question_bad_category_raises():
+    with pytest.raises(ToolError) as ei:
+        mcp_server.answer_question("q", pipeline=Pipeline.single_shot, category="*")
+    assert "invalid category" in str(ei.value)
 
 
 def test_answer_question_empty_text_fallback(monkeypatch):
     monkeypatch.setattr(
         mcp_server.agent,
         "run",
-        lambda question, run_name=None, language=None: SimpleNamespace(text="", sources=[]),
+        lambda q, run_name=None, language=None: SimpleNamespace(
+            text="", success=False, sources=[]
+        ),
     )
-    assert mcp_server.answer_question("q") == {"answer": "No answer generated.", "sources": []}
+    assert mcp_server.answer_question("q").answer == "No answer generated."
 
 
-def test_answer_question_error_is_generic(monkeypatch):
-    def boom(question, run_name=None, language=None):
-        raise RuntimeError("upstream 500: secret detail")
+def test_answer_question_error_masks_through_client(monkeypatch):
+    def boom(q, run_name=None, language=None):
+        raise RuntimeError("secret detail sql")
 
     monkeypatch.setattr(mcp_server.agent, "run", boom)
-    out = mcp_server.answer_question("q")
-    assert out["answer"].startswith(chat.ERROR_PREFIX)
-    assert "secret detail" not in out["answer"]
-    assert out["sources"] == []
+
+    async def go():
+        async with Client(mcp_server.mcp) as c:
+            return await c.call_tool("answer_question", {"text": "q"})
+
+    with pytest.raises(ToolError) as ei:
+        asyncio.run(go())
+    assert "secret detail" not in str(ei.value)
 
 
 def test_list_categories_maps_rows_with_counts(monkeypatch):
@@ -116,9 +161,11 @@ def test_list_categories_maps_rows_with_counts(monkeypatch):
     assert mcp_server.list_categories() == {"databases": 5, "llm": 3}
 
 
-def test_list_categories_error_returns_empty(monkeypatch):
-    def boom(only_top, category):
-        raise SQLAlchemyError("bad lquery")
+def test_list_categories_bad_category_raises():
+    with pytest.raises(ToolError):
+        mcp_server.list_categories(category="(")
 
-    monkeypatch.setattr(mcp_server.db, "list_categories", boom)
-    assert mcp_server.list_categories(category="(") == {}
+
+def test_list_categories_only_top_with_category_raises():
+    with pytest.raises(ToolError):
+        mcp_server.list_categories(category="databases", only_top=True)

@@ -102,7 +102,7 @@ Eval-платформа:
 
 MCP-сервер (Model Context Protocol) примонтирован на `/mcp` (streamable HTTP) и отдаёт корпус любому MCP-клиенту (Claude Desktop, Cursor, IDE-агенты). Построен на standalone `fastmcp`, переиспользует те же примитивы поиска, что REST/agent. Тулы:
 - `search_corpus(query, category?)` - гибридный поиск, отдаёт чанки с маркерами `[source]`; опц. фильтр по категории.
-- `answer_question(question, pipeline?, language?)` - полный RAG-ответ (пайплайн `agent` или `single_shot`).
+- `answer_question(text, pipeline?, category?, language?)` - полный RAG-ответ, возвращает `{answer, retrieved, sources}` (`agent` или `single_shot`; `category` только с `single_shot`).
 - `list_categories(category?, only_top?)` - пути категорий с количеством чанков, для discovery валидных значений фильтра перед поиском.
 
 Подключение: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, или MCP Inspector на тот же URL.
