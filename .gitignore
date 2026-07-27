@@ -5,7 +5,7 @@ __pycache__/
 build/
 dist/
 
-# venv (uv.lock коммитим, .venv — нет)
+# venv (uv.lock коммитим, .venv - нет)
 .venv/
 
 # env / secrets
