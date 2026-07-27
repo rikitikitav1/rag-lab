@@ -5,7 +5,7 @@ class _FakeReranker:
     def __init__(self, scores):
         self._scores = scores
 
-    def compute_score(self, pairs, normalize=True):
+    def predict(self, pairs):
         return self._scores
 
 
@@ -19,6 +19,6 @@ def test_rerank_empty_rows():
     assert rerank.rerank("q", [], top=3) == []
 
 
-def test_rerank_handles_single_float_score(monkeypatch):
-    monkeypatch.setattr(rerank, "_model", lambda: _FakeReranker(0.7))
+def test_rerank_single_row(monkeypatch):
+    monkeypatch.setattr(rerank, "_model", lambda: _FakeReranker([0.7]))
     assert rerank.rerank("q", [("only",)], top=3) == [("only",)]

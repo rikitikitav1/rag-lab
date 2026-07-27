@@ -113,7 +113,7 @@ MCP-сервер (Model Context Protocol) примонтирован на `/mcp`
 - `app/orm/` - SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
 - `app/models/` - ORM-модели: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk).
 - `app/llm.py` - клиент Ollama через OpenAI SDK (генерация / эмбеддинги / structured output) + резолвер роль→модель.
-- `app/rerank.py` - cross-encoder реранкер (FlagEmbedding, CPU, ленивая загрузка).
+- `app/rerank.py` - cross-encoder реранкер (sentence-transformers, CPU, ленивая загрузка).
 - `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - очередь на Postgres (FOR UPDATE SKIP LOCKED) и воркер с ретраями/дефёром; хендлеры разнесены по тематике.
 - `app/bootstrap.py` - idempotent-инициализация на старте.
 - `app/sources/` - per-source ingestion (reader-паттерн: `Base` ABC + источники).

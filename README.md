@@ -1,5 +1,7 @@
 # rag-lab
 
+[![CI](https://github.com/rikitikitav1/rag-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/rikitikitav1/rag-lab/actions/workflows/ci.yml)
+
 A RAG system over a personal knowledge base and external IT repositories. It answers technical questions and returns the sources it retrieved. Built **from primitives** (no LangChain/LlamaIndex) on **local inference** (Ollama on a single GPU, via the OpenAI-compatible protocol).
 
 This is a **showcase lab**: a bench for practicing LLM/RAG engineering approaches by hand (retrieval, LLM-as-judge eval, model lifecycle, reranking, async queues) and showing results as numbers. Not a production service, a playground for approaches.
@@ -114,7 +116,7 @@ Connect: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, o
 - `app/orm/` - SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
 - `app/models/` - ORM models: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk).
 - `app/llm.py` - Ollama client via the OpenAI SDK (generation / embeddings / structured output) + role→model resolver.
-- `app/rerank.py` - cross-encoder reranker (FlagEmbedding, CPU, lazy-loaded).
+- `app/rerank.py` - cross-encoder reranker (sentence-transformers, CPU, lazy-loaded).
 - `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - Postgres queue (FOR UPDATE SKIP LOCKED) and worker with retries/defer; handlers split by theme.
 - `app/bootstrap.py` - idempotent startup init.
 - `app/sources/` - per-source ingestion (reader pattern: `Base` ABC + sources).
