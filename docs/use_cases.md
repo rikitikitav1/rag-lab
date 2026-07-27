@@ -14,7 +14,7 @@ Hands-on scenarios for rag-lab. Each is copy-paste ready. Everything is also cli
 curl -sX POST localhost:8000/v1/chat/question -H 'Content-Type: application/json' \
   -d '{"text":"What is a hash table?"}' | python3 -m json.tool
 ```
-Returns the answer, cited sources (with vector/keyword ranks and score), and token/time metrics. Add `"rerank": true` to apply the cross-encoder for this single request (slower, ~10s on CPU).
+Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Add `"rerank": true` to apply the cross-encoder for this single request (slower, ~10s on CPU).
 
 ## Scenario 2: mini-eval from scratch to numbers
 

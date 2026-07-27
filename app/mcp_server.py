@@ -47,9 +47,10 @@ _TOOL_DESC = {
     "answer_question": (
         "Answer a question from the technical knowledge corpus. Returns "
         "{answer, retrieved, sources}: retrieved=true means context was found and "
-        "used, false means the model had nothing to ground on. retrieved does NOT "
-        "certify the answer is correct or fully supported, so judge the answer and "
-        "its sources yourself. sources lists the source paths used. For raw chunks "
+        "fed to the model, false means it had nothing to ground on. retrieved does "
+        "NOT certify the answer is correct or fully supported, so judge the answer "
+        "and its sources yourself. sources lists the paths retrieved as context, "
+        "not necessarily the ones the answer rests on. For raw chunks "
         "use search_corpus instead. The 'agent' pipeline reformulates and searches "
         "over multiple hops (better recall); 'single_shot' does one pass (faster)."
     ),
