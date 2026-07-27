@@ -1,4 +1,4 @@
-# не тащим в build context (ускоряет сборку, не пускаем хостовый venv в образ)
+# keep out of the build context (faster builds, no host venv in the image)
 .venv/
 __pycache__/
 *.py[cod]

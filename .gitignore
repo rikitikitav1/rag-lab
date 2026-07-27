@@ -5,19 +5,19 @@ __pycache__/
 build/
 dist/
 
-# venv (uv.lock коммитим, .venv - нет)
+# venv (commit uv.lock, not .venv)
 .venv/
 
 # env / secrets
 .env
 
-# временные файлы (правило проекта)
+# temp files (project rule)
 temp_files/
 
-# логи
+# logs
 *.log
 
-# тесты
+# tests
 .pytest_cache/
 .coverage
 htmlcov/

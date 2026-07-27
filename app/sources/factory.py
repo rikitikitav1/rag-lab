@@ -86,7 +86,7 @@ def provision(specs, workers=8) -> dict:
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(clone_repo, n, u): n for n, u in specs}
         for fut in as_completed(futures):
-            roots[futures[fut]] = fut.result()  # Path или None
+            roots[futures[fut]] = fut.result()  # Path or None
     ok = sum(v is not None for v in roots.values())
     log.info("provision.done", ok=ok, failed=len(roots) - ok)
     return roots
