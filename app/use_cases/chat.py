@@ -127,6 +127,23 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool):
     return rerank.rerank(question, candidates, top=k)
 
 
+def format_chunks(rows) -> str:
+    return "\n\n".join(
+        f"[{src}]\n{content}" for content, src, *_ in rows if not is_ignored_source(src)
+    )
+
+
+def search_chunks(
+    query: str,
+    category: str | None = None,
+    k: int = config.settings.retrieval.results_limit,
+) -> tuple[str, list[Source]]:
+    rows = _retrieve_rows(query, category, k, config.settings.rerank.enabled)
+    if not rows:
+        return NO_RESULTS, []
+    return format_chunks(rows) or NO_RESULTS, take_sources(rows)
+
+
 @measure_elapsed
 def retrieve(
     question: str,
@@ -152,13 +169,7 @@ def answer(
         use_rerank = config.settings.rerank.enabled
     rows = _retrieve_rows(question, category, k, use_rerank)
 
-    context = None
-    if rows:
-        context = "\n\n".join(
-            f"[{src}]\n{content}"
-            for content, src, *_ in rows
-            if not is_ignored_source(src)
-        )
+    context = format_chunks(rows) if rows else None
     if not context:
         ans = Answer(text=NO_RESULTS)
     else:

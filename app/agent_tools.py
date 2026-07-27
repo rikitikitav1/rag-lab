@@ -2,7 +2,6 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-import config
 import logging_setup
 from use_cases import chat
 
@@ -64,35 +63,9 @@ def dispatch(name: str, arguments: str) -> ToolResult:
         return ToolResult(content=f"{chat.ERROR_PREFIX}tool '{name}' failed")
 
 
-def _search_corpus(
-    query: str,
-    category: str | None = None,
-) -> ToolResult:
-    rows = chat._retrieve_rows(
-        question=query,
-        category=category,
-        k=config.settings.retrieval.results_limit,
-        rerank_enabled=config.settings.rerank.enabled,
-    )
-
-    if not rows:
-        return ToolResult(
-            content=chat.NO_RESULTS,
-            meta={"sources": []},
-        )
-
-    content = "\n\n".join(
-        f"[{src}]\n{content}"
-        for content, src, *_ in rows
-        if not chat.is_ignored_source(src)
-    )
-
-    return ToolResult(
-        content=content or chat.NO_RESULTS,
-        meta={
-            "sources": chat.take_sources(rows),
-        },
-    )
+def _search_corpus(query: str, category: str | None = None) -> ToolResult:
+    content, sources = chat.search_chunks(query, category)
+    return ToolResult(content=content, meta={"sources": sources})
 
 
 register(

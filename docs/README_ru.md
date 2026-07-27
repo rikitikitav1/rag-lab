@@ -98,6 +98,15 @@ Eval-платформа:
 - `GET /v1/question-log`, `GET /v1/question-log/{id}` (логи ответов; фильтры вкл. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; детально с context)
 - `GET /v1/job`, `GET /v1/job/{id}` (джобы + elapsed)
 
+## MCP
+
+MCP-сервер (Model Context Protocol) примонтирован на `/mcp` (streamable HTTP) и отдаёт корпус любому MCP-клиенту (Claude Desktop, Cursor, IDE-агенты). Построен на standalone `fastmcp`, переиспользует те же примитивы поиска, что REST/agent. Тулы:
+- `search_corpus(query, category?)` — гибридный поиск, отдаёт чанки с маркерами `[source]`; опц. фильтр по категории.
+- `answer_question(question, pipeline?, language?)` — полный RAG-ответ (пайплайн `agent` или `single_shot`).
+- `list_categories(category?, only_top?)` — пути категорий с количеством чанков, для discovery валидных значений фильтра перед поиском.
+
+Подключение: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, или MCP Inspector на тот же URL.
+
 ## Как это устроено
 
 - `app/config.py` — loader `config.yaml`.
@@ -111,6 +120,7 @@ Eval-платформа:
 - `app/db.py` — гибридный поиск (сырой SQL: pgvector `<=>`, FTS, ltree, RRF).
 - `app/use_cases/` — `chat` (retrieve/answer), `agent` (ReAct tool-calling цикл), `index` (сбор корпуса), `judge` (оценка ответа).
 - `app/agent_tools.py` — реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
+- `app/mcp_server.py` — FastMCP-сервер (примонтирован на `/mcp`): тулы `search_corpus` / `answer_question` / `list_categories` поверх примитивов поиска.
 - `app/api/` — REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
 - `app/seed.py`, `app/console.py` — сид промптов/банка вопросов; REPL-консоль.
 - `app/evals/` — eval-стенд (runner + метрики retrieval + generation через judge).
@@ -118,4 +128,4 @@ Eval-платформа:
 
 ## Статус
 
-Учебный проект: цель — освоить RAG/LLM-инженерию руками, из примитивов. RAG из примитивов (гибрид, ltree, FTS) + FastAPI-сервер + 4-осевой eval-стенд на LLM-judge + production-слой (pyproject/uv, централизованный config, SQLAlchemy ORM sync+async, OpenAI-совместимый клиент, role-keyed lifecycle моделей, версионирование промптов, async job-queue, банк вопросов, reranking, route-driven eval-платформа).
+Учебный проект: цель — освоить RAG/LLM-инженерию руками, из примитивов. RAG из примитивов (гибрид, ltree, FTS) + FastAPI-сервер + 4-осевой eval-стенд на LLM-judge + production-слой (pyproject/uv, централизованный config, SQLAlchemy ORM sync+async, OpenAI-совместимый клиент, role-keyed lifecycle моделей, версионирование промптов, async job-queue, банк вопросов, reranking, route-driven eval-платформа, MCP-сервер).

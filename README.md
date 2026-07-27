@@ -99,6 +99,15 @@ Observability:
 - `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs; filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; detail with context)
 - `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed)
 
+## MCP
+
+An MCP (Model Context Protocol) server is mounted at `/mcp` (streamable HTTP), exposing the corpus to any MCP client (Claude Desktop, Cursor, IDE agents). Built on standalone `fastmcp` and reusing the same retrieval primitives as the REST/agent paths. Tools:
+- `search_corpus(query, category?)` - hybrid retrieval, returns chunks with `[source]` markers; optional category subtree filter.
+- `answer_question(question, pipeline?, language?)` - full RAG answer (`agent` or `single_shot` pipeline).
+- `list_categories(category?, only_top?)` - category paths with chunk counts, for discovering valid filter values before searching.
+
+Connect: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, or point the MCP Inspector at the same URL.
+
 ## How it is built
 
 - `app/config.py` - `config.yaml` loader.
@@ -112,6 +121,7 @@ Observability:
 - `app/db.py` - hybrid search (raw SQL: pgvector `<=>`, FTS, ltree, RRF).
 - `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling loop), `index` (corpus build), `judge` (answer scoring).
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
+- `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
 - `app/evals/` - eval bench (runner + retrieval and generation metrics via the judge).
@@ -119,4 +129,4 @@ Observability:
 
 ## Status
 
-A learning project: the goal is to master RAG/LLM engineering by hand, from primitives. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 4-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform).
+A learning project: the goal is to master RAG/LLM engineering by hand, from primitives. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 4-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform, MCP server).
