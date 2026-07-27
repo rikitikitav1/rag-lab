@@ -20,10 +20,11 @@
       "python-multipart>=0.0.20",
       "FlagEmbedding>=1.3.5",
       "transformers>=4.44,<4.49",
+      "fastmcp>=2.0",
 ]
 
 [dependency-groups]
-  dev = ["pytest>=8"]
+  dev = ["pytest>=8", "ruff>=0.16"]
 
 [tool.pytest.ini_options]
   testpaths = ["tests"]
@@ -44,4 +45,12 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "B"]
-ignore = ["B008"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.File",
+    "fastapi.Form",
+    "pydantic.Field",
+]

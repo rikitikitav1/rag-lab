@@ -1,6 +1,6 @@
 # rag-lab
 
-RAG-система над личной базой знаний и внешними IT-репозиториями. Отвечает на технические вопросы, цитируя источники. Собрана **из примитивов** (без LangChain/LlamaIndex) на **локальном инференсе** (Ollama на своей GPU, через OpenAI-совместимый протокол).
+RAG-система над личной базой знаний и внешними IT-репозиториями. Отвечает на технические вопросы и возвращает источники, использованные как контекст. Собрана **из примитивов** (без LangChain/LlamaIndex) на **локальном инференсе** (Ollama на своей GPU, через OpenAI-совместимый протокол).
 
 Это **витрина-лаборатория**: стенд, чтобы руками отрабатывать инженерные подходы LLM/RAG (retrieval, eval на LLM-судье, lifecycle моделей, reranking, async-очереди) и показывать результат на цифрах. Не продакшн-сервис, а полигон подходов.
 
@@ -11,11 +11,11 @@ RAG-система над личной базой знаний и внешним
 - **Гибридный retrieval**: векторный поиск (pgvector) + полнотекстовый (Postgres FTS с per-language стеммингом), слияние через **RRF** (Reciprocal Rank Fusion). Фильтр по иерархическим категориям (ltree), distance-порог с честным отказом на вопросах вне корпуса.
 - **Локальные модели** через Ollama по ролям: генерация, эмбеддинги (`bge-m3`), LLM-судья. Роль отвязана от конкретной модели: какая модель обслуживает роль, хранится в БД и меняется на лету.
 - **Мультиисточник**, единая таксономия: личные заметки (rus) + interview-репозитории Devinterview-io (eng, ~170 репо). Per-source стратегии ingestion.
-- **Eval-стенд, 5 осей качества**: retrieval (hit@k / MRR), faithfulness (грунтован ли ответ в контексте), relevance (отвечает ли по существу), completeness (покрывает ли эталонный ответ), refusal-accuracy — через **LLM-as-judge** со structured output.
+- **Eval-стенд, 5 осей качества**: retrieval (hit@k / MRR), faithfulness (грунтован ли ответ в контексте), relevance (отвечает ли по существу), completeness (покрывает ли эталонный ответ), refusal-accuracy - через **LLM-as-judge** со structured output.
 - **Асинхронный job-queue**: тяжёлые операции (pull/delete моделей, индексация корпуса, эмбеддинг банка вопросов) уходят в очередь на Postgres, их разбирает воркер. Сервис зависит только от Postgres: Ollama может быть недоступна на старте, джобы дефёрятся/ретраятся, приложение не падает.
 - **Reranking (opt-in)**: cross-encoder `bge-reranker-v2-m3` поверх гибрида (retrieve-wide → rerank → narrow), включается флагом (per-request / per-run); A/B-протестирован на кросс-язычном наборе.
 - **Агент (ReAct, из примитивов)**: рукописный tool-calling цикл, где модель сама решает когда искать по корпусу, может переформулировать запрос и сделать несколько хопов, затем отвечает. Выбирается как eval-пайплайн (`pipeline: agent`) и меряется в лоб против single-shot RAG (см. лог экспериментов).
-- **Route-driven eval-платформа**: генерация не-циркулярных наборов (LLM-парафраз interview-вопросов + перевод на ru), импорт вопросов файлом, прогоны и оценка судьёй — всё булково через очередь; наблюдаемость через лог запросов (`question-log`) и джобы с `elapsed`.
+- **Route-driven eval-платформа**: генерация не-циркулярных наборов (LLM-парафраз interview-вопросов + перевод на ru), импорт вопросов файлом, прогоны и оценка судьёй - всё булково через очередь; наблюдаемость через лог запросов (`question-log`) и джобы с `elapsed`.
 - **Слоёвка**: транспортно-нейтральные `use_cases` → тонкие адаптеры (CLI / FastAPI REST).
 
 ## Стек
@@ -24,7 +24,7 @@ Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg)
 
 ## Архитектура моделей и промптов
 
-- **Model / ModelRole**: `Model` (имя + статус: available/loading/ready), `ModelRole` (role как PK → одна модель на роль по построению, FK `ON DELETE RESTRICT` = БД не даст удалить назначенную модель). Резолвер `llm.resolve_name(role)` берёт имя из БД, параметры инференса — из `config.yaml`.
+- **Model / ModelRole**: `Model` (имя + статус: available/loading/ready), `ModelRole` (role как PK → одна модель на роль по построению, FK `ON DELETE RESTRICT` = БД не даст удалить назначенную модель). Резолвер `llm.resolve_name(role)` берёт имя из БД, параметры инференса - из `config.yaml`.
 - **Prompt**: версионирование в БД (`purpose` + `version`, ровно один `active` на назначение). Промпты-исходники лежат файлами в `prompts/` (формат `<purpose>.v<N>.txt`), сид заливает их в БД, активной становится свежая версия.
 - **Bootstrap на старте** (idempotent): завести Model-строки из конфига → засидить роли → сверить с Ollama (что не скачано → статус `loading` + джоба pull) → заэнкьюить индексацию, если корпус пуст → заэнкьюить эмбеддинг вопросов без вектора.
 
@@ -32,13 +32,13 @@ Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg)
 
 Всё тюнингуемое вынесено в **`config.yaml`** (монтируется в контейнер):
 
-- `llm.roles` — модель + `options` на каждую роль (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` — модели, которые тоже скачать, но не назначить.
-- `service.retrieval` — `distance_threshold`, `results_limit`, `rrf_k`, лимиты кандидатов.
-- `service.rerank` — `enabled`, `model`, `candidates`, `top`.
-- `service.agent` — `max_hops` (кап хопов ReAct).
-- `service.ingestion` — `chunk_max_size`, `batch_size`, `commit_size`.
-- `service.sources` — источники (interview-репозитории и их base_url).
-- `postgres` — подключение к БД.
+- `llm.roles` - модель + `options` на каждую роль (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` - модели, которые тоже скачать, но не назначить.
+- `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, лимиты кандидатов.
+- `service.rerank` - `enabled`, `model`, `candidates`, `top`.
+- `service.agent` - `max_hops` (кап хопов ReAct).
+- `service.ingestion` - `chunk_max_size`, `batch_size`, `commit_size`.
+- `service.sources` - источники (interview-репозитории и их base_url).
+- `postgres` - подключение к БД.
 
 В коде остаются source-специфичные деревья категорий.
 
@@ -71,6 +71,8 @@ curl -X POST localhost:8000/v1/chat/question \
 
 Полный интерактивный справочник в Swagger: `/docs`.
 
+Листинговые эндпоинты (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) используют общую пагинацию: `limit` (по умолчанию 100, максимум 1000), `offset`, `sort_by`, `sort_order` (`asc`/`desc`, по умолчанию `desc`).
+
 Health:
 - `GET /liveness`, `GET /readiness`
 
@@ -88,31 +90,42 @@ Lifecycle моделей:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval-платформа:
-- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, опц. `rerank`)
-- `POST /v1/questions/import` (залить файл вопросов; опц. цепочка run)
+- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, опц. `rerank`; 400 если `rerank` вместе с `pipeline: agent`)
+- `GET /v1/eval/misses?run_name=X` (retrieval-промахи прогона: in-corpus вопросы, где ожидаемый источник не найден, expected vs retrieved)
+- `POST /v1/questions/import` (залить файл вопросов, ≤5 МБ; опц. цепочка run)
 
 Наблюдаемость:
-- `GET /v1/question-log`, `GET /v1/question-log/{id}` (логи ответов с фильтрами + детально с context)
+- `GET /v1/question-log`, `GET /v1/question-log/{id}` (логи ответов; фильтры вкл. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; детально с context)
 - `GET /v1/job`, `GET /v1/job/{id}` (джобы + elapsed)
+
+## MCP
+
+MCP-сервер (Model Context Protocol) примонтирован на `/mcp` (streamable HTTP) и отдаёт корпус любому MCP-клиенту (Claude Desktop, Cursor, IDE-агенты). Построен на standalone `fastmcp`, переиспользует те же примитивы поиска, что REST/agent. Тулы:
+- `search_corpus(query, category?)` - гибридный поиск, отдаёт чанки с маркерами `[source]`; опц. фильтр по категории.
+- `answer_question(text, pipeline?, category?, language?)` - полный RAG-ответ, возвращает `{answer, retrieved, sources}` (`agent` или `single_shot`; `category` только с `single_shot`).
+- `list_categories(category?, only_top?)` - пути категорий с количеством чанков, для discovery валидных значений фильтра перед поиском.
+
+Подключение: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, или MCP Inspector на тот же URL.
 
 ## Как это устроено
 
-- `app/config.py` — loader `config.yaml`.
-- `app/orm/` — SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
-- `app/models/` — ORM-модели: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk).
-- `app/llm.py` — клиент Ollama через OpenAI SDK (генерация / эмбеддинги / structured output) + резолвер роль→модель.
-- `app/rerank.py` — cross-encoder реранкер (FlagEmbedding, CPU, ленивая загрузка).
-- `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` — очередь на Postgres (FOR UPDATE SKIP LOCKED) и воркер с ретраями/дефёром; хендлеры разнесены по тематике.
-- `app/bootstrap.py` — idempotent-инициализация на старте.
-- `app/sources/` — per-source ingestion (reader-паттерн: `Base` ABC + источники).
-- `app/db.py` — гибридный поиск (сырой SQL: pgvector `<=>`, FTS, ltree, RRF).
-- `app/use_cases/` — `chat` (retrieve/answer), `agent` (ReAct tool-calling цикл), `index` (сбор корпуса), `judge` (оценка ответа).
-- `app/agent_tools.py` — реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
-- `app/api/` — REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
-- `app/seed.py`, `app/console.py` — сид промптов/банка вопросов; REPL-консоль.
-- `app/evals/` — eval-стенд (runner + метрики retrieval + generation через judge).
-- `tests/` — unit-тесты (чистая логика, без DB/Ollama): `docker compose exec rag-lab pytest -q`.
+- `app/config.py` - loader `config.yaml`.
+- `app/orm/` - SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
+- `app/models/` - ORM-модели: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk).
+- `app/llm.py` - клиент Ollama через OpenAI SDK (генерация / эмбеддинги / structured output) + резолвер роль→модель.
+- `app/rerank.py` - cross-encoder реранкер (FlagEmbedding, CPU, ленивая загрузка).
+- `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - очередь на Postgres (FOR UPDATE SKIP LOCKED) и воркер с ретраями/дефёром; хендлеры разнесены по тематике.
+- `app/bootstrap.py` - idempotent-инициализация на старте.
+- `app/sources/` - per-source ingestion (reader-паттерн: `Base` ABC + источники).
+- `app/db.py` - гибридный поиск (сырой SQL: pgvector `<=>`, FTS, ltree, RRF).
+- `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling цикл), `index` (сбор корпуса), `judge` (оценка ответа).
+- `app/agent_tools.py` - реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
+- `app/mcp_server.py` - FastMCP-сервер (примонтирован на `/mcp`): тулы `search_corpus` / `answer_question` / `list_categories` поверх примитивов поиска.
+- `app/api/` - REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
+- `app/seed.py`, `app/console.py` - сид промптов/банка вопросов; REPL-консоль.
+- `app/evals/` - eval-стенд (runner + метрики retrieval + generation через judge).
+- `tests/` - unit-тесты (чистая логика, без DB/Ollama): `docker compose exec rag-lab pytest -q`.
 
 ## Статус
 
-Учебный проект: цель — освоить RAG/LLM-инженерию руками, из примитивов. RAG из примитивов (гибрид, ltree, FTS) + FastAPI-сервер + 4-осевой eval-стенд на LLM-judge + production-слой (pyproject/uv, централизованный config, SQLAlchemy ORM sync+async, OpenAI-совместимый клиент, role-keyed lifecycle моделей, версионирование промптов, async job-queue, банк вопросов, reranking, route-driven eval-платформа).
+Учебный проект: цель - освоить RAG/LLM-инженерию руками, из примитивов. RAG из примитивов (гибрид, ltree, FTS) + FastAPI-сервер + 4-осевой eval-стенд на LLM-judge + production-слой (pyproject/uv, централизованный config, SQLAlchemy ORM sync+async, OpenAI-совместимый клиент, role-keyed lifecycle моделей, версионирование промптов, async job-queue, банк вопросов, reranking, route-driven eval-платформа, MCP-сервер).

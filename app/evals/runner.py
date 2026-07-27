@@ -26,13 +26,18 @@ def _answer_one(
     text: str,
     run_name: str,
     use_rerank: bool | None,
-    pipeline: str,
+    pipeline: Pipeline,
+    language: str | None,
 ) -> None:
     if pipeline == Pipeline.agent:
-        agent.run(text, run_name=run_name)
+        agent.run(text, run_name=run_name, language=language)
     elif pipeline == Pipeline.single_shot:
         chat.answer(
-            text, add_context=True, run_name=run_name, use_rerank=use_rerank
+            text,
+            add_context=True,
+            run_name=run_name,
+            use_rerank=use_rerank,
+            language=language,
         )
     else:
         raise ValueError(f"unknown pipeline: {pipeline}")
@@ -44,12 +49,16 @@ def run(
     question_ids: list[int] | None = None,
     use_rerank: bool | None = None,
     pipeline: str = "single_shot",
+    language: str | None = None,
 ) -> int:
+    pipeline = Pipeline(pipeline)
+    if use_rerank is not None and pipeline == Pipeline.agent:
+        raise ValueError("rerank override is not supported for the agent pipeline")
     texts = _target_texts(set_name, question_ids)
     answered = 0
     for text in texts:
         try:
-            _answer_one(text, run_name, use_rerank, pipeline)
+            _answer_one(text, run_name, use_rerank, pipeline, language)
             answered += 1
         except Exception as e:
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))

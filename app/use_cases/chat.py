@@ -23,6 +23,9 @@ log = logging_setup.get_logger(__name__)
 
 IGNORED_SOURCES = config.settings.ignored_sources
 
+NO_RESULTS = "No relevant documents found."
+ERROR_PREFIX = "error: "
+
 
 @dataclass
 class Source:
@@ -124,6 +127,23 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool):
     return rerank.rerank(question, candidates, top=k)
 
 
+def format_chunks(rows) -> str:
+    return "\n\n".join(
+        f"[{src}]\n{content}" for content, src, *_ in rows if not is_ignored_source(src)
+    )
+
+
+def search_chunks(
+    query: str,
+    category: str | None = None,
+    k: int = config.settings.retrieval.results_limit,
+) -> tuple[str, list[Source]]:
+    rows = _retrieve_rows(query, category, k, config.settings.rerank.enabled)
+    if not rows:
+        return NO_RESULTS, []
+    return format_chunks(rows) or NO_RESULTS, take_sources(rows)
+
+
 @measure_elapsed
 def retrieve(
     question: str,
@@ -149,15 +169,10 @@ def answer(
         use_rerank = config.settings.rerank.enabled
     rows = _retrieve_rows(question, category, k, use_rerank)
 
-    context = None
-    if not rows:
-        ans = Answer(text="No relevant documents found.")
+    context = format_chunks(rows) if rows else None
+    if not context:
+        ans = Answer(text=NO_RESULTS)
     else:
-        context = "\n\n".join(
-            f"[{src}]\n{content}"
-            for content, src, *_ in rows
-            if not is_ignored_source(src)
-        )
         user = f"{context}\n\nQuestion: {question}"
         if language:
             user += f"\n\n{_language_directive(language)}"
@@ -180,7 +195,7 @@ def answer(
     ans.elapsed = round(time.perf_counter() - start, 3)
 
     try:
-        _log_answer(question, ans, lang, context, run_name)
+        _log_answer(question, ans, lang, context, run_name, use_rerank)
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
 
@@ -206,7 +221,7 @@ def _language_directive(language: str) -> str:
 
 
 def _log_answer(
-    original_text: str, ans: Answer, lang: str, context=None, run_name=None
+    original_text: str, ans: Answer, lang: str, context=None, run_name=None, use_rerank=False
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -223,6 +238,12 @@ def _log_answer(
             },
             prompts={
                 "generate_answer": prompt_repo.active_version(Purpose.generate_answer)
+            },
+            metrics={
+                "config": {
+                    "rerank": use_rerank,
+                    "distance_threshold": ans.metrics.distance_threshold,
+                }
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

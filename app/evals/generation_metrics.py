@@ -11,14 +11,12 @@ def evaluate(run_name=None, verbose=False) -> dict:
 
     faith = Counter()
     relevance = Counter()
-    completeness = Counter()
+    completeness = Counter(ql.completeness for ql in logs if ql.completeness)
     for ql in in_corpus:
         if ql.faithfulness:
             faith[ql.faithfulness] += 1
         if ql.relevance:
             relevance[ql.relevance] += 1
-        if ql.completeness:
-            completeness[ql.completeness] += 1
         if verbose:
             print(
                 f"Q: {ql.question.original_text}\n"

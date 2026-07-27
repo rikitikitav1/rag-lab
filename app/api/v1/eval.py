@@ -1,7 +1,8 @@
 import time
+from typing import Literal
 
 import job_queue
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from models.eval import QuestionLog
 from models.registry import Pipeline
 from orm.async_db import commit_and_refresh, get_session
@@ -31,6 +32,7 @@ class EvalRunRequest(BaseModel):
     question_ids: list[int] | None = None
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
+    language: Literal["ru", "en"] | None = None
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -62,6 +64,7 @@ class MissItem(BaseModel):
     retrieved: list[str]
     faithfulness: str | None
     relevance: str | None
+    completeness: str | None
 
 
 class MissesResponse(BaseModel):
@@ -74,7 +77,8 @@ class MissesResponse(BaseModel):
 @router.get("/misses", response_model=MissesResponse)
 async def eval_misses(
     run_name: str,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = (
@@ -102,6 +106,7 @@ async def eval_misses(
                     retrieved=got,
                     faithfulness=ql.faithfulness,
                     relevance=ql.relevance,
+                    completeness=ql.completeness,
                 )
             )
 
@@ -109,7 +114,7 @@ async def eval_misses(
         run_name=run_name,
         in_corpus=in_corpus,
         misses=len(items),
-        items=items[:limit],
+        items=items[offset : offset + limit],
     )
 
 
@@ -120,7 +125,8 @@ async def enqueue_eval_run(
 ):
     if request.rerank is not None and request.pipeline == Pipeline.agent:
         raise HTTPException(
-            status_code=400, detail="rerank is not supported with the agent pipeline"
+            status_code=400,
+            detail="per-request rerank override is not supported for the agent pipeline",
         )
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
     return await _enqueue(
@@ -132,5 +138,6 @@ async def enqueue_eval_run(
             "question_ids": request.question_ids,
             "rerank": request.rerank,
             "pipeline": request.pipeline.value,
+            "language": request.language,
         },
     )

@@ -1,9 +1,10 @@
 import agent_tools as at
-from agent_tools import Tool, ToolResult
 
 
 def test_schema_shape():
-    tool = Tool(name="t", description="d", parameters={"type": "object"}, run=lambda: ToolResult(""))
+    tool = at.Tool(
+        name="t", description="d", parameters={"type": "object"}, run=lambda: at.ToolResult("")
+    )
     s = tool.schema()
     assert s["type"] == "function"
     assert s["function"] == {
@@ -18,35 +19,34 @@ def test_dispatch_unknown_tool():
 
 
 def test_dispatch_bad_json():
-    assert "invalid arguments json" in at.dispatch("search_corpus", "{bad").content
+    assert "invalid arguments" in at.dispatch("search_corpus", "{bad").content
 
 
-def test_dispatch_catches_tool_exception():
+def test_dispatch_catches_tool_exception(monkeypatch):
     def boom(**kwargs):
         raise ValueError("kaboom")
 
-    at.register(Tool(name="boom", description="", parameters={}, run=boom))
-    try:
-        result = at.dispatch("boom", "{}")
-    finally:
-        at._REGISTRY.pop("boom", None)
+    monkeypatch.setitem(
+        at._REGISTRY, "boom", at.Tool(name="boom", description="", parameters={}, run=boom)
+    )
+    result = at.dispatch("boom", "{}")
     assert result.content == "error: tool 'boom' failed"
     assert "kaboom" not in result.content
 
 
-def test_dispatch_passes_parsed_args():
+def test_dispatch_drops_undeclared_args(monkeypatch):
     seen = {}
 
     def echo(**kwargs):
         seen.update(kwargs)
-        return ToolResult("ok")
+        return at.ToolResult("ok")
 
-    at.register(Tool(name="echo", description="", parameters={}, run=echo))
-    try:
-        at.dispatch("echo", '{"query": "hi", "category": "db"}')
-    finally:
-        at._REGISTRY.pop("echo", None)
-    assert seen == {"query": "hi", "category": "db"}
+    schema = {"type": "object", "properties": {"query": {"type": "string"}}}
+    monkeypatch.setitem(
+        at._REGISTRY, "echo", at.Tool(name="echo", description="", parameters=schema, run=echo)
+    )
+    at.dispatch("echo", '{"query": "hi", "category": "db"}')
+    assert seen == {"query": "hi"}
 
 
 def test_search_corpus_formats_content_and_sources(monkeypatch):

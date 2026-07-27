@@ -1,10 +1,12 @@
+import re
+
 import job_queue
 from crud import get_or_404
 from fastapi import APIRouter, Depends, HTTPException, Query
 from models.registry import Model, ModelRole, Status
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel, Field
-from query_utils import apply_sort_limit_offset
+from pydantic import BaseModel, Field, field_validator
+from query_utils import Page, apply_sort_limit_offset
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,10 +26,7 @@ async def list_models(
     id: list[int] | None = Query(default=None),
     name: list[str] | None = Query(default=None),
     status: list[Status] | None = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
-    sort_by: str = Query(default="id"),
-    sort_order: str = Query(default="asc"),
+    page: Page = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(Model)
@@ -40,10 +39,10 @@ async def list_models(
     stmt = apply_sort_limit_offset(
         stmt=stmt,
         sort_map={"id": Model.id, "name": Model.name, "status": Model.status},
-        sort_by=sort_by,
-        sort_order=sort_order,
-        limit=limit,
-        offset=offset,
+        sort_by=page.sort_by,
+        sort_order=page.sort_order,
+        limit=page.limit,
+        offset=page.offset,
     )
 
     result = await session.scalars(stmt)
@@ -55,8 +54,24 @@ async def show_model(id: int, session: AsyncSession = Depends(get_session)):
     return await get_or_404(Model, id, session)
 
 
+_ALLOWED_REGISTRIES = {"hf.co", "registry.ollama.ai"}
+_MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?$")
+
+
 class ModelCreateRequest(BaseModel):
-    name: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+)?$")
+    name: str = Field(max_length=128, pattern=_MODEL_NAME_RE.pattern)
+
+    @field_validator("name")
+    @classmethod
+    def _check_registry_host(cls, v: str) -> str:
+        parts = v.split("/")
+        if any(p in ("", ".", "..") for p in parts):
+            raise ValueError("invalid model name")
+        if len(parts) > 3:
+            raise ValueError("invalid model name")
+        if len(parts) == 3 and parts[0].lower() not in _ALLOWED_REGISTRIES:
+            raise ValueError("model registry host not allowed")
+        return v
 
 
 @router.post("", response_model=ModelResponse)

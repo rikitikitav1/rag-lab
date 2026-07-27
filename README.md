@@ -1,6 +1,6 @@
 # rag-lab
 
-A RAG system over a personal knowledge base and external IT repositories. It answers technical questions and cites its sources. Built **from primitives** (no LangChain/LlamaIndex) on **local inference** (Ollama on a single GPU, via the OpenAI-compatible protocol).
+A RAG system over a personal knowledge base and external IT repositories. It answers technical questions and returns the sources it retrieved. Built **from primitives** (no LangChain/LlamaIndex) on **local inference** (Ollama on a single GPU, via the OpenAI-compatible protocol).
 
 This is a **showcase lab**: a bench for practicing LLM/RAG engineering approaches by hand (retrieval, LLM-as-judge eval, model lifecycle, reranking, async queues) and showing results as numbers. Not a production service, a playground for approaches.
 
@@ -71,6 +71,8 @@ Full hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own
 
 Full interactive reference in Swagger at `/docs`.
 
+List endpoints (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) share pagination: `limit` (default 100, max 1000), `offset`, `sort_by`, `sort_order` (`asc`/`desc`, default `desc`).
+
 Health:
 - `GET /liveness`, `GET /readiness`
 
@@ -83,19 +85,28 @@ Chat and search:
 Model lifecycle:
 - `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (create enqueues a pull), `DELETE /v1/model/{id}` (409 if assigned to a role)
 - `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role)
-- `GET /v1/source`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index — ablation / source-of-truth scoping)
+- `GET /v1/source`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index - ablation / source-of-truth scoping)
 
 Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
-- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, optional `rerank`)
+- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, optional `rerank`; 400 if `rerank` is combined with `pipeline: agent`)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
-- `POST /v1/questions/import` (upload a questions file; optional chained run)
+- `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 
 Observability:
-- `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs with filters + detail with context)
+- `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs; filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; detail with context)
 - `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed)
+
+## MCP
+
+An MCP (Model Context Protocol) server is mounted at `/mcp` (streamable HTTP), exposing the corpus to any MCP client (Claude Desktop, Cursor, IDE agents). Built on standalone `fastmcp` and reusing the same retrieval primitives as the REST/agent paths. Tools:
+- `search_corpus(query, category?)` - hybrid retrieval, returns chunks with `[source]` markers; optional category subtree filter.
+- `answer_question(text, pipeline?, category?, language?)` - full RAG answer, returns `{answer, retrieved, sources}` (`agent` or `single_shot`; `category` only with `single_shot`).
+- `list_categories(category?, only_top?)` - category paths with chunk counts, for discovering valid filter values before searching.
+
+Connect: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, or point the MCP Inspector at the same URL.
 
 ## How it is built
 
@@ -110,6 +121,7 @@ Observability:
 - `app/db.py` - hybrid search (raw SQL: pgvector `<=>`, FTS, ltree, RRF).
 - `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling loop), `index` (corpus build), `judge` (answer scoring).
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
+- `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
 - `app/evals/` - eval bench (runner + retrieval and generation metrics via the judge).
@@ -117,4 +129,4 @@ Observability:
 
 ## Status
 
-A learning project: the goal is to master RAG/LLM engineering by hand, from primitives. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 4-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform).
+A learning project: the goal is to master RAG/LLM engineering by hand, from primitives. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 4-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform, MCP server).

@@ -12,7 +12,7 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 
 ---
 
-## 2026-07-25 — Reranking (cross-encoder) A/B
+## 2026-07-25 - Reranking (cross-encoder) A/B
 
 **Hypothesis:** a cross-encoder reranker over hybrid retrieval (retrieve-wide → rerank → narrow) improves which chunks reach the generator, most on the cross-lingual set where retrieval is vector-only.
 
@@ -34,11 +34,11 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 
 **Delta:** retrieval hit@k/MRR ~flat (en slightly worse); faithfulness up markedly on ru (+17 faithful, −14 unfaithful), small on en.
 
-**Conclusion:** reranking barely moves the file-level hit@k, but improves chunk ordering within the top-k enough to lift faithfulness on hard cross-lingual queries. Cost ~10s/query on CPU. **Decision: default OFF, opt-in flag** (per-request in `/chat/question`, per-run in `/eval/run`) — the latency is not worth it in the general case, but it is available for cross-lingual/noisy workloads.
+**Conclusion:** reranking barely moves the file-level hit@k, but improves chunk ordering within the top-k enough to lift faithfulness on hard cross-lingual queries. Cost ~10s/query on CPU. **Decision: default OFF, opt-in flag** (per-request in `/chat/question`, per-run in `/eval/run`) - the latency is not worth it in the general case, but it is available for cross-lingual/noisy workloads.
 
 ---
 
-## 2026-07-25 — Generation prompt v2 → v3 (completeness)
+## 2026-07-25 - Generation prompt v2 → v3 (completeness)
 
 **Hypothesis:** the weak axis is relevance (answers judged "partially" rather than "relevant"): the generator answers loosely. A prompt pushing directness and completeness should convert partially → relevant. Retrieval is unchanged, so any delta is the prompt.
 
@@ -59,13 +59,13 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 
 **Cross-check (en):** relevant 33 → 44 (+11); faithful 61 → 56 (−5). Caveat: the en baseline was temp 0.1, so not a perfectly clean comparison.
 
-**Delta:** relevance up on both languages (ru +22, en +11) — the target shift, and since retrieval and temperature were held, it is attributable to the prompt. Faithfulness up on ru (+12), slight trade-off on en (−5): pushing completeness yields longer answers with more assertions, some of which the judge marks ungrounded.
+**Delta:** relevance up on both languages (ru +22, en +11) - the target shift, and since retrieval and temperature were held, it is attributable to the prompt. Faithfulness up on ru (+12), slight trade-off on en (−5): pushing completeness yields longer answers with more assertions, some of which the judge marks ungrounded.
 
 **Conclusion:** v3 is a clear, reproducible win on relevance across both languages (not a set-specific fluke). **Decision: v3 active.** Follow-up: resolve the en faithfulness dip with a clean temp-0 baseline, and/or add a "no assertions beyond what answers the question" clause to balance completeness against grounding.
 
 ---
 
-## 2026-07-25 — Reranking on top of v3 (stacking, clean)
+## 2026-07-25 - Reranking on top of v3 (stacking, clean)
 
 **Hypothesis:** does the cross-encoder reranker stack on the v3 prompt? The earlier rerank A/B was temp 0.1 (noisy); redo cleanly on v3.
 
@@ -82,13 +82,13 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 | faithful | 50 | 53 | +3 |
 | unfaithful | 24 | 17 | −7 |
 
-**Delta:** everything moves the right way — better ranking (MRR), better grounding (unfaithful −7), better relevance (+4). Modest but consistent, unlike the noisy temp-0.1 run.
+**Delta:** everything moves the right way - better ranking (MRR), better grounding (unfaithful −7), better relevance (+4). Modest but consistent, unlike the noisy temp-0.1 run.
 
 **Conclusion:** rerank **stacks positively on v3** on the cross-lingual set, at ~10s/query CPU cost. Confirms the **opt-in default OFF** decision: the quality gain is real and worth enabling for cross-lingual / high-stakes queries, not for latency-sensitive general use.
 
 ---
 
-## 2026-07-26 — ReAct agent vs single-shot (a measured loss)
+## 2026-07-26 - ReAct agent vs single-shot (a measured loss)
 
 **Hypothesis:** a ReAct agent that decides its own retrieval (search when needed, refine, multi-hop) should answer at least as well as single-shot RAG, and better on questions needing decomposition. New judge axis **completeness** (answer vs the question's reference answer) added specifically because faithfulness/relevance cannot see the agent's expected advantage.
 
@@ -104,15 +104,15 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 | unfaithful | 28 | 24 | **55** |
 | relevant | 35 | 57 | 47 |
 | complete / partially / incomplete | 0/73/27 | 1/85/14 | 1/72/**27** |
-| avg hops | — | — | 2.03 (max 3) |
+| avg hops | - | - | 2.03 (max 3) |
 
-**Diagnosis (the point of the experiment):** the agent **lost on every axis**. Root cause is retrieval, not generation: **54/100 agent answers had zero retrieved sources**. Every question triggered a search (no run stopped at hop 1), so the agent did not skip retrieval — its self-formulated queries **returned empty ~54% of the time**, while single-shot embeds the full question and retrieves at 80%. Handing query formulation to the 8B model collapsed the cross-lingual retrieval that direct embedding gets for free (reformulated queries drift past the distance threshold). Empty context then propagates downstream: unfaithful jumps to 55 (the model answers ungrounded when the search comes back empty). Only 3/100 runs did 3 hops, so there is no decomposition benefit to offset the retrieval loss.
+**Diagnosis (the point of the experiment):** the agent **lost on every axis**. Root cause is retrieval, not generation: **54/100 agent answers had zero retrieved sources**. Every question triggered a search (no run stopped at hop 1), so the agent did not skip retrieval - its self-formulated queries **returned empty ~54% of the time**, while single-shot embeds the full question and retrieves at 80%. Handing query formulation to the 8B model collapsed the cross-lingual retrieval that direct embedding gets for free (reformulated queries drift past the distance threshold). Empty context then propagates downstream: unfaithful jumps to 55 (the model answers ungrounded when the search comes back empty). Only 3/100 runs did 3 hops, so there is no decomposition benefit to offset the retrieval loss.
 
-**Note on metrics:** retrieval hit@k/MRR here are computed the same way for both pipelines; for the agent this is really recall-across-hops, not precision@k, so it is not a clean head-to-head (see PROGRESS backlog). In this run the caveat did not matter — the agent barely multi-hops and its searches often return empty, so the number is deflated, not inflated. (An earlier worry that the agent would *inflate* hit@k via recall was wrong; measuring corrected it.)
+**Note on metrics:** retrieval hit@k/MRR here are computed the same way for both pipelines; for the agent this is really recall-across-hops, not precision@k, so it is not a clean head-to-head (see PROGRESS backlog). In this run the caveat did not matter - the agent barely multi-hops and its searches often return empty, so the number is deflated, not inflated. (An earlier worry that the agent would *inflate* hit@k via recall was wrong; measuring corrected it.)
 
 **Conclusion:** on this workload (cross-lingual, mostly single-fact questions, 8B model, single retrieval tool) the naive ReAct agent is **strictly worse** than single-shot v3. Agentic RAG is not free: giving a weak model control over query formulation destroyed retrieval. **Decision: single-shot v3 stays the default.** Follow-ups (backlog): have the agent search with the original question (or add it alongside its reformulation), and/or relax the distance threshold for tool searches; the agent's value likely needs genuinely multi-part questions and a stronger model, not this set.
 
-**Follow-up (same day) — the loss was a bug, not the agent (the diagnosis above was wrong).** Inspecting the actual tool-call arguments disproved the "query drift past the distance threshold" theory. The empties came from a different place: the 8B model **always filled the optional `category` parameter with a hallucinated ltree path** (`numpy.array_operations`, `databases.amazon`, `angularjs`), and `category ~ lquery` returns zero for paths that do not exist in the taxonomy. The query *text* the model produced was fine (full, on-topic). Even the rare non-empty case was wrong-domain (a `databases.redis` guess returned redis chunks for a reinforcement-learning question). **Fix: remove `category` from the tool schema offered to the model** (the `_search_corpus` function still supports it; it is just not exposed). General tool-design lesson: never offer a free-form parameter the model cannot ground — use an enum (small fixed set) or a discovery tool; here the taxonomy is too large for an enum, so drop it.
+**Follow-up (same day) - the loss was a bug, not the agent (the diagnosis above was wrong).** Inspecting the actual tool-call arguments disproved the "query drift past the distance threshold" theory. The empties came from a different place: the 8B model **always filled the optional `category` parameter with a hallucinated ltree path** (`numpy.array_operations`, `databases.amazon`, `angularjs`), and `category ~ lquery` returns zero for paths that do not exist in the taxonomy. The query *text* the model produced was fine (full, on-topic). Even the rare non-empty case was wrong-domain (a `databases.redis` guess returned redis chunks for a reinforcement-learning question). **Fix: remove `category` from the tool schema offered to the model** (the `_search_corpus` function still supports it; it is just not exposed). General tool-design lesson: never offer a free-form parameter the model cannot ground - use an enum (small fixed set) or a discovery tool; here the taxonomy is too large for an enum, so drop it.
 
 **Re-run (`agent_nocat_ru`, category removed):**
 
@@ -124,15 +124,31 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 | unfaithful | 24 | 55 | 32 |
 | relevant | 57 | 47 | **70** |
 | complete / partially / incomplete | 1/85/14 | 1/72/27 | **2/89/9** |
-| empty-source answers | — | 54 | **0** |
+| empty-source answers | - | 54 | **0** |
 
-**Revised conclusion:** "agent is strictly worse" was an artifact of the category bug, not a property of agentic RAG. With the trap removed the agent **beats single-shot on retrieval (84 vs 80, MRR 0.773 vs 0.652), relevance (70 vs 57), and completeness (incomplete 9 vs 14)** — its query reformulation (often ru→en) retrieves better cross-lingually than embedding the raw Russian question. The one axis it loses is **faithfulness (37 vs 50 faithful, 32 vs 24 unfaithful)**: answering more fully from a multi-hop context union yields more assertions the judge marks ungrounded (the completeness-vs-grounding tradeoff, plus a different context denominator than single-shot's top-3). **Takeaway: measuring caught a bug the naive read would have shipped as a conclusion.** Open follow-up: close the faithfulness gap (tighter grounding instruction; or judge the agent against a deduped/narrowed context).
+**Revised conclusion:** "agent is strictly worse" was an artifact of the category bug, not a property of agentic RAG. With the trap removed the agent **beats single-shot on retrieval (84 vs 80, MRR 0.773 vs 0.652), relevance (70 vs 57), and completeness (incomplete 9 vs 14)** - its query reformulation (often ru→en) retrieves better cross-lingually than embedding the raw Russian question. The one axis it loses is **faithfulness (37 vs 50 faithful, 32 vs 24 unfaithful)**: answering more fully from a multi-hop context union yields more assertions the judge marks ungrounded (the completeness-vs-grounding tradeoff, plus a different context denominator than single-shot's top-3). **Takeaway: measuring caught a bug the naive read would have shipped as a conclusion.** Open follow-up: close the faithfulness gap (tighter grounding instruction; or judge the agent against a deduped/narrowed context).
+
+**Post-remediation re-run (`agent_v2_ru`).** After a second review round the agent/judge path was hardened: `answered` now follows retrieved evidence (honest refusal on empty), the judged context excludes the "No relevant documents found." / tool-error sentinels, judging is per-axis, and `dispatch` drops any hallucinated `category`. Re-running the same set validated the fixes and moved the faithfulness gap the predicted follow-up direction:
+
+| axis | v3_ru (single-shot) | agent_nocat_ru | agent_v2_ru (hardened) |
+|------|---------------------|----------------|------------------------|
+| retrieval hit@k | 80% | 84% | **87%** |
+| retrieval MRR | 0.652 | 0.773 | **0.779** |
+| faithful | 50 | 37 | 39 |
+| unfaithful | 24 | 32 | **29** |
+| relevant | 57 | 70 | 68 |
+| complete / partially / incomplete | 1/85/14 | 2/89/9 | **5/90/5** |
+| empty-source answers | - | 0 | 0 |
+
+Filtering non-evidence out of the faithfulness context (the round-2 fix) is what nudged unfaithful 32 → 29 and faithful 37 → 39: the judge was previously scoring some answers against a context that literally said "No relevant documents found." The overall conclusion stands - the agent beats single-shot on retrieval, relevance, and completeness, and trails on faithfulness, with the gap now narrower. The fix improved measurement validity, not the model.
+
+**Metric caveats (post round-3 hardening).** Three numbers here shifted meaning and are not strictly comparable across rounds: (1) agent MRR reflects cross-hop source dedup added in `24fae88`, so pre-dedup agent MRR (`agent_nocat_ru` 0.773) is not directly comparable to `agent_v2_ru` 0.779 (hit@k is unaffected - membership is unchanged). (2) The agent's `hops` now includes the forced synthesis turn, so a run capped at N can report N+1. (3) faithfulness and relevance are counted over in-corpus logs; completeness is counted over all logs (in-corpus plus the out-of-corpus refusal probes), so the three axes do not share a denominator.
 
 ---
 
-## 2026-07-26 — Corpus ablation: disable developer-roadmap
+## 2026-07-26 - Corpus ablation: disable developer-roadmap
 
-**Hypothesis:** several `paraphrased_ru` misses are "right topic, wrong repo" — the generalist `developer-roadmap` corpus overlaps many domains and its chunks outrank the true single-source gold chunk. If none of the eval's gold sources live in roadmap, disabling it should raise hit@k rather than lower it.
+**Hypothesis:** several `paraphrased_ru` misses are "right topic, wrong repo" - the generalist `developer-roadmap` corpus overlaps many domains and its chunks outrank the true single-source gold chunk. If none of the eval's gold sources live in roadmap, disabling it should raise hit@k rather than lower it.
 
 **Change:** runtime source toggle (`PUT /v1/source/3 {active:false}`), no re-index. `hybrid_search` filters chunks to active sources only. One variable: roadmap in vs out.
 
@@ -148,4 +164,30 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 
 **Delta:** large. Removing one corpus lifted hit@k by 10 points and MRR by 0.18. The gold sources for this eval set are not in roadmap, so its chunks were pure distractors ranking above true sources.
 
-**Conclusion:** corpus composition is a first-order retrieval lever — a broad, topically-overlapping source hurts a single-source-labeled eval more than reranking or prompt tuning helped. Confirms the earlier miss diagnosis (disambiguation, not corpus gap). **Decision: drop developer-roadmap from the corpus entirely.** It is a generalist roadmap index whose chunks are shallow and topically diffuse; it added retrieval noise across every domain without being a canonical source for any of them. The showcase corpus is cleaner as a set of focused sources (interview banks, system-design-primer, redis-doc). New default retrieval on `paraphrased_ru` is **90% / MRR 0.832** (previously 80% / 0.652). The source-active toggle proved out as the ablation tool that justified the removal. Follow-up: multi-source gold labels would quantify how much of any residual "distraction" is genuinely wrong vs adjacent-correct.
+**Conclusion:** corpus composition is a first-order retrieval lever - a broad, topically-overlapping source hurts a single-source-labeled eval more than reranking or prompt tuning helped. Confirms the earlier miss diagnosis (disambiguation, not corpus gap). **Decision: drop developer-roadmap from the corpus entirely.** It is a generalist roadmap index whose chunks are shallow and topically diffuse; it added retrieval noise across every domain without being a canonical source for any of them. The showcase corpus is cleaner as a set of focused sources (interview banks, system-design-primer, redis-doc). New default retrieval on `paraphrased_ru` is **90% / MRR 0.832** (previously 80% / 0.652). The source-active toggle proved out as the ablation tool that justified the removal. Follow-up: multi-source gold labels would quantify how much of any residual "distraction" is genuinely wrong vs adjacent-correct.
+
+---
+
+## 2026-07-27 - Generation prompt v3 → v4 (drop inline citations)
+
+**Hypothesis:** the three citation rules in v3 buy nothing that the structured `sources` field does not already carry, and they cost answer cleanliness. Inline `[source]` markers appeared unevenly across runs (present on some single-shot answers, absent on others), so as a consumer-facing contract they were unreliable anyway. Dropping them should leave grounding untouched, since the load-bearing rules are "use only information explicitly supported by the context" and the partial/absent/conflict clauses, not the citation lines.
+
+**Change:** `generate_answer` v3 → v4: removed exactly three lines ("cite every factual statement in the format [source]", "do not cite a source unless it directly supports the statement", "cite all relevant sources when several support a statement"). Every other rule is byte-identical to v3.
+
+**Scope:** `generate_answer` is read only by `chat.answer` (`app/use_cases/chat.py:180`), so this affects **single_shot only**. The agent synthesizes through `agent_system` in its ReAct loop and is untouched; `prompts/agent_system.v2.txt:11` still instructs the agent to cite inline. That asymmetry is deliberate for now: changing the agent prompt would need its own agent eval, and folding it into this run would confound the two.
+
+**Judge impact:** none by construction. `judge_faithfulness.v1`, `judge_relevance.v1` and `judge_completeness.v1` contain no reference to citations or `[source]` markers, so the rubric does not move. v3 and v4 numbers stay comparable on all three axes.
+
+**Setup:** set `paraphrased_ru` (100); generator `llama3.1:8b`, temp 0; rerank off. Measured on the current (roadmap-removed) corpus, so a v3 control (`v3_current`) was run alongside v4 (`v4_ru`) on the same corpus. Retrieval is prompt-independent and came out identical for both (91% / MRR 0.837), confirming a clean single-variable A/B. That retrieval is higher than the pre-roadmap-drop `v3_ru` baseline above (80% / 0.652), which is the corpus change, not the prompt.
+
+**Result (v3 with citations vs v4 without, same corpus):**
+
+| axis | v3 (inline citations) | v4 (no citations) |
+|------|-----------------------|-------------------|
+| faithful / partially / unfaithful | **56 / 29 / 15** | 49 / 30 / 21 |
+| relevant / partially / irrelevant | **68 / 28 / 4** | 56 / 35 / 9 |
+| complete / partially / incomplete | 2 / 87 / **11** | 1 / 82 / 17 |
+
+**v4 is worse on all three axes**, most on relevance (68 → 56, irrelevant 4 → 9) and faithfulness (unfaithful 15 → 21).
+
+**Conclusion: the hypothesis was wrong; the citation rules were load-bearing, not cosmetic.** Forcing the 8B to attribute every statement to a source is a grounding discipline that keeps the answer tied to the retrieved context and on topic. Removing it let the model drift into less relevant, less grounded prose. The uneven inline markers were a symptom of a weak model following the instruction imperfectly, not a reason to drop it. **Decision: revert. v4 deleted (file and DB row), v3 stays active.** The consumer-facing sources contract is handled honestly at the API/doc layer instead: the structured `sources` list is the authoritative channel, and the answer prose may still carry inline `[source]` markers unevenly. Follow-up: consistent inline citation is a model-capability lever (a stronger generator), not a prompt-removal one. Measuring reverted a plausible cosmetic change before it shipped a quality regression.
