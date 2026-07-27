@@ -142,12 +142,18 @@ def request_embeddings_batch(texts, role="embedding"):
     return [d.embedding for d in resp.data]
 
 
+_HTTP_TIMEOUT = 60
+_PULL_TIMEOUT = 3600
+
+
 def pull_model(model):
-    return _post_request("/api/pull", {"model": model, "stream": False})
+    return _post_request("/api/pull", {"model": model, "stream": False}, timeout=_PULL_TIMEOUT)
 
 
 def delete_model(model):
-    response = requests.delete(f"{LLM_BASE}/api/delete", json={"model": model})
+    response = requests.delete(
+        f"{LLM_BASE}/api/delete", json={"model": model}, timeout=_HTTP_TIMEOUT
+    )
     if response.status_code == 404:
         log.info("llm.model_already_absent", model=model)
         return None
@@ -180,9 +186,9 @@ def _check(response, path) -> Any:
     return response.json()
 
 
-def _post_request(path, payload):
-    return _check(requests.post(f"{LLM_BASE}{path}", json=payload), path)
+def _post_request(path, payload, timeout=_HTTP_TIMEOUT):
+    return _check(requests.post(f"{LLM_BASE}{path}", json=payload, timeout=timeout), path)
 
 
 def _get_request(path) -> dict:
-    return _check(requests.get(f"{LLM_BASE}{path}"), path)
+    return _check(requests.get(f"{LLM_BASE}{path}", timeout=_HTTP_TIMEOUT), path)

@@ -116,7 +116,7 @@ Connect: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, o
 - `app/orm/` - SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
 - `app/models/` - ORM models: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk).
 - `app/llm.py` - Ollama client via the OpenAI SDK (generation / embeddings / structured output) + role→model resolver.
-- `app/rerank.py` - cross-encoder reranker (FlagEmbedding, CPU, lazy-loaded).
+- `app/rerank.py` - cross-encoder reranker (sentence-transformers, CPU, lazy-loaded).
 - `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - Postgres queue (FOR UPDATE SKIP LOCKED) and worker with retries/defer; handlers split by theme.
 - `app/bootstrap.py` - idempotent startup init.
 - `app/sources/` - per-source ingestion (reader pattern: `Base` ABC + sources).

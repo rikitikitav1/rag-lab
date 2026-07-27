@@ -7,21 +7,18 @@ from typing import TYPE_CHECKING
 import config
 
 if TYPE_CHECKING:
-    from FlagEmbedding import FlagReranker
+    from sentence_transformers import CrossEncoder
 
-_reranker: FlagReranker | None = None
+_reranker: CrossEncoder | None = None
 
 
-def _model() -> FlagReranker:
+def _model() -> CrossEncoder:
     global _reranker
 
     if _reranker is None:
-        from FlagEmbedding import FlagReranker
+        from sentence_transformers import CrossEncoder
 
-        _reranker = FlagReranker(
-            config.settings.rerank.model,
-            use_fp16=False,
-        )
+        _reranker = CrossEncoder(config.settings.rerank.model)
 
     return _reranker
 
@@ -35,11 +32,7 @@ def rerank[R: Sequence](
         return []
 
     pairs = [(question, row[0]) for row in rows]
-
-    scores = _model().compute_score(pairs, normalize=True)
-    if isinstance(scores, float):
-        scores = [scores]
-
+    scores = _model().predict(pairs)
     ranked = sorted(zip(rows, scores, strict=True), key=itemgetter(1), reverse=True)
 
     return [row for row, _ in ranked[:top]]
