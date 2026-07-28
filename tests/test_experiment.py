@@ -108,3 +108,83 @@ def test_value_suffix_formats():
 
     assert value_suffix(5) == "05"
     assert value_suffix("llama3.1:70b") == "llama3.1_70b"
+
+
+def _log(qid, faith=None, rel=None, compl=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        question_id=qid, faithfulness=faith, relevance=rel, completeness=compl
+    )
+
+
+def test_paired_logs_matches_by_question_id():
+    from use_cases.experiment import _paired_logs
+
+    a = [_log(1), _log(2), _log(3)]
+    b = [_log(3), _log(1)]
+    pairs = _paired_logs(a, b)
+    assert [(x.question_id, y.question_id) for x, y in pairs] == [(1, 1), (3, 3)]
+
+
+def test_axis_deltas_skips_missing_scores():
+    from use_cases.experiment import _axis_deltas, _paired_logs
+
+    a = [_log(1, faith="5"), _log(2, faith=None), _log(3, faith="7")]
+    b = [_log(1, faith="8"), _log(2, faith="9"), _log(3, faith=None)]
+    deltas = _axis_deltas(_paired_logs(a, b), "faithfulness")
+    assert deltas == [3]
+
+
+def test_compare_identical_runs_gives_p_one():
+    from use_cases.experiment import _compare_question_sets
+
+    logs = [_log(i, faith="7", rel="8", compl="6") for i in range(10)]
+    out = _compare_question_sets(logs, logs)
+    assert out["faithfulness"]["p"] == 1.0
+    assert out["faithfulness"]["mean_delta"] == 0.0
+    assert out["faithfulness"]["ci95"] == [0.0, 0.0]
+
+
+def test_annotate_significance_bonferroni():
+    from use_cases.experiment import _annotate_significance
+
+    comparisons = {
+        "a_vs_b": {
+            "faithfulness": {"p": 0.03},
+            "relevance": {"p": 0.001},
+            "completeness": None,
+        },
+        "a_vs_c": {
+            "faithfulness": {"p": 0.5},
+            "relevance": None,
+            "completeness": None,
+        },
+    }
+    out = _annotate_significance(comparisons)
+    assert out["tests"] == 3
+    assert out["threshold"] == round(0.05 / 3, 5)
+    faith_b = out["comparisons"]["a_vs_b"]["faithfulness"]
+    rel_b = out["comparisons"]["a_vs_b"]["relevance"]
+    assert faith_b["significant_raw"] and not faith_b["significant_bonferroni"]
+    assert rel_b["significant_raw"] and rel_b["significant_bonferroni"]
+
+
+def test_annotate_significance_empty():
+    from use_cases.experiment import _annotate_significance
+
+    out = _annotate_significance({})
+    assert out["tests"] == 0 and out["threshold"] is None
+
+
+def test_compare_detects_consistent_shift():
+    from use_cases.experiment import _compare_question_sets
+
+    a = [_log(i, faith="5") for i in range(20)]
+    b = [_log(i, faith="7") for i in range(20)]
+    out = _compare_question_sets(a, b)
+    stats = out["faithfulness"]
+    assert stats["mean_delta"] == 2.0
+    assert stats["p"] < 0.05
+    assert stats["ci95"] == [2.0, 2.0]
+    assert out["relevance"] is None

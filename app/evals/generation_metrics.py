@@ -4,10 +4,7 @@ from evals.loaders import load_logs
 
 
 def _num(v):
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
+    return None if v is None else int(v)
 
 
 def _avg(scores):
