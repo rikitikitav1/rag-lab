@@ -62,6 +62,7 @@ def hybrid_search(
                     SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank(content_tsv, q) DESC) AS rank
                     FROM data_chunks, plainto_tsquery((:ts_config)::regconfig, :question) q
                     WHERE content_tsv @@ q {cat_filter} {src_filter}
+                    ORDER BY rank
                     LIMIT :limit_keyword
                 )
                 SELECT d.content, d.source, d.category, d.chunk_index,

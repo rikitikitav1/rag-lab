@@ -136,9 +136,13 @@ def format_chunks(rows) -> str:
 def search_chunks(
     query: str,
     category: str | None = None,
-    k: int = config.settings.retrieval.results_limit,
+    k: int | None = None,
+    use_rerank: bool | None = None,
 ) -> tuple[str, list[Source]]:
-    rows = _retrieve_rows(query, category, k, config.settings.rerank.enabled)
+    k = k or config.settings.retrieval.results_limit
+    if use_rerank is None:
+        use_rerank = config.settings.rerank.enabled
+    rows = _retrieve_rows(query, category, k, use_rerank)
     if not rows:
         return NO_RESULTS, []
     return format_chunks(rows) or NO_RESULTS, take_sources(rows)
@@ -148,8 +152,9 @@ def search_chunks(
 def retrieve(
     question: str,
     category: str | None = None,
-    k: int = config.settings.retrieval.results_limit,
+    k: int | None = None,
 ) -> Retrieval:
+    k = k or config.settings.retrieval.results_limit
     rows = _retrieve_rows(question, category, k, config.settings.rerank.enabled)
     return Retrieval(sources=take_sources(rows))
 
@@ -157,16 +162,18 @@ def retrieve(
 def answer(
     question: str,
     category: str | None = None,
-    k: int = config.settings.retrieval.results_limit,
+    k: int | None = None,
     add_context=False,
     run_name: str | None = None,
     use_rerank: bool | None = None,
     language: str | None = None,
+    model: str | None = None,
 ) -> Answer:
     start = time.perf_counter()
     lang = _resolve_language(question, language)
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
+    k = k or config.settings.retrieval.results_limit
     rows = _retrieve_rows(question, category, k, use_rerank)
 
     context = format_chunks(rows) if rows else None
@@ -179,15 +186,19 @@ def answer(
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
             user=user,
+            model=model,
         )
+        metrics = AnswerMetric(
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+        )
+        if model:
+            metrics.model = model
         ans = Answer(
             text=response.text,
             success=True,
             sources=take_sources(rows),
-            metrics=AnswerMetric(
-                prompt_tokens=response.prompt_tokens,
-                completion_tokens=response.completion_tokens,
-            ),
+            metrics=metrics,
         )
         if add_context:
             ans.context = context
@@ -195,7 +206,7 @@ def answer(
     ans.elapsed = round(time.perf_counter() - start, 3)
 
     try:
-        _log_answer(question, ans, lang, context, run_name, use_rerank)
+        _log_answer(question, ans, lang, context, run_name, use_rerank, k)
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
 
@@ -221,7 +232,8 @@ def _language_directive(language: str) -> str:
 
 
 def _log_answer(
-    original_text: str, ans: Answer, lang: str, context=None, run_name=None, use_rerank=False
+    original_text: str, ans: Answer, lang: str, context=None, run_name=None,
+    use_rerank=False, k=None,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -243,6 +255,7 @@ def _log_answer(
                 "config": {
                     "rerank": use_rerank,
                     "distance_threshold": ans.metrics.distance_threshold,
+                    "k": k,
                 }
             },
             prompt_tokens=ans.metrics.prompt_tokens,

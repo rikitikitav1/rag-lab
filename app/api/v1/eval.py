@@ -1,3 +1,4 @@
+import re
 import time
 from typing import Literal
 
@@ -6,12 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from models.eval import QuestionLog
 from models.registry import Pipeline
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix="/eval", tags=["eval"])
+
+MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?$")
 
 
 class JobEnqueuedResponse(BaseModel):
@@ -33,6 +36,20 @@ class EvalRunRequest(BaseModel):
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
+    k: int | None = None
+    max_hops: int | None = None
+    model: str | None = Field(default=None, max_length=128, pattern=MODEL_NAME_RE.pattern)
+
+
+class ExperimentRequest(BaseModel):
+    run_name: str | None = None
+    set_name: str | None = None
+    question_ids: list[int] | None = None
+    rerank: bool | None = None
+    pipeline: Pipeline = Pipeline.single_shot
+    language: Literal["ru", "en"] | None = None
+    param: Literal["k", "max_hops", "model"] = "k"
+    values: list[int | str] = Field(min_length=1)
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -118,16 +135,30 @@ async def eval_misses(
     )
 
 
+def validate_param_values(param: str, values: list) -> None:
+    if param == "model":
+        bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.match(v)]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
+    else:
+        bad = [v for v in values if not isinstance(v, int) or v < 1]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"{param} values must be positive integers"
+            )
+
+
+def value_suffix(value) -> str:
+    if isinstance(value, int):
+        return f"{value:02d}"
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", str(value))
+
+
 @router.post("/run", response_model=JobEnqueuedResponse)
 async def enqueue_eval_run(
     request: EvalRunRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    if request.rerank is not None and request.pipeline == Pipeline.agent:
-        raise HTTPException(
-            status_code=400,
-            detail="per-request rerank override is not supported for the agent pipeline",
-        )
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
     return await _enqueue(
         session,
@@ -137,7 +168,36 @@ async def enqueue_eval_run(
             "set_name": request.set_name,
             "question_ids": request.question_ids,
             "rerank": request.rerank,
+            "k": request.k,
+            "max_hops": request.max_hops,
+            "model": request.model,
             "pipeline": request.pipeline.value,
             "language": request.language,
         },
     )
+
+
+@router.post("/experiment", response_model=list[JobEnqueuedResponse])
+async def enqueue_experiment(
+    request: ExperimentRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    validate_param_values(request.param, request.values)
+    base = request.run_name or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
+    jobs = []
+    for value in request.values:
+        job = await _enqueue(
+            session,
+            "eval_run",
+            {
+                "run_name": f"{base}_{request.param}_{value_suffix(value)}",
+                "set_name": request.set_name,
+                "question_ids": request.question_ids,
+                "rerank": request.rerank,
+                "pipeline": request.pipeline.value,
+                "language": request.language,
+                request.param: value,
+            },
+        )
+        jobs.append(job)
+    return jobs

@@ -40,11 +40,23 @@ def test_eval_run_pipeline_invalid_422(client):
     assert r.status_code == 422
 
 
-def test_eval_run_rerank_with_agent_400(client):
+def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
+    from types import SimpleNamespace
+
+    import api.v1.eval as eval_mod
+
+    monkeypatch.setattr(
+        eval_mod.job_queue, "add_job", lambda s, t, o: SimpleNamespace(id=1, type=t, options=o)
+    )
+
+    async def _refresh(session, obj):
+        return obj
+
+    monkeypatch.setattr(eval_mod, "commit_and_refresh", _refresh)
     r = client.post(
         "/v1/eval/run", json={"set_name": "s", "pipeline": "agent", "rerank": True}
     )
-    assert r.status_code == 400
+    assert r.status_code == 200
 
 
 def test_job_limit_over_max_422(client):

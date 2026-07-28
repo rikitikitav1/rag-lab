@@ -64,6 +64,11 @@ def judge_answers(options: dict) -> None:
         judged=judged,
         total=len(log_ids),
     )
+    run_name = options.get("run_name")
+    if run_name:
+        from use_cases import experiment
+
+        experiment.try_aggregate_for_run(run_name)
 
 
 def _judge_log(log_id: int, force: bool = False) -> bool:
@@ -99,7 +104,7 @@ def _judge_axis(ql, metrics, axis, precondition, force, verdict_fn, args) -> boo
         return False
     v, err = _run_axis(ql.id, axis, verdict_fn, *args)
     if v:
-        setattr(ql, axis, v.verdict.value)
+        setattr(ql, axis, str(v.score))
         metrics[axis] = _axis_metric(v)
         return True
     metrics[axis] = _errored_metric(metrics, axis, err)

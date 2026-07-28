@@ -28,7 +28,7 @@ def run_once() -> bool:
 
     start = time.perf_counter()
     try:
-        handler(claimed.options)
+        handler(claimed.options | {"_job_id": claimed.id})
         elapsed = round(time.perf_counter() - start, 3)
         job_queue.complete(claimed.id, elapsed=elapsed)
         log.info("worker.done", id=claimed.id, type=claimed.type, elapsed=elapsed)

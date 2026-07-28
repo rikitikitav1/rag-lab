@@ -1,3 +1,4 @@
+import inspect
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -43,7 +44,7 @@ def schemas() -> list[dict]:
     return [t.schema() for t in _REGISTRY.values()]
 
 
-def dispatch(name: str, arguments: str) -> ToolResult:
+def dispatch(name: str, arguments: str, **runtime) -> ToolResult:
     tool = _REGISTRY.get(name)
     if tool is None:
         return ToolResult(content=f"{chat.ERROR_PREFIX}unknown tool '{name}'")
@@ -56,6 +57,8 @@ def dispatch(name: str, arguments: str) -> ToolResult:
     dropped = [k for k in raw if k not in allowed]
     if dropped:
         log.warning("tool.dropped_args", tool=name, dropped=dropped)
+    accepted = inspect.signature(tool.run).parameters
+    kwargs.update({key: val for key, val in runtime.items() if val is not None and key in accepted})
     try:
         return tool.run(**kwargs)
     except Exception as e:
@@ -63,8 +66,13 @@ def dispatch(name: str, arguments: str) -> ToolResult:
         return ToolResult(content=f"{chat.ERROR_PREFIX}tool '{name}' failed")
 
 
-def _search_corpus(query: str, category: str | None = None) -> ToolResult:
-    content, sources = chat.search_chunks(query, category)
+def _search_corpus(
+    query: str,
+    category: str | None = None,
+    k: int | None = None,
+    use_rerank: bool | None = None,
+) -> ToolResult:
+    content, sources = chat.search_chunks(query, category, k=k, use_rerank=use_rerank)
     return ToolResult(content=content, meta={"sources": sources})
 
 

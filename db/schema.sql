@@ -140,6 +140,53 @@ ALTER SEQUENCE public.data_sources_id_seq OWNED BY public.data_sources.id;
 
 
 --
+-- Name: experiments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.experiments (
+    id integer NOT NULL,
+    name text,
+    status text DEFAULT 'draft'::text NOT NULL,
+    dataset text NOT NULL,
+    sample_size integer,
+    sample_seed integer,
+    question_ids jsonb,
+    data_prep jsonb DEFAULT '{}'::jsonb NOT NULL,
+    procedure jsonb DEFAULT '{}'::jsonb NOT NULL,
+    param text NOT NULL,
+    param_values jsonb DEFAULT '[]'::jsonb NOT NULL,
+    run_names jsonb DEFAULT '[]'::jsonb NOT NULL,
+    results jsonb,
+    conclusion text,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    elapsed double precision,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: experiments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.experiments_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: experiments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.experiments_id_seq OWNED BY public.experiments.id;
+
+
+--
 -- Name: jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -152,8 +199,7 @@ CREATE TABLE public.jobs (
     apply_since timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    elapsed double precision,
-    CONSTRAINT jobs_status_check CHECK ((status = ANY (ARRAY['new'::text, 'running'::text, 'done'::text, 'error'::text, 'paused'::text])))
+    elapsed double precision
 );
 
 
@@ -365,6 +411,13 @@ ALTER TABLE ONLY public.data_sources ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: experiments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.experiments ALTER COLUMN id SET DEFAULT nextval('public.experiments_id_seq'::regclass);
+
+
+--
 -- Name: jobs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -421,6 +474,14 @@ ALTER TABLE ONLY public.data_sources
 
 ALTER TABLE ONLY public.data_sources
     ADD CONSTRAINT data_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: experiments experiments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.experiments
+    ADD CONSTRAINT experiments_pkey PRIMARY KEY (id);
 
 
 --
@@ -622,4 +683,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260726000001'),
     ('20260726000002'),
     ('20260726000003'),
-    ('20260726000004');
+    ('20260726000004'),
+    ('20260728000001'),
+    ('20260728000002');

@@ -21,6 +21,7 @@
       "sentence-transformers>=5",
       "transformers>=5",
       "fastmcp>=2.0",
+      "scipy>=1.18.0",
 ]
 
 [dependency-groups]

@@ -69,3 +69,35 @@ async def list_jobs(
 @router.get("/{id}", response_model=JobResponse)
 async def show_job(id: int, session: AsyncSession = Depends(get_session)):
     return await get_or_404(Job, id, session)
+
+
+class CancelResponse(BaseModel):
+    cancelled: list[int]
+
+
+_ACTIVE = (JobStatus.new, JobStatus.running)
+
+
+@router.post("/{id}/cancel", response_model=CancelResponse)
+async def cancel_job(id: int, session: AsyncSession = Depends(get_session)):
+    job = await get_or_404(Job, id, session)
+    targets = [job]
+
+    run_name = (job.options or {}).get("run_name")
+    if job.type == "eval_run" and run_name:
+        deps = await session.scalars(
+            select(Job).where(
+                Job.type == "judge_answers",
+                Job.status.in_(_ACTIVE),
+                Job.options["run_name"].astext == run_name,
+            )
+        )
+        targets.extend(deps)
+
+    cancelled = []
+    for t in targets:
+        if t.status in _ACTIVE:
+            t.status = JobStatus.cancelled
+            cancelled.append(t.id)
+    await session.commit()
+    return CancelResponse(cancelled=cancelled)

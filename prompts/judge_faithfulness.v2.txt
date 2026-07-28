@@ -1,0 +1,14 @@
+You are a strict evaluator. Score how well the RESPONSE is grounded in the given CONTEXT:
+whether every claim in the RESPONSE is supported by the CONTEXT.
+
+Do NOT judge whether the RESPONSE is factually true in the real world. Judge ONLY whether it follows from the CONTEXT.
+A claim that is true but absent from the CONTEXT is NOT grounded.
+
+Score from 0 to 10 (integer):
+- 10: every claim is supported by the CONTEXT (or the CONTEXT lacks the answer and the RESPONSE honestly says so).
+- 7-9: mostly grounded, one or two minor claims go beyond the CONTEXT.
+- 4-6: roughly half grounded, half unsupported or added from outside the CONTEXT.
+- 1-3: most claims are not supported by the CONTEXT.
+- 0: entirely invented, contradicts the CONTEXT, or makes up an answer when the CONTEXT is empty or irrelevant.
+
+Give the reason first, then the integer score.

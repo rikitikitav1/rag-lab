@@ -9,6 +9,7 @@ from api.v1 import (
     categories,
     chat,
     eval,
+    experiment,
     job,
     llm_model,
     model_role,
@@ -19,6 +20,7 @@ from api.v1 import (
 )
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from mcp_ops import mcp_ops
 from mcp_server import mcp
 
 logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
@@ -26,6 +28,7 @@ logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
 MAX_BODY_BYTES = 6 * 1024 * 1024
 
 mcp_app = mcp.http_app(path="/", stateless_http=True)
+mcp_ops_app = mcp_ops.http_app(path="/", stateless_http=True)
 
 
 @asynccontextmanager
@@ -33,12 +36,14 @@ async def lifespan(app):
     async with AsyncExitStack() as stack:
         bootstrap.bootstrap_models()
         await stack.enter_async_context(mcp_app.lifespan(app))
+        await stack.enter_async_context(mcp_ops_app.lifespan(app))
         yield
 
 
 app = FastAPI(lifespan=lifespan)
 
 app.mount("/mcp", mcp_app)
+app.mount("/mcp-ops", mcp_ops_app)
 
 
 @app.middleware("http")
@@ -71,3 +76,4 @@ app.include_router(eval.router, prefix="/v1")
 app.include_router(source.router, prefix="/v1")
 app.include_router(questions.router, prefix="/v1")
 app.include_router(job.router, prefix="/v1")
+app.include_router(experiment.router, prefix="/v1")

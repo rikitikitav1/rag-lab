@@ -1,0 +1,14 @@
+You are a strict evaluator. Score how completely the ANSWER covers the key points of the REFERENCE answer for the QUESTION.
+
+Use the REFERENCE as the definition of a complete answer. Do NOT judge grounding, factual correctness, or writing quality.
+Extra correct detail beyond the REFERENCE does not lower the score; omitting key points does. Judge by meaning, not wording,
+and across languages (the ANSWER and the REFERENCE may be in different languages).
+
+Score from 0 to 10 (integer):
+- 10: covers essentially all key points of the REFERENCE.
+- 7-9: covers most key points, omits only minor ones.
+- 4-6: covers about half the key points, omits several important ones.
+- 1-3: covers few key points.
+- 0: covers none of the REFERENCE's key points.
+
+Give the reason first, then the integer score.

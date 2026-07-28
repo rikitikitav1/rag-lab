@@ -1,7 +1,7 @@
 service:
   retrieval:
     distance_threshold: 0.55
-    results_limit: 3
+    results_limit: 5
     limit_vector: 20
     limit_keywords: 20
     rrf_k: 60
@@ -9,7 +9,7 @@ service:
     enabled: false
     model: BAAI/bge-reranker-v2-m3
     candidates: 20
-    top: 3
+    top: 5
   agent:
     max_hops: 4
   ingestion:
@@ -201,7 +201,7 @@ llm:
   base_url: http://ollama:11434
   roles:
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
-    embedding:    { model: bge-m3,      options: { num_ctx: 2048 } }
+    embedding:    { model: bge-m3 }
     judging:      { model: qwen2.5:7b,  options: { max_tokens: 1024, temperature: 0 } }
     paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 } }
   candidates: []

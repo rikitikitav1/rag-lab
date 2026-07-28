@@ -23,11 +23,18 @@ def evaluate(run_name=None):
             misses.append(ql.question.original_text)
 
     n = len(in_corpus) or 1
-    print(f"hit@k: {hits}/{len(in_corpus)} = {hits / n:.0%}")
-    print(f"MRR:   {rr_sum / n:.3f}")
-    print("misses:", len(misses))
+    return {
+        "hit_at_k": round(hits / n, 3),
+        "mrr": round(rr_sum / n, 3),
+        "hits": hits,
+        "n": len(in_corpus),
+        "misses": len(misses),
+    }
 
 
 if __name__ == "__main__":
     run_name = sys.argv[1] if len(sys.argv) > 1 else None
-    evaluate(run_name)
+    r = evaluate(run_name)
+    print(f"hit@k: {r['hits']}/{r['n']} = {r['hit_at_k']:.0%}")
+    print(f"MRR:   {r['mrr']:.3f}")
+    print("misses:", r["misses"])
