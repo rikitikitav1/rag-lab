@@ -28,9 +28,18 @@ def _answer_one(
     use_rerank: bool | None,
     pipeline: Pipeline,
     language: str | None,
+    k: int | None,
+    max_hops: int | None,
 ) -> None:
     if pipeline == Pipeline.agent:
-        agent.run(text, run_name=run_name, language=language)
+        agent.run(
+            text,
+            run_name=run_name,
+            language=language,
+            k=k,
+            max_hops=max_hops,
+            use_rerank=use_rerank,
+        )
     elif pipeline == Pipeline.single_shot:
         chat.answer(
             text,
@@ -38,6 +47,7 @@ def _answer_one(
             run_name=run_name,
             use_rerank=use_rerank,
             language=language,
+            k=k,
         )
     else:
         raise ValueError(f"unknown pipeline: {pipeline}")
@@ -50,21 +60,31 @@ def run(
     use_rerank: bool | None = None,
     pipeline: str = "single_shot",
     language: str | None = None,
+    k: int | None = None,
+    max_hops: int | None = None,
+    job_id: int | None = None,
 ) -> int:
     pipeline = Pipeline(pipeline)
-    if use_rerank is not None and pipeline == Pipeline.agent:
-        raise ValueError("rerank override is not supported for the agent pipeline")
     texts = _target_texts(set_name, question_ids)
     answered = 0
+    cancelled = False
     for text in texts:
+        if job_id is not None and job_queue.is_cancelled(job_id):
+            cancelled = True
+            break
         try:
-            _answer_one(text, run_name, use_rerank, pipeline, language)
+            _answer_one(text, run_name, use_rerank, pipeline, language, k, max_hops)
             answered += 1
         except Exception as e:
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
-    job_queue.enqueue("judge_answers", {"run_name": run_name})
+    if not cancelled:
+        job_queue.enqueue("judge_answers", {"run_name": run_name})
     log.info(
-        "eval_run.answered", run_name=run_name, answered=answered, total=len(texts)
+        "eval_run.answered",
+        run_name=run_name,
+        answered=answered,
+        total=len(texts),
+        cancelled=cancelled,
     )
     return answered
 

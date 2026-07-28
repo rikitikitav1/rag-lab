@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from models.eval import QuestionLog
 from models.registry import Pipeline
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -33,6 +33,19 @@ class EvalRunRequest(BaseModel):
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
+    k: int | None = None
+    max_hops: int | None = None
+
+
+class ExperimentRequest(BaseModel):
+    run_name: str | None = None
+    set_name: str | None = None
+    question_ids: list[int] | None = None
+    rerank: bool | None = None
+    pipeline: Pipeline = Pipeline.single_shot
+    language: Literal["ru", "en"] | None = None
+    param: Literal["k", "max_hops"] = "k"
+    values: list[int] = Field(min_length=1)
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -123,11 +136,6 @@ async def enqueue_eval_run(
     request: EvalRunRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    if request.rerank is not None and request.pipeline == Pipeline.agent:
-        raise HTTPException(
-            status_code=400,
-            detail="per-request rerank override is not supported for the agent pipeline",
-        )
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
     return await _enqueue(
         session,
@@ -137,7 +145,36 @@ async def enqueue_eval_run(
             "set_name": request.set_name,
             "question_ids": request.question_ids,
             "rerank": request.rerank,
+            "k": request.k,
+            "max_hops": request.max_hops,
             "pipeline": request.pipeline.value,
             "language": request.language,
         },
     )
+
+
+@router.post("/experiment", response_model=list[JobEnqueuedResponse])
+async def enqueue_experiment(
+    request: ExperimentRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    if any(v < 1 for v in request.values):
+        raise HTTPException(status_code=400, detail="values must be positive")
+    base = request.run_name or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
+    jobs = []
+    for value in request.values:
+        job = await _enqueue(
+            session,
+            "eval_run",
+            {
+                "run_name": f"{base}_{request.param}{value:02d}",
+                "set_name": request.set_name,
+                "question_ids": request.question_ids,
+                "rerank": request.rerank,
+                "pipeline": request.pipeline.value,
+                "language": request.language,
+                request.param: value,
+            },
+        )
+        jobs.append(job)
+    return jobs

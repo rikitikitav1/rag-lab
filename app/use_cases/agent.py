@@ -25,6 +25,7 @@ class AgentResult:
     messages: list = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    max_prompt_tokens: int = 0
     elapsed: float = 0.0
 
 
@@ -34,10 +35,14 @@ def run(
     max_hops: int | None = None,
     run_name: str | None = None,
     language: str | None = None,
+    k: int | None = None,
+    use_rerank: bool | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
     if max_hops is None:
         max_hops = config.settings.agent.max_hops
+    if use_rerank is None:
+        use_rerank = config.settings.rerank.enabled
     system = prompt_repo.active_template(Purpose.agent_system)
     if language:
         system += f"\n\n{chat._language_directive(language)}"
@@ -57,7 +62,8 @@ def run(
             break
         result.prompt_tokens += turn.prompt_tokens
         result.completion_tokens += turn.completion_tokens
-        if _apply_turn(turn, messages, result):
+        result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
+        if _apply_turn(turn, messages, result, k, use_rerank):
             break
 
     result.sources = _unique_sources(result.sources)
@@ -72,6 +78,7 @@ def run(
             result.hops += 1
             result.prompt_tokens += final.prompt_tokens
             result.completion_tokens += final.completion_tokens
+            result.max_prompt_tokens = max(result.max_prompt_tokens, final.prompt_tokens)
             result.text = final.text or ""
             if final.finish_reason == "length":
                 log.warning("agent.truncated", hops=result.hops)
@@ -91,13 +98,19 @@ def run(
         sources=len(result.sources),
     )
     try:
-        _log_answer(question, result, run_name, language)
+        _log_answer(question, result, run_name, language, k, use_rerank)
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
     return result
 
 
-def _apply_turn(turn: llm.ChatTurn, messages: list[dict], result: AgentResult) -> bool:
+def _apply_turn(
+    turn: llm.ChatTurn,
+    messages: list[dict],
+    result: AgentResult,
+    k: int | None = None,
+    use_rerank: bool | None = None,
+) -> bool:
     if not turn.tool_calls:
         result.text = turn.text or ""
         result.success = bool(result.text)
@@ -109,7 +122,9 @@ def _apply_turn(turn: llm.ChatTurn, messages: list[dict], result: AgentResult) -
 
     for tc in turn.tool_calls:
         log.info("agent.tool_call", tool=tc.function.name, arguments=tc.function.arguments)
-        res = agent_tools.dispatch(tc.function.name, tc.function.arguments)
+        res = agent_tools.dispatch(
+            tc.function.name, tc.function.arguments, k=k, use_rerank=use_rerank
+        )
         result.sources.extend(res.meta.get("sources", []))
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": res.content})
 
@@ -142,7 +157,11 @@ def _log_answer(
     result: AgentResult,
     run_name: str | None,
     language: str | None = None,
+    k: int | None = None,
+    use_rerank: bool | None = None,
 ) -> None:
+    if use_rerank is None:
+        use_rerank = config.settings.rerank.enabled
     lang = chat._resolve_language(question_text, language)
     with Session() as session:
         question = chat._find_or_create_question(session, question_text, lang)
@@ -162,11 +181,13 @@ def _log_answer(
             metrics={
                 "hops": result.hops,
                 "no_evidence": not bool(result.sources),
+                "context_tokens": result.max_prompt_tokens,
                 "config": {
-                    "rerank": config.settings.rerank.enabled,
+                    "rerank": use_rerank,
                     "distance_threshold": round(
                         config.settings.retrieval.distance_threshold, 3
                     ),
+                    "k": k or config.settings.retrieval.results_limit,
                 },
             },
             prompt_tokens=result.prompt_tokens,

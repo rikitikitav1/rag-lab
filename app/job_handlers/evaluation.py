@@ -18,5 +18,8 @@ def eval_run(options: dict) -> None:
         use_rerank=options.get("rerank"),
         pipeline=options.get("pipeline", "single_shot"),
         language=options.get("language"),
+        k=options.get("k"),
+        max_hops=options.get("max_hops"),
+        job_id=options.get("_job_id"),
     )
     log.info("eval_run.done", run_name=options["run_name"], answered=answered)
