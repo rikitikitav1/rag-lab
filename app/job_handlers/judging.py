@@ -64,6 +64,11 @@ def judge_answers(options: dict) -> None:
         judged=judged,
         total=len(log_ids),
     )
+    run_name = options.get("run_name")
+    if run_name:
+        from use_cases import experiment
+
+        experiment.try_aggregate_for_run(run_name)
 
 
 def _judge_log(log_id: int, force: bool = False) -> bool:

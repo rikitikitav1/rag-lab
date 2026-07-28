@@ -9,6 +9,7 @@ from api.v1 import (
     categories,
     chat,
     eval,
+    experiment,
     job,
     llm_model,
     model_role,
@@ -71,3 +72,4 @@ app.include_router(eval.router, prefix="/v1")
 app.include_router(source.router, prefix="/v1")
 app.include_router(questions.router, prefix="/v1")
 app.include_router(job.router, prefix="/v1")
+app.include_router(experiment.router, prefix="/v1")
