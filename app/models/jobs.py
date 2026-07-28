@@ -13,6 +13,7 @@ class JobStatus(StrEnum):
     done = "done"
     error = "error"
     paused = "paused"
+    cancelled = "cancelled"
 
 
 # todo: allowed jobs list take from worker handlers

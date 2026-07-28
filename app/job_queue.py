@@ -72,10 +72,33 @@ def reschedule(
     _update(id, **fields)
 
 
+def cancel(ids: list[int]) -> list[int]:
+    if not ids:
+        return []
+    with Session() as session:
+        jobs = session.scalars(
+            select(Job).where(
+                Job.id.in_(ids),
+                Job.status.in_([JobStatus.new, JobStatus.running]),
+            )
+        ).all()
+        cancelled = [j.id for j in jobs]
+        for job in jobs:
+            job.status = JobStatus.cancelled
+        session.commit()
+        return cancelled
+
+
+def is_cancelled(id: int) -> bool:
+    with Session() as session:
+        job = session.get(Job, id)
+        return job is not None and job.status == JobStatus.cancelled
+
+
 def _update(id: int, **fields) -> None:
     with Session() as session:
         job = session.get(Job, id)
-        if job is None:
+        if job is None or job.status == JobStatus.cancelled:
             return
         for key, value in fields.items():
             setattr(job, key, value)
