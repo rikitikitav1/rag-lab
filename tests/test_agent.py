@@ -42,7 +42,7 @@ def test_apply_turn_executes_tools_and_continues(monkeypatch):
     monkeypatch.setattr(
         agent_tools,
         "dispatch",
-        lambda name, args: agent_tools.ToolResult(
+        lambda name, args, **kwargs: agent_tools.ToolResult(
             content="chunks", meta={"sources": ["S1"]}
         ),
     )
@@ -99,7 +99,7 @@ def test_apply_turn_accumulates_across_multiple_calls(monkeypatch):
     monkeypatch.setattr(
         agent_tools,
         "dispatch",
-        lambda name, args: agent_tools.ToolResult(content="c", meta={"sources": [name]}),
+        lambda name, args, **kwargs: agent_tools.ToolResult(content="c", meta={"sources": [name]}),
     )
     turn = _turn(
         tool_calls=[
