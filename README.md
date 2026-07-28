@@ -54,6 +54,8 @@ curl -X POST localhost:8000/v1/chat/question \
 # Swagger: http://localhost:8000/docs
 ```
 
+No authentication by design (REST, `/mcp`, `/mcp-ops` are all open): this is a local lab bound to 127.0.0.1. Do not expose it to a network as is.
+
 The first `up` pulls ~16 GB of models and builds the index (~5-10 min, watch `docker compose logs -f worker`). The server starts **without waiting** for models and indexing, so the first requests may refuse until the corpus fills up.
 
 Full hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own questions, browsing logs) and the complete command reference: **[docs/use_cases.md](docs/use_cases.md)**.
@@ -93,13 +95,62 @@ Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
-- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, optional `rerank`; 400 if `rerank` is combined with `pipeline: agent`)
+- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops` and `model` (generator) overrides; config only sets the defaults)
+- `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops` or `model`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 
+Experiments (first-class entity over the raw sweep route):
+- `POST /v1/experiment` (creates the experiment - dataset + deterministic seed-based sample / procedure snapshot / varied param - and enqueues the run series), `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`
+- state machine `draft → running → aggregated → concluded` (+ `failed`); when the last judge job of the series finishes, the aggregator computes per-value metrics and an RRF composite over the three generation axes and stores them in `results` (retrieval hit@k/MRR reported per value but kept out of the fusion: hit@k is monotonic in `k`, it would confound the composite)
+- results carry **paired significance statistics**, not just point estimates: for the winner vs every other value, per axis - mean paired delta (same question in both runs), bootstrap 95% CI and a Wilcoxon signed-rank p-value, plus Bonferroni-corrected significance flags over the whole test family, so the JSON itself says what survives multiple-comparison correction
+
+One call asks the bench a question; generation, judging and aggregation happen in the background. Questions you can ask this way:
+
+```bash
+# "How many chunks should I feed the generator?" - retrieval width sweep
+curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
+  "name": "k_sweep", "dataset": "paraphrased_ru", "sample_size": 100,
+  "pipeline": "agent", "language": "ru", "param": "k", "param_values": [1, 3, 5, 7, 10]}'
+
+# "Does a bigger generator earn its cost on my corpus?" - model A/B
+# (a model missing from the registry is pulled automatically, the run waits)
+curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
+  "name": "model_ab", "dataset": "paraphrased_ru", "sample_size": 100,
+  "param": "model", "param_values": ["llama3.1:8b", "gemma2:9b"]}'
+
+# "Do extra agent hops pay off?" - hop-cap sweep on a cheap 10-question sample
+curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
+  "name": "hops", "dataset": "paraphrased_ru", "sample_size": 10, "sample_seed": 42,
+  "pipeline": "agent", "param": "max_hops", "param_values": [2, 4, 6]}'
+```
+
+When the series is judged, `GET /v1/experiment/{id}` returns per-value metrics and a composite verdict:
+
+```json
+{
+  "status": "aggregated",
+  "results": {
+    "per_value": {"5": {"faithfulness": 7.18, "relevance": 8.9, "completeness": 6.16, "hit_at_k": 0.9, "mrr": 0.757}, "...": "..."},
+    "composite": {
+      "method": "rrf", "winner": "5",
+      "ranking": [{"value": "5", "rrf": 0.0487}, {"value": "10", "rrf": 0.0484}],
+      "pairwise": {
+        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.3669, "n": 100, "significant_raw": false, "significant_bonferroni": false}, "...": "..."}},
+        "method": "bonferroni", "alpha": 0.05, "tests": 15, "threshold": 0.00333
+      }
+    }
+  }
+}
+```
+
+The pairwise block is what keeps conclusions honest: an early version of this bench "concluded" k=5 beats k=10 from a composite-score gap in the third decimal - the paired test shows that comparison is a coin flip (p=0.37), and the corrected flags mark which of the 15 grid tests survive at all. See [docs/experiments.md](docs/experiments.md) for the cases where this reversed our own verdicts.
+
+Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment becomes a self-contained artifact: what was varied, on what data, the numbers, the verdict.
+
 Observability:
 - `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs; filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; detail with context)
-- `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed)
+- `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed), `POST /v1/job/{id}/cancel` (cancels the job and its dependent judge, cooperative stop for a running eval)
 
 ## MCP
 
@@ -110,25 +161,31 @@ An MCP (Model Context Protocol) server is mounted at `/mcp` (streamable HTTP), e
 
 Connect: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, or point the MCP Inspector at the same URL.
 
+A second, separate ops server is mounted at `/mcp-ops` - an eval control plane kept off the product surface (an external client gets search/answer tools, not admin verbs):
+- `run_metrics(run_name)` - aggregated eval metrics for one run (generation axes + retrieval hit@k/MRR).
+- `compare_runs(run_names)` - side-by-side metrics with an RRF composite ranking (generation axes only).
+- `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - job queue control, cancel takes the dependent judge down with the run.
+
 ## How it is built
 
 - `app/config.py` - `config.yaml` loader.
 - `app/orm/` - SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
-- `app/models/` - ORM models: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk).
+- `app/models/` - ORM models: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk), `experiment` (Experiment + state machine).
 - `app/llm.py` - Ollama client via the OpenAI SDK (generation / embeddings / structured output) + role→model resolver.
 - `app/rerank.py` - cross-encoder reranker (sentence-transformers, CPU, lazy-loaded).
 - `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - Postgres queue (FOR UPDATE SKIP LOCKED) and worker with retries/defer; handlers split by theme.
 - `app/bootstrap.py` - idempotent startup init.
 - `app/sources/` - per-source ingestion (reader pattern: `Base` ABC + sources).
 - `app/db.py` - hybrid search (raw SQL: pgvector `<=>`, FTS, ltree, RRF).
-- `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling loop), `index` (corpus build), `judge` (answer scoring).
+- `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling loop), `index` (corpus build), `judge` (answer scoring), `experiment` (series aggregator + RRF composite).
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
-- `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
+- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `list_jobs` / `cancel_job` over the eval platform.
+- `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
 - `app/evals/` - eval bench (runner + retrieval and generation metrics via the judge).
 - `tests/` - unit tests (pure logic, no DB/Ollama): `docker compose exec rag-lab pytest -q`.
 
 ## Status
 
-A learning project: the goal is to master RAG/LLM engineering by hand, from primitives. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 4-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform, MCP server).
+A learning project: the goal is to master RAG/LLM engineering by hand, from primitives. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 5-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform, MCP server).

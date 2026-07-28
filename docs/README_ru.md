@@ -52,6 +52,8 @@ curl -X POST localhost:8000/v1/chat/question \
 # Swagger: http://localhost:8000/docs
 ```
 
+Аутентификации нет намеренно (REST, `/mcp`, `/mcp-ops` открыты): это локальная лаборатория, порты привязаны к 127.0.0.1. Не выставляйте её в сеть как есть.
+
 Первый `up` тянет ~16 ГБ моделей и строит индекс (~5-10 мин, следи за `docker compose logs -f worker`). Сервер стартует **не дожидаясь** моделей и индексации, поэтому первые запросы могут вернуть отказ, пока корпус наполняется.
 
 Полные сценарии (мини-eval до цифр, reranking A/B, импорт своих вопросов, просмотр логов) и справочник команд: **[use_cases.md](use_cases.md)**.
@@ -90,13 +92,62 @@ Lifecycle моделей:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval-платформа:
-- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, опц. `rerank`; 400 если `rerank` вместе с `pipeline: agent`)
+- `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, per-run override'ы `rerank`, `k` (ширина ретривала), `max_hops` (кап хопов), `model` (генератор); конфиг задаёт только дефолты)
+- `POST /v1/eval/experiment` (серия прогонов: параметр `param` (`k`, `max_hops` или `model`) варьируется по списку `values`, один авто-именованный прогон на значение, каждый судится; набор/пайплайн/язык фиксированы для чистого сравнения по одной переменной; значение `model`, которого нет в реестре, создаётся и скачивается, прогон ждёт готовности)
 - `GET /v1/eval/misses?run_name=X` (retrieval-промахи прогона: in-corpus вопросы, где ожидаемый источник не найден, expected vs retrieved)
 - `POST /v1/questions/import` (залить файл вопросов, ≤5 МБ; опц. цепочка run)
 
+Эксперименты (полноценная сущность над сырым роутом серии):
+- `POST /v1/experiment` (создаёт эксперимент - dataset + детерминированная выборка по seed / снапшот процедуры / варьируемый параметр - и ставит серию прогонов), `GET /v1/experiment` (список с фильтрами), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`
+- стейт-машина `draft → running → aggregated → concluded` (+ `failed`); после последней judge-джобы серии агрегатор считает метрики по каждому значению + RRF-композит по трём генеративным осям и пишет в `results` (retrieval hit@k/MRR отдаются per value, но в фьюжен не входят: hit@k монотонен по `k` и конфаундил бы композит)
+- в results лежат **парные статистики значимости**, а не только точечные оценки: для победителя против каждого другого значения, по осям - средняя парная дельта (один и тот же вопрос в обоих прогонах), bootstrap 95% CI и p-value Уилкоксона, плюс флаги значимости с поправкой Бонферрони на всё семейство тестов - JSON сам говорит, что пережило поправку на множественные сравнения
+
+Один вызов = один вопрос стенду; генерация, судейство и агрегация происходят в фоне. Вопросы, которые так можно задавать:
+
+```bash
+# "Сколько чанков кормить генератору?" - свип ширины ретривала
+curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
+  "name": "k_sweep", "dataset": "paraphrased_ru", "sample_size": 100,
+  "pipeline": "agent", "language": "ru", "param": "k", "param_values": [1, 3, 5, 7, 10]}'
+
+# "Окупает ли себя модель побольше на моём корпусе?" - A/B моделей
+# (модели, которой нет в реестре, скачается автоматически, прогон подождёт)
+curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
+  "name": "model_ab", "dataset": "paraphrased_ru", "sample_size": 100,
+  "param": "model", "param_values": ["llama3.1:8b", "gemma2:9b"]}'
+
+# "Дают ли что-то лишние хопы агента?" - свип капа хопов на дешёвой выборке из 10 вопросов
+curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
+  "name": "hops", "dataset": "paraphrased_ru", "sample_size": 10, "sample_seed": 42,
+  "pipeline": "agent", "param": "max_hops", "param_values": [2, 4, 6]}'
+```
+
+Когда серия отсужена, `GET /v1/experiment/{id}` возвращает метрики по каждому значению и композитный вердикт:
+
+```json
+{
+  "status": "aggregated",
+  "results": {
+    "per_value": {"5": {"faithfulness": 7.18, "relevance": 8.9, "completeness": 6.16, "hit_at_k": 0.9, "mrr": 0.757}, "...": "..."},
+    "composite": {
+      "method": "rrf", "winner": "5",
+      "ranking": [{"value": "5", "rrf": 0.0487}, {"value": "10", "rrf": 0.0484}],
+      "pairwise": {
+        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.3669, "n": 100, "significant_raw": false, "significant_bonferroni": false}, "...": "..."}},
+        "method": "bonferroni", "alpha": 0.05, "tests": 15, "threshold": 0.00333
+      }
+    }
+  }
+}
+```
+
+Блок pairwise - то, что держит выводы честными: ранняя версия стенда «заключила», что k=5 лучше k=10, по разнице композита в третьем знаке - парный тест показывает, что это сравнение монетка (p=0.37), а флаги с поправкой отмечают, какие из 15 тестов решётки вообще выживают. Случаи, где это развернуло наши собственные вердикты - в [experiments.md](experiments.md).
+
+Вывод фиксируется через `PUT /v1/experiment/{id}/conclusion`, и эксперимент становится самодостаточным артефактом: что варьировали, на каких данных, цифры, вердикт.
+
 Наблюдаемость:
 - `GET /v1/question-log`, `GET /v1/question-log/{id}` (логи ответов; фильтры вкл. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; детально с context)
-- `GET /v1/job`, `GET /v1/job/{id}` (джобы + elapsed)
+- `GET /v1/job`, `GET /v1/job/{id}` (джобы + elapsed), `POST /v1/job/{id}/cancel` (отменяет джобу и её зависимый judge, кооперативный стоп для запущенного прогона)
 
 ## MCP
 
@@ -107,25 +158,31 @@ MCP-сервер (Model Context Protocol) примонтирован на `/mcp`
 
 Подключение: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, или MCP Inspector на тот же URL.
 
+Второй, отдельный ops-сервер примонтирован на `/mcp-ops` - control plane eval-платформы, вынесенный с продуктовой поверхности (внешний клиент получает search/answer, а не админские глаголы):
+- `run_metrics(run_name)` - агрегированные метрики прогона (генеративные оси + retrieval hit@k/MRR).
+- `compare_runs(run_names)` - сравнение прогонов бок о бок с RRF-композитным ранжированием (только генеративные оси).
+- `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - управление очередью джоб, cancel снимает и зависимый judge.
+
 ## Как это устроено
 
 - `app/config.py` - loader `config.yaml`.
 - `app/orm/` - SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
-- `app/models/` - ORM-модели: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk).
+- `app/models/` - ORM-модели: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk), `experiment` (Experiment + стейт-машина).
 - `app/llm.py` - клиент Ollama через OpenAI SDK (генерация / эмбеддинги / structured output) + резолвер роль→модель.
 - `app/rerank.py` - cross-encoder реранкер (sentence-transformers, CPU, ленивая загрузка).
 - `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - очередь на Postgres (FOR UPDATE SKIP LOCKED) и воркер с ретраями/дефёром; хендлеры разнесены по тематике.
 - `app/bootstrap.py` - idempotent-инициализация на старте.
 - `app/sources/` - per-source ingestion (reader-паттерн: `Base` ABC + источники).
 - `app/db.py` - гибридный поиск (сырой SQL: pgvector `<=>`, FTS, ltree, RRF).
-- `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling цикл), `index` (сбор корпуса), `judge` (оценка ответа).
+- `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling цикл), `index` (сбор корпуса), `judge` (оценка ответа), `experiment` (агрегатор серии + RRF-композит).
 - `app/agent_tools.py` - реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
 - `app/mcp_server.py` - FastMCP-сервер (примонтирован на `/mcp`): тулы `search_corpus` / `answer_question` / `list_categories` поверх примитивов поиска.
-- `app/api/` - REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / questions / question-log / job).
+- `app/mcp_ops.py` - ops MCP-сервер (примонтирован на `/mcp-ops`): `run_metrics` / `compare_runs` / `list_jobs` / `cancel_job` поверх eval-платформы.
+- `app/api/` - REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - сид промптов/банка вопросов; REPL-консоль.
 - `app/evals/` - eval-стенд (runner + метрики retrieval + generation через judge).
 - `tests/` - unit-тесты (чистая логика, без DB/Ollama): `docker compose exec rag-lab pytest -q`.
 
 ## Статус
 
-Учебный проект: цель - освоить RAG/LLM-инженерию руками, из примитивов. RAG из примитивов (гибрид, ltree, FTS) + FastAPI-сервер + 4-осевой eval-стенд на LLM-judge + production-слой (pyproject/uv, централизованный config, SQLAlchemy ORM sync+async, OpenAI-совместимый клиент, role-keyed lifecycle моделей, версионирование промптов, async job-queue, банк вопросов, reranking, route-driven eval-платформа, MCP-сервер).
+Учебный проект: цель - освоить RAG/LLM-инженерию руками, из примитивов. RAG из примитивов (гибрид, ltree, FTS) + FastAPI-сервер + 5-осевой eval-стенд на LLM-judge + production-слой (pyproject/uv, централизованный config, SQLAlchemy ORM sync+async, OpenAI-совместимый клиент, role-keyed lifecycle моделей, версионирование промптов, async job-queue, банк вопросов, reranking, route-driven eval-платформа, MCP-сервер).

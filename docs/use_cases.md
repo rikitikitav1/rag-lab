@@ -118,6 +118,23 @@ docker compose exec rag-lab python -m evals.generation_metrics agent_ru
 ```
 Caveat: retrieval hit@k/MRR are computed the same way for both pipelines, but for the agent the source list is a union across hops (recall-flavoured), so read it as a caveat, not a head-to-head with single-shot precision@k. See [experiments.md](experiments.md) for the measured result.
 
+## Scenario 9: parameter series (measure a retrieval lever)
+
+`POST /v1/eval/experiment` queues one run per value of a swept parameter, keeping set, pipeline and language fixed for a clean single-variable comparison. Three params are supported: `k` (retrieval width, chunks fed to the generator), `max_hops` (agent hop cap) and `model` (generator model name; a model absent from the registry is created and pulled, the run waits for it). Runs are auto-named `<base>_<param>_<value>` and each enqueues its own judge pass; the worker drains them one at a time, so it is fire-and-forget.
+
+```bash
+# sweep retrieval width k over the agent pipeline (5 runs, each judged)
+curl -sX POST localhost:8000/v1/eval/experiment -H 'Content-Type: application/json' \
+  -d '{"set_name":"paraphrased_ru","pipeline":"agent","language":"ru","param":"k","values":[1,3,5,7,10]}'
+
+# watch the runs drain
+curl -s "localhost:8000/v1/job?type=eval_run&sort_by=id&sort_order=desc&limit=6" | python3 -m json.tool
+
+# per-run numbers once a run is judged
+docker compose exec rag-lab python -m evals.generation_metrics paraphrased_ru_agent_<ts>_k05
+```
+Set temperature to 0 (config `llm.roles.generation`) so the swept parameter is the only variable. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
+
 ## Command reference
 
 ```bash
