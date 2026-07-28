@@ -99,7 +99,7 @@ def _judge_axis(ql, metrics, axis, precondition, force, verdict_fn, args) -> boo
         return False
     v, err = _run_axis(ql.id, axis, verdict_fn, *args)
     if v:
-        setattr(ql, axis, v.verdict.value)
+        setattr(ql, axis, str(v.score))
         metrics[axis] = _axis_metric(v)
         return True
     metrics[axis] = _errored_metric(metrics, axis, err)
