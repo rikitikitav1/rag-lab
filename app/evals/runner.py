@@ -30,6 +30,7 @@ def _answer_one(
     language: str | None,
     k: int | None,
     max_hops: int | None,
+    model: str | None,
 ) -> None:
     if pipeline == Pipeline.agent:
         agent.run(
@@ -39,6 +40,7 @@ def _answer_one(
             k=k,
             max_hops=max_hops,
             use_rerank=use_rerank,
+            model=model,
         )
     elif pipeline == Pipeline.single_shot:
         chat.answer(
@@ -48,6 +50,7 @@ def _answer_one(
             use_rerank=use_rerank,
             language=language,
             k=k,
+            model=model,
         )
     else:
         raise ValueError(f"unknown pipeline: {pipeline}")
@@ -62,6 +65,7 @@ def run(
     language: str | None = None,
     k: int | None = None,
     max_hops: int | None = None,
+    model: str | None = None,
     job_id: int | None = None,
 ) -> int:
     pipeline = Pipeline(pipeline)
@@ -73,7 +77,7 @@ def run(
             cancelled = True
             break
         try:
-            _answer_one(text, run_name, use_rerank, pipeline, language, k, max_hops)
+            _answer_one(text, run_name, use_rerank, pipeline, language, k, max_hops, model)
             answered += 1
         except Exception as e:
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))

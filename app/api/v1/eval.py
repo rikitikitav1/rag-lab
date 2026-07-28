@@ -1,3 +1,4 @@
+import re
 import time
 from typing import Literal
 
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix="/eval", tags=["eval"])
+
+MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?$")
 
 
 class JobEnqueuedResponse(BaseModel):
@@ -35,6 +38,7 @@ class EvalRunRequest(BaseModel):
     language: Literal["ru", "en"] | None = None
     k: int | None = None
     max_hops: int | None = None
+    model: str | None = Field(default=None, max_length=128, pattern=MODEL_NAME_RE.pattern)
 
 
 class ExperimentRequest(BaseModel):
@@ -44,8 +48,8 @@ class ExperimentRequest(BaseModel):
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
-    param: Literal["k", "max_hops"] = "k"
-    values: list[int] = Field(min_length=1)
+    param: Literal["k", "max_hops", "model"] = "k"
+    values: list[int | str] = Field(min_length=1)
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -131,6 +135,25 @@ async def eval_misses(
     )
 
 
+def validate_param_values(param: str, values: list) -> None:
+    if param == "model":
+        bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.match(v)]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
+    else:
+        bad = [v for v in values if not isinstance(v, int) or v < 1]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"{param} values must be positive integers"
+            )
+
+
+def value_suffix(value) -> str:
+    if isinstance(value, int):
+        return f"{value:02d}"
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", str(value))
+
+
 @router.post("/run", response_model=JobEnqueuedResponse)
 async def enqueue_eval_run(
     request: EvalRunRequest,
@@ -147,6 +170,7 @@ async def enqueue_eval_run(
             "rerank": request.rerank,
             "k": request.k,
             "max_hops": request.max_hops,
+            "model": request.model,
             "pipeline": request.pipeline.value,
             "language": request.language,
         },
@@ -158,8 +182,7 @@ async def enqueue_experiment(
     request: ExperimentRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    if any(v < 1 for v in request.values):
-        raise HTTPException(status_code=400, detail="values must be positive")
+    validate_param_values(request.param, request.values)
     base = request.run_name or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
     jobs = []
     for value in request.values:
@@ -167,7 +190,7 @@ async def enqueue_experiment(
             session,
             "eval_run",
             {
-                "run_name": f"{base}_{request.param}{value:02d}",
+                "run_name": f"{base}_{request.param}_{value_suffix(value)}",
                 "set_name": request.set_name,
                 "question_ids": request.question_ids,
                 "rerank": request.rerank,

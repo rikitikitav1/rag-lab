@@ -167,6 +167,7 @@ def answer(
     run_name: str | None = None,
     use_rerank: bool | None = None,
     language: str | None = None,
+    model: str | None = None,
 ) -> Answer:
     start = time.perf_counter()
     lang = _resolve_language(question, language)
@@ -185,15 +186,19 @@ def answer(
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
             user=user,
+            model=model,
         )
+        metrics = AnswerMetric(
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+        )
+        if model:
+            metrics.model = model
         ans = Answer(
             text=response.text,
             success=True,
             sources=take_sources(rows),
-            metrics=AnswerMetric(
-                prompt_tokens=response.prompt_tokens,
-                completion_tokens=response.completion_tokens,
-            ),
+            metrics=metrics,
         )
         if add_context:
             ans.context = context

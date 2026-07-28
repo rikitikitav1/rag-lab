@@ -37,6 +37,7 @@ def run(
     language: str | None = None,
     k: int | None = None,
     use_rerank: bool | None = None,
+    model: str | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
     if max_hops is None:
@@ -56,7 +57,7 @@ def run(
     for hop in range(1, max_hops + 1):
         result.hops = hop
         try:
-            turn = llm.chat(messages, tools=tools, role=role)
+            turn = llm.chat(messages, tools=tools, role=role, model=model)
         except RuntimeError as e:
             log.error("agent.hop_failed", hop=hop, error=str(e))
             break
@@ -71,7 +72,7 @@ def run(
     if not result.success and result.sources:
         log.info("agent.forcing_final", hops=result.hops)
         try:
-            final = llm.chat(messages, role=role)
+            final = llm.chat(messages, role=role, model=model)
         except RuntimeError as e:
             log.error("agent.final_failed", error=str(e))
         else:
@@ -98,7 +99,7 @@ def run(
         sources=len(result.sources),
     )
     try:
-        _log_answer(question, result, run_name, language, k, use_rerank)
+        _log_answer(question, result, run_name, language, k, use_rerank, model)
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
     return result
@@ -159,6 +160,7 @@ def _log_answer(
     language: str | None = None,
     k: int | None = None,
     use_rerank: bool | None = None,
+    model: str | None = None,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -174,7 +176,7 @@ def _log_answer(
             sources=[asdict(s) for s in result.sources],
             pipeline=Pipeline.agent.value,
             models={
-                "generation": llm.resolve_name("generation"),
+                "generation": model or llm.resolve_name("generation"),
                 "embedding": llm.resolve_name("embedding"),
             },
             prompts={"agent_system": prompt_repo.active_version(Purpose.agent_system)},

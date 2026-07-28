@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,7 +13,10 @@ from sqlalchemy import select
 LLM_BASE = config.settings.llm.base_url
 
 _client = OpenAI(
-    base_url=f"{LLM_BASE}/v1", api_key="ollama", timeout=120.0, max_retries=1
+    base_url=f"{LLM_BASE}/v1",
+    api_key="ollama",
+    timeout=float(os.getenv("LLM_TIMEOUT", "120")),
+    max_retries=1,
 )
 
 log = logging_setup.get_logger(__name__)
@@ -47,8 +51,8 @@ def resolve_name(role: str) -> str:
     return name
 
 
-def ask(system, user, role="generation", schema=None) -> Completion:
-    name = resolve_name(role)
+def ask(system, user, role="generation", schema=None, model=None) -> Completion:
+    name = model or resolve_name(role)
     try:
         resp = _client.chat.completions.create(
             model=name,
@@ -76,8 +80,8 @@ def ask(system, user, role="generation", schema=None) -> Completion:
     )
 
 
-def chat(messages, tools=None, role="generation") -> ChatTurn:
-    name = resolve_name(role)
+def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
+    name = model or resolve_name(role)
     params = _params(role, None)
     if tools:
         params["tools"] = tools

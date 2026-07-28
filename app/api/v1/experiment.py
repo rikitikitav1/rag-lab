@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.v1.eval import validate_param_values, value_suffix
+
 router = APIRouter(prefix="/experiment", tags=["experiments"])
 
 
@@ -26,8 +28,8 @@ class ExperimentCreate(BaseModel):
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
-    param: Literal["k", "max_hops"] = "k"
-    param_values: list[int] = Field(min_length=1)
+    param: Literal["k", "max_hops", "model"] = "k"
+    param_values: list[int | str] = Field(min_length=1)
 
 
 class ExperimentResponse(BaseModel):
@@ -80,6 +82,7 @@ async def _resolve_sample(
 async def create_experiment(
     request: ExperimentCreate, session: AsyncSession = Depends(get_session)
 ):
+    validate_param_values(request.param, request.param_values)
     ids = await _resolve_sample(
         session,
         request.dataset,
@@ -109,7 +112,7 @@ async def create_experiment(
     base = request.name or f"{request.dataset}_{request.pipeline.value}_{int(time.time())}"
     run_names = []
     for value in request.param_values:
-        run_name = f"{base}_{request.param}{value:02d}"
+        run_name = f"{base}_{request.param}_{value_suffix(value)}"
         job_queue.add_job(
             session,
             "eval_run",
