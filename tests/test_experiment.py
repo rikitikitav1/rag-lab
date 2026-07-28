@@ -60,12 +60,14 @@ def test_compute_results_rrf_winner_ignores_retrieval(monkeypatch):
     }
     monkeypatch.setattr(exp.generation_metrics, "evaluate", lambda rn: gen[rn])
     monkeypatch.setattr(exp.retrieval_metrics, "evaluate", lambda rn: ret[rn])
+    monkeypatch.setattr(exp, "load_logs", lambda rn: [])
 
     results = exp.compute_results("run", ["run_hi", "run_lo"], ["run_hi", "run_lo"])
 
     assert results["composite"]["winner"] == "run_hi"
     assert results["composite"]["axes"] == ["faithfulness", "relevance", "completeness"]
     assert results["per_value"]["run_lo"]["hit_at_k"] == 0.9
+    assert results["composite"]["pairwise"]["tests"] == 0
 
 
 def test_experiment_empty_values_422(client):
