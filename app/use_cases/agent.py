@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass, field
 
 import agent_tools
 import config
+import errors
 import job_queue
 import llm
 import logging_setup
@@ -29,6 +30,7 @@ class AgentResult:
     elapsed: float = 0.0
 
 
+# uses asyncio.run for remote MCP tools: call from sync context only, never from an event loop
 def run(
     question: str,
     role: str = "generation",
@@ -52,7 +54,8 @@ def run(
         {"role": "user", "content": question},
     ]
     result = AgentResult(messages=messages)
-    tools = agent_tools.schemas()
+    remote = {t.name: t for t in agent_tools.remote_tools()}
+    tools = agent_tools.schemas() + [t.schema() for t in remote.values()]
 
     for hop in range(1, max_hops + 1):
         result.hops = hop
@@ -64,7 +67,7 @@ def run(
         result.prompt_tokens += turn.prompt_tokens
         result.completion_tokens += turn.completion_tokens
         result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
-        if _apply_turn(turn, messages, result, k, use_rerank):
+        if _apply_turn(turn, messages, result, k, use_rerank, remote):
             break
 
     result.sources = _unique_sources(result.sources)
@@ -99,7 +102,8 @@ def run(
         sources=len(result.sources),
     )
     try:
-        _log_answer(question, result, run_name, language, k, use_rerank, model)
+        mcp_names = sorted({name.split("__")[0] for name in remote})
+        _log_answer(question, result, run_name, language, k, use_rerank, model, mcp_names)
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
     return result
@@ -111,6 +115,7 @@ def _apply_turn(
     result: AgentResult,
     k: int | None = None,
     use_rerank: bool | None = None,
+    remote: dict | None = None,
 ) -> bool:
     if not turn.tool_calls:
         result.text = turn.text or ""
@@ -124,7 +129,11 @@ def _apply_turn(
     for tc in turn.tool_calls:
         log.info("agent.tool_call", tool=tc.function.name, arguments=tc.function.arguments)
         res = agent_tools.dispatch(
-            tc.function.name, tc.function.arguments, k=k, use_rerank=use_rerank
+            tc.function.name,
+            tc.function.arguments,
+            extra=remote,
+            k=k,
+            use_rerank=use_rerank,
         )
         result.sources.extend(res.meta.get("sources", []))
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": res.content})
@@ -148,7 +157,7 @@ def _context_from_messages(messages) -> str:
         for m in messages
         if isinstance(m, dict)
         and m.get("role") == "tool"
-        and not m["content"].startswith(chat.ERROR_PREFIX)
+        and not m["content"].startswith(errors.ERROR_PREFIX)
         and m["content"] != chat.NO_RESULTS
     )
 
@@ -161,6 +170,7 @@ def _log_answer(
     k: int | None = None,
     use_rerank: bool | None = None,
     model: str | None = None,
+    mcp_names: list[str] | None = None,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -190,6 +200,7 @@ def _log_answer(
                         config.settings.retrieval.distance_threshold, 3
                     ),
                     "k": k or config.settings.retrieval.results_limit,
+                    "mcp": mcp_names or [],
                 },
             },
             prompt_tokens=result.prompt_tokens,

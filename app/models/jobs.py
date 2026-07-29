@@ -21,10 +21,13 @@ class JobStatus(StrEnum):
 
 class Job(Base):
     __tablename__ = "jobs"
-    __table_args__ = (Index("idx_jobs_apply_since_status", "apply_since", "status"),)
+    __table_args__ = (
+        Index("idx_jobs_queue_status_apply_since", "queue", "status", "apply_since"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[str]
+    queue: Mapped[str] = mapped_column(default="default")
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, native_enum=False), default=JobStatus.new
     )

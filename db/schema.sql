@@ -199,7 +199,8 @@ CREATE TABLE public.jobs (
     apply_since timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    elapsed double precision
+    elapsed double precision,
+    queue text DEFAULT 'default'::text NOT NULL
 );
 
 
@@ -221,6 +222,47 @@ CREATE SEQUENCE public.jobs_id_seq
 --
 
 ALTER SEQUENCE public.jobs_id_seq OWNED BY public.jobs.id;
+
+
+--
+-- Name: mcp_integrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mcp_integrations (
+    id integer NOT NULL,
+    name character varying(64) NOT NULL,
+    url text NOT NULL,
+    status text DEFAULT 'disabled'::text NOT NULL,
+    allowed_tools jsonb DEFAULT '[]'::jsonb NOT NULL,
+    tool_schemas jsonb DEFAULT '{}'::jsonb NOT NULL,
+    auth jsonb,
+    timeout_s integer DEFAULT 30 NOT NULL,
+    max_result_chars integer DEFAULT 4000 NOT NULL,
+    last_checked_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: mcp_integrations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mcp_integrations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mcp_integrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mcp_integrations_id_seq OWNED BY public.mcp_integrations.id;
 
 
 --
@@ -425,6 +467,13 @@ ALTER TABLE ONLY public.jobs ALTER COLUMN id SET DEFAULT nextval('public.jobs_id
 
 
 --
+-- Name: mcp_integrations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mcp_integrations ALTER COLUMN id SET DEFAULT nextval('public.mcp_integrations_id_seq'::regclass);
+
+
+--
 -- Name: models id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -490,6 +539,22 @@ ALTER TABLE ONLY public.experiments
 
 ALTER TABLE ONLY public.jobs
     ADD CONSTRAINT jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mcp_integrations mcp_integrations_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mcp_integrations
+    ADD CONSTRAINT mcp_integrations_name_key UNIQUE (name);
+
+
+--
+-- Name: mcp_integrations mcp_integrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mcp_integrations
+    ADD CONSTRAINT mcp_integrations_pkey PRIMARY KEY (id);
 
 
 --
@@ -593,10 +658,10 @@ CREATE INDEX data_chunks_source_id_idx ON public.data_chunks USING btree (source
 
 
 --
--- Name: idx_jobs_apply_since_status; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_jobs_queue_status_apply_since; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_jobs_apply_since_status ON public.jobs USING btree (apply_since, status);
+CREATE INDEX idx_jobs_queue_status_apply_since ON public.jobs USING btree (queue, status, apply_since);
 
 
 --
@@ -685,4 +750,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260726000003'),
     ('20260726000004'),
     ('20260728000001'),
-    ('20260728000002');
+    ('20260728000002'),
+    ('20260728000003'),
+    ('20260729000001');

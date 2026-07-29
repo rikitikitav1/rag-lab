@@ -81,7 +81,7 @@ async def create_model(
 ):
     model = Model(name=request.name)
     session.add(model)
-    job_queue.add_job(session, "pull_llm_model", {"name": request.name})
+    job_queue.add_job(session, "pull_llm_model", {"name": request.name}, queue="io")
     return await commit_and_refresh(session, model)
 
 
@@ -98,7 +98,7 @@ async def delete_model(id: int, session: AsyncSession = Depends(get_session)):
 
     name = model.name
     await session.delete(model)
-    job_queue.add_job(session, "delete_llm_model", {"name": name})
+    job_queue.add_job(session, "delete_llm_model", {"name": name}, queue="io")
     await session.commit()
 
     return model

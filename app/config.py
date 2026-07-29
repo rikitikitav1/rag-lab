@@ -63,6 +63,15 @@ class PostgresCfg(BaseModel):
     user: str
 
 
+class McpIntegrationsCfg(BaseModel):
+    secret_env: list[str] = []
+
+    def secret(self, name: str) -> str:
+        if name not in self.secret_env:
+            return ""
+        return os.getenv(name, "")
+
+
 class AppConfig(BaseModel):
     retrieval: RetrievalCfg
     rerank: RerankCfg
@@ -74,6 +83,7 @@ class AppConfig(BaseModel):
     sources: SourcesCfg
     llm: LlmCfg
     postgres: PostgresCfg
+    mcp_integrations: McpIntegrationsCfg
 
 
 def _load(path: str) -> AppConfig:
@@ -91,6 +101,7 @@ def _load(path: str) -> AppConfig:
         sources=service["sources"],
         llm=raw["llm"],
         postgres=raw["postgres"],
+        mcp_integrations=raw.get("mcp_integrations", {}),
     )
 
 

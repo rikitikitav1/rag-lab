@@ -29,8 +29,10 @@ def evaluate(run_name=None, verbose=False) -> dict:
                 f"  faith: {ql.faithfulness} | relevance: {ql.relevance} | complete: {ql.completeness}\n"
             )
 
+    via_remote = [ql for ql in out_of_corpus if _has_remote_evidence(ql)]
+    refusal_pool = [ql for ql in out_of_corpus if not _has_remote_evidence(ql)]
     correct = sum(
-        1 for ql in out_of_corpus if (_num(ql.faithfulness) or 0) >= 7 or not ql.answered
+        1 for ql in refusal_pool if (_num(ql.faithfulness) or 0) >= 7 or not ql.answered
     )
     n = sum(1 for ql in in_corpus if _num(ql.faithfulness) is not None)
 
@@ -45,8 +47,13 @@ def evaluate(run_name=None, verbose=False) -> dict:
         "faithfulness_0_1": norm(faith),
         "relevance_0_1": norm(relevance),
         "completeness_0_1": norm(completeness),
-        "refusal_accuracy": f"{correct}/{len(out_of_corpus)}",
+        "refusal_accuracy": f"{correct}/{len(refusal_pool)}",
+        "answered_via_remote": len(via_remote),
     }
+
+
+def _has_remote_evidence(ql) -> bool:
+    return any(s["source"].startswith("mcp:") for s in (ql.sources or []))
 
 
 if __name__ == "__main__":

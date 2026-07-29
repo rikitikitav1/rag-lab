@@ -10,7 +10,11 @@ def evaluate(run_name=None):
     hits, rr_sum, misses = 0, 0.0, []
     for ql in in_corpus:
         expected = ql.question.marked_sources
-        got = [s["source"] for s in (ql.sources or [])]
+        got = [
+            s["source"]
+            for s in (ql.sources or [])
+            if not s["source"].startswith("mcp:")
+        ]
         rank = None
         for i, source in enumerate(got, 1):
             if any(exp in source for exp in expected):
