@@ -316,3 +316,45 @@ Pending: the +0.38 is a point estimate; paired CI / significance testing (in pro
 **Postscript - the multiple comparisons trap (found immediately).** Running the full winner-vs-each grid on the k-sweep (15 tests: 5 pairs × 3 axes) "found" two significant results that are almost certainly false positives: k=5 beating its neighbors k=6 (faith +0.35, p=0.026) and k=7 (faith +0.40, p=0.045) while being indistinguishable from the distant k=10 (p=0.37). That non-monotonic shape is what noise looks like, not what a retrieval-width effect looks like - and at 15 tests with α=0.05 one expects ~0.75 false alarms per grid. Bonferroni (0.05/15 ≈ 0.003) kills both, and grazes even the one honest-looking signal: **k=5 vs k=1 completeness +0.68, p=0.009** - a single chunk visibly hurts answer completeness, the only defensible per-pair conclusion in the sweep. Revised k-sweep verdict: avoid k=1; between k=3 and k=10 no difference is provable at n=100; keep k=5 as the cheap middle. Lesson stacked on the lesson: intervals fixed the point-estimate problem, and immediately exposed the next one - the more comparisons you look at, the stricter your threshold must be, or something "significant" will always turn up.
 
 **Full-matrix verdict (all 15 k-pairs × 3 axes, 45 tests).** One coherent signal survives scrutiny: **k=1 hurts completeness**, losing to every k≥5 (+0.51..+0.68, p=0.009..0.047) with k=3 pointing the same way - four same-direction significant pairs plus a plausible mechanism outweigh the fact that no single pair clears Bonferroni. The two k=5-beats-neighbors faithfulness hits are non-monotonic (k5≈k10), mechanism-free, and dismissed as multiple-comparison noise. Everything between k=3 and k=10 is a statistical plateau on every axis at n=100. Final answer to "which k is best": provably not 1; within 3..10 undecidable; k=5 stays as the plateau middle with the best point estimates (all deltas vs k=3 positive but unproven). To actually separate 5 from 3, the lever is sample size, not a cleverer test: n≈500-1000 shrinks the CIs ~3x - exactly the multi-fidelity step (search at 100, confirm at 1000) the experiment design already anticipates.
+
+## 2026-07-29 - Judge vs judge: qwen2.5 7b against 32b on the same 100 answers (Spearman)
+
+Question: how much of our metric is the ruler, not the thing measured? Cheap surrogate for human
+calibration (audit item): snapshot the 7b judge's verdicts on `ss_70b_k5`, null the axes, re-judge
+the identical answers with qwen2.5:32b, correlate.
+
+| axis | Spearman | mean 7b -> 32b | exact match |
+|------|----------|----------------|-------------|
+| faithfulness | 0.30 | 7.60 -> 9.35 | 26% |
+| relevance | 0.52 | 8.51 -> 9.23 | 59% |
+| completeness | **0.71** | 6.09 -> 5.85 | 60% |
+
+Reading:
+- **Completeness is the most judge-stable axis** - the only one with an anchor (reference answer).
+  Rankings and means both survive the judge swap.
+- **Faithfulness is the most judge-dependent.** The 32b judge pushes almost everything to 9-10
+  (ceiling effect); with the scores clumped, ranks collapse into ties and rank correlation has
+  nothing to grab. 7b was harsher and more discriminating - a bigger judge is not automatically
+  a better ruler.
+- Practical rule recorded: **absolute axis values do not transfer between judges; A/B comparisons
+  under one judge remain valid.** "We changed the judge and faithfulness jumped +1.75 out of thin
+  air" is the cleanest illustration yet of why metrics only compare within one procedure.
+
+## 2026-07-29 - Agent becomes an MCP client (DeepWiki first) - comparability boundary
+
+The agent's toolbox now extends with tools from registered external MCP servers (see README, MCP
+client section). First live run: a question about `langchain-ai/langchain` (absent from the corpus) -
+the agent recognized the gap on hop 1, called `deepwiki__ask_question` on hop 2, answered with
+`mcp:deepwiki__ask_question` as the recorded source. The CRAG arc, step 1: the agent MAY ask outside.
+
+Measurement layer was updated in the same change (external audit, fix-loop in the branch):
+- `hit_at_k`/`MRR` rank only corpus sources - `mcp:*` evidence is excluded from retrieval metrics
+  (it stays in the log as provenance).
+- refusal semantics split: out-of-corpus questions with no remote evidence still expect a refusal
+  (`refusal_accuracy`); ones answered from remote evidence are excluded from that pool and counted
+  separately as `answered_via_remote`.
+- every agent log now snapshots the active integrations at run time (`metrics.config.mcp`).
+
+**Comparability boundary: from this change on, the agent has an external fallback. Runs before and
+after are not comparable on refusal or retrieval axes without an explicit caveat; check
+`metrics.config.mcp` to tell which world a run belongs to.**
