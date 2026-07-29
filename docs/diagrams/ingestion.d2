@@ -1,0 +1,38 @@
+direction: down
+
+trigger: "index_data job (bootstrap when corpus is empty, or on demand)"
+
+sources: Source registry (reader pattern) {
+  direction: right
+  notes: notes\nmarkdown, ru
+  interview: Devinterview repos\n~170 x README, en
+  hooks: "each source class: discover / category_for / read / postprocess"
+}
+
+idem: "Idempotent per source: upsert data_source by name, delete its old chunks"
+
+chunk: chunk_markdown\nsplit by H2 + recursive\nmax 1024 chars
+cat: "path -> ltree category"
+embed: Batch embed\nbge-m3 via /api/embed {
+  shape: hexagon
+}
+insert: Bulk insert data_chunks {
+  shape: cylinder
+}
+tsv: "FTS trigger: to_tsvector per language (rus/eng)" {
+  style.stroke-dash: 3
+}
+
+questions: embed_questions job\nquestion bank vectors {
+  style.stroke-dash: 3
+}
+
+trigger -> sources
+sources -> idem -> chunk -> cat -> embed -> insert
+insert -> tsv: on write
+trigger -> questions
+
+note: |md
+  Corpus quality rule learned the hard way: RAG is exactly as good
+  as the corpus is clean. Re-running any source is safe by design.
+|

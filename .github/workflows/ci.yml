@@ -20,6 +20,18 @@ jobs:
       - run: uv sync --frozen --all-groups
       - run: uv run pytest -q
 
+  diagrams:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install d2
+        run: curl -fsSL https://d2lang.com/install.sh | sh -s -- --version v0.7.1
+      - name: render and check freshness
+        run: |
+          ./scripts/render_diagrams.sh
+          git diff --exit-code -- docs/diagrams/ \
+            || { echo "::error::diagrams are stale, run scripts/render_diagrams.sh"; exit 1; }
+
   security:
     runs-on: ubuntu-latest
     steps:

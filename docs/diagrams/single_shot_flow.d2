@@ -1,0 +1,51 @@
+direction: down
+
+q: POST /v1/chat/question
+embed: "Embed query (bge-m3, 1024d)"
+
+retrieval: Hybrid retrieval (one SQL query) {
+  direction: right
+  vector: vector CTE\ntop-N by cosine\ndistance
+  keyword: keyword CTE\nFTS per-language
+  rrf: "RRF merge\n1/(60+rank)"
+  vector -> rrf
+  keyword -> rrf
+}
+
+threshold: "distance threshold (absolute quality gate)"
+gate: Any rows left?
+
+rerank_q: "rerank enabled?\n(default off, per-run override)"
+rerank: Cross-encoder rerank\nbge-reranker-v2-m3\ncandidates 20 -> top k {
+  style.stroke-dash: 3
+}
+
+ctx: "Build context: chunks + source markers"
+gen: "Generate (llama3.1:8b, temp 0.1)" {
+  shape: hexagon
+}
+answer: Answer + sources {
+  style.fill: "#d4edda"
+}
+refuse: "\"No relevant documents found.\"\nhonest refusal, no LLM call" {
+  style.fill: "#fff3cd"
+}
+log: question_log:\nanswer, context, sources, config {
+  shape: page
+}
+
+q -> embed -> retrieval -> threshold -> gate
+gate -> refuse: no
+gate -> rerank_q: yes
+rerank_q -> rerank: on
+rerank_q -> ctx: off
+rerank -> ctx
+ctx -> gen -> answer
+answer -> log
+refuse -> log
+
+note: |md
+  Single-shot is deliberately dumb: retrieve once, generate once,
+  no tool calls, no external fallback. It is the measurable
+  baseline the agent pipeline is compared against.
+|

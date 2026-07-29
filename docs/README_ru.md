@@ -149,6 +149,18 @@ curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -
 - `GET /v1/question-log`, `GET /v1/question-log/{id}` (логи ответов; фильтры вкл. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; детально с context)
 - `GET /v1/job`, `GET /v1/job/{id}` (джобы + elapsed), `POST /v1/job/{id}/cancel` (отменяет джобу и её зависимый judge, кооперативный стоп для запущенного прогона)
 
+## Архитектура
+
+![Архитектура](diagrams/architecture.svg)
+
+![Single-shot: гибридный ретривал, порог, реранк](diagrams/single_shot_flow.svg)
+
+![Индексация](diagrams/ingestion.svg)
+
+![Eval-конвейер](diagrams/eval_pipeline.svg)
+
+Диаграммы - D2-исходники в `docs/diagrams/`, рендер `scripts/render_diagrams.sh`; CI падает, если закоммиченный SVG разошелся с исходником.
+
 ## MCP
 
 MCP-сервер (Model Context Protocol) примонтирован на `/mcp` (streamable HTTP) и отдаёт корпус любому MCP-клиенту (Claude Desktop, Cursor, IDE-агенты). Построен на standalone `fastmcp`, переиспользует те же примитивы поиска, что REST/agent. Тулы:
@@ -166,6 +178,10 @@ MCP-сервер (Model Context Protocol) примонтирован на `/mcp`
 ### MCP-клиент: агент потребляет внешние серверы
 
 Лаборатория теперь обе стороны протокола: свой MCP-сервер выше и MCP-*клиент* ниже. Внешние hosted-серверы регистрируются как `McpIntegration`, их тулы попадают в тулбокс агента рядом с `search_corpus` под неймспейсом `integration__tool` (например `deepwiki__ask_question`). Агент сам решает на каждом хопе, идти ли за пределы корпуса; успешный внешний вызов пишется источником `mcp:` (провенанс), упавший деградирует в строку ошибки.
+
+![Флоу агента с внешним fallback](diagrams/agent_flow.svg)
+
+![Стейт-машина интеграции](diagrams/mcp_state.svg)
 
 Жизненный цикл через `/v1/mcp_integration`: CRUD с фильтрами; новые интеграции стартуют `disabled`, стейт-машина `disabled/active/unreachable` разделяет намерение оператора и наблюдаемое здоровье (пробы переключают только `active <-> unreachable`). `POST /{id}/discover` кэширует снапшот схем тулов в БД - агент собирает тулы из замороженного кэша (ноль сети на старте рана, подмена описания на сервере не долетает до промпта молча). `POST /{id}/probe` - живой пинг, `GET /{id}/health` - дешёвое чтение состояния; health-джоба на каждый create/update уходит в io-лейн очереди и не ждёт GPU-джобы. `allowed_tools` - явный allowlist: discover показывает каталог, человек выбирает, что реально видит 8B-модель.
 

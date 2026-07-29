@@ -1,0 +1,29 @@
+direction: right
+
+disabled: disabled {
+  style.fill: "#e2e3e5"
+}
+active: active {
+  style.fill: "#d4edda"
+}
+unreachable: unreachable {
+  style.fill: "#f8d7da"
+}
+
+start: "" {
+  shape: circle
+  width: 20
+}
+
+start -> disabled: created (always)
+disabled -> active: PUT (operator)
+active -> disabled: PUT (operator)
+unreachable -> disabled: PUT (operator)
+active -> unreachable: probe failed {style.stroke-dash: 3}
+unreachable -> active: probe ok {style.stroke-dash: 3}
+
+legend: |md
+  Solid: operator intent (API).
+  Dashed: observed health (probe / health job).
+  Probes never touch `disabled`.
+|

@@ -60,6 +60,12 @@ The first `up` pulls ~16 GB of models and builds the index (~5-10 min, watch `do
 
 Full hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own questions, browsing logs) and the complete command reference: **[docs/use_cases.md](docs/use_cases.md)**.
 
+## Architecture
+
+![Architecture](docs/diagrams/architecture.svg)
+
+Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagrams.sh`; CI fails if a committed SVG drifts from its source.
+
 ## Compose services
 
 | Service | Role |
@@ -86,6 +92,8 @@ Chat and search:
 - `POST /v1/agent/question` (ReAct agent answer; optional `max_hops`, `language`, and `debug` for the full message trace)
 - `GET /v1/categories` (category tree with chunk counts)
 
+![Single-shot flow: hybrid retrieval, threshold, optional rerank](docs/diagrams/single_shot_flow.svg)
+
 Model lifecycle:
 - `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (create enqueues a pull), `DELETE /v1/model/{id}` (409 if assigned to a role)
 - `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role)
@@ -99,6 +107,8 @@ Eval platform:
 - `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops` or `model`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
+
+![Eval pipeline](docs/diagrams/eval_pipeline.svg)
 
 Experiments (first-class entity over the raw sweep route):
 - `POST /v1/experiment` (creates the experiment - dataset + deterministic seed-based sample / procedure snapshot / varied param - and enqueues the run series), `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`
@@ -170,11 +180,15 @@ A second, separate ops server is mounted at `/mcp-ops` - an eval control plane k
 
 The lab is both sides of the protocol: its own MCP server above, and an MCP *client* below. External hosted MCP servers are registered as `McpIntegration` rows and their tools join the agent's toolbox next to `search_corpus`, namespaced `integration__tool` (e.g. `deepwiki__ask_question`). The agent decides per hop whether to look outside the corpus; a successful remote call is recorded as an `mcp:` source (provenance), a failed one degrades to an error string the agent can route around.
 
+![Agent flow with remote fallback](docs/diagrams/agent_flow.svg)
+
 Registry lifecycle via `/v1/mcp_integration`:
 - CRUD with filters; new integrations start `disabled`, a state machine (`disabled/active/unreachable`) separates operator intent from observed health (probes flip `active <-> unreachable`, never touch `disabled`).
 - `POST /{id}/discover` - fetch the server's tool list, cache name/description/schema snapshots in the DB. The agent builds tools from this frozen cache (no network on run start, and a later description swap on the server side does not silently reach the LLM prompt - discover again to refresh).
 - `POST /{id}/probe` - live ping writing `last_checked_at/last_error`; `GET /{id}/health` - cheap read of the stored state. A `check_mcp_health` job fires on every create/update (io queue lane, so it never waits behind GPU jobs).
 - `allowed_tools` is an explicit allowlist: discovery shows the catalog, a human picks what the 8B model actually sees. Tool descriptions are truncated on cache; results are truncated to `max_result_chars`.
+
+![McpIntegration state machine](docs/diagrams/mcp_state.svg)
 
 Auth per integration is declared as `{"type": "bearer", "token_env": "HF_TOKEN"}` or `{"type": "header", "header": "...", "value_env": "..."}` - the DB stores only environment variable *names*; values come from the environment and only for variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`).
 
