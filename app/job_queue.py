@@ -13,26 +13,32 @@ class ClaimedJob:
     options: dict
 
 
-def enqueue(type: str, options: dict | None = None) -> int:
+def enqueue(type: str, options: dict | None = None, queue: str = "default") -> int:
     with Session() as session:
-        job = Job(type=type, options=options or {})
+        job = Job(type=type, options=options or {}, queue=queue)
         session.add(job)
         session.commit()
         return job.id
 
 
-def add_job(session, type: str, options: dict | None = None) -> Job:
+def add_job(
+    session, type: str, options: dict | None = None, queue: str = "default"
+) -> Job:
     # stage a job in the caller's transaction (caller commits); async-safe: .add() is sync
-    job = Job(type=type, options=options or {})
+    job = Job(type=type, options=options or {}, queue=queue)
     session.add(job)
     return job
 
 
-def claim_next() -> ClaimedJob | None:
+def claim_next(queues: list[str]) -> ClaimedJob | None:
     with Session() as session:
         job = session.scalars(
             select(Job)
-            .where(Job.status == JobStatus.new, Job.apply_since <= func.now())
+            .where(
+                Job.status == JobStatus.new,
+                Job.queue.in_(queues),
+                Job.apply_since <= func.now(),
+            )
             .order_by(Job.apply_since)
             .with_for_update(skip_locked=True)
             .limit(1)

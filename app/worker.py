@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from datetime import timedelta
 
@@ -13,10 +14,11 @@ MAX_ATTEMPTS = 3
 
 Deferred = job_handlers.Deferred
 HANDLERS = job_handlers.HANDLERS
+QUEUES = [q.strip() for q in os.getenv("WORKER_QUEUES", "default,io").split(",") if q.strip()]
 
 
-def run_once() -> bool:
-    claimed = job_queue.claim_next()
+def run_once(queues: list[str]) -> bool:
+    claimed = job_queue.claim_next(queues)
     if claimed is None:
         return False
 
@@ -61,12 +63,25 @@ def run_once() -> bool:
     return True
 
 
+def _loop(queues: list[str]) -> None:
+    while True:
+        try:
+            busy = run_once(queues)
+        except Exception as e:
+            log.error("worker.loop_error", queues=queues, error=str(e))
+            busy = False
+        if not busy:
+            time.sleep(POLL_INTERVAL)
+
+
 def main() -> None:
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
-    log.info("worker.start", handlers=list(HANDLERS))
-    while True:
-        if not run_once():
-            time.sleep(POLL_INTERVAL)
+    if not QUEUES:
+        raise SystemExit("WORKER_QUEUES is empty")
+    log.info("worker.start", queues=QUEUES, handlers=list(HANDLERS))
+    for lane in QUEUES[1:]:
+        threading.Thread(target=_loop, args=([lane],), daemon=True).start()
+    _loop([QUEUES[0]])
 
 
 if __name__ == "__main__":

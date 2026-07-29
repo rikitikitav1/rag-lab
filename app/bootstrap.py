@@ -56,7 +56,7 @@ def _reconcile_with_ollama() -> None:
         session.commit()
 
     for name in to_pull:
-        job_queue.enqueue("pull_llm_model", {"name": name})
+        job_queue.enqueue("pull_llm_model", {"name": name}, queue="io")
         log.info("bootstrap.pull_enqueued", name=name)
 
 

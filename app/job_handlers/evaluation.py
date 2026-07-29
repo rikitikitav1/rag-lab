@@ -16,7 +16,7 @@ def _require_model_ready(name: str) -> None:
         if model is None:
             session.add(Model(name=name))
             session.commit()
-            job_queue.enqueue("pull_llm_model", {"name": name})
+            job_queue.enqueue("pull_llm_model", {"name": name}, queue="io")
             log.info("eval_run.model_pull_enqueued", model=name)
             raise Deferred(30)
     if model.status != Status.ready:
