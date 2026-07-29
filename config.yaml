@@ -211,3 +211,8 @@ postgres:
   port: 5432
   dbname: postgres
   user: postgres
+
+mcp_integrations:
+  secret_env:
+    - HF_TOKEN
+    - CONTEXT7_API_KEY

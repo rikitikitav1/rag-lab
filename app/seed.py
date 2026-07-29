@@ -9,6 +9,7 @@ from pathlib import Path
 import config
 import logging_setup
 from models.eval import Question
+from models.mcp_integration import McpIntegration
 from models.registry import Prompt, Purpose
 from orm.sync_db import Session
 from sqlalchemy import exists, select
@@ -152,10 +153,56 @@ def seed_questions() -> None:
     log.info("seed.questions", total=len(rows))
 
 
+MCP_INTEGRATIONS = [
+    {
+        "name": "deepwiki",
+        "url": "https://mcp.deepwiki.com/mcp",
+        "auth": None,
+    },
+    {
+        "name": "hf",
+        "url": "https://huggingface.co/mcp",
+        "auth": {"type": "bearer", "token_env": "HF_TOKEN"},
+    },
+    {
+        "name": "context7",
+        "url": "https://mcp.context7.com/mcp",
+        "auth": {
+            "type": "header",
+            "header": "CONTEXT7_API_KEY",
+            "value_env": "CONTEXT7_API_KEY",
+        },
+    },
+]
+
+
+def seed_mcp_integrations() -> None:
+    with Session() as session:
+        rows = session.execute(
+            select(McpIntegration.name, McpIntegration.url)
+        ).all()
+        names = {row.name for row in rows}
+        urls = {row.url for row in rows}
+        fresh = [
+            item
+            for item in MCP_INTEGRATIONS
+            if item["name"] not in names and item["url"] not in urls
+        ]
+        if fresh:
+            session.execute(pg_insert(McpIntegration).values(fresh))
+            session.commit()
+    log.info(
+        "seed.mcp_integrations",
+        seeded=len(fresh),
+        skipped=len(MCP_INTEGRATIONS) - len(fresh),
+    )
+
+
 def main() -> None:
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
     seed_prompts()
     seed_questions()
+    seed_mcp_integrations()
 
 
 if __name__ == "__main__":

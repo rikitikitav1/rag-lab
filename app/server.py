@@ -12,6 +12,7 @@ from api.v1 import (
     experiment,
     job,
     llm_model,
+    mcp_integration,
     model_role,
     prompt,
     question_log,
@@ -77,3 +78,4 @@ app.include_router(source.router, prefix="/v1")
 app.include_router(questions.router, prefix="/v1")
 app.include_router(job.router, prefix="/v1")
 app.include_router(experiment.router, prefix="/v1")
+app.include_router(mcp_integration.router, prefix="/v1")
