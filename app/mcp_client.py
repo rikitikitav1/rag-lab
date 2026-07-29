@@ -1,8 +1,10 @@
 import time
 
 import config
+import errors
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from mcp.types import TextContent
 
 
 def auth_headers(integration) -> dict:
@@ -31,3 +33,13 @@ async def ping(integration) -> float:
 async def list_tools(integration) -> list:
     async with build_client(integration) as client:
         return await client.list_tools()
+
+
+async def call_tool(integration, tool, args) -> str:
+    try:
+        async with build_client(integration) as client:
+            result = await client.call_tool(tool, arguments=args)
+        text = "\n".join(block.text for block in result.content if isinstance(block, TextContent))
+        return text[: integration.max_result_chars]
+    except Exception as e:
+        return f"{errors.ERROR_PREFIX}tool '{tool}' failed: {type(e).__name__}"

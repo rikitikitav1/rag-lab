@@ -24,7 +24,6 @@ log = logging_setup.get_logger(__name__)
 IGNORED_SOURCES = config.settings.ignored_sources
 
 NO_RESULTS = "No relevant documents found."
-ERROR_PREFIX = "error: "
 
 
 @dataclass
