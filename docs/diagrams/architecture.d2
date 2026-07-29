@@ -1,0 +1,51 @@
+direction: right
+
+client: Client {
+  shape: person
+}
+
+lab: rag-lab (docker compose) {
+  api: FastAPI\n(uvicorn --reload) {
+    rest: REST /v1/*
+    mcp: MCP /mcp
+    ops: MCP /mcp-ops
+  }
+
+  worker: Worker {
+    default: lane "default"\n(GPU jobs)
+    io: lane "io"\n(network jobs)
+  }
+
+  postgres: PostgreSQL\n+ pgvector {
+    shape: cylinder
+  }
+
+  ollama: Ollama (GPU) {
+    gen: llama3.1:8b
+    judge: qwen2.5:7b
+    embed: bge-m3
+  }
+}
+
+external: External MCP servers {
+  deepwiki: DeepWiki
+  hf: Hugging Face
+  context7: Context7
+}
+
+client -> lab.api.rest: HTTP
+client -> lab.api.mcp: MCP clients\n(Claude, Cursor)
+
+lab.api -> lab.postgres: ORM (sync + async)
+lab.api -> lab.postgres: enqueue jobs {style.stroke-dash: 3}
+lab.worker -> lab.postgres: claim jobs\nFOR UPDATE SKIP LOCKED
+
+lab.worker.default -> lab.ollama: generate / judge / embed
+lab.worker.io -> lab.ollama: model pull / delete\n(ollama downloads from hf.co / registry)
+lab.api -> lab.ollama: chat, agent hops
+
+lab.api -> external: discover / probe
+lab.worker.io -> external: health jobs
+lab.api -> external: agent tool calls\n(namespaced integration__tool) {
+  style.stroke-width: 3
+}

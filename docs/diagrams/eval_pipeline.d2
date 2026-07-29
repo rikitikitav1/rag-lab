@@ -1,0 +1,40 @@
+direction: right
+
+exp: POST /v1/experiment {
+  shape: hexagon
+}
+
+runs: "eval_run jobs (one per param value: k / max_hops / model)" {
+  r1: run k=01
+  r2: run k=05
+  r3: run k=10
+}
+
+logs: question_logs\n(answer, context, sources) {
+  shape: cylinder
+}
+
+judge: judge_answers job\nLLM judge, 0-10 per axis {
+  axes: faithfulness / relevance / completeness
+}
+
+agg: Experiment aggregator {
+  composite: RRF composite\n(generation axes only)
+  pairwise: pairwise stats\nbootstrap CI + Wilcoxon\n+ Bonferroni flags
+}
+
+results: results.composite\nwinner + significance {
+  shape: page
+}
+
+exp -> runs: enqueue (find-or-create\nmissing models)
+runs -> logs
+logs -> judge
+judge -> agg: live trigger on\nlast run judged
+agg -> results
+
+note: |md
+  Retrieval axes (hit@k, MRR) stay out of the
+  composite: hit@k is monotonic in k and
+  would confound the fusion.
+|

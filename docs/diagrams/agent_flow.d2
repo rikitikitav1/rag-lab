@@ -1,0 +1,57 @@
+direction: down
+
+q: POST /v1/agent/question
+toolbox: Build toolbox {
+  static: search_corpus
+  remote: remote tools from\nactive integrations\n(allowlist x schema cache)
+}
+hop1: "Hop 1: LLM" {
+  shape: hexagon
+}
+search: search_corpus
+hit: Corpus hit?
+answer_corpus: Answer from corpus\nsources = chunks {
+  style.fill: "#d4edda"
+}
+hop2: "Hop 2: LLM decides" {
+  shape: hexagon
+}
+remote_call: "deepwiki__ask_question" {
+  shape: hexagon
+}
+remote_ok: Answer from remote\nsource = "mcp:deepwiki__ask_question" {
+  style.fill: "#d4edda"
+}
+remote_err: "\"error: tool ... failed: <Type>\"" {
+  style.fill: "#f8d7da"
+}
+refuse: Honest refusal\nsuccess = false {
+  style.fill: "#fff3cd"
+}
+log: "Log: sources, context,\nmetrics.config.mcp snapshot" {
+  shape: page
+}
+metrics: |md
+  ## Measured per run
+  - generation: faithfulness / relevance / completeness (LLM judge, 0-10)
+  - retrieval: hit@k / MRR over corpus sources (mcp:* excluded)
+  - refusal accuracy over questions with no remote evidence
+  - answered_via_remote: counted separately
+| {
+  shape: page
+}
+
+q -> toolbox -> hop1
+hop1 -> search: tool call
+search -> hit
+hit -> answer_corpus: found
+hit -> hop2: empty
+hop2 -> remote_call: ask outside
+hop2 -> refuse: give up
+remote_call -> remote_ok: ok (truncated to\nmax_result_chars)
+remote_call -> remote_err: server down / timeout
+remote_err -> hop2: LLM sees the error,\nretries or refuses
+answer_corpus -> log
+remote_ok -> log
+refuse -> log
+log -> metrics
