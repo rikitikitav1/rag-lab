@@ -169,11 +169,40 @@ def answer(
     model: str | None = None,
 ) -> Answer:
     start = time.perf_counter()
-    lang = _resolve_language(question, language)
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
     k = k or config.settings.retrieval.results_limit
     rows = _retrieve_rows(question, category, k, use_rerank)
+    return answer_from_rows(
+        question,
+        rows,
+        add_context=add_context,
+        run_name=run_name,
+        use_rerank=use_rerank,
+        language=language,
+        model=model,
+        k=k,
+        started_at=start,
+    )
+
+
+def answer_from_rows(
+    question: str,
+    rows,
+    add_context=False,
+    run_name: str | None = None,
+    use_rerank: bool | None = None,
+    language: str | None = None,
+    model: str | None = None,
+    k: int | None = None,
+    started_at: float | None = None,
+    phased: bool = False,
+) -> Answer:
+    start = started_at if started_at is not None else time.perf_counter()
+    lang = _resolve_language(question, language)
+    if use_rerank is None:
+        use_rerank = config.settings.rerank.enabled
+    k = k or config.settings.retrieval.results_limit
 
     context = format_chunks(rows) if rows else None
     if not context:
@@ -205,7 +234,7 @@ def answer(
     ans.elapsed = round(time.perf_counter() - start, 3)
 
     try:
-        _log_answer(question, ans, lang, context, run_name, use_rerank, k)
+        _log_answer(question, ans, lang, context, run_name, use_rerank, k, phased)
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
 
@@ -232,7 +261,7 @@ def _language_directive(language: str) -> str:
 
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
-    use_rerank=False, k=None,
+    use_rerank=False, k=None, phased=False,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -255,6 +284,7 @@ def _log_answer(
                     "rerank": use_rerank,
                     "distance_threshold": ans.metrics.distance_threshold,
                     "k": k,
+                    "phased": phased,
                 }
             },
             prompt_tokens=ans.metrics.prompt_tokens,
