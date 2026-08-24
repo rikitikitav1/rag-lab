@@ -131,6 +131,7 @@ def _phase_generate(
     k: int,
     model: str | None,
     job_id: int | None,
+    rerank_device: str | None = None,
 ) -> tuple[int, bool]:
     answered = 0
     for text, rows in retrieved:
@@ -147,6 +148,7 @@ def _phase_generate(
                 k=k,
                 model=model,
                 phased=True,
+                rerank_device=rerank_device,
             )
             answered += 1
         except Exception as e:
@@ -164,6 +166,7 @@ def run_phased(
     job_id: int | None,
 ) -> tuple[int, bool]:
     k = k or config.settings.retrieval.results_limit
+    rerank_device = None
 
     started = time.perf_counter()
     retrieved = _phase_retrieve(texts, k, use_rerank)
@@ -180,6 +183,7 @@ def run_phased(
         retrieved = _phase_rerank(retrieved, k)
         log.info("eval_run.phase", name="rerank", n=len(retrieved),
                  elapsed=round(time.perf_counter() - started, 1))
+        rerank_device = rerank.device()
         rerank.unload()
 
         if job_id is not None and job_queue.is_cancelled(job_id):
@@ -187,7 +191,7 @@ def run_phased(
 
     started = time.perf_counter()
     answered, cancelled = _phase_generate(
-        retrieved, run_name, use_rerank, language, k, model, job_id
+        retrieved, run_name, use_rerank, language, k, model, job_id, rerank_device
     )
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))

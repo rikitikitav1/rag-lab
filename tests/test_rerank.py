@@ -32,3 +32,29 @@ def test_device_reports_the_loaded_model_not_the_intent(monkeypatch):
     loaded = type("M", (), {"model": type("Inner", (), {"device": "cpu"})()})()
     monkeypatch.setattr(rerank, "_reranker", loaded)
     assert rerank.device() == "cpu"
+
+
+def test_cuda_oom_falls_back_to_cpu(monkeypatch):
+    import torch
+
+    calls = []
+
+    def boom():
+        raise torch.cuda.OutOfMemoryError("no room")
+
+    class _Cpu:
+        def __init__(self, name, device=None, **kw):
+            calls.append(device)
+
+        def predict(self, pairs):
+            return [0.5] * len(pairs)
+
+    monkeypatch.setattr(rerank, "_model", boom)
+    monkeypatch.setattr(rerank, "unload", lambda: calls.append("unload"))
+    monkeypatch.setattr("sentence_transformers.CrossEncoder", _Cpu)
+
+    scores = rerank.score_pairs([("q", "chunk")])
+
+    assert scores == [0.5]
+    assert calls == ["unload", "cpu"]
+    assert isinstance(rerank._reranker, _Cpu)

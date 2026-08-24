@@ -197,6 +197,7 @@ def answer_from_rows(
     k: int | None = None,
     started_at: float | None = None,
     phased: bool = False,
+    rerank_device: str | None = None,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
     lang = _resolve_language(question, language)
@@ -234,7 +235,9 @@ def answer_from_rows(
     ans.elapsed = round(time.perf_counter() - start, 3)
 
     try:
-        _log_answer(question, ans, lang, context, run_name, use_rerank, k, phased)
+        _log_answer(
+            question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device
+        )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
 
@@ -259,10 +262,10 @@ def _language_directive(language: str) -> str:
     return f"Respond in {_LANG_NAMES.get(language, language)}."
 
 
-def _config_snapshot(use_rerank, k, phased, distance_threshold) -> dict:
+def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device=None) -> dict:
     return {
         "rerank": use_rerank,
-        "rerank_device": _rerank_device() if use_rerank else None,
+        "rerank_device": (rerank_device or _rerank_device()) if use_rerank else None,
         "distance_threshold": distance_threshold,
         "k": k,
         "phased": phased,
@@ -280,7 +283,7 @@ def _rerank_device() -> str | None:
 
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
-    use_rerank=False, k=None, phased=False,
+    use_rerank=False, k=None, phased=False, rerank_device=None,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -300,7 +303,7 @@ def _log_answer(
             },
             metrics={
                 "config": _config_snapshot(
-                    use_rerank, k, phased, ans.metrics.distance_threshold
+                    use_rerank, k, phased, ans.metrics.distance_threshold, rerank_device
                 )
             },
             prompt_tokens=ans.metrics.prompt_tokens,

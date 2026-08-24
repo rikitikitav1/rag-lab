@@ -63,7 +63,8 @@ def test_answer_from_rows_empty_is_a_refusal(monkeypatch):
 def test_answer_from_rows_logs_phased_flag(monkeypatch):
     logged = _stub_generation(monkeypatch)
     chat.answer_from_rows("q", [_row("a.md")], k=5, phased=True)
-    assert logged["args"][-1] is True
+    phased_arg = logged["args"][7]
+    assert phased_arg is True
 
 
 def test_answer_from_rows_keeps_caller_start(monkeypatch):

@@ -189,3 +189,33 @@ def test_cancel_between_phases_skips_rerank_and_generation(monkeypatch):
 
     assert (answered, cancelled) == (0, True)
     assert not [c for c in calls if c[0] in ("rerank", "generate")]
+
+
+def test_phased_snapshot_keeps_the_device_used_during_rerank(monkeypatch):
+    _stub_phases(monkeypatch)
+    logged = []
+    monkeypatch.setattr(
+        runner.chat, "answer_from_rows",
+        lambda text, rows, **kw: logged.append(kw.get("rerank_device")),
+    )
+    monkeypatch.setattr(runner.rerank, "device", lambda: "cpu")
+
+    runner.run_phased(
+        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None
+    )
+
+    assert logged == ["cpu", "cpu"]
+
+
+def test_rerank_phase_accepts_numpy_scores(monkeypatch):
+    import numpy as np
+
+    retrieved = [("q1", _scored_rows("a", [0.1, 0.2])), ("q2", _scored_rows("b", [0.3]))]
+    monkeypatch.setattr(
+        runner.rerank, "score_pairs",
+        lambda pairs: np.asarray([1.0, 9.0, 5.0], dtype=np.float32),
+    )
+
+    out = runner._phase_rerank(retrieved, k=1)
+
+    assert [rows[0][0] for _, rows in out] == ["chunk a 1", "chunk b 0"]
