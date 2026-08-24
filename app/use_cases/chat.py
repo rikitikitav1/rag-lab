@@ -259,6 +259,25 @@ def _language_directive(language: str) -> str:
     return f"Respond in {_LANG_NAMES.get(language, language)}."
 
 
+def _config_snapshot(use_rerank, k, phased, distance_threshold) -> dict:
+    return {
+        "rerank": use_rerank,
+        "rerank_device": _rerank_device() if use_rerank else None,
+        "distance_threshold": distance_threshold,
+        "k": k,
+        "phased": phased,
+    }
+
+
+def _rerank_device() -> str | None:
+    try:
+        import rerank
+
+        return rerank.device()
+    except Exception:
+        return None
+
+
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False,
@@ -280,12 +299,9 @@ def _log_answer(
                 "generate_answer": prompt_repo.active_version(Purpose.generate_answer)
             },
             metrics={
-                "config": {
-                    "rerank": use_rerank,
-                    "distance_threshold": ans.metrics.distance_threshold,
-                    "k": k,
-                    "phased": phased,
-                }
+                "config": _config_snapshot(
+                    use_rerank, k, phased, ans.metrics.distance_threshold
+                )
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

@@ -70,7 +70,7 @@ services:
     environment:
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
       WORKER_QUEUES: default,io
-      RERANK_DEVICE: cpu
+      RERANK_DEVICE: ${RERANK_DEVICE:-cuda}
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
     depends_on:

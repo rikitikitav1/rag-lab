@@ -5,14 +5,17 @@ from operator import itemgetter
 from typing import TYPE_CHECKING
 
 import config
+import logging_setup
 
 if TYPE_CHECKING:
     from sentence_transformers import CrossEncoder
 
+log = logging_setup.get_logger(__name__)
+
 _reranker: CrossEncoder | None = None
 
 
-def _device() -> str:
+def device() -> str:
     import os
 
     import torch
@@ -29,10 +32,10 @@ def _model() -> CrossEncoder:
         import torch
         from sentence_transformers import CrossEncoder
 
-        device = _device()
-        kwargs = {"torch_dtype": torch.float16} if device == "cuda" else {}
+        target = device()
+        kwargs = {"torch_dtype": torch.float16} if target == "cuda" else {}
         _reranker = CrossEncoder(
-            config.settings.rerank.model, device=device, model_kwargs=kwargs
+            config.settings.rerank.model, device=target, model_kwargs=kwargs
         )
 
     return _reranker
@@ -47,8 +50,15 @@ def _predict(pairs: list) -> list:
     except torch.cuda.OutOfMemoryError:
         from sentence_transformers import CrossEncoder
 
+        log.warning("rerank.cuda_oom_fallback", pairs=len(pairs))
+        _reranker = None
+        torch.cuda.empty_cache()
         _reranker = CrossEncoder(config.settings.rerank.model, device="cpu")
         return _reranker.predict(pairs)
+
+
+def score_pairs(pairs: list) -> list:
+    return _predict(pairs) if pairs else []
 
 
 def unload() -> None:
@@ -56,10 +66,15 @@ def unload() -> None:
     if _reranker is None:
         return
     _reranker = None
+
+    import gc
+
     import torch
 
+    gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        log.info("rerank.unloaded", vram_mb=round(torch.cuda.memory_allocated() / 1e6))
 
 
 def rerank[R: Sequence](

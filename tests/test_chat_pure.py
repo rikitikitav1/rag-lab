@@ -70,3 +70,15 @@ def test_answer_from_rows_keeps_caller_start(monkeypatch):
     _stub_generation(monkeypatch)
     ans = chat.answer_from_rows("q", [_row("a.md")], k=5, started_at=time.perf_counter() - 3)
     assert ans.elapsed >= 3
+
+
+def test_config_snapshot_records_device_only_when_reranking(monkeypatch):
+    monkeypatch.setattr(chat, "_rerank_device", lambda: "cuda")
+
+    assert chat._config_snapshot(True, 5, False, 0.55)["rerank_device"] == "cuda"
+    assert chat._config_snapshot(False, 5, False, 0.55)["rerank_device"] is None
+
+
+def test_config_snapshot_carries_procedure_fields():
+    snap = chat._config_snapshot(False, 7, True, 0.42)
+    assert (snap["k"], snap["phased"], snap["distance_threshold"]) == (7, True, 0.42)

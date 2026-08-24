@@ -15,8 +15,8 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
         lambda text, vector, category, limit: calls.append(("search", text, limit)) or _rows(text),
     )
     monkeypatch.setattr(
-        runner.rerank, "rerank",
-        lambda text, rows, top: calls.append(("rerank", text, top)) or rows[:top],
+        runner.rerank, "score_pairs",
+        lambda pairs: calls.append(("rerank", len(pairs))) or [1.0] * len(pairs),
     )
     monkeypatch.setattr(runner.llm, "unload", lambda role: calls.append(("unload", role)))
     monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
@@ -37,10 +37,20 @@ def test_phases_run_in_order_and_free_vram(monkeypatch):
     assert kinds == [
         "search", "search",
         "unload", "unload",
-        "rerank", "rerank",
+        "rerank",
         "unload",
         "generate", "generate",
     ]
+
+
+def test_rerank_runs_once_for_the_whole_set(monkeypatch):
+    calls = _stub_phases(monkeypatch)
+    runner.run_phased(
+        "run", ["q1", "q2", "q3"], use_rerank=True, language=None, k=2, model=None, job_id=None
+    )
+    reranks = [c for c in calls if c[0] == "rerank"]
+    assert len(reranks) == 1
+    assert reranks[0][1] == 9
 
 
 def test_retrieval_widens_only_when_reranking(monkeypatch):
@@ -81,7 +91,6 @@ def _scored_rows(marker, scores):
 
 
 def _rerank_by_content(monkeypatch, ranking):
-    # ranking: content substring -> score; a real reranker scores the (question, chunk) pair
     def fake_predict(pairs):
         return [ranking.get(chunk, 0.0) for _, chunk in pairs]
 
@@ -90,7 +99,6 @@ def _rerank_by_content(monkeypatch, ranking):
 
 
 def test_rerank_phase_keeps_candidates_with_their_own_question(monkeypatch):
-    # the classic batching bug: chunks leaking between questions
     retrieved = [("q1", _scored_rows("a", [0.1, 0.2])), ("q2", _scored_rows("b", [0.3, 0.4]))]
     _rerank_by_content(monkeypatch, {"chunk a 0": 9, "chunk a 1": 1, "chunk b 0": 8, "chunk b 1": 2})
 

@@ -1,5 +1,6 @@
 import sys
 import time
+from operator import itemgetter
 
 import config
 import job_queue
@@ -94,7 +95,15 @@ def _phase_retrieve(texts: list[str], k: int, use_rerank: bool) -> list:
 
 
 def _phase_rerank(retrieved: list, k: int) -> list:
-    return [(text, rerank.rerank(text, rows, top=k)) for text, rows in retrieved]
+    scores = rerank.score_pairs([(text, row[0]) for text, rows in retrieved for row in rows])
+
+    ranked, offset = [], 0
+    for text, rows in retrieved:
+        window = scores[offset : offset + len(rows)]
+        offset += len(rows)
+        best = sorted(zip(rows, window, strict=True), key=itemgetter(1), reverse=True)
+        ranked.append((text, [row for row, _ in best[:k]]))
+    return ranked
 
 
 def _phase_generate(
