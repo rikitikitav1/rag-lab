@@ -1,0 +1,51 @@
+direction: down
+
+title: |md
+  ### Inside one eval run: phases, not a per-question loop
+|
+
+card: GPU (8 GB) {
+  style.stroke-dash: 3
+  style.fill: "#f6f8fa"
+
+  p1: "PHASE 1 - retrieve" {
+    style.fill: "#d4edda"
+    embed: "one embeddings batch for the whole set (bge-m3)"
+    search: "hybrid search per question, wide pool when reranking"
+    embed -> search
+  }
+
+  p2: "PHASE 2 - rerank" {
+    style.fill: "#fff3cd"
+    flat: "flatten to pairs: 100 questions x 20 candidates = 2000"
+    once: "one predict for all of them, fp16 on the card"
+    back: "slice scores back per question, keep top k"
+    flat -> once -> back
+  }
+
+  p3: "PHASE 3 - generate" {
+    style.fill: "#d4edda"
+    gen: "answer from the context that is already prepared (llama3.1:8b)"
+    logrow: "question_log + config snapshot: rerank, device, k, phased"
+    gen -> logrow
+  }
+
+  p1 -> p2: "ollama models unloaded (keep_alive 0)" {
+    style.stroke-width: 2
+  }
+  p2 -> p3: "reranker unloaded, cuda cache emptied" {
+    style.stroke-width: 2
+  }
+}
+
+why: |md
+  **Why phases.** Per question the loop needed the embedder, then the
+  reranker, then the generator. Together they do not fit in 8 GB, so
+  ollama evicted and reloaded a model on every single question.
+  Phases make each stage own the card alone: two swaps per run instead
+  of two per question, and the reranker gets a real batch
+  (44 s for 100 questions on the card, about 16 min on CPU).
+
+  Interactive answers stay a straight line: one question cannot be
+  batched, and the agent decides for itself when to search.
+|
