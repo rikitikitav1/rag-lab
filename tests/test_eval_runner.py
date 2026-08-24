@@ -18,7 +18,10 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
         runner.rerank, "score_pairs",
         lambda pairs: calls.append(("rerank", len(pairs))) or [1.0] * len(pairs),
     )
-    monkeypatch.setattr(runner.llm, "unload", lambda role: calls.append(("unload", role)))
+    monkeypatch.setattr(
+        runner.llm, "unload",
+        lambda role="embedding", model=None: calls.append(("unload", role)),
+    )
     monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
     monkeypatch.setattr(
         runner.chat, "answer_from_rows",
@@ -129,3 +132,60 @@ def test_rerank_phase_handles_ragged_and_empty_pools(monkeypatch):
 
     assert [len(rows) for _, rows in out] == [1, 0, 2]
     assert [r[0] for r in out[2][1]] == ["chunk c 1", "chunk c 2"]
+
+
+def test_unload_targets_the_overridden_generator(monkeypatch):
+    calls = _stub_phases(monkeypatch)
+    unloaded = []
+    monkeypatch.setattr(
+        runner.llm, "unload",
+        lambda role="embedding", model=None: unloaded.append((role, model)),
+    )
+    runner.run_phased(
+        "run", ["q"], use_rerank=True, language=None, k=2, model="hf.co/some/model:Q4", job_id=None
+    )
+    assert ("generation", "hf.co/some/model:Q4") in unloaded
+    assert calls
+
+
+def test_embedding_failure_drops_only_its_batch(monkeypatch):
+    calls = _stub_phases(monkeypatch)
+    monkeypatch.setattr(runner.config.settings.ingestion, "batch_size", 2)
+
+    def flaky(chunk):
+        if "boom" in chunk:
+            raise RuntimeError("embedder down")
+        return [[0.1]] * len(chunk)
+
+    monkeypatch.setattr(runner.llm, "request_embeddings_batch", flaky)
+
+    out = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], k=3, use_rerank=False)
+
+    assert [text for text, _ in out] == ["ok1", "ok2"]
+    assert len([c for c in calls if c[0] == "search"]) == 2
+
+
+def test_search_failure_skips_one_question(monkeypatch):
+    _stub_phases(monkeypatch)
+
+    def flaky(text, vector, category, limit):
+        if text == "bad":
+            raise RuntimeError("pg down")
+        return _rows(text)
+
+    monkeypatch.setattr(runner.db, "hybrid_search", flaky)
+
+    out = runner._phase_retrieve(["good", "bad"], k=3, use_rerank=False)
+    assert [text for text, _ in out] == ["good"]
+
+
+def test_cancel_between_phases_skips_rerank_and_generation(monkeypatch):
+    calls = _stub_phases(monkeypatch)
+    monkeypatch.setattr(runner.job_queue, "is_cancelled", lambda job_id: True)
+
+    answered, cancelled = runner.run_phased(
+        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=7
+    )
+
+    assert (answered, cancelled) == (0, True)
+    assert not [c for c in calls if c[0] in ("rerank", "generate")]

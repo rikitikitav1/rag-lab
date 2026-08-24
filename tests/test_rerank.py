@@ -22,3 +22,13 @@ def test_rerank_empty_rows():
 def test_rerank_single_row(monkeypatch):
     monkeypatch.setattr(rerank, "_model", lambda: _FakeReranker([0.7]))
     assert rerank.rerank("q", [("only",)], top=3) == [("only",)]
+
+
+def test_device_reports_the_loaded_model_not_the_intent(monkeypatch):
+    monkeypatch.setattr(rerank, "requested_device", lambda: "cuda")
+    monkeypatch.setattr(rerank, "_reranker", None)
+    assert rerank.device() == "cuda"
+
+    loaded = type("M", (), {"model": type("Inner", (), {"device": "cpu"})()})()
+    monkeypatch.setattr(rerank, "_reranker", loaded)
+    assert rerank.device() == "cpu"

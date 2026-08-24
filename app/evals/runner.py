@@ -85,13 +85,30 @@ def _run_sequential(
     return answered, False
 
 
+def _embed_in_batches(texts: list[str]) -> list:
+    size = config.settings.ingestion.batch_size
+    vectors: list = []
+    for start in range(0, len(texts), size):
+        chunk = texts[start : start + size]
+        try:
+            vectors.extend(llm.request_embeddings_batch(chunk))
+        except Exception as e:
+            log.error("eval_run.embed_failed", start=start, n=len(chunk), error=str(e))
+            vectors.extend([None] * len(chunk))
+    return vectors
+
+
 def _phase_retrieve(texts: list[str], k: int, use_rerank: bool) -> list:
     limit = config.settings.rerank.candidates if use_rerank else k
-    vectors = llm.request_embeddings_batch(texts)
-    return [
-        (text, db.hybrid_search(text, vector, None, limit=limit))
-        for text, vector in zip(texts, vectors, strict=True)
-    ]
+    retrieved = []
+    for text, vector in zip(texts, _embed_in_batches(texts), strict=True):
+        if vector is None:
+            continue
+        try:
+            retrieved.append((text, db.hybrid_search(text, vector, None, limit=limit)))
+        except Exception as e:
+            log.error("eval_run.search_failed", run_text=text[:80], error=str(e))
+    return retrieved
 
 
 def _phase_rerank(retrieved: list, k: int) -> list:
@@ -153,14 +170,20 @@ def run_phased(
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
              elapsed=round(time.perf_counter() - started, 1))
 
+    if job_id is not None and job_queue.is_cancelled(job_id):
+        return 0, True
+
     if use_rerank:
         llm.unload("embedding")
-        llm.unload("generation")
+        llm.unload("generation", model=model)
         started = time.perf_counter()
         retrieved = _phase_rerank(retrieved, k)
         log.info("eval_run.phase", name="rerank", n=len(retrieved),
                  elapsed=round(time.perf_counter() - started, 1))
         rerank.unload()
+
+        if job_id is not None and job_queue.is_cancelled(job_id):
+            return 0, True
 
     started = time.perf_counter()
     answered, cancelled = _phase_generate(

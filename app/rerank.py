@@ -16,6 +16,12 @@ _reranker: CrossEncoder | None = None
 
 
 def device() -> str:
+    if _reranker is not None:
+        return str(_reranker.model.device).split(":")[0]
+    return requested_device()
+
+
+def requested_device() -> str:
     import os
 
     import torch
@@ -32,7 +38,7 @@ def _model() -> CrossEncoder:
         import torch
         from sentence_transformers import CrossEncoder
 
-        target = device()
+        target = requested_device()
         kwargs = {"torch_dtype": torch.float16} if target == "cuda" else {}
         _reranker = CrossEncoder(
             config.settings.rerank.model, device=target, model_kwargs=kwargs
@@ -48,13 +54,13 @@ def _predict(pairs: list) -> list:
     try:
         return _model().predict(pairs)
     except torch.cuda.OutOfMemoryError:
-        from sentence_transformers import CrossEncoder
-
         log.warning("rerank.cuda_oom_fallback", pairs=len(pairs))
-        _reranker = None
-        torch.cuda.empty_cache()
-        _reranker = CrossEncoder(config.settings.rerank.model, device="cpu")
-        return _reranker.predict(pairs)
+
+    from sentence_transformers import CrossEncoder
+
+    unload()
+    _reranker = CrossEncoder(config.settings.rerank.model, device="cpu")
+    return _reranker.predict(pairs)
 
 
 def score_pairs(pairs: list) -> list:

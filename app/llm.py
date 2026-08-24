@@ -154,9 +154,9 @@ def pull_model(model):
     return _post_request("/api/pull", {"model": model, "stream": False}, timeout=_PULL_TIMEOUT)
 
 
-def unload(role="embedding"):
+def unload(role="embedding", model=None):
     # frees VRAM between eval phases: keep_alive 0 overrides the server default
-    name = resolve_name(role)
+    name = model or resolve_name(role)
     try:
         _post_request("/api/generate", {"model": name, "keep_alive": 0})
     except Exception as e:
