@@ -60,3 +60,27 @@ runs, not an effect.
   comparable.
 - Lesson for the ops list: the stack degrades silently. Nothing failed, nothing warned, the run
   was simply twice as slow, and only a measurement showed it.
+
+## Postscript: what an external audit found in the same change
+
+Five defects, all real, all fixed in `d5595a7`. Two of them would have quietly corrupted this
+very experiment had it been run differently:
+
+- **The unload asked for the wrong model.** It expired the model assigned to the role, not the
+  one the run actually used, so any sweep with a model override (`param=model`) would have
+  started the rerank phase on an occupied card - the exact condition the phases exist to avoid.
+  The run measured above used the role default, which is why the numbers hold.
+- **The log recorded intent, not reality.** `rerank_device` came from the environment plus
+  "is a card visible", so a run that hit CUDA OOM and silently continued on CPU would still be
+  filed as a GPU run. A comparison across such runs would have been meaningless while looking
+  perfectly clean. The device now comes from the model that is actually resident.
+
+The rest: the OOM fallback repeated the same free-nothing bug that made the phases slow in the
+first place; the retrieval phase embedded the whole set in one request with no error handling
+(2565 questions under a 120s timeout, one failure costing three full worker retries); and
+cancellation was only checked inside generation, so a cancelled job still finished the entire
+rerank while holding the GPU.
+
+Worth recording as a pattern: three of the five are the same species as the bug this experiment
+started with - something that keeps working, reports success, and is simply wrong or slow. None
+of them would surface without a measurement or an explicit check.
