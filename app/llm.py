@@ -154,6 +154,15 @@ def pull_model(model):
     return _post_request("/api/pull", {"model": model, "stream": False}, timeout=_PULL_TIMEOUT)
 
 
+def unload(role="embedding", model=None):
+    # frees VRAM between eval phases: keep_alive 0 overrides the server default
+    name = model or resolve_name(role)
+    try:
+        _post_request("/api/generate", {"model": name, "keep_alive": 0})
+    except Exception as e:
+        log.warning("llm.unload_failed", model=name, error=str(e))
+
+
 def delete_model(model):
     response = requests.delete(
         f"{LLM_BASE}/api/delete", json={"model": model}, timeout=_HTTP_TIMEOUT

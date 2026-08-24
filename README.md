@@ -77,6 +77,17 @@ Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagram
 | `worker` | processes the job queue (pull/delete/index/embed/paraphrase/eval/judge) |
 | `ollama` | local inference on GPU |
 
+### Environment knobs
+
+Everything tunable about the pipeline lives in `config.yaml`; the environment only carries what depends on the machine or must stay out of the repo. Copy `.env.example` to `.env` — compose picks it up, and every value has a working default.
+
+| Variable | Default | What it does |
+|----------|---------|--------------|
+| `RERANK_DEVICE` | `cuda` (worker), `cpu` (API) | Where the cross-encoder runs. The asymmetry is deliberate: eval runs rerank in a phase that owns the card, while interactive answers share it with ollama, and a reranker resident there would evict the generator on every question. `auto` picks cuda when a card is visible; CUDA OOM falls back to CPU with a warning. |
+| `LLM_TIMEOUT` | `120` | Seconds per completion. A 70b model on CPU needs minutes; the default kills such runs mid-flight. |
+| `WORKER_QUEUES` | `default,io` | Queue lanes the worker serves, one thread each. Network and disk jobs (model pulls, MCP health) live on `io` so they never wait behind GPU work. |
+| `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
+
 ## REST API
 
 Full interactive reference in Swagger at `/docs`.
@@ -109,6 +120,12 @@ Eval platform:
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 
 ![Eval pipeline](docs/diagrams/eval_pipeline.svg)
+
+A single run does not loop per question: it goes through phases so each stage owns the GPU alone, which is what makes reranking affordable in bulk.
+
+![Phases inside one eval run](docs/diagrams/phased_run.svg)
+
+Measured on 100 questions with reranking on: **2092s → 652s (3.2x)** while `hit@5` and `MRR` stayed identical to the third decimal. Most of the win did not come from batching — it came from noticing that the card was never actually released between phases, so ollama had been loading the generator as 26 layers of 33. The full story, including what the batch alone did *not* buy, is in [the journal entry](docs/experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md).
 
 Experiments (first-class entity over the raw sweep route):
 - `POST /v1/experiment` (creates the experiment - dataset + deterministic seed-based sample / procedure snapshot / varied param - and enqueues the run series), `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`
