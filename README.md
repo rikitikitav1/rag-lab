@@ -118,6 +118,7 @@ Eval platform:
 - `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops`, `fallback_policy` and `model` (generator) overrides; config only sets the defaults)
 - `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops`, `fallback_policy` or `model`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
+- `GET /v1/eval/compare?runs=A&runs=B` (arms side by side split by pool: in-corpus, out-of-corpus, off-domain; per arm the judged axes, how often the answer came from a remote tool against the corpus, how often the coverage gate fired, latency avg/p50 and the outcome histogram; per pair of arms a paired Wilcoxon over the same questions, so a difference is reported with its significance instead of two averages)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 
 ![Eval pipeline](docs/diagrams/eval_pipeline.svg)
@@ -193,6 +194,7 @@ Connect: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, o
 A second, separate ops server is mounted at `/mcp-ops` - an eval control plane kept off the product surface (an external client gets search/answer tools, not admin verbs):
 - `run_metrics(run_name)` - aggregated eval metrics for one run (generation axes + retrieval hit@k/MRR).
 - `compare_runs(run_names)` - side-by-side metrics with an RRF composite ranking (generation axes only).
+- `compare_pools(run_names)` - the same runs split by pool (in-corpus / out-of-corpus / off-domain) with gate firings, latency, outcome histogram and a paired Wilcoxon per pair of runs.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - job queue control, cancel takes the dependent judge down with the run.
 
 ### MCP client: the agent consumes external servers
@@ -253,7 +255,8 @@ The same run says something less comfortable: **no policy ever refuses.** On the
 - `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling loop), `index` (corpus build), `judge` (answer scoring), `experiment` (series aggregator + RRF composite).
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
-- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `list_jobs` / `cancel_job` over the eval platform.
+- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `list_jobs` / `cancel_job` over the eval platform.
+- `app/evals/pools.py`, `app/evals/compare.py` - one place that decides which pool a question belongs to and what the run's outcome was, shared by the metrics, the comparison report and both MCP tools.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
 - `app/evals/` - eval bench (runner + retrieval and generation metrics via the judge).

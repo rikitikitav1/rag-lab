@@ -74,6 +74,9 @@ curl -s "localhost:8000/v1/question-log?run_name=demo_run&faithfulness=unfaithfu
 # retrieval misses for a run: in-corpus questions where the expected source was not retrieved
 curl -s "localhost:8000/v1/eval/misses?run_name=demo_run&limit=20" | python3 -m json.tool
 
+# two arms side by side, split by pool, with a paired Wilcoxon over the same questions
+curl -s "localhost:8000/v1/eval/compare?runs=arm_a&runs=arm_b" | python3 -m json.tool
+
 # jobs by type/status with elapsed
 curl -s "localhost:8000/v1/job?type=eval_run&sort_by=elapsed&sort_order=desc" | python3 -m json.tool
 ```

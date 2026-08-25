@@ -107,6 +107,7 @@ Eval-платформа:
 - `POST /v1/eval/paraphrase` (сгенерить парафраз-набор), `POST /v1/eval/run` (прогнать набор → судья; `pipeline: single_shot|agent`, per-run override'ы `rerank`, `k` (ширина ретривала), `max_hops` (кап хопов), `fallback_policy`, `model` (генератор); конфиг задаёт только дефолты)
 - `POST /v1/eval/experiment` (серия прогонов: параметр `param` (`k`, `max_hops`, `fallback_policy` или `model`) варьируется по списку `values`, один авто-именованный прогон на значение, каждый судится; набор/пайплайн/язык фиксированы для чистого сравнения по одной переменной; значение `model`, которого нет в реестре, создаётся и скачивается, прогон ждёт готовности)
 - `GET /v1/eval/misses?run_name=X` (retrieval-промахи прогона: in-corpus вопросы, где ожидаемый источник не найден, expected vs retrieved)
+- `GET /v1/eval/compare?runs=A&runs=B` (руки рядом, с разбивкой по пулам: in-corpus, out-of-corpus, off-domain; по каждой руке судейские оси, доля ответов из внешнего тула против корпуса, сколько раз сработал гейт покрытия, латентность avg/p50 и гистограмма исходов; на каждую пару рук парный тест Уилкоксона по одним и тем же вопросам, то есть разница отдаётся вместе со значимостью, а не двумя средними)
 - `POST /v1/questions/import` (залить файл вопросов, ≤5 МБ; опц. цепочка run)
 
 Эксперименты (полноценная сущность над сырым роутом серии):
@@ -192,6 +193,7 @@ MCP-сервер (Model Context Protocol) примонтирован на `/mcp`
 Второй, отдельный ops-сервер примонтирован на `/mcp-ops` - control plane eval-платформы, вынесенный с продуктовой поверхности (внешний клиент получает search/answer, а не админские глаголы):
 - `run_metrics(run_name)` - агрегированные метрики прогона (генеративные оси + retrieval hit@k/MRR).
 - `compare_runs(run_names)` - сравнение прогонов бок о бок с RRF-композитным ранжированием (только генеративные оси).
+- `compare_pools(run_names)` - те же прогоны в разбивке по пулам (in-corpus / out-of-corpus / off-domain) со срабатываниями гейта, латентностью, гистограммой исходов и парным тестом Уилкоксона на каждую пару прогонов.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - управление очередью джоб, cancel снимает и зависимый judge.
 
 ### MCP-клиент: агент потребляет внешние серверы
@@ -248,7 +250,8 @@ Auth интеграции описывается как `{"type": "bearer", "tok
 - `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling цикл), `index` (сбор корпуса), `judge` (оценка ответа), `experiment` (агрегатор серии + RRF-композит).
 - `app/agent_tools.py` - реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
 - `app/mcp_server.py` - FastMCP-сервер (примонтирован на `/mcp`): тулы `search_corpus` / `answer_question` / `list_categories` поверх примитивов поиска.
-- `app/mcp_ops.py` - ops MCP-сервер (примонтирован на `/mcp-ops`): `run_metrics` / `compare_runs` / `list_jobs` / `cancel_job` поверх eval-платформы.
+- `app/mcp_ops.py` - ops MCP-сервер (примонтирован на `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `list_jobs` / `cancel_job` поверх eval-платформы.
+- `app/evals/pools.py`, `app/evals/compare.py` - одно место, которое решает, в какой пул попал вопрос и чем закончился прогон: им пользуются метрики, сравнительный отчёт и оба MCP-инструмента.
 - `app/api/` - REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - сид промптов/банка вопросов; REPL-консоль.
 - `app/evals/` - eval-стенд (runner + метрики retrieval + generation через judge).
