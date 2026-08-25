@@ -359,3 +359,43 @@ def test_the_middleware_arm_keeps_an_external_source_too(monkeypatch_factory):
     assert [s.source for s in result.sources] == ["mcp:deepwiki__ask_question"]
     assert str(result.outcome) == "answered"
     assert result.fallback_opened is True
+
+
+def test_a_model_that_only_calls_tools_stops_at_the_hop_cap(monkeypatch_factory):
+    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}] * 8
+    with monkeypatch_factory() as monkeypatch:
+        result = _middleware_run(
+            monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
+        )
+    # the cap lives in the middleware, so the guard must never be the thing that stops a run
+    assert str(result.outcome) != "error"
+    assert result.hops <= 4
+
+
+def test_the_loop_and_the_graph_stop_at_the_same_hop_cap(monkeypatch_factory):
+    turns = [
+        _turn(tool_calls=[_tool_call(str(i), "search_corpus", "{}")], message={"role": "assistant"})
+        for i in range(8)
+    ]
+    (loop, _), (graph, _) = _both(
+        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
+    )
+    assert _shape(loop) == _shape(graph)
+    assert loop.hops == 4
+
+
+def test_the_middleware_arm_refuses_an_off_topic_question_like_the_loop(monkeypatch_factory):
+    script = [
+        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
+        {"text": "I cannot answer this from the available sources"},
+    ]
+    strong = _hit(rerank_score=0.9, vector_distance=0.2)
+    with monkeypatch_factory() as monkeypatch:
+        monkeypatch.setattr(agent, "_topic_score", lambda question: 0.61)
+        result = _middleware_run(
+            monkeypatch, script, [strong], fallback_policy="corpus_first_weak", topic_threshold=0.5
+        )
+    # a strong retrieval must not rescue a question the axis has already ruled out
+    assert str(result.fallback_reason) == "off_topic"
+    assert result.sources == []
+    assert result.dropped_sources == ["s.md"]

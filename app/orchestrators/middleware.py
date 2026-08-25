@@ -69,7 +69,8 @@ class CoverageGateMiddleware(AgentMiddleware):
         remote_sources = _artifacts([m for m in turn if m not in results])
         sources = _artifacts(results)
         verdict = policy.verdict(sources, self.run.gate) if results else None
-        if verdict and self.run.gate.off_topic:
+        # the axis overrules the gate on the fact of a corpus call, not on the gate's opinion
+        if results and self.run.gate.off_topic:
             verdict = policy.FallbackReason.off_topic
         if not verdict:
             self.run.sources.extend(sources + remote_sources)
@@ -135,8 +136,18 @@ class ToolboxMiddleware(AgentMiddleware):
                     }
                 )
             log.info("mw.forcing_final", calls=self.run.model_calls)
-            return handler(request.override(tools=[], messages=messages))
+            return _without_tool_calls(handler(request.override(tools=[], messages=messages)))
         return handler(request.override(tools=tools))
+
+
+# the loop never runs a tool after the cap: whatever the last turn says, the run ends with it
+def _without_tool_calls(response):
+    messages = getattr(response, "result", None) or [response]
+    for message in messages:
+        if getattr(message, "tool_calls", None):
+            log.info("mw.dropped_call_after_cap", calls=len(message.tool_calls))
+            message.tool_calls = []
+    return response
 
 
 class NudgeMiddleware(AgentMiddleware):

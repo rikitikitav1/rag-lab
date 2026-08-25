@@ -8,6 +8,11 @@ from orchestrators import middleware as orch_middleware
 log = logging_setup.get_logger(__name__)
 
 
+def truncated(message) -> bool:
+    meta = getattr(message, "response_metadata", None) or {}
+    return meta.get("finish_reason") == "length" or meta.get("done_reason") == "length"
+
+
 def chat_model(role: str = "generation", model: str | None = None):
     from langchain_ollama import ChatOllama
 
@@ -68,9 +73,10 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
             config={"recursion_limit": limit},
         )
     except GraphRecursionError:
-        # without this the question vanishes from the run instead of counting as exhausted
-        log.warning("react.recursion_limit", max_hops=ctx["max_hops"])
-        result.hops = ctx["max_hops"]
+        # a guard, not a budget: hitting it means the graph looped, which is an error and not
+        # a run that simply ran out of hops
+        log.error("react.recursion_limit", max_hops=ctx["max_hops"], limit=limit)
+        result.hops = ctx["max_hops"] + 1
         result.text = ""
         result.success = False
         return
@@ -104,4 +110,6 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
         result.prompt_tokens += usage.get("input_tokens") or 0
         result.completion_tokens += usage.get("output_tokens") or 0
         result.max_prompt_tokens = max(result.max_prompt_tokens, usage.get("input_tokens") or 0)
+    if replies and truncated(replies[-1]):
+        log.warning("react.truncated", hops=result.hops)
     log.info("react.done", hops=result.hops, sources=len(result.sources))
