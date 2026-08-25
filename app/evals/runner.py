@@ -37,6 +37,7 @@ def _answer_one(
     k: int | None,
     max_hops: int | None,
     model: str | None,
+    fallback_policy: str | None,
 ) -> None:
     if pipeline == Pipeline.agent:
         agent.run(
@@ -47,6 +48,7 @@ def _answer_one(
             max_hops=max_hops,
             use_rerank=use_rerank,
             model=model,
+            fallback_policy=fallback_policy,
         )
     elif pipeline == Pipeline.single_shot:
         chat.answer(
@@ -71,6 +73,7 @@ def _run_sequential(
     k: int | None,
     max_hops: int | None,
     model: str | None,
+    fallback_policy: str | None,
     job_id: int | None,
 ) -> tuple[int, bool]:
     answered = 0
@@ -78,7 +81,9 @@ def _run_sequential(
         if job_id is not None and job_queue.is_cancelled(job_id):
             return answered, True
         try:
-            _answer_one(text, run_name, use_rerank, pipeline, language, k, max_hops, model)
+            _answer_one(
+                text, run_name, use_rerank, pipeline, language, k, max_hops, model, fallback_policy
+            )
             answered += 1
         except Exception as e:
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
@@ -105,21 +110,24 @@ def _phase_retrieve(texts: list[str], k: int, use_rerank: bool) -> list:
         if vector is None:
             continue
         try:
-            retrieved.append((text, db.hybrid_search(text, vector, None, limit=limit)))
+            retrieved.append((text, db.hybrid_search(text, vector, None, limit=limit), None))
         except Exception as e:
             log.error("eval_run.search_failed", run_text=text[:80], error=str(e))
     return retrieved
 
 
 def _phase_rerank(retrieved: list, k: int) -> list:
-    scores = rerank.score_pairs([(text, row[0]) for text, rows in retrieved for row in rows])
+    scores = rerank.score_pairs(
+        [(text, row[0]) for text, rows, _ in retrieved for row in rows]
+    )
 
     ranked, offset = [], 0
-    for text, rows in retrieved:
+    for text, rows, _ in retrieved:
         window = scores[offset : offset + len(rows)]
         offset += len(rows)
         best = sorted(zip(rows, window, strict=True), key=itemgetter(1), reverse=True)
-        ranked.append((text, [row for row, _ in best[:k]]))
+        top = best[:k]
+        ranked.append((text, [row for row, _ in top], [float(s) for _, s in top]))
     return ranked
 
 
@@ -134,13 +142,14 @@ def _phase_generate(
     rerank_device: str | None = None,
 ) -> tuple[int, bool]:
     answered = 0
-    for text, rows in retrieved:
+    for text, rows, rerank_scores in retrieved:
         if job_id is not None and job_queue.is_cancelled(job_id):
             return answered, True
         try:
             chat.answer_from_rows(
                 text,
                 rows,
+                rerank_scores=rerank_scores,
                 add_context=True,
                 run_name=run_name,
                 use_rerank=use_rerank,
@@ -208,6 +217,7 @@ def run(
     k: int | None = None,
     max_hops: int | None = None,
     model: str | None = None,
+    fallback_policy: str | None = None,
     job_id: int | None = None,
     phased: bool | None = None,
 ) -> int:
@@ -224,7 +234,8 @@ def run(
         )
     else:
         answered, cancelled = _run_sequential(
-            texts, run_name, use_rerank, pipeline, language, k, max_hops, model, job_id
+            texts, run_name, use_rerank, pipeline, language, k, max_hops, model,
+            fallback_policy, job_id,
         )
     if not cancelled:
         job_queue.enqueue("judge_answers", {"run_name": run_name})

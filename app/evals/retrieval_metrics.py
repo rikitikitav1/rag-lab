@@ -15,6 +15,8 @@ def evaluate(run_name=None):
             for s in (ql.sources or [])
             if not s["source"].startswith("mcp:")
         ]
+        # a policy that hides weak chunks from the model still retrieved them
+        got += ((ql.metrics or {}).get("retrieval") or {}).get("dropped_sources") or []
         rank = None
         for i, source in enumerate(got, 1):
             if any(exp in source for exp in expected):

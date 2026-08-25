@@ -69,6 +69,13 @@ def seed_prompts() -> None:
                 select(exists().where(Prompt.purpose == purpose, Prompt.active))
             )
             freshest = max(new_files, key=lambda f: f.version)
+            if has_active:
+                log.warning(
+                    "seed.prompt_inactive",
+                    purpose=str(purpose),
+                    version=freshest.version,
+                    hint="activate via POST /v1/prompt/{id}/activate",
+                )
             for file in new_files:
                 active = not has_active and file is freshest
                 session.add(

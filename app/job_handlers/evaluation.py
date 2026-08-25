@@ -41,6 +41,7 @@ def eval_run(options: dict) -> None:
         k=options.get("k"),
         max_hops=options.get("max_hops"),
         model=model,
+        fallback_policy=options.get("fallback_policy"),
         job_id=options.get("_job_id"),
     )
     log.info("eval_run.done", run_name=options["run_name"], answered=answered)

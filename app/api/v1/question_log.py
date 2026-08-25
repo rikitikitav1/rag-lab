@@ -9,6 +9,7 @@ from query_utils import Page, apply_sort_limit_offset
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from use_cases.agent import FallbackPolicy, FallbackReason
 
 router = APIRouter(prefix="/question-log", tags=["question-logs"])
 
@@ -83,6 +84,17 @@ async def list_question_logs(
     completeness: list[str] | None = Query(default=None),
     created_from: datetime | None = Query(default=None),
     created_to: datetime | None = Query(default=None),
+    rerank: bool | None = Query(default=None),
+    rerank_device: str | None = Query(default=None, max_length=16),
+    phased: bool | None = Query(default=None),
+    fallback_policy: list[FallbackPolicy] | None = Query(default=None),
+    fallback_reason: list[FallbackReason] | None = Query(default=None),
+    empty_retrieval: bool | None = Query(
+        default=None, description="true = the corpus returned nothing"
+    ),
+    max_distance: float | None = Query(
+        default=None, ge=0, le=2, description="keep logs whose closest chunk was at least this near"
+    ),
     page: Page = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
@@ -113,6 +125,24 @@ async def list_question_logs(
         stmt = stmt.where(QuestionLog.created_at >= created_from)
     if created_to is not None:
         stmt = stmt.where(QuestionLog.created_at <= created_to)
+
+    config = QuestionLog.metrics["config"]
+    retrieval = QuestionLog.metrics["retrieval"]
+    if rerank is not None:
+        stmt = stmt.where(config["rerank"].as_boolean().is_(rerank))
+    if rerank_device is not None:
+        stmt = stmt.where(config["rerank_device"].astext == rerank_device)
+    if phased is not None:
+        stmt = stmt.where(config["phased"].as_boolean().is_(phased))
+    if fallback_policy is not None:
+        stmt = stmt.where(config["fallback_policy"].astext.in_(fallback_policy))
+    if fallback_reason is not None:
+        stmt = stmt.where(QuestionLog.metrics["fallback_reason"].astext.in_(fallback_reason))
+    if empty_retrieval is not None:
+        count = retrieval["results_count"].as_integer()
+        stmt = stmt.where(count == 0 if empty_retrieval else count > 0)
+    if max_distance is not None:
+        stmt = stmt.where(retrieval["min_distance"].as_float() <= max_distance)
 
     stmt = apply_sort_limit_offset(
         stmt=stmt,

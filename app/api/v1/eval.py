@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from use_cases.agent import FallbackPolicy
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
@@ -39,6 +40,7 @@ class EvalRunRequest(BaseModel):
     k: int | None = None
     max_hops: int | None = None
     model: str | None = Field(default=None, max_length=128, pattern=MODEL_NAME_RE.pattern)
+    fallback_policy: FallbackPolicy | None = None
 
 
 class ExperimentRequest(BaseModel):
@@ -48,7 +50,7 @@ class ExperimentRequest(BaseModel):
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
-    param: Literal["k", "max_hops", "model"] = "k"
+    param: Literal["k", "max_hops", "model", "fallback_policy"] = "k"
     values: list[int | str] = Field(min_length=1)
 
 
@@ -135,11 +137,22 @@ async def eval_misses(
     )
 
 
-def validate_param_values(param: str, values: list) -> None:
+def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:
+    if param in ("fallback_policy", "max_hops") and pipeline != Pipeline.agent:
+        raise HTTPException(
+            status_code=400, detail=f"{param} only applies to the agent pipeline"
+        )
     if param == "model":
         bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.match(v)]
         if bad:
             raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
+    elif param == "fallback_policy":
+        allowed = {p.value for p in FallbackPolicy}
+        bad = [v for v in values if v not in allowed]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"fallback_policy must be one of {sorted(allowed)}: {bad}"
+            )
     else:
         bad = [v for v in values if not isinstance(v, int) or v < 1]
         if bad:
@@ -173,6 +186,7 @@ async def enqueue_eval_run(
             "model": request.model,
             "pipeline": request.pipeline.value,
             "language": request.language,
+            "fallback_policy": request.fallback_policy and request.fallback_policy.value,
         },
     )
 
@@ -182,7 +196,7 @@ async def enqueue_experiment(
     request: ExperimentRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    validate_param_values(request.param, request.values)
+    validate_param_values(request.param, request.values, request.pipeline)
     base = request.run_name or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
     jobs = []
     for value in request.values:

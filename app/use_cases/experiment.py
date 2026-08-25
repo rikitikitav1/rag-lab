@@ -15,6 +15,7 @@ log = logging_setup.get_logger(__name__)
 _RRF_K = 60
 _BOOTSTRAP_N = 10_000
 _AXES = ("faithfulness", "relevance", "completeness")
+_COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")
 
 
 def _run_pending(session, run_name: str) -> int:
@@ -49,7 +50,7 @@ def _series_complete(session, run_names: list[str]) -> bool:
 
 def _rrf(per_value: dict) -> dict[str, float]:
     scores = {v: 0.0 for v in per_value}
-    for axis in _AXES:
+    for axis in _COMPOSITE_AXES:
         ranked = sorted(
             (v for v in per_value if per_value[v].get(axis) is not None),
             key=lambda v: per_value[v][axis],
@@ -134,8 +135,23 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
             "completeness": gen["completeness"],
             "hit_at_k": ret["hit_at_k"],
             "mrr": ret["mrr"],
+            "remote_grounding": gen["remote_grounding"],
+            "remote_relevance": gen["remote_relevance"],
             "refusal_accuracy": gen["refusal_accuracy"],
+            "off_domain_refusal": gen["off_domain_refusal"],
+            "off_domain_grounding": gen["off_domain_grounding"],
+            "off_domain_refusal_rate": gen["off_domain_refusal_rate"],
+            "supported_rate": gen["supported_rate"],
+            "n_off_domain_scored": gen["n_off_domain_scored"],
+            "unsupported_external": gen["unsupported_external"],
+            "unsupported_off_domain": gen["unsupported_off_domain"],
+            "narrated_calls": gen["narrated_calls"],
+            "outcomes": gen["outcomes"],
+            "false_refusal": gen["false_refusal"],
+            "answer_rate": gen["answer_rate"],
+            "answered_via_remote": gen["answered_via_remote"],
             "n_scored": gen["n_scored"],
+            "n_remote_scored": gen["n_remote_scored"],
         }
     scores = _rrf(per_value)
     ranking = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -158,7 +174,7 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
         "composite": {
             "method": "rrf",
             "k": _RRF_K,
-            "axes": list(_AXES),
+            "axes": list(_COMPOSITE_AXES),
             "ranking": [{"value": v, "rrf": round(s, 5)} for v, s in ranking],
             "winner": winner,
             "pairwise": _annotate_significance(comparisons),

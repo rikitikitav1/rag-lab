@@ -98,3 +98,78 @@ def test_model_create_rejects_bad_registry_422(client, name):
 def test_sort_order_invalid_422(client):
     r = client.get("/v1/job", params={"sort_order": "descending"})
     assert r.status_code == 422
+
+
+@pytest.fixture
+def client_empty_db(monkeypatch):
+    import bootstrap
+
+    monkeypatch.setattr(bootstrap, "bootstrap_models", lambda: None)
+
+    import server
+    from orm.async_db import get_session
+
+    class _Result:
+        def all(self):
+            return []
+
+    class _Session:
+        async def scalars(self, stmt):
+            return _Result()
+
+    async def _session():
+        yield _Session()
+
+    server.app.dependency_overrides[get_session] = _session
+    with TestClient(server.app) as c:
+        yield c
+    server.app.dependency_overrides.clear()
+
+
+def test_question_log_snapshot_filters_are_accepted(client_empty_db):
+    for query in (
+        "rerank=true",
+        "rerank_device=cuda",
+        "phased=false",
+        "empty_retrieval=true",
+        "max_distance=0.3",
+        "fallback_policy=corpus_first&fallback_policy=agent_choice",
+        "fallback_reason=empty",
+    ):
+        assert client_empty_db.get(f"/v1/question-log?{query}&limit=1").status_code == 200
+
+
+def test_question_log_rejects_out_of_range_distance(client):
+    assert client.get("/v1/question-log?max_distance=5").status_code == 422
+
+
+def test_question_log_rejects_unknown_fallback_reason(client):
+    assert client.get("/v1/question-log?fallback_reason=bogus").status_code == 422
+
+
+def test_experiment_rejects_unknown_fallback_policy(client):
+    r = client.post(
+        "/v1/eval/experiment",
+        json={
+            "set_name": "s",
+            "pipeline": "agent",
+            "param": "fallback_policy",
+            "values": ["corpus_first", "yolo"],
+        },
+    )
+    assert r.status_code == 400
+    assert "yolo" in r.json()["detail"]
+
+
+def test_fallback_policy_is_rejected_for_single_shot(client):
+    r = client.post(
+        "/v1/eval/experiment",
+        json={"set_name": "s", "param": "fallback_policy", "values": ["corpus_first"]},
+    )
+    assert r.status_code == 400
+    assert "agent" in r.json()["detail"]
+
+
+def test_bulk_cancel_needs_a_filter(client):
+    r = client.post("/v1/job/cancel", json={})
+    assert r.status_code == 400
