@@ -29,6 +29,19 @@ def is_empty():
         ).scalar()
 
 
+def nearest_distance(embedding) -> float | None:
+    query = """
+        SELECT embedding <=> CAST(:embedding AS vector) AS distance
+        FROM data_chunks
+        WHERE embedding IS NOT NULL
+        ORDER BY distance
+        LIMIT 1
+    """
+    with engine.connect() as conn:
+        row = conn.execute(text(query), {"embedding": str(list(embedding))}).scalar()
+    return float(row) if row is not None else None
+
+
 def list_categories(category=None, only_top=None):
     cat_filter = "WHERE category ~ (:category)::lquery" if category else ""
     cat_select = "subpath(category, 0, 1)::text" if only_top else "category"

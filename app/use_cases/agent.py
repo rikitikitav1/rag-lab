@@ -16,6 +16,8 @@ from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import chat
 
+import db
+
 log = logging_setup.get_logger(__name__)
 
 TOOL_CALL_NUDGE = (
@@ -40,9 +42,16 @@ class FallbackReason(StrEnum):
     none = "none"
     empty = "empty"
     weak = "weak"
+    off_topic = "off_topic"
 
 
 
+
+
+@dataclass
+class Topic:
+    threshold: float | None = None
+    score: float | None = None
 
 
 @dataclass
@@ -52,6 +61,7 @@ class Gate:
     threshold: float | None = None
     distance_threshold: float | None = None
     drop_weak_context: bool = False
+    off_topic: bool = False
     announce: bool = False
     tool_signatures: str = ""
 
@@ -88,6 +98,7 @@ def run(
     model: str | None = None,
     fallback_policy: str | None = None,
     gate_signal: str | None = None,
+    topic_threshold: float | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
     if max_hops is None:
@@ -103,12 +114,25 @@ def run(
         {"role": "user", "content": question},
     ]
     result = AgentResult(messages=messages)
+    topic = Topic(
+        threshold=topic_threshold
+        if topic_threshold is not None
+        else config.settings.agent.topic_threshold
+    )
+    if topic.threshold is not None:
+        topic.score = _topic_score(question)
+
     remote = {t.name: t for t in agent_tools.remote_tools()}
     configured = sorted({name.split("__")[0] for name in remote})
     if remote and policy != FallbackPolicy.agent_choice:
         remote = _admissible(question, remote, result, role=role, model=model)
     external = policy == FallbackPolicy.agent_choice
     gate = Gate(tool_signatures=_signatures(remote.values()))
+    if topic.score is not None and topic.score >= topic.threshold:
+        log.info("agent.off_topic", score=round(topic.score, 3), threshold=topic.threshold)
+        remote = {}
+        gate.off_topic = True
+        gate.drop_weak_context = True
     if policy == FallbackPolicy.corpus_first_weak:
         gate.signal = GateSignal(gate_signal or config.settings.agent.gate_signal)
         if gate.signal != GateSignal.distance:
@@ -116,7 +140,7 @@ def run(
             gate.threshold = config.settings.agent.weak_threshold
         if gate.signal != GateSignal.cross_encoder:
             gate.distance_threshold = config.settings.agent.weak_distance
-        gate.drop_weak_context = bool(remote)
+        gate.drop_weak_context = gate.off_topic or bool(remote)
     nudges = 1
     tools = agent_tools.schemas()
     if external:
@@ -194,7 +218,7 @@ def run(
         admitted = sorted({name.split("__")[0] for name in remote})
         _log_answer(
             question, result, run_name, language, k, use_rerank, model,
-            admitted, policy, configured, gate, max_hops,
+            admitted, policy, configured, gate, max_hops, topic,
         )
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
@@ -251,6 +275,14 @@ def _signatures(tools) -> str:
         f"{' '.join(tool.description.split())[:160]}"
         for tool in tools
     )
+
+
+def _topic_score(question: str) -> float | None:
+    try:
+        return db.nearest_distance(llm.embed(question))
+    except Exception as e:
+        log.error("agent.topic_score_failed", error=str(e))
+        return None
 
 
 def _weak_by_cross_encoder(sources: list, gate: Gate) -> bool:
@@ -331,6 +363,8 @@ def _apply_turn(
         last = corpus[-1]
         last[2] = f"{last[2]}\n\n{notice.replace('{tools}', gate.tool_signatures)}"
         result.fallback_announced = True
+    if verdict and gate.off_topic:
+        verdict = FallbackReason.off_topic
     if verdict and result.fallback_reason == FallbackReason.none:
         result.fallback_reason = verdict
 
@@ -387,6 +421,7 @@ def _log_answer(
     mcp_configured: list[str] | None = None,
     gate: Gate | None = None,
     max_hops: int | None = None,
+    topic: Topic | None = None,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -452,6 +487,15 @@ def _log_answer(
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
                     "drop_weak_context": bool(gate and gate.drop_weak_context),
+                    "topic": (
+                        {
+                            "threshold": topic.threshold,
+                            "score": round(topic.score, 3) if topic.score is not None else None,
+                            "input": "question",
+                        }
+                        if topic and topic.threshold is not None
+                        else None
+                    ),
                     "mcp": mcp_names or [],
                     "mcp_configured": mcp_configured or [],
                 },

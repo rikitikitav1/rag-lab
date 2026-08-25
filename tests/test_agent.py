@@ -744,3 +744,47 @@ def test_either_flags_when_only_one_signal_fires(monkeypatch):
 def test_cross_encoder_signal_ignores_the_distance(monkeypatch):
     result, _ = _run_with_signal(monkeypatch, "cross_encoder", _hit(rerank_score=0.9, vector_distance=0.48))
     assert result.fallback_reason == agent.FallbackReason.none
+
+
+def _run_off_topic(monkeypatch, topic_score, corpus_sources, threshold=0.5):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="I cannot answer this from the available sources"),
+    ]
+    seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=corpus_sources)
+    monkeypatch.setattr(agent, "_topic_score", lambda question: topic_score)
+    result = agent.run(
+        "q", max_hops=2, fallback_policy="corpus_first_weak", topic_threshold=threshold
+    )
+    return result, seen_tools
+
+
+def test_an_off_topic_question_never_sees_an_external_tool(monkeypatch):
+    weak = SimpleNamespace(source="junk.md", rerank_score=0.02, vector_distance=0.52)
+    result, seen_tools = _run_off_topic(monkeypatch, topic_score=0.78, corpus_sources=[weak])
+
+    assert result.fallback_reason == agent.FallbackReason.off_topic
+    assert seen_tools == [["search_corpus"], ["search_corpus"]]
+    assert result.sources == []
+    assert result.outcome == outcomes.Outcome.refused
+
+
+def test_a_question_on_topic_still_reaches_the_toolbox(monkeypatch):
+    weak = SimpleNamespace(source="junk.md", rerank_score=0.02, vector_distance=0.42)
+    result, seen_tools = _run_off_topic(monkeypatch, topic_score=0.44, corpus_sources=[weak])
+
+    assert result.fallback_reason == agent.FallbackReason.weak
+    assert seen_tools[1] == ["search_corpus", "deepwiki__ask_question"]
+
+
+def test_the_topic_axis_is_off_unless_a_threshold_is_given(monkeypatch):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    _agent_harness(monkeypatch, turns, corpus_sources=[_scored(0.9)])
+    monkeypatch.setattr(
+        agent, "_topic_score", lambda question: pytest.fail("topic must not be scored")
+    )
+
+    agent.run("q", max_hops=2, fallback_policy="corpus_first_weak")

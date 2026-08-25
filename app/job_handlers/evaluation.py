@@ -43,6 +43,7 @@ def eval_run(options: dict) -> None:
         model=model,
         fallback_policy=options.get("fallback_policy"),
         gate_signal=options.get("gate_signal"),
+        topic_threshold=options.get("topic_threshold"),
         job_id=options.get("_job_id"),
     )
     log.info("eval_run.done", run_name=options["run_name"], answered=answered)

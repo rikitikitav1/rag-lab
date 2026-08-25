@@ -32,6 +32,7 @@ class AgentCfg(BaseModel):
     gate_candidates: int = 5
     weak_threshold: float = 0.5
     gate_signal: str = "cross_encoder"
+    topic_threshold: float | None = None
     weak_distance: float = 0.39
 
 
