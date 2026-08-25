@@ -492,7 +492,7 @@ def test_a_raw_tool_call_is_not_served_as_an_answer(monkeypatch):
     _agent_harness(monkeypatch, turns, corpus_sources=[])
     monkeypatch.setattr(agent_tools, "remote_tools", lambda: [])
 
-    result = agent.run("как приготовить карбонару?", max_hops=1)
+    result = agent.run("how do I cook carbonara?", max_hops=1)
 
     assert result.text == chat.NO_RESULTS
     assert result.success is False
@@ -501,7 +501,7 @@ def test_a_raw_tool_call_is_not_served_as_an_answer(monkeypatch):
 def test_outcome_separates_a_refusal_from_an_unsupported_answer(monkeypatch):
     cases = [
         ("I cannot answer this from the available sources", outcomes.Outcome.refused),
-        ("Кликхаус это распределённая база данных", outcomes.Outcome.unsupported_answer),
+        ("ClickHouse is a distributed database", outcomes.Outcome.unsupported_answer),
         ('{"name": "deepwiki__ask_question", "parameters": {"q": "x"}}', outcomes.Outcome.narrated_call),
         ("assistant\n\nI will use deepwiki__ask_question(repoName=\"x\")", outcomes.Outcome.narrated_call),
         ("", outcomes.Outcome.exhausted),
@@ -683,7 +683,7 @@ def test_a_run_with_no_evidence_is_asked_to_refuse_in_words(monkeypatch):
     _agent_harness(monkeypatch, turns, corpus_sources=[])
     monkeypatch.setattr(agent_tools, "remote_tools", lambda: [])
 
-    result = agent.run("как приготовить карбонару?", max_hops=2)
+    result = agent.run("how do I cook carbonara?", max_hops=2)
 
     assert result.no_evidence_prompted is True
     assert result.messages[-1]["content"] == f"tpl:{Purpose.agent_no_evidence}"

@@ -6,7 +6,7 @@ A RAG system over a personal knowledge base and external IT repositories. It ans
 
 This is a **showcase lab**: a bench for practicing LLM/RAG engineering approaches by hand (retrieval, LLM-as-judge eval, model lifecycle, reranking, async queues) and showing results as numbers. Not a production service, a playground for approaches.
 
-> Русская версия: [docs/README_ru.md](docs/README_ru.md) · Hands-on scenarios and commands: [docs/use_cases.md](docs/use_cases.md) · Experiments log: [docs/experiments.md](docs/experiments.md)
+> In Russian: [docs/README_ru.md](docs/README_ru.md) · Hands-on scenarios and commands: [docs/use_cases.md](docs/use_cases.md) · Experiments log: [docs/experiments.md](docs/experiments.md)
 
 ## What it is
 
@@ -225,7 +225,7 @@ Handing an 8B model a toolbox and hoping it prefers the local corpus is not a po
 
 What is forced is the *fact* of asking the corpus, not the wording: rephrasing and the decision to go outside stay with the model, which is where an 8B is actually decent (cross-language retrieval included).
 
-Before any of that, a tool has to earn its place in the toolbox. Under the corpus-first policies each external tool is checked once per run against a single question: does the question already state the values its required arguments need (for DeepWiki, a repository in `owner/repo` form)? A tool that would force the model to invent an argument is not offered at all. This started as a measurement: with the gate on but no admissibility check, in-corpus questions like "как приготовить карбонару?" were sent to a GitHub-repo tool with `repoName: "carbonara-recipe"`, and faithfulness on those questions fell to zero. Two cheaper routers were tried first and both failed: the cross-encoder scores a (question, tool description) pair at zero for everything (it is trained on question-passage relevance, not on capability blurbs), and bi-encoder cosine puts repo questions at 0.40-0.43 against 0.42 for an unrelated interview question. A rejected tool costs nothing: with no tool to hand off to, the weak chunks are kept and the run degrades to plain corpus behaviour.
+Before any of that, a tool has to earn its place in the toolbox. Under the corpus-first policies each external tool is checked once per run against a single question: does the question already state the values its required arguments need (for DeepWiki, a repository in `owner/repo` form)? A tool that would force the model to invent an argument is not offered at all. This started as a measurement: with the gate on but no admissibility check, in-corpus questions like a Russian one about cooking carbonara were sent to a GitHub-repo tool with `repoName: "carbonara-recipe"`, and faithfulness on those questions fell to zero. Two cheaper routers were tried first and both failed: the cross-encoder scores a (question, tool description) pair at zero for everything (it is trained on question-passage relevance, not on capability blurbs), and bi-encoder cosine puts repo questions at 0.40-0.43 against 0.42 for an unrelated interview question. A rejected tool costs nothing: with no tool to hand off to, the weak chunks are kept and the run degrades to plain corpus behaviour.
 
 When no source answers at all, the run no longer ends in silence: the final turn runs without tools, carrying a versioned instruction (`agent.no_evidence`) to say plainly that the available sources do not cover the question and not to answer from memory. Those runs come back as refusals in the language of the question instead of empty results.
 

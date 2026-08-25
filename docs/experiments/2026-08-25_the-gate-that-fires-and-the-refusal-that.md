@@ -98,7 +98,7 @@ answer is about what was asked, fluent, and completely unsupported. Relevance ca
 hallucination; only grounding can. A dashboard built on relevance would have shown this system
 as excellent on exactly the questions where it invents.
 
-What it looks like in the log: to "как приготовить настоящую карбонару без сливок?" the agent
+What it looks like in the log: asked in Russian how to cook carbonara without cream, the agent
 returns a recipe, with `xamarin-interview-questions/README.md` in `sources`, because the hybrid
 search always returns its five nearest chunks and the model answers from parametric memory while
 the citation rides along. The provenance is not a lie the model tells, it is a lie the pipeline
