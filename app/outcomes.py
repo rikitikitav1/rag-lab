@@ -5,8 +5,19 @@ NO_RESULTS = "No relevant documents found."
 
 REFUSAL_MARKERS = (
     "cannot answer", "can't answer", "cannot provide", "unable to find", "could not find",
-    "no relevant", "not able to answer", "cannot be answered", "не могу ответить",
-    "не удалось найти", "не нашёл", "не нашел", "нет информации", "не располагаю",
+    "couldn't find", "no relevant", "not able to answer", "cannot be answered",
+    "не могу ответить", "не удалось найти", "не нашёл", "не нашел", "нет информации",
+    "не располагаю",
+)
+
+# these phrases refuse only when the answer also blames the sources: "not found" alone
+# is ordinary technical prose ("if the key is not found, nil is returned")
+MISSING_MARKERS = (
+    "no information", "not found", "don't have", "do not have", "не удалось", "не найдено",
+    "нет данных", "не содержится", "отсутствует",
+)
+SOURCE_MARKERS = (
+    "source", "available", "corpus", "context", "документ", "источник", "материал", "корпус",
 )
 
 
@@ -47,7 +58,11 @@ def refusal(text: str) -> bool:
     if len(stripped) > REFUSAL_MAX_CHARS:
         return False
     lowered = stripped.lower()
-    return any(m in lowered for m in REFUSAL_MARKERS)
+    if any(m in lowered for m in REFUSAL_MARKERS):
+        return True
+    return any(m in lowered for m in MISSING_MARKERS) and any(
+        s in lowered for s in SOURCE_MARKERS
+    )
 
 
 # refusal before evidence: a policy that keeps weak chunks would never register one otherwise
