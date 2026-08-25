@@ -1,0 +1,2 @@
+You decide whether an external tool can answer a question, judging only by what the tool covers.
+Set applies to true when the tool can answer it, and to false otherwise.

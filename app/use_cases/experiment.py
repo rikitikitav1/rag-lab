@@ -4,17 +4,17 @@ import logging_setup
 import numpy as np
 from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
+from evals.stats import delta_stats as _delta_stats
 from models.eval import QuestionLog
 from models.experiment import Experiment, ExperimentStatus
 from orm.sync_db import Session
-from scipy.stats import wilcoxon
 from sqlalchemy import func, select, update
 
 log = logging_setup.get_logger(__name__)
 
 _RRF_K = 60
-_BOOTSTRAP_N = 10_000
 _AXES = ("faithfulness", "relevance", "completeness")
+_COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")
 
 
 def _run_pending(session, run_name: str) -> int:
@@ -49,7 +49,7 @@ def _series_complete(session, run_names: list[str]) -> bool:
 
 def _rrf(per_value: dict) -> dict[str, float]:
     scores = {v: 0.0 for v in per_value}
-    for axis in _AXES:
+    for axis in _COMPOSITE_AXES:
         ranked = sorted(
             (v for v in per_value if per_value[v].get(axis) is not None),
             key=lambda v: per_value[v][axis],
@@ -76,21 +76,6 @@ def _axis_deltas(pairs: list, axis: str) -> list:
         if va is not None and vb is not None:
             deltas.append(vb - va)
     return deltas
-
-
-def _delta_stats(deltas: list, rng) -> dict:
-    arr = np.array(deltas, dtype=float)
-    boot_means = rng.choice(arr, size=(_BOOTSTRAP_N, arr.size), replace=True).mean(axis=1)
-    p = 1.0 if np.all(arr == 0) else float(wilcoxon(arr).pvalue)
-    return {
-        "mean_delta": round(float(arr.mean()), 3),
-        "ci95": [
-            round(float(np.percentile(boot_means, 2.5)), 3),
-            round(float(np.percentile(boot_means, 97.5)), 3),
-        ],
-        "p": round(p, 4),
-        "n": int(arr.size),
-    }
 
 
 def _compare_question_sets(set_a: list, set_b: list) -> dict:
@@ -134,8 +119,23 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
             "completeness": gen["completeness"],
             "hit_at_k": ret["hit_at_k"],
             "mrr": ret["mrr"],
+            "remote_grounding": gen["remote_grounding"],
+            "remote_relevance": gen["remote_relevance"],
             "refusal_accuracy": gen["refusal_accuracy"],
+            "off_domain_refusal": gen["off_domain_refusal"],
+            "off_domain_grounding": gen["off_domain_grounding"],
+            "off_domain_refusal_rate": gen["off_domain_refusal_rate"],
+            "supported_rate": gen["supported_rate"],
+            "n_off_domain_scored": gen["n_off_domain_scored"],
+            "unsupported_external": gen["unsupported_external"],
+            "unsupported_off_domain": gen["unsupported_off_domain"],
+            "narrated_calls": gen["narrated_calls"],
+            "outcomes": gen["outcomes"],
+            "false_refusal": gen["false_refusal"],
+            "answer_rate": gen["answer_rate"],
+            "answered_via_remote": gen["answered_via_remote"],
             "n_scored": gen["n_scored"],
+            "n_remote_scored": gen["n_remote_scored"],
         }
     scores = _rrf(per_value)
     ranking = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -158,7 +158,7 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
         "composite": {
             "method": "rrf",
             "k": _RRF_K,
-            "axes": list(_AXES),
+            "axes": list(_COMPOSITE_AXES),
             "ranking": [{"value": v, "rrf": round(s, 5)} for v, s in ranking],
             "winner": winner,
             "pairwise": _annotate_significance(comparisons),

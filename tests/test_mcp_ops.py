@@ -23,6 +23,18 @@ def test_compare_runs_empty_raises():
         mcp_ops.compare_runs([])
 
 
+def test_compare_pools_empty_raises():
+    with pytest.raises(ToolError):
+        mcp_ops.compare_pools([])
+
+
+def test_compare_pools_names_the_runs_without_logs(monkeypatch):
+    monkeypatch.setattr(mcp_ops, "load_logs", lambda run_name: [])
+    with pytest.raises(ToolError) as ei:
+        mcp_ops.compare_pools(["ghost"])
+    assert "ghost" in str(ei.value)
+
+
 def test_cancel_job_missing_raises(monkeypatch):
     class _Session:
         def __enter__(self):

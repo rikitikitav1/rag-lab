@@ -1,0 +1,11 @@
+The corpus has no relevant documents for this question.
+
+These external tools are available now:
+{tools}
+
+Read what each one covers. If one of them fits the question, call it the same way you call
+search_corpus, with exactly the arguments its own schema lists, and do not reuse the arguments of
+the corpus search. Cite the tool you used as the source, and ignore the earlier search results.
+
+If none of them covers this question, do not call any of them. Say plainly that you cannot answer
+it from the available sources.

@@ -87,7 +87,7 @@ def rerank[R: Sequence](
     question: str,
     rows: Sequence[R],
     top: int,
-) -> list[R]:
+) -> list[tuple[R, float]]:
     if not rows:
         return []
 
@@ -95,4 +95,4 @@ def rerank[R: Sequence](
     scores = _predict(pairs)
     ranked = sorted(zip(rows, scores, strict=True), key=itemgetter(1), reverse=True)
 
-    return [row for row, _ in ranked[:top]]
+    return [(row, float(score)) for row, score in ranked[:top]]

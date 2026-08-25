@@ -1,19 +1,31 @@
 direction: down
 
-q: POST /v1/agent/question
+q: POST /v1/agent/question\nfallback_policy: corpus_first | corpus_first_weak | agent_choice
 toolbox: Build toolbox {
   static: search_corpus
   remote: remote tools from\nactive integrations\n(allowlist x schema cache)
+  admit: "admissible? does the question itself carry\nthis tool's required arguments" {
+    style.fill: "#fff3cd"
+  }
+  withheld: "corpus_first: admitted tools stay out of the schema\nuntil the corpus fails, dispatch refuses them by name" {
+    style.fill: "#fff3cd"
+  }
+  remote -> admit -> withheld
 }
-hop1: "Hop 1: LLM" {
+hop1: "Hop 1: LLM sees search_corpus only" {
   shape: hexagon
 }
 search: search_corpus
-hit: Corpus hit?
+gate: "Coverage gate, once per turn\ncorpus_first: any rows above the distance threshold\ncorpus_first_weak, gate_signal:\ndistance (default): best hit's vector distance <= weak_distance\ncross_encoder: best of the top 5 >= weak_threshold\neither: weak when one of the two says so" {
+  style.fill: "#fff3cd"
+}
 answer_corpus: Answer from corpus\nsources = chunks {
   style.fill: "#d4edda"
 }
-hop2: "Hop 2: LLM decides" {
+open: "fallback_reason: empty | weak\nweak chunks dropped (kept in the log for hit@k),\nadmitted schemas join the toolbox,\nnotice appended to the tool result" {
+  style.fill: "#fff3cd"
+}
+hop2: "Hop 2: LLM decides,\nadmitted tools now visible" {
   shape: hexagon
 }
 remote_call: "deepwiki__ask_question" {
@@ -22,35 +34,43 @@ remote_call: "deepwiki__ask_question" {
 remote_ok: Answer from remote\nsource = "mcp:deepwiki__ask_question" {
   style.fill: "#d4edda"
 }
-remote_err: "\"error: tool ... failed: <Type>\"" {
+remote_err: "\"error: tool ... failed (<kind>)\"\nkind: timeout | connect | auth |\nclient | server | tool | empty" {
   style.fill: "#f8d7da"
 }
-refuse: Honest refusal\nsuccess = false {
+no_evidence: "No source answered: final turn without tools,\nagent.no_evidence prompt" {
   style.fill: "#fff3cd"
 }
-log: "Log: sources, context,\nmetrics.config.mcp snapshot" {
+refuse: "Refusal in words\noutcome = refused" {
+  style.fill: "#fff3cd"
+}
+log: "Log: sources, context, outcome, fallback_reason,\nfallback_opened, tool_errors, retrieval snapshot,\nconfig (gate, mcp + mcp_configured, policy, max_hops)" {
   shape: page
 }
 metrics: |md
-  ## Measured per run
-  - generation: faithfulness / relevance / completeness (LLM judge, 0-10)
-  - retrieval: hit@k / MRR over corpus sources (mcp:* excluded)
-  - refusal accuracy over questions with no remote evidence
-  - answered_via_remote: counted separately
+  ## Measured per pool, not in one average
+  - in-corpus: faithfulness / relevance / completeness, hit@k / MRR
+  - answered from a tool: remote_grounding (grounded in what the tool said, not in truth)
+  - off-domain: off_domain_grounding, refusals, answers with no support
+  - outcome histogram: answered / refused / unsupported / narrated call / exhausted
 | {
   shape: page
 }
 
 q -> toolbox -> hop1
+toolbox -> hop2: "agent_choice: everything\nvisible from hop 1" {
+  style.stroke-dash: 3
+}
 hop1 -> search: tool call
-search -> hit
-hit -> answer_corpus: found
-hit -> hop2: empty
+search -> gate
+gate -> answer_corpus: covered
+gate -> open: empty or weak
+open -> hop2
 hop2 -> remote_call: ask outside
-hop2 -> refuse: give up
+hop2 -> no_evidence: nothing left to ask
 remote_call -> remote_ok: ok (truncated to\nmax_result_chars)
-remote_call -> remote_err: server down / timeout
-remote_err -> hop2: LLM sees the error,\nretries or refuses
+remote_call -> remote_err: classified on the call path
+remote_err -> hop2: LLM sees the error,\nretries or gives up
+no_evidence -> refuse
 answer_corpus -> log
 remote_ok -> log
 refuse -> log

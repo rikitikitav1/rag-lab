@@ -1,0 +1,6 @@
+No source available in this run answered the question: the corpus returned nothing usable and no
+external tool could help.
+
+Tell the user plainly, in their language, that you cannot answer this from the available sources.
+Do not answer from memory, do not guess, and do not offer a partial answer as if it were sourced.
+One or two sentences is enough. If it is useful, name what kind of source would be needed.

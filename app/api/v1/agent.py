@@ -11,6 +11,7 @@ class AgentRequest(BaseModel):
     text: str
     max_hops: int | None = Field(default=None, ge=1, le=10)
     language: Literal["ru", "en"] | None = None
+    fallback_policy: agent.FallbackPolicy | None = None
     debug: bool = False
 
 
@@ -20,6 +21,7 @@ class AgentSource(BaseModel):
     vector_rank: float | None = None
     keyword_rank: float | None = None
     score: float
+    rerank_score: float | None = None
 
 
 class AgentResponse(BaseModel):
@@ -40,7 +42,10 @@ def _serialize_trace(messages) -> list[dict]:
 @router.post("/question", response_model=AgentResponse)
 def ask(request: AgentRequest) -> AgentResponse:
     res = agent.run(
-        request.text, max_hops=request.max_hops, language=request.language
+        request.text,
+        max_hops=request.max_hops,
+        language=request.language,
+        fallback_policy=request.fallback_policy,
     )
     return AgentResponse(
         text=res.text,
@@ -56,6 +61,7 @@ def ask(request: AgentRequest) -> AgentResponse:
                 vector_rank=s.vector_rank,
                 keyword_rank=s.keyword_rank,
                 score=s.score,
+                rerank_score=s.rerank_score,
             )
             for s in res.sources
         ],

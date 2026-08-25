@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import config
 import errors
 import logging_setup
 import mcp_client
@@ -39,6 +40,8 @@ class Tool:
         }
 
 
+CORPUS_TOOL = "search_corpus"
+
 _REGISTRY: dict[str, Tool] = {}
 
 
@@ -55,11 +58,16 @@ def dispatch(
 ) -> ToolResult:
     tool = (extra or {}).get(name) or _REGISTRY.get(name)
     if tool is None:
-        return ToolResult(content=f"{errors.ERROR_PREFIX}unknown tool '{name}'")
+        return ToolResult(
+            content=f"{errors.ERROR_PREFIX}unknown tool '{name}'", meta={"error_kind": "client"}
+        )
     try:
         raw = json.loads(arguments or "{}")
     except json.JSONDecodeError:
-        return ToolResult(content=f"{errors.ERROR_PREFIX}tool '{name}' got invalid arguments")
+        return ToolResult(
+            content=f"{errors.ERROR_PREFIX}tool '{name}' got invalid arguments",
+            meta={"error_kind": "client"},
+        )
     allowed = tool.parameters.get("properties")
     if allowed is None:
         # remote schemas may keep args under $ref/anyOf; pass through untouched
@@ -69,13 +77,25 @@ def dispatch(
         dropped = [k for k in raw if k not in allowed]
         if dropped:
             log.warning("tool.dropped_args", tool=name, dropped=dropped)
+        missing = [p for p in tool.parameters.get("required", []) if p not in kwargs]
+        if missing:
+            log.warning("tool.missing_args", tool=name, missing=missing)
+            return ToolResult(
+                content=(
+                    f"{errors.ERROR_PREFIX}tool '{name}' is missing required arguments "
+                    f"{missing}; it accepts: {', '.join(allowed)}"
+                ),
+                meta={"error_kind": "client"},
+            )
     accepted = inspect.signature(tool.run).parameters
     kwargs.update({key: val for key, val in runtime.items() if val is not None and key in accepted})
     try:
         return tool.run(**kwargs)
     except Exception as e:
         log.error("tool.failed", tool=name, error=str(e))
-        return ToolResult(content=f"{errors.ERROR_PREFIX}tool '{name}' failed")
+        return ToolResult(
+            content=f"{errors.ERROR_PREFIX}tool '{name}' failed", meta={"error_kind": "tool"}
+        )
 
 
 def _search_corpus(
@@ -83,16 +103,25 @@ def _search_corpus(
     category: str | None = None,
     k: int | None = None,
     use_rerank: bool | None = None,
+    gate_top: int | None = None,
 ) -> ToolResult:
-    content, sources = chat.search_chunks(query, category, k=k, use_rerank=use_rerank)
+    content, sources = chat.search_chunks(
+        query, category, k=k, use_rerank=use_rerank, gate_top=gate_top
+    )
     return ToolResult(content=content, meta={"sources": sources})
 
 
 def _remote_run(integration, tool_name):
     def run(**kwargs) -> ToolResult:
-        text = asyncio.run(mcp_client.call_tool(integration, tool_name, kwargs))
-        if text.startswith(errors.ERROR_PREFIX):
-            return ToolResult(content=text)
+        outcome = asyncio.run(mcp_client.call_tool(integration, tool_name, kwargs))
+        text = outcome.text
+        if not text.strip():
+            return ToolResult(
+                content=f"{errors.ERROR_PREFIX}tool '{tool_name}' returned nothing",
+                meta={"error_kind": "empty"},
+            )
+        if outcome.error_kind or text.startswith(errors.ERROR_PREFIX):
+            return ToolResult(content=text, meta={"error_kind": outcome.error_kind})
         source = chat.Source(
             source=f"mcp:{integration.name}__{tool_name}",
             vector_rank=None,
@@ -141,10 +170,9 @@ def remote_tools() -> list[Tool]:
 
 register(
     Tool(
-        name="search_corpus",
+        name=CORPUS_TOOL,
         description=(
-            "Search the technical knowledge corpus (interview banks, "
-            "system-design-primer, redis docs) and return the most relevant "
+            f"Search {config.settings.corpus.description} and return the most relevant "
             "chunks with their [source] markers. Call this before answering."
         ),
         parameters={

@@ -1,0 +1,6 @@
+The corpus has no relevant documents for this question.
+
+External tools are now available in your toolbox. Call one of them to answer, and cite the tool
+you used as the source. Ignore the earlier search results: they did not match the question.
+
+If the external tools also return nothing useful, say plainly that you cannot answer.

@@ -5,14 +5,12 @@ from sqlalchemy import text
 
 DetectorFactory.seed = 0
 
-TS_CONFIG = {"en": "english", "ru": "russian"}
-
-
 def _ts_config(text_):
+    fts = config.settings.fts
     try:
-        return TS_CONFIG.get(detect(text_), "english")
+        return fts.languages.get(detect(text_), fts.fallback)
     except LangDetectException:
-        return "english"
+        return fts.fallback
 
 
 def cleanup():
@@ -27,6 +25,19 @@ def is_empty():
         return conn.execute(
             text("SELECT NOT EXISTS (SELECT 1 FROM data_chunks)")
         ).scalar()
+
+
+def nearest_distance(embedding) -> float | None:
+    query = """
+        SELECT embedding <=> CAST(:embedding AS vector) AS distance
+        FROM data_chunks
+        WHERE embedding IS NOT NULL
+        ORDER BY distance
+        LIMIT 1
+    """
+    with engine.connect() as conn:
+        row = conn.execute(text(query), {"embedding": str(list(embedding))}).scalar()
+    return float(row) if row is not None else None
 
 
 def list_categories(category=None, only_top=None):

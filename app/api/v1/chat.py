@@ -42,6 +42,7 @@ class AnswerSource(BaseModel):
     vector_rank: float | None = None
     keyword_rank: float | None = None
     score: float
+    rerank_score: float | None = None
 
 
 class QuestionResponse(BaseModel):
@@ -81,6 +82,7 @@ def ask(question: QuestionRequest) -> QuestionResponse:
                 vector_rank=s.vector_rank,
                 keyword_rank=s.keyword_rank,
                 score=s.score,
+                rerank_score=s.rerank_score,
             )
             for s in res.sources
         ],
@@ -99,6 +101,7 @@ def quick_ask(question: QuestionRequest) -> RetrievalResponse:
                 vector_rank=s.vector_rank,
                 keyword_rank=s.keyword_rank,
                 score=s.score,
+                rerank_score=s.rerank_score,
             )
             for s in res.sources
         ],

@@ -7,6 +7,7 @@ import config
 import job_queue
 import llm
 import logging_setup
+import outcomes
 import prompt_repo
 from langdetect import LangDetectException, detect
 from models.eval import Question, QuestionLog
@@ -23,7 +24,7 @@ log = logging_setup.get_logger(__name__)
 
 IGNORED_SOURCES = config.settings.ignored_sources
 
-NO_RESULTS = "No relevant documents found."
+NO_RESULTS = outcomes.NO_RESULTS
 
 
 @dataclass
@@ -33,6 +34,7 @@ class Source:
     keyword_rank: float | None
     vector_distance: float | None
     score: float
+    rerank_score: float | None = None
 
     def __str__(self) -> str:
         return (
@@ -85,7 +87,9 @@ class Answer:
         )
 
 
-def _source_from_row(src, vector_rank, keyword_rank, vector_distance, score) -> Source:
+def _source_from_row(
+    src, vector_rank, keyword_rank, vector_distance, score, rerank_score=None
+) -> Source:
     return Source(
         source=src,
         vector_rank=vector_rank,
@@ -94,6 +98,7 @@ def _source_from_row(src, vector_rank, keyword_rank, vector_distance, score) -> 
         if vector_distance is not None
         else None,
         score=round(float(score), 3),
+        rerank_score=round(float(rerank_score), 3) if rerank_score is not None else None,
     )
 
 
@@ -101,29 +106,36 @@ def is_ignored_source(source) -> bool:
     return Path(source).name in IGNORED_SOURCES
 
 
-def take_sources(rows) -> list[Source]:
-    seen: set[str] = set()
-    sources: list[Source] = []
-    for _, src, _, _, vector_rank, keyword_rank, vector_distance, score in rows:
-        if src in seen or is_ignored_source(src):
+def take_sources(rows, rerank_scores=None) -> list[Source]:
+    scores = rerank_scores or [None] * len(rows)
+    kept: dict[str, Source] = {}
+    for row, rerank_score in zip(rows, scores, strict=True):
+        _, src, _, _, vector_rank, keyword_rank, vector_distance, score = row
+        if is_ignored_source(src):
             continue
-        seen.add(src)
-        sources.append(
-            _source_from_row(src, vector_rank, keyword_rank, vector_distance, score)
+        if src in kept:
+            # a duplicated path must not hide the best cross-encoder score from the gate
+            best = kept[src].rerank_score
+            if rerank_score is not None and (best is None or rerank_score > best):
+                kept[src].rerank_score = round(float(rerank_score), 3)
+            continue
+        kept[src] = _source_from_row(
+            src, vector_rank, keyword_rank, vector_distance, score, rerank_score
         )
-    return sources
+    return list(kept.values())
 
 
 def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool):
     if not rerank_enabled:
-        return db.hybrid_search(question, llm.embed(question), category, limit=k)
+        return db.hybrid_search(question, llm.embed(question), category, limit=k), None
 
     import rerank
 
     candidates = db.hybrid_search(
         question, llm.embed(question), category, limit=config.settings.rerank.candidates
     )
-    return rerank.rerank(question, candidates, top=k)
+    ranked = rerank.rerank(question, candidates, top=k)
+    return [row for row, _ in ranked], [score for _, score in ranked]
 
 
 def format_chunks(rows) -> str:
@@ -132,19 +144,30 @@ def format_chunks(rows) -> str:
     )
 
 
+def _gate_scores(query: str, rows, top: int) -> list:
+    import rerank
+
+    head = rows[:top]
+    scores = rerank.score_pairs([(query, row[0]) for row in head])
+    return [float(s) for s in scores] + [None] * (len(rows) - len(head))
+
+
 def search_chunks(
     query: str,
     category: str | None = None,
     k: int | None = None,
     use_rerank: bool | None = None,
+    gate_top: int | None = None,
 ) -> tuple[str, list[Source]]:
     k = k or config.settings.retrieval.results_limit
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
-    rows = _retrieve_rows(query, category, k, use_rerank)
+    rows, rerank_scores = _retrieve_rows(query, category, k, use_rerank)
     if not rows:
         return NO_RESULTS, []
-    return format_chunks(rows) or NO_RESULTS, take_sources(rows)
+    if rerank_scores is None and gate_top:
+        rerank_scores = _gate_scores(query, rows, gate_top)
+    return format_chunks(rows) or NO_RESULTS, take_sources(rows, rerank_scores)
 
 
 @measure_elapsed
@@ -154,8 +177,8 @@ def retrieve(
     k: int | None = None,
 ) -> Retrieval:
     k = k or config.settings.retrieval.results_limit
-    rows = _retrieve_rows(question, category, k, config.settings.rerank.enabled)
-    return Retrieval(sources=take_sources(rows))
+    rows, rerank_scores = _retrieve_rows(question, category, k, config.settings.rerank.enabled)
+    return Retrieval(sources=take_sources(rows, rerank_scores))
 
 
 def answer(
@@ -172,10 +195,11 @@ def answer(
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
     k = k or config.settings.retrieval.results_limit
-    rows = _retrieve_rows(question, category, k, use_rerank)
+    rows, rerank_scores = _retrieve_rows(question, category, k, use_rerank)
     return answer_from_rows(
         question,
         rows,
+        rerank_scores=rerank_scores,
         add_context=add_context,
         run_name=run_name,
         use_rerank=use_rerank,
@@ -189,6 +213,7 @@ def answer(
 def answer_from_rows(
     question: str,
     rows,
+    rerank_scores=None,
     add_context=False,
     run_name: str | None = None,
     use_rerank: bool | None = None,
@@ -226,7 +251,7 @@ def answer_from_rows(
         ans = Answer(
             text=response.text,
             success=True,
-            sources=take_sources(rows),
+            sources=take_sources(rows, rerank_scores),
             metrics=metrics,
         )
         if add_context:
@@ -236,7 +261,8 @@ def answer_from_rows(
 
     try:
         _log_answer(
-            question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device
+            question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
+            _retrieval_snapshot(rows, ans.sources),
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -262,6 +288,16 @@ def _language_directive(language: str) -> str:
     return f"Respond in {_LANG_NAMES.get(language, language)}."
 
 
+def _retrieval_snapshot(rows, sources) -> dict:
+    distances = [row[6] for row in rows if row[6] is not None]
+    rerank_scores = [s.rerank_score for s in sources if s.rerank_score is not None]
+    return {
+        "results_count": len(rows),
+        "min_distance": round(min(distances), 3) if distances else None,
+        "top_rerank_score": max(rerank_scores) if rerank_scores else None,
+    }
+
+
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device=None) -> dict:
     return {
         "rerank": use_rerank,
@@ -283,7 +319,7 @@ def _rerank_device() -> str | None:
 
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
-    use_rerank=False, k=None, phased=False, rerank_device=None,
+    use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -304,7 +340,8 @@ def _log_answer(
             metrics={
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold, rerank_device
-                )
+                ),
+                "retrieval": retrieval,
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

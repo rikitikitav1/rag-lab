@@ -3,6 +3,7 @@ import time
 from typing import Literal
 
 import job_queue
+from evals import compare as compare_uc
 from fastapi import APIRouter, Depends, HTTPException, Query
 from models.eval import QuestionLog
 from models.registry import Pipeline
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from use_cases.agent import FallbackPolicy, GateSignal
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
@@ -39,6 +41,10 @@ class EvalRunRequest(BaseModel):
     k: int | None = None
     max_hops: int | None = None
     model: str | None = Field(default=None, max_length=128, pattern=MODEL_NAME_RE.pattern)
+    fallback_policy: FallbackPolicy | None = None
+    gate_signal: GateSignal | None = None
+    weak_distance: float | None = Field(default=None, ge=0, le=2)
+    topic_threshold: float | None = Field(default=None, ge=0, le=2)
 
 
 class ExperimentRequest(BaseModel):
@@ -48,8 +54,11 @@ class ExperimentRequest(BaseModel):
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
-    param: Literal["k", "max_hops", "model"] = "k"
-    values: list[int | str] = Field(min_length=1)
+    param: Literal[
+        "k", "max_hops", "model", "fallback_policy", "gate_signal", "weak_distance",
+        "topic_threshold",
+    ] = "k"
+    values: list[int | float | str] = Field(min_length=1)
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -135,11 +144,55 @@ async def eval_misses(
     )
 
 
-def validate_param_values(param: str, values: list) -> None:
+class CompareResponse(BaseModel):
+    runs: list[str]
+    pools: dict
+    blended_do_not_rank: dict
+
+
+@router.get("/compare", response_model=CompareResponse)
+async def eval_compare(
+    runs: list[str] = Query(min_length=1),
+    session: AsyncSession = Depends(get_session),
+):
+    loaded = {}
+    for run_name in dict.fromkeys(runs):
+        stmt = (
+            select(QuestionLog)
+            .options(selectinload(QuestionLog.question))
+            .where(QuestionLog.run_name == run_name)
+        )
+        loaded[run_name] = list((await session.scalars(stmt)).all())
+
+    empty = [name for name, logs in loaded.items() if not logs]
+    if empty:
+        raise HTTPException(status_code=404, detail=f"no logs for runs: {empty}")
+    return compare_uc.compare(loaded)
+
+
+def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:
+    agent_only = (
+        "fallback_policy", "max_hops", "gate_signal", "weak_distance", "topic_threshold"
+    )
+    if param in agent_only and pipeline != Pipeline.agent:
+        raise HTTPException(
+            status_code=400, detail=f"{param} only applies to the agent pipeline"
+        )
     if param == "model":
         bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.match(v)]
         if bad:
             raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
+    elif param in ("topic_threshold", "weak_distance"):
+        bad = [v for v in values if not isinstance(v, int | float) or not 0 <= v <= 2]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"{param} must be 0..2: {bad}")
+    elif param in ("fallback_policy", "gate_signal"):
+        allowed = {p.value for p in (FallbackPolicy if param == "fallback_policy" else GateSignal)}
+        bad = [v for v in values if v not in allowed]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"fallback_policy must be one of {sorted(allowed)}: {bad}"
+            )
     else:
         bad = [v for v in values if not isinstance(v, int) or v < 1]
         if bad:
@@ -173,6 +226,10 @@ async def enqueue_eval_run(
             "model": request.model,
             "pipeline": request.pipeline.value,
             "language": request.language,
+            "fallback_policy": request.fallback_policy and request.fallback_policy.value,
+            "gate_signal": request.gate_signal and request.gate_signal.value,
+            "weak_distance": request.weak_distance,
+            "topic_threshold": request.topic_threshold,
         },
     )
 
@@ -182,7 +239,7 @@ async def enqueue_experiment(
     request: ExperimentRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    validate_param_values(request.param, request.values)
+    validate_param_values(request.param, request.values, request.pipeline)
     base = request.run_name or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
     jobs = []
     for value in request.values:

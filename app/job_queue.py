@@ -51,6 +51,18 @@ def claim_next(queues: list[str]) -> ClaimedJob | None:
         return claimed
 
 
+def requeue_stale(queues: list[str]) -> list[int]:
+    with Session() as session:
+        jobs = session.scalars(
+            select(Job).where(Job.status == JobStatus.running, Job.queue.in_(queues))
+        ).all()
+        ids = [job.id for job in jobs]
+        for job in jobs:
+            job.status = JobStatus.new
+        session.commit()
+        return ids
+
+
 def complete(id: int, elapsed: float | None = None) -> None:
     fields = {"status": JobStatus.done}
     if elapsed is not None:

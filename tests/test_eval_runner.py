@@ -102,35 +102,35 @@ def _rerank_by_content(monkeypatch, ranking):
 
 
 def test_rerank_phase_keeps_candidates_with_their_own_question(monkeypatch):
-    retrieved = [("q1", _scored_rows("a", [0.1, 0.2])), ("q2", _scored_rows("b", [0.3, 0.4]))]
+    retrieved = [("q1", _scored_rows("a", [0.1, 0.2]), None), ("q2", _scored_rows("b", [0.3, 0.4]), None)]
     _rerank_by_content(monkeypatch, {"chunk a 0": 9, "chunk a 1": 1, "chunk b 0": 8, "chunk b 1": 2})
 
     out = runner._phase_rerank(retrieved, k=1)
 
-    assert [text for text, _ in out] == ["q1", "q2"]
-    assert [rows[0][0] for _, rows in out] == ["chunk a 0", "chunk b 0"]
+    assert [text for text, _, _ in out] == ["q1", "q2"]
+    assert [rows[0][0] for _, rows, _ in out] == ["chunk a 0", "chunk b 0"]
 
 
 def test_rerank_phase_orders_within_each_question(monkeypatch):
-    retrieved = [("q", _scored_rows("a", [0.1, 0.2, 0.3]))]
+    retrieved = [("q", _scored_rows("a", [0.1, 0.2, 0.3]), None)]
     _rerank_by_content(monkeypatch, {"chunk a 0": 1, "chunk a 1": 5, "chunk a 2": 3})
 
-    (_, rows), = runner._phase_rerank(retrieved, k=3)
+    (_, rows, _), = runner._phase_rerank(retrieved, k=3)
 
     assert [r[0] for r in rows] == ["chunk a 1", "chunk a 2", "chunk a 0"]
 
 
 def test_rerank_phase_handles_ragged_and_empty_pools(monkeypatch):
     retrieved = [
-        ("q1", _scored_rows("a", [0.1])),
-        ("q2", []),
-        ("q3", _scored_rows("c", [0.1, 0.2, 0.3])),
+        ("q1", _scored_rows("a", [0.1]), None),
+        ("q2", [], None),
+        ("q3", _scored_rows("c", [0.1, 0.2, 0.3]), None),
     ]
     _rerank_by_content(monkeypatch, {"chunk a 0": 1, "chunk c 0": 1, "chunk c 1": 9, "chunk c 2": 5})
 
     out = runner._phase_rerank(retrieved, k=2)
 
-    assert [len(rows) for _, rows in out] == [1, 0, 2]
+    assert [len(rows) for _, rows, _ in out] == [1, 0, 2]
     assert [r[0] for r in out[2][1]] == ["chunk c 1", "chunk c 2"]
 
 
@@ -161,7 +161,7 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
 
     out = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], k=3, use_rerank=False)
 
-    assert [text for text, _ in out] == ["ok1", "ok2"]
+    assert [text for text, _, _ in out] == ["ok1", "ok2"]
     assert len([c for c in calls if c[0] == "search"]) == 2
 
 
@@ -176,7 +176,7 @@ def test_search_failure_skips_one_question(monkeypatch):
     monkeypatch.setattr(runner.db, "hybrid_search", flaky)
 
     out = runner._phase_retrieve(["good", "bad"], k=3, use_rerank=False)
-    assert [text for text, _ in out] == ["good"]
+    assert [text for text, _, _ in out] == ["good"]
 
 
 def test_cancel_between_phases_skips_rerank_and_generation(monkeypatch):
@@ -210,7 +210,7 @@ def test_phased_snapshot_keeps_the_device_used_during_rerank(monkeypatch):
 def test_rerank_phase_accepts_numpy_scores(monkeypatch):
     import numpy as np
 
-    retrieved = [("q1", _scored_rows("a", [0.1, 0.2])), ("q2", _scored_rows("b", [0.3]))]
+    retrieved = [("q1", _scored_rows("a", [0.1, 0.2]), None), ("q2", _scored_rows("b", [0.3]), None)]
     monkeypatch.setattr(
         runner.rerank, "score_pairs",
         lambda pairs: np.asarray([1.0, 9.0, 5.0], dtype=np.float32),
@@ -218,4 +218,15 @@ def test_rerank_phase_accepts_numpy_scores(monkeypatch):
 
     out = runner._phase_rerank(retrieved, k=1)
 
-    assert [rows[0][0] for _, rows in out] == ["chunk a 1", "chunk b 0"]
+    assert [rows[0][0] for _, rows, _ in out] == ["chunk a 1", "chunk b 0"]
+
+
+def test_agent_runs_get_the_fallback_policy(monkeypatch):
+    seen = []
+    monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1"])
+    monkeypatch.setattr(runner.job_queue, "enqueue", lambda *a, **kw: None)
+    monkeypatch.setattr(runner.agent, "run", lambda text, **kw: seen.append(kw["fallback_policy"]))
+
+    runner.run("run", set_name="s", pipeline="agent", fallback_policy="agent_choice")
+
+    assert seen == ["agent_choice"]

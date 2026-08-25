@@ -45,7 +45,22 @@ def _gen(faith, rel, compl):
         "relevance_0_1": rel / 10,
         "completeness_0_1": compl / 10,
         "refusal_accuracy": "0/0",
+        "off_domain_refusal": "0/0",
+        "off_domain_grounding": None,
+        "off_domain_refusal_rate": None,
+        "supported_rate": 1.0,
+        "n_off_domain_scored": 0,
+        "unsupported_external": "0/0",
+        "unsupported_off_domain": "0/0",
+        "narrated_calls": 0,
+        "outcomes": {},
+        "false_refusal": "0/10",
+        "answer_rate": 1.0,
+        "answered_via_remote": 0,
+        "remote_grounding": None,
+        "remote_relevance": None,
         "n_scored": 10,
+        "n_remote_scored": 0,
     }
 
 
@@ -65,7 +80,7 @@ def test_compute_results_rrf_winner_ignores_retrieval(monkeypatch):
     results = exp.compute_results("run", ["run_hi", "run_lo"], ["run_hi", "run_lo"])
 
     assert results["composite"]["winner"] == "run_hi"
-    assert results["composite"]["axes"] == ["faithfulness", "relevance", "completeness"]
+    assert results["composite"]["axes"][:3] == ["faithfulness", "relevance", "completeness"]
     assert results["per_value"]["run_lo"]["hit_at_k"] == 0.9
     assert results["composite"]["pairwise"]["tests"] == 0
 

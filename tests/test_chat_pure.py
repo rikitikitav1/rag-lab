@@ -1,4 +1,5 @@
 import time
+from types import SimpleNamespace
 
 import pytest
 from use_cases import chat
@@ -83,3 +84,55 @@ def test_config_snapshot_records_device_only_when_reranking(monkeypatch):
 def test_config_snapshot_carries_procedure_fields():
     snap = chat._config_snapshot(False, 7, True, 0.42)
     assert (snap["k"], snap["phased"], snap["distance_threshold"]) == (7, True, 0.42)
+
+
+def test_gate_scores_only_the_head_and_pads_the_rest(monkeypatch):
+    import rerank
+
+    seen = []
+    monkeypatch.setattr(rerank, "score_pairs", lambda pairs: seen.append(pairs) or [0.9, 0.1])
+    rows = [_row(f"{i}.md") for i in range(5)]
+
+    scores = chat._gate_scores("q", rows, top=2)
+
+    assert scores == [0.9, 0.1, None, None, None]
+    assert seen == [[("q", "content"), ("q", "content")]]
+
+
+def test_search_chunks_attaches_gate_scores_with_rerank_off(monkeypatch):
+    rows = [_row("a.md"), _row("b.md")]
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, None))
+    monkeypatch.setattr(chat, "_gate_scores", lambda query, rows, top: [0.42, None])
+
+    _, sources = chat.search_chunks("q", use_rerank=False, gate_top=1)
+
+    assert [s.rerank_score for s in sources] == [0.42, None]
+
+
+def test_search_chunks_leaves_rerank_scores_alone(monkeypatch):
+    rows = [_row("a.md")]
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, [0.77]))
+    monkeypatch.setattr(chat, "_gate_scores", lambda *a, **kw: pytest.fail("gate ran anyway"))
+
+    _, sources = chat.search_chunks("q", use_rerank=True, gate_top=5)
+
+    assert [s.rerank_score for s in sources] == [0.77]
+
+
+def test_dedup_keeps_the_best_cross_encoder_score():
+    rows = [_row("a.md"), _row("b.md"), _row("a.md")]
+    sources = chat.take_sources(rows, [0.1, 0.2, 0.9])
+    by_path = {s.source: s.rerank_score for s in sources}
+    assert by_path == {"a.md": 0.9, "b.md": 0.2}
+
+
+def test_fts_language_comes_from_config(monkeypatch):
+    import config
+
+    import db
+
+    monkeypatch.setattr(
+        config.settings, "fts", SimpleNamespace(languages={"ru": "russian"}, fallback="simple")
+    )
+    assert db._ts_config("что такое хеш-таблица") == "russian"
+    assert db._ts_config("...") == "simple"

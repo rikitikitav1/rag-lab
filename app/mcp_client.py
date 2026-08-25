@@ -1,10 +1,44 @@
 import time
+from dataclasses import dataclass
 
 import config
 import errors
+import httpx
+import logging_setup
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.exceptions import ToolError
 from mcp.types import TextContent
+
+log = logging_setup.get_logger(__name__)
+
+
+@dataclass
+class CallOutcome:
+    text: str
+    error_kind: str | None = None
+
+
+# fastmcp hides the real cause under RuntimeError inside a TaskGroup group
+def classify(exc: BaseException, depth: int = 0) -> str:
+    if isinstance(exc, ToolError):
+        return "tool"
+    if isinstance(exc, BaseExceptionGroup):
+        kinds = [classify(inner, depth + 1) for inner in exc.exceptions]
+        return next((kind for kind in kinds if kind != "unknown"), "unknown")
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status is not None:
+        if status in (401, 403):
+            return "auth"
+        return "server" if status >= 500 else "client"
+    if isinstance(exc, httpx.TimeoutException | TimeoutError):
+        return "timeout"
+    if isinstance(exc, httpx.ConnectError | OSError):
+        return "connect"
+    cause = exc.__cause__ or exc.__context__
+    if cause is not None and depth < 5:
+        return classify(cause, depth + 1)
+    return "unknown"
 
 
 def auth_headers(integration) -> dict:
@@ -35,11 +69,22 @@ async def list_tools(integration) -> list:
         return await client.list_tools()
 
 
-async def call_tool(integration, tool, args) -> str:
+async def call_tool(integration, tool, args) -> CallOutcome:
     try:
         async with build_client(integration) as client:
             result = await client.call_tool(tool, arguments=args)
         text = "\n".join(block.text for block in result.content if isinstance(block, TextContent))
-        return text[: integration.max_result_chars]
+        return CallOutcome(text=text[: integration.max_result_chars])
     except Exception as e:
-        return f"{errors.ERROR_PREFIX}tool '{tool}' failed: {type(e).__name__}"
+        kind = classify(e)
+        log.warning(
+            "mcp.call_failed",
+            integration=integration.name,
+            tool=tool,
+            kind=kind,
+            error=type(e).__name__,
+        )
+        return CallOutcome(
+            text=f"{errors.ERROR_PREFIX}tool '{tool}' failed ({kind}): {type(e).__name__}",
+            error_kind=kind,
+        )
