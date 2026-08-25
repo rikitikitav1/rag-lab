@@ -65,7 +65,7 @@ class SourcesCfg(BaseModel):
 
 
 class LlmCfg(BaseModel):
-    context_length: int = 12288
+    context_length: int = 8192
     base_url: str
     roles: dict[str, RoleCfg]
     candidates: list[str] = []

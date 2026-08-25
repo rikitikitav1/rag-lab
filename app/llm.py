@@ -67,7 +67,6 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
         raise RuntimeError(f"LLM chat failed ({name}): {e}") from e
 
     usage = resp.usage
-    _warn_if_truncated(usage.prompt_tokens, name)
     log.info(
         "llm.chat",
         model=name,
@@ -99,7 +98,6 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     choice = resp.choices[0]
     message = choice.message
     usage = resp.usage
-    _warn_if_truncated(usage.prompt_tokens, name)
     log.info(
         "llm.chat_tools",
         model=name,
@@ -118,15 +116,6 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     )
 
 
-# ollama drops the overflow silently, so a run that lost half its context looks like a bad answer
-def _warn_if_truncated(prompt_tokens: int, model: str) -> None:
-    window = config.settings.llm.context_length
-    if prompt_tokens > window:
-        log.warning(
-            "llm.prompt_over_context", model=model, prompt_tokens=prompt_tokens, context=window
-        )
-
-
 def _params(role, schema) -> dict:
     opts = config.settings.llm.roles[role].options
     params = {k: opts[k] for k in ("temperature", "max_tokens") if k in opts}
@@ -140,6 +129,19 @@ def _params(role, schema) -> dict:
 
 def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
+
+
+# the server reports the window it actually loaded, which is not always the one in our config
+def server_context_length(model: str) -> int | None:
+    try:
+        loaded = _get_request("/api/ps").get("models") or []
+    except Exception as e:  # noqa: BLE001 - a probe must not break a run
+        log.warning("llm.ps_failed", error=str(e))
+        return None
+    for entry in loaded:
+        if entry.get("name", "").startswith(model.split(":")[0]):
+            return entry.get("context_length")
+    return None
 
 
 def list_models():

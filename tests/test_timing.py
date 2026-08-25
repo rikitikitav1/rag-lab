@@ -18,14 +18,11 @@ def test_measure_elapsed_sets_field_on_result():
     assert out.elapsed >= 0.0
 
 
-def test_a_prompt_over_the_context_window_is_reported(monkeypatch):
-    import llm
+def test_a_shorter_prompt_than_the_hop_before_means_the_server_trimmed_it():
+    from use_cases.agent import AgentResult
 
-    seen = []
-    monkeypatch.setattr(llm.log, "warning", lambda event, **kw: seen.append((event, kw)))
-    window = llm.config.settings.llm.context_length
-    llm._warn_if_truncated(window + 1, "llama3.1:8b")
-    llm._warn_if_truncated(window - 1, "llama3.1:8b")
+    result = AgentResult()
+    for tokens in (600, 1800, 3900, 900, 1500):
+        result.note_prompt(tokens)
 
-    assert [event for event, _ in seen] == ["llm.prompt_over_context"]
-    assert seen[0][1]["context"] == window
+    assert result.truncated_hops == 1

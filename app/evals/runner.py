@@ -92,6 +92,9 @@ def _run_sequential(
     for text in texts:
         if job_id is not None and job_queue.is_cancelled(job_id):
             return answered, True
+        # after the first answer the generator is loaded, so a spill is finally visible
+        if answered == 1:
+            llm.warn_if_models_do_not_fit()
         try:
             _answer_one(
                 text, run_name, use_rerank, pipeline, language, k, max_hops, model,

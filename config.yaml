@@ -221,10 +221,11 @@ service:
         - xgboost-interview-questions
         - xml-interview-questions
 llm:
-  # mirrors OLLAMA_CONTEXT_LENGTH: the server truncates a longer prompt without saying so.
-  # 12288 measured on this card: both models stay resident, 14336 makes ollama swap them
-  # (112 reloads and 16s per question against 12 reloads and 4s)
-  context_length: 12288
+  # mirrors OLLAMA_CONTEXT_LENGTH. The server drops whole messages to fit and reports the
+  # trimmed count, so an over-long prompt is invisible in the numbers it returns.
+  # The longest hop ever logged is 4075 tokens; 8192 leaves room without crowding the
+  # embedder off the card, which is what 14336 did (112 model reloads against 12)
+  context_length: 8192
   base_url: http://ollama:11434
   roles:
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }

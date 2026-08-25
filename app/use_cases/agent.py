@@ -50,6 +50,8 @@ class AgentResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     max_prompt_tokens: int = 0
+    truncated_hops: int = 0
+    last_prompt_tokens: int = 0
     elapsed: float = 0.0
     fallback_reason: str = FallbackReason.none
     fallback_announced: bool = False
@@ -59,6 +61,12 @@ class AgentResult:
     dropped_hits: list = field(default_factory=list)
     outcome: str = outcomes.Outcome.error
     tool_errors: dict = field(default_factory=dict)
+
+    # history only grows, so a prompt shorter than the previous hop means the server trimmed it
+    def note_prompt(self, tokens: int) -> None:
+        if self.last_prompt_tokens - tokens > 512:
+            self.truncated_hops += 1
+        self.last_prompt_tokens = tokens
 
 
 # uses asyncio.run for remote MCP tools: call from sync context only, never from an event loop
@@ -174,6 +182,7 @@ def run(
           result.prompt_tokens += turn.prompt_tokens
           result.completion_tokens += turn.completion_tokens
           result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
+          result.note_prompt(turn.prompt_tokens)
           if not turn.tool_calls and nudges and outcomes.narrated_tool_call(
               turn.text, (*remote, agent_tools.CORPUS_TOOL)
           ):
@@ -245,7 +254,8 @@ def run(
                 "name": str(orchestrator),
                 "client": (
                     "ChatOllama"
-                    if orchestrator == Orchestrator.langgraph_idiomatic
+                    if orchestrator
+                    in (Orchestrator.langgraph_idiomatic, Orchestrator.langgraph_middleware)
                     else "openai-compat"
                 ),
                 **(orch_graph.versions() if graph_run else {}),
@@ -497,7 +507,9 @@ def _log_answer(
                     "distance_threshold": round(
                         config.settings.retrieval.distance_threshold, 3
                     ),
-                    "context_length": config.settings.llm.context_length,
+                    "context_length": llm.server_context_length(model or "llama")
+                    or config.settings.llm.context_length,
+                    "truncated_hops": result.truncated_hops or None,
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
                     "corpus": config.settings.corpus.description,
