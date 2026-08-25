@@ -22,6 +22,7 @@ class GateSignal(StrEnum):
 class Orchestrator(StrEnum):
     handrolled = "agent"
     langgraph_ported = "langgraph_ported"
+    langgraph_middleware = "langgraph_middleware"
     langgraph_idiomatic = "langgraph_idiomatic"
 
 

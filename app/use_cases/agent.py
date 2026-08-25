@@ -11,9 +11,12 @@ import outcomes
 import prompt_repo
 from models.eval import QuestionLog
 from models.registry import Pipeline, Purpose
+from orchestrators import graph as orch_graph
+from orchestrators import middleware as orch_middleware
+from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
-from use_cases import agent_graph, agent_react, chat
+from use_cases import chat
 from use_cases.agent_policy import (
     TOOL_CALL_NUDGE,
     FallbackPolicy,
@@ -133,23 +136,27 @@ def run(
 
     orchestrator = Orchestrator(orchestrator or Orchestrator.handrolled)
     graph_run = orchestrator != Orchestrator.handrolled
-    if orchestrator == Orchestrator.langgraph_idiomatic:
-        agent_react.invoke(
-            question,
-            system,
-            agent_graph.context(
-                remote=remote, k=k, use_rerank=use_rerank, role=role, model=model,
-                max_hops=max_hops,
-            ),
-            result,
+    if orchestrator in (Orchestrator.langgraph_idiomatic, Orchestrator.langgraph_middleware):
+        ctx = orch_graph.context(
+            remote=remote, k=k, use_rerank=use_rerank, role=role, model=model,
+            max_hops=max_hops,
         )
+        if orchestrator == Orchestrator.langgraph_middleware:
+            gate.announce = not external and bool(remote)
+            run = orch_middleware.Run(remote, gate, external, max_hops)
+            orch_react.invoke(
+                question, system, ctx, result,
+                middleware=orch_middleware.build(run), run=run,
+            )
+        else:
+            orch_react.invoke(question, system, ctx, result)
         messages = result.messages
     elif graph_run:
         gate.announce = not external and bool(remote)
-        agent_graph.invoke(
+        orch_graph.invoke(
             question,
             system,
-            agent_graph.context(
+            orch_graph.context(
                 remote=remote, gate=gate, external=external, k=k, use_rerank=use_rerank,
                 role=role, model=model, max_hops=max_hops,
             ),
@@ -241,7 +248,7 @@ def run(
                     if orchestrator == Orchestrator.langgraph_idiomatic
                     else "openai-compat"
                 ),
-                **(agent_graph.versions() if graph_run else {}),
+                **(orch_graph.versions() if graph_run else {}),
             },
         )
     except SQLAlchemyError as e:
