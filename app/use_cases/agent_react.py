@@ -20,24 +20,24 @@ def chat_model(role: str = "generation", model: str | None = None):
     )
 
 
-# the standard tool interface hands the model a string and keeps nothing else, so the sources
-# every downstream metric needs are collected on the side rather than through the framework
-def as_tools(remote: dict, collected: list, k=None, use_rerank=None) -> list:
+# the standard two-layer tool contract: content goes to the model, artifact rides along on the
+# ToolMessage for the pipeline. Our error kinds have no place in it, only success or error
+def as_tools(remote: dict, k=None, use_rerank=None) -> list:
     def make(name: str, tool):
-        def call(**kwargs) -> str:
+        def call(**kwargs) -> tuple[str, list]:
             import json
 
             res = agent_tools.dispatch(
                 name, json.dumps(kwargs), extra=remote, k=k, use_rerank=use_rerank
             )
-            collected.extend(res.meta.get("sources", []))
-            return res.content
+            return res.content, res.meta.get("sources", [])
 
         return StructuredTool.from_function(
             func=call,
             name=name,
             description=tool.description,
             args_schema=tool.parameters,
+            response_format="content_and_artifact",
         )
 
     tools = [make(t.name, t) for t in agent_tools.registry()]
@@ -47,8 +47,7 @@ def as_tools(remote: dict, collected: list, k=None, use_rerank=None) -> list:
 def invoke(question: str, system: str, ctx: dict, result) -> None:
     from langchain.agents import create_agent
 
-    collected: list = []
-    tools = as_tools(ctx["remote"], collected, k=ctx["k"], use_rerank=ctx["use_rerank"])
+    tools = as_tools(ctx["remote"], k=ctx["k"], use_rerank=ctx["use_rerank"])
     agent = create_agent(
         model=ctx.get("model_client") or chat_model(ctx["role"], ctx["model"]),
         tools=tools,
@@ -60,6 +59,12 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
     )
     messages = state["messages"]
     replies = [m for m in messages if getattr(m, "type", None) == "ai"]
+    collected = [
+        source
+        for m in messages
+        if getattr(m, "type", None) == "tool"
+        for source in (getattr(m, "artifact", None) or [])
+    ]
     result.messages.clear()
     result.messages.extend(
         {"role": getattr(m, "type", "unknown"), "content": str(m.content)} for m in messages

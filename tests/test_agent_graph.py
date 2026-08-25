@@ -162,3 +162,18 @@ def test_the_graph_reports_the_same_hop_count_when_it_runs_out(monkeypatch_facto
     )
     assert _shape(loop) == _shape(graph)
     assert loop.hops == graph.hops
+
+
+def test_the_graph_leaves_a_context_for_the_judge(monkeypatch_factory):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    (loop, _), (graph, _) = _both(
+        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
+    )
+    # a run whose context comes back empty is silently skipped by the judge
+    assert agent._context_from_messages(graph.messages)
+    assert agent._context_from_messages(graph.messages) == agent._context_from_messages(
+        loop.messages
+    )
