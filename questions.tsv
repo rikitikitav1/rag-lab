@@ -2564,3 +2564,273 @@ interview	eng	in_corpus	xml-interview-questions/README.md	Explain the difference
 interview	eng	in_corpus	xml-interview-questions/README.md	What is the purpose of XML comments and how are they represented?
 interview	eng	in_corpus	xml-interview-questions/README.md	Describe the concept of XML processing instructions.
 interview	eng	in_corpus	xml-interview-questions/README.md	What is the difference between an empty element and a self-closing element in XML?
+out_of_corpus	eng	out_of_corpus		In the repository langchain-ai/langgraph, how does a checkpointer persist graph state between steps?
+out_of_corpus	eng	out_of_corpus		In the repository langchain-ai/langgraph, what is the difference between a conditional edge and a normal edge?
+out_of_corpus	eng	out_of_corpus		In the repository jlowin/fastmcp, how does the Client choose a transport for a given URL?
+out_of_corpus	eng	out_of_corpus		In the repository jlowin/fastmcp, what happens when a tool raises an exception during a call?
+out_of_corpus	eng	out_of_corpus		In the repository tiangolo/fastapi, how are dependencies resolved for a single request?
+out_of_corpus	eng	out_of_corpus		In the repository tiangolo/fastapi, how does the framework generate the OpenAPI schema?
+out_of_corpus	eng	out_of_corpus		In the repository celery/celery, how does a worker acknowledge a task and what happens on failure?
+out_of_corpus	eng	out_of_corpus		In the repository celery/celery, what is the difference between a chain and a chord?
+out_of_corpus	eng	out_of_corpus		In the repository apache/kafka, what guarantees does the idempotent producer provide?
+out_of_corpus	eng	out_of_corpus		In the repository grpc/grpc, how does a bidirectional streaming call terminate?
+out_of_corpus	eng	out_of_corpus		In the repository sqlalchemy/sqlalchemy, how does the identity map avoid duplicate objects in a session?
+out_of_corpus	eng	out_of_corpus		In the repository sqlalchemy/sqlalchemy, when does the unit of work flush pending changes?
+out_of_corpus	eng	out_of_corpus		In the repository ollama/ollama, how does the scheduler decide which model to evict from the GPU?
+out_of_corpus	eng	out_of_corpus		In the repository ollama/ollama, what does the keep_alive parameter control?
+out_of_corpus	eng	out_of_corpus		In the repository huggingface/transformers, how is a tokenizer loaded from a model repository?
+out_of_corpus	eng	out_of_corpus		In the repository encode/httpx, how are connection pool limits configured?
+out_of_corpus	eng	out_of_corpus		In the repository astral-sh/uv, how does the resolver build a lock file?
+out_of_corpus	eng	out_of_corpus		In the repository langchain-ai/langgraph, how does a checkpointer restore state after an interrupt?
+out_of_corpus	eng	out_of_corpus		In the repository langchain-ai/langgraph, what is the difference between a compiled graph and a graph builder?
+out_of_corpus	eng	out_of_corpus		In the repository jlowin/fastmcp, how does the server decide which tools to expose to a client?
+out_of_corpus	eng	out_of_corpus		In the repository jlowin/fastmcp, what does the Context object give a tool function?
+out_of_corpus	eng	out_of_corpus		In the repository pgvector/pgvector, how is the HNSW index built during an index creation?
+out_of_corpus	eng	out_of_corpus		In the repository pgvector/pgvector, what does the ivfflat probes setting change at query time?
+out_of_corpus	eng	out_of_corpus		In the repository tiangolo/fastapi, how is a response model used to filter the returned data?
+out_of_corpus	eng	out_of_corpus		In the repository tiangolo/fastapi, what happens when a dependency is declared with yield?
+out_of_corpus	eng	out_of_corpus		In the repository celery/celery, how does the prefetch multiplier affect task distribution?
+out_of_corpus	eng	out_of_corpus		In the repository celery/celery, what does the late acknowledgement setting change on failure?
+out_of_corpus	eng	out_of_corpus		In the repository apache/kafka, how is the leader epoch used during log truncation?
+out_of_corpus	eng	out_of_corpus		In the repository apache/kafka, what does the transaction coordinator do on a producer restart?
+out_of_corpus	eng	out_of_corpus		In the repository grpc/grpc, how are deadlines propagated between services?
+out_of_corpus	eng	out_of_corpus		In the repository grpc/grpc, what does the keepalive ping configuration control?
+out_of_corpus	eng	out_of_corpus		In the repository sqlalchemy/sqlalchemy, how does lazy loading decide when to emit a query?
+out_of_corpus	eng	out_of_corpus		In the repository sqlalchemy/sqlalchemy, what is the difference between session.merge and session.add?
+out_of_corpus	eng	out_of_corpus		In the repository ollama/ollama, how is a model kept in memory between requests?
+out_of_corpus	eng	out_of_corpus		In the repository ollama/ollama, how does the runner decide how many layers to offload to the GPU?
+out_of_corpus	eng	out_of_corpus		In the repository huggingface/transformers, how does generate implement beam search?
+out_of_corpus	eng	out_of_corpus		In the repository huggingface/transformers, what does the trainer do between gradient accumulation steps?
+out_of_corpus	eng	out_of_corpus		In the repository encode/httpx, how does the client handle redirects?
+out_of_corpus	eng	out_of_corpus		In the repository encode/httpx, what is the difference between a transport and a client?
+out_of_corpus	eng	out_of_corpus		In the repository astral-sh/uv, how does the cache decide whether a wheel can be reused?
+out_of_corpus	eng	out_of_corpus		In the repository astral-sh/uv, what does uv do when two dependencies require conflicting versions?
+out_of_corpus	eng	out_of_corpus		In the repository django/django, how is the middleware chain assembled at startup?
+out_of_corpus	eng	out_of_corpus		In the repository pallets/flask, what does the application context protect against?
+out_of_corpus	eng	out_of_corpus		In the repository pallets/flask, how are blueprints registered on an application?
+out_of_corpus	eng	out_of_corpus		In the repository psf/requests, how are sessions reusing connections?
+out_of_corpus	eng	out_of_corpus		In the repository pandas-dev/pandas, what does the copy-on-write mode change?
+out_of_corpus	eng	out_of_corpus		In the repository pytorch/pytorch, what does DataLoader do with num_workers greater than zero?
+out_of_corpus	eng	out_of_corpus		In the repository kubernetes/kubernetes, how does the scheduler score nodes for a pod?
+out_of_corpus	eng	out_of_corpus		In the repository docker/compose, how are service dependencies resolved on startup?
+out_of_corpus	eng	out_of_corpus		In the repository hashicorp/terraform, how is the dependency graph built from the configuration?
+out_of_corpus	eng	out_of_corpus		In the repository hashicorp/terraform, what does the state lock protect?
+out_of_corpus	eng	out_of_corpus		In the repository grafana/grafana, how are dashboard variables resolved before a query?
+out_of_corpus	eng	out_of_corpus		In the repository prometheus/prometheus, how does the scrape manager handle a target that times out?
+out_of_corpus	eng	out_of_corpus		In the repository prometheus/prometheus, how is a range vector evaluated in a query?
+out_of_corpus	eng	out_of_corpus		In the repository elastic/elasticsearch, how is a search request distributed across shards?
+out_of_corpus	eng	out_of_corpus		In the repository elastic/elasticsearch, what happens during a segment merge?
+out_of_corpus	eng	out_of_corpus		In the repository apache/spark, how does the shuffle write data between stages?
+out_of_corpus	eng	out_of_corpus		In the repository ClickHouse/ClickHouse, how does the MergeTree engine merge parts?
+out_of_corpus	eng	out_of_corpus		In the repository ClickHouse/ClickHouse, how are materialized views populated on insert?
+out_of_corpus	eng	out_of_corpus		In the repository rabbitmq/rabbitmq-server, what does a quorum queue do when a node fails?
+out_of_corpus	eng	out_of_corpus		In the repository nats-io/nats-server, how does JetStream persist a stream?
+out_of_corpus	eng	out_of_corpus		In the repository etcd-io/etcd, how does the raft implementation handle a leader election?
+out_of_corpus	eng	out_of_corpus		In the repository etcd-io/etcd, what is a lease used for?
+out_of_corpus	eng	out_of_corpus		In the repository golang/go, how does the scheduler handle a goroutine that blocks on a syscall?
+out_of_corpus	eng	out_of_corpus		In the repository golang/go, how does the garbage collector decide when to start a cycle?
+out_of_corpus	eng	out_of_corpus		In the repository rust-lang/cargo, how does the resolver pick feature unification?
+out_of_corpus	eng	out_of_corpus		In the repository denoland/deno, how are permissions checked at runtime?
+out_of_corpus	eng	out_of_corpus		In the repository vercel/next.js, how does the app router decide between server and client components?
+out_of_corpus	eng	out_of_corpus		In the repository facebook/react, what does the scheduler package do with lane priorities?
+out_of_corpus	eng	out_of_corpus		In the repository vuejs/core, how does the reactivity system track dependencies?
+out_of_corpus	eng	out_of_corpus		In the repository sveltejs/svelte, how does the compiler generate update functions?
+out_of_corpus	eng	out_of_corpus		In the repository tokio-rs/tokio, how does the multi-threaded runtime steal work between threads?
+out_of_corpus	eng	out_of_corpus		In the repository gin-gonic/gin, how does the router match a path with parameters?
+out_of_corpus	eng	out_of_corpus		In the repository spf13/cobra, how are flags inherited by subcommands?
+out_of_corpus	eng	out_of_corpus		In the repository stretchr/testify, how does the suite package run setup and teardown?
+out_of_corpus	eng	out_of_corpus		In the repository rails/rails, how does ActiveRecord decide when to write to the database?
+out_of_corpus	eng	out_of_corpus		In the repository rails/rails, how is the autoloader resolving constants?
+out_of_corpus	eng	out_of_corpus		In the repository puma/puma, how are worker processes and threads combined?
+out_of_corpus	eng	out_of_corpus		In the repository ansible/ansible, how does a playbook run decide the execution strategy?
+off_domain	rus	off_domain		как приготовить настоящую карбонару без сливок?
+off_domain	rus	off_domain		сколько минут варить перепелиные яйца вкрутую?
+off_domain	rus	off_domain		чем отличается разрыхлитель от соды в выпечке?
+off_domain	rus	off_domain		какая температура нужна для закваски теста на ржаном хлебе?
+off_domain	rus	off_domain		почему при реакции соды с уксусом выделяется газ?
+off_domain	rus	off_domain		что такое энтальпия простыми словами?
+off_domain	rus	off_domain		какая валентность у серы в серной кислоте?
+off_domain	rus	off_domain		чем ионная связь отличается от ковалентной?
+off_domain	rus	off_domain		как правильно поливать орхидею зимой?
+off_domain	rus	off_domain		когда обрезать смородину чтобы был хороший урожай?
+off_domain	rus	off_domain		какие витамины содержатся в квашеной капусте?
+off_domain	rus	off_domain		сколько длится больничный при переломе лодыжки?
+off_domain	rus	off_domain		как оформить налоговый вычет за обучение?
+off_domain	rus	off_domain		какой штраф за проезд на красный свет?
+off_domain	rus	off_domain		в каком году был подписан Тильзитский мир?
+off_domain	rus	off_domain		кто написал оперу Пиковая дама?
+off_domain	rus	off_domain		какое расстояние от Земли до Марса в перигелии?
+off_domain	rus	off_domain		почему небо на закате красное?
+off_domain	rus	off_domain		как научиться подтягиваться с нуля?
+off_domain	rus	off_domain		какое давление в шинах должно быть зимой?
+off_domain	eng	off_domain		how long should I bake sourdough at 240 degrees?
+off_domain	eng	off_domain		what is the boiling point of ethanol at sea level?
+off_domain	eng	off_domain		how do I train a puppy to stop biting?
+off_domain	eng	off_domain		which muscles does a deadlift work?
+out_of_corpus	eng	out_of_corpus		In the repository GnuCOBOL/gnucobol, how does the compiler translate a PERFORM paragraph into C?
+out_of_corpus	eng	out_of_corpus		In the repository GnuCOBOL/gnucobol, how are COMP-3 packed decimal fields stored at runtime?
+out_of_corpus	eng	out_of_corpus		In the repository SWI-Prolog/swipl-devel, how does the engine implement backtracking over choice points?
+out_of_corpus	eng	out_of_corpus		In the repository SWI-Prolog/swipl-devel, what does the garbage collector do with the trail stack?
+out_of_corpus	eng	out_of_corpus		In the repository mercurylang/mercury, how does the compiler use determinism declarations?
+out_of_corpus	eng	out_of_corpus		In the repository fortran-lang/fpm, how does the package manager resolve module dependencies?
+out_of_corpus	eng	out_of_corpus		In the repository erlang/otp, how does a supervisor restart a crashed child process?
+out_of_corpus	eng	out_of_corpus		In the repository erlang/otp, how are messages passed between processes on different nodes?
+out_of_corpus_extra	eng	parked		In the repository elixir-lang/elixir, how does the compiler expand macros at compile time?
+out_of_corpus_extra	eng	parked		In the repository ada-lang/ada-spark-rfcs, what does a SPARK contract add to an Ada subprogram?
+out_of_corpus_extra	eng	parked		In the repository racket/racket, how are continuations implemented in the runtime?
+out_of_corpus_extra	eng	parked		In the repository apache/groovy, how does the compiler handle dynamic dispatch?
+off_domain	rus	off_domain		как в Visual FoxPro связать таблицы в отчёте?
+off_domain	rus	off_domain		чем DBF-таблица FoxPro отличается от таблицы dBase III?
+off_domain	rus	off_domain		как в MS Access сделать форму с подчинённой таблицей?
+off_domain	rus	off_domain		почему база MS Access раздувается и как её сжать?
+off_domain	rus	off_domain		как в Delphi 7 положить компонент на форму во время выполнения?
+off_domain	rus	off_domain		как настроить репликацию в Lotus Notes?
+off_domain	rus	off_domain		как в Novell NetWare раздать права на сетевую папку?
+off_domain	rus	off_domain		как в Turbo Pascal работать с оверлеями?
+off_domain	rus	off_domain		как в ColdFusion сделать запрос к базе через cfquery?
+off_domain	rus	off_domain		чем отличается VB6 от VBA в макросах Excel?
+off_domain	rus	off_domain		как на AS/400 запустить программу на RPG?
+off_domain	rus	off_domain		как в Clipper собрать exe из prg-файлов?
+off_domain	rus	off_domain		что такое Model Context Protocol и зачем он нужен?
+off_domain	rus	off_domain		чем MCP-сервер отличается от MCP-клиента?
+off_domain	rus	off_domain		что нового в PostgreSQL 17 по сравнению с 16?
+off_domain	rus	off_domain		чем Valkey отличается от Redis после форка?
+off_domain	rus	off_domain		какие изменения принёс Next.js 15 в кэширование?
+off_domain	rus	off_domain		чем DeepSeek-R1 отличается от обычных чат-моделей?
+off_domain	rus	off_domain		что такое structured outputs в OpenAI API?
+off_domain	rus	off_domain		как работает reasoning effort в новых моделях?
+off_domain	rus	off_domain		что такое pgvectorscale и зачем он поверх pgvector?
+rejected_contaminated	eng	rejected		In the repository apache/kafka, how does the consumer group coordinator assign partitions?
+rejected_contaminated	eng	rejected		In the repository apache/spark, what does the catalyst optimizer do to a logical plan?
+rejected_contaminated	eng	rejected		In the repository django/django, how does the ORM build a queryset before it is evaluated?
+rejected_contaminated	eng	rejected		In the repository facebook/react, how does reconciliation decide to reuse a fiber?
+rejected_contaminated	eng	rejected		In the repository kubernetes/kubernetes, what does the kubelet do when a liveness probe fails?
+rejected_contaminated	eng	rejected		In the repository mongodb/mongo, how does the write concern affect acknowledgement?
+rejected_contaminated	eng	rejected		In the repository mongodb/mongo, how is the oplog used by a replica set member?
+rejected_contaminated	eng	rejected		In the repository nodejs/node, how are worker threads isolated from the main thread?
+rejected_contaminated	eng	rejected		In the repository nodejs/node, how does the event loop order timers and immediates?
+rejected_contaminated	eng	rejected		In the repository numpy/numpy, how does broadcasting decide the result shape?
+rejected_contaminated	eng	rejected		In the repository numpy/numpy, what is the difference between a view and a copy?
+rejected_contaminated	eng	rejected		In the repository pandas-dev/pandas, how does groupby split and combine the data?
+rejected_contaminated	eng	rejected		In the repository pgvector/pgvector, how does an HNSW index differ from an IVFFlat index?
+rejected_contaminated	eng	rejected		In the repository pgvector/pgvector, which distance operators are available for a vector column?
+rejected_contaminated	eng	rejected		In the repository pytorch/pytorch, how does autograd build the backward graph?
+rejected_contaminated	eng	rejected		In the repository rabbitmq/rabbitmq-server, how are messages routed by a topic exchange?
+rejected_contaminated	eng	rejected		In the repository scikit-learn/scikit-learn, how does a pipeline fit its steps?
+rejected_contaminated	eng	rejected		In the repository scikit-learn/scikit-learn, how is cross-validation splitting the data by default?
+rejected_contaminated	eng	rejected		In the repository sidekiq/sidekiq, how are retries scheduled after a job fails?
+rejected_contaminated	eng	rejected		In the repository vercel/next.js, how is incremental static regeneration implemented?
+rejected_contaminated	rus	rejected		что такое server actions в React 19?
+out_of_corpus_extra	eng	parked		In the repository ziglang/zig, how does comptime evaluate code during compilation?
+out_of_corpus_extra	eng	parked		In the repository nim-lang/Nim, how does the reference counting memory management work?
+out_of_corpus_extra	eng	parked		In the repository crystal-lang/crystal, how does the compiler infer union types?
+out_of_corpus_extra	eng	parked		In the repository ocaml/ocaml, how does the runtime represent variants in memory?
+out_of_corpus_extra	eng	parked		In the repository ghc/ghc, how does the STG machine evaluate thunks?
+out_of_corpus_extra	eng	parked		In the repository JuliaLang/julia, how does multiple dispatch pick a method at runtime?
+out_of_corpus_extra	eng	parked		In the repository lua/lua, how are tables implemented as both arrays and hashes?
+out_of_corpus_extra	eng	parked		In the repository tcltk/tcl, how does the interpreter handle command substitution?
+out_of_corpus_extra	eng	parked		In the repository pharo-project/pharo, how does the image save the running object graph?
+out_of_corpus_extra	eng	parked		In the repository chapel-lang/chapel, how are domains distributed across locales?
+out_of_corpus_extra	eng	parked		In the repository apple/swift, how does ARC insert retain and release calls?
+out_of_corpus_extra	eng	parked		In the repository scala/scala3, how does the compiler encode given instances?
+off_domain	rus	off_domain		сколько по времени тушить утку в духовке?
+off_domain	rus	off_domain		чем отличается бешамель от велюте?
+off_domain	rus	off_domain		как сделать бисквит чтобы он не опадал?
+off_domain	rus	off_domain		какая пропорция риса и воды для плова?
+off_domain	rus	off_domain		чем заменить яйца в веганской выпечке?
+off_domain	rus	off_domain		как хранить свежую зелень чтобы не вяла?
+off_domain	rus	off_domain		почему молоко сворачивается при кипячении с кислым?
+off_domain	rus	off_domain		как определить готовность стейка без термометра?
+off_domain	rus	off_domain		какая температура плавления вольфрама?
+off_domain	rus	off_domain		что такое катализатор в химической реакции?
+off_domain	rus	off_domain		чем отличается кислота от щёлочи по pH?
+off_domain	rus	off_domain		как устроена периодическая таблица по группам?
+off_domain	rus	off_domain		что происходит при электролизе воды?
+off_domain	rus	off_domain		почему благородные газы не вступают в реакции?
+off_domain	rus	off_domain		что такое молярная масса вещества?
+off_domain	rus	off_domain		как работает фотосинтез у растений?
+off_domain	rus	off_domain		чем митоз отличается от мейоза?
+off_domain	rus	off_domain		как устроена цепочка ДНК?
+off_domain	rus	off_domain		почему у человека четыре группы крови?
+off_domain	rus	off_domain		как работают антибиотики против бактерий?
+off_domain	rus	off_domain		сколько заживает растяжение связок голеностопа?
+off_domain	rus	off_domain		какие анализы сдают при подозрении на анемию?
+off_domain	rus	off_domain		чем отличается КТ от МРТ?
+off_domain	rus	off_domain		как правильно измерять артериальное давление дома?
+off_domain	rus	off_domain		какой срок исковой давности по трудовым спорам?
+off_domain	rus	off_domain		как расторгнуть договор аренды досрочно?
+off_domain	rus	off_domain		что нужно для регистрации ИП?
+off_domain	rus	off_domain		какие документы нужны для загранпаспорта?
+off_domain	rus	off_domain		как оспорить штраф с камеры?
+off_domain	rus	off_domain		в каком году отменили крепостное право?
+off_domain	rus	off_domain		кто был первым президентом Франции?
+off_domain	rus	off_domain		что такое Ганзейский союз?
+off_domain	rus	off_domain		почему пала Западная Римская империя?
+off_domain	rus	off_domain		какая самая глубокая точка мирового океана?
+off_domain	rus	off_domain		почему на Венере такая высокая температура?
+off_domain_extra	rus	parked		как образуются торнадо?
+off_domain_extra	rus	parked		чем отличается климат от погоды?
+off_domain_extra	rus	parked		какая высота Эльбруса?
+off_domain_extra	rus	parked		как правильно бегать чтобы не убить колени?
+off_domain_extra	rus	parked		сколько раз в неделю нужно ходить в зал новичку?
+off_domain_extra	rus	parked		чем отличается кроль от брасса по технике?
+off_domain_extra	rus	parked		как считать пульсовые зоны для кардио?
+off_domain_extra	rus	parked		как выбрать масло для двигателя по вязкости?
+off_domain_extra	rus	parked		почему буксует сцепление на механике?
+off_domain_extra	rus	parked		как часто менять тормозные колодки?
+off_domain_extra	rus	parked		чем отличается гибрид от плагин-гибрида?
+off_domain_extra	rus	parked		как настроить гитару без тюнера?
+off_domain_extra	rus	parked		чем мажор отличается от минора?
+off_domain_extra	rus	parked		кто написал Лунную сонату?
+off_domain_extra	rus	parked		чем импрессионизм отличается от постимпрессионизма?
+off_domain_extra	rus	parked		как считается сложный процент по вкладу?
+off_domain_extra	rus	parked		чем отличается ETF от паевого фонда?
+off_domain_extra	rus	parked		что такое инфляция простыми словами?
+off_domain_extra	rus	parked		как работает страхование вкладов?
+off_domain_extra	rus	parked		что такое когнитивный диссонанс?
+off_domain_extra	rus	parked		чем отличается интроверт от экстраверта по типологии?
+off_domain_extra	rus	parked		как формируется привычка за сколько дней?
+off_domain_extra	rus	parked		почему люди прокрастинируют?
+off_domain_extra	rus	parked		как в 1С 7.7 настроить обмен с торговым оборудованием?
+off_domain_extra	rus	parked		как в Delphi собрать проект под Windows 95?
+off_domain_extra	rus	parked		как работать с Btrieve из старого приложения?
+off_domain_extra	rus	parked		как в WordPerfect настроить макросы?
+off_domain_extra	rus	parked		что такое агентные скиллы в Claude Code?
+off_domain_extra	rus	parked		чем Gemini 2.5 отличается от предыдущего поколения?
+off_domain_extra	rus	parked		что такое prompt caching и когда он экономит деньги?
+off_domain_extra	rus	parked		как устроен sampling в MCP-протоколе?
+off_domain	eng	off_domain		how long should I marinate beef for a stew?
+off_domain	eng	off_domain		what is the difference between baking soda and baking powder?
+off_domain	eng	off_domain		why does pasta water need salt?
+off_domain	eng	off_domain		what is the melting point of aluminium?
+off_domain	eng	off_domain		what does a catalyst do in a reaction?
+off_domain	eng	off_domain		how does photosynthesis convert light into sugar?
+off_domain	eng	off_domain		what causes muscle soreness two days after training?
+off_domain	eng	off_domain		how often should a car timing belt be replaced?
+off_domain	eng	off_domain		what documents do I need to rent a flat abroad?
+off_domain	eng	off_domain		when did the Berlin Wall fall?
+off_domain	eng	off_domain		why is the sky red at sunset?
+off_domain	eng	off_domain		how do noise cancelling headphones work?
+off_domain	eng	off_domain		what is compound interest and how is it calculated?
+off_domain	eng	off_domain		how do I tune a guitar by ear?
+off_domain	eng	off_domain		what is the deepest lake in the world?
+off_domain	eng	off_domain		how long does a sprained ankle take to heal?
+off_domain	eng	off_domain		what is the difference between weather and climate?
+off_domain	eng	off_domain		how does a heat pump work in winter?
+off_domain	eng	off_domain		what is cognitive dissonance?
+off_domain	eng	off_domain		how many hours of sleep does an adult need?
+out_of_corpus	rus	out_of_corpus		В репозитории langchain-ai/langgraph, как устроен механизм прерывания графа?
+out_of_corpus	rus	out_of_corpus		В репозитории tiangolo/fastapi, как фреймворк валидирует тело запроса?
+out_of_corpus	rus	out_of_corpus		В репозитории pgvector/pgvector, как устроен индекс ivfflat внутри?
+out_of_corpus	rus	out_of_corpus		В репозитории ollama/ollama, как рантайм решает, сколько слоёв выгрузить на GPU?
+out_of_corpus	rus	out_of_corpus		В репозитории celery/celery, как воркер подтверждает выполнение задачи?
+rejected_contaminated	rus	rejected		В репозитории apache/kafka, как координатор группы распределяет партиции?
+out_of_corpus	rus	out_of_corpus		В репозитории kubernetes/kubernetes, как планировщик выбирает узел для пода?
+rejected_contaminated	rus	rejected		В репозитории pytorch/pytorch, как autograd строит граф для обратного прохода?
+out_of_corpus	rus	out_of_corpus		В репозитории golang/go, как планировщик обрабатывает блокирующий системный вызов?
+out_of_corpus	rus	out_of_corpus		В репозитории rails/rails, как автозагрузчик разрешает константы?
+out_of_corpus	rus	out_of_corpus		В репозитории ClickHouse/ClickHouse, как движок MergeTree сливает куски данных?
+out_of_corpus	rus	out_of_corpus		В репозитории erlang/otp, как супервизор перезапускает упавший процесс?
+out_of_corpus	rus	out_of_corpus		В репозитории ziglang/zig, как работает comptime во время компиляции?
+out_of_corpus	rus	out_of_corpus		В репозитории etcd-io/etcd, как реализованы выборы лидера в raft?
+out_of_corpus	rus	out_of_corpus		В репозитории encode/httpx, как клиент обрабатывает редиректы?
