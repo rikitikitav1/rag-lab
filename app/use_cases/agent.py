@@ -222,6 +222,7 @@ def run(
             result.prompt_tokens += final.prompt_tokens
             result.completion_tokens += final.completion_tokens
             result.max_prompt_tokens = max(result.max_prompt_tokens, final.prompt_tokens)
+            result.note_prompt(final.prompt_tokens)
             result.text = final.text or ""
             if final.finish_reason == "length":
                 log.warning("agent.truncated", hops=result.hops)
@@ -507,8 +508,9 @@ def _log_answer(
                     "distance_threshold": round(
                         config.settings.retrieval.distance_threshold, 3
                     ),
-                    "context_length": llm.server_context_length(model or "llama")
-                    or config.settings.llm.context_length,
+                    "context_length": llm.server_context_length(
+                        model or llm.resolve_name("generation")
+                    ),
                     "truncated_hops": result.truncated_hops or None,
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,

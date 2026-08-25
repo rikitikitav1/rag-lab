@@ -62,7 +62,7 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
 
     try:
         # a bare agent spends two super-steps per hop; the middleware hooks add their own
-        limit = (4 * ctx["max_hops"] + 8) if middleware else (2 * ctx["max_hops"] + 1)
+        limit = (12 * ctx["max_hops"] + 24) if middleware else (2 * ctx["max_hops"] + 1)
         state = agent.invoke(
             {"messages": [{"role": "user", "content": question}]},
             config={"recursion_limit": limit},
@@ -100,6 +100,7 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
     result.success = bool(result.text)
     for reply in replies:
         usage = getattr(reply, "usage_metadata", None) or {}
+        result.note_prompt(usage.get("input_tokens") or 0)
         result.prompt_tokens += usage.get("input_tokens") or 0
         result.completion_tokens += usage.get("output_tokens") or 0
         result.max_prompt_tokens = max(result.max_prompt_tokens, usage.get("input_tokens") or 0)

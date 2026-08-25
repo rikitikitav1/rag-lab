@@ -1,3 +1,5 @@
+import json
+from types import SimpleNamespace
 
 import pytest
 from test_agent import _agent_harness, _hit, _tool_call, _turn, _weak_hit
@@ -55,6 +57,30 @@ def monkeypatch_factory():
             return False
 
     return _Ctx
+
+
+# the create_agent arms keep their own message format, so equivalence is compared on everything
+# the pipeline downstream actually reads
+def _core(result):
+    shape = _shape(result)
+    for key in ("roles", "contents"):
+        shape.pop(key, None)
+    return shape
+
+
+def turns_for(script):
+    out = []
+    for step in script:
+        calls = [
+            _tool_call(call.get("id", f"call_{i}"), call["name"], json.dumps(call.get("args", {})))
+            for i, call in enumerate(step.get("tool_calls") or [])
+        ]
+        out.append(
+            _turn(text=step.get("text"), tool_calls=calls, message={"role": "assistant"})
+            if calls
+            else _turn(text=step.get("text"), message={"role": "assistant", "content": step.get("text")})
+        )
+    return out
 
 
 def _shape(result):
@@ -234,10 +260,10 @@ def test_the_middleware_arm_answers_from_the_corpus_like_the_loop(monkeypatch_fa
         result = _middleware_run(
             monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)]
         )
-    assert str(result.outcome) == "answered"
-    assert result.text == "final"
-    assert [s.source for s in result.sources] == ["s.md"]
-    assert str(result.fallback_reason) == "none"
+    (loop, _), _ = _both(
+        monkeypatch_factory, turns_for(script), [_hit(rerank_score=0.9, vector_distance=0.2)]
+    )
+    assert _core(loop) == _core(result)
 
 
 def test_the_middleware_arm_drops_weak_context_and_opens_the_toolbox(monkeypatch_factory):
@@ -246,10 +272,11 @@ def test_the_middleware_arm_drops_weak_context_and_opens_the_toolbox(monkeypatch
         result = _middleware_run(
             monkeypatch, script, [_weak_hit()], fallback_policy="corpus_first_weak"
         )
-    assert str(result.fallback_reason) == "weak"
-    assert result.fallback_opened is True
+    (loop, _), _ = _both(
+        monkeypatch_factory, turns_for(script), [_weak_hit()], fallback_policy="corpus_first_weak"
+    )
+    assert _core(loop) == _core(result)
     assert result.dropped_sources == ["s.md"]
-    assert result.sources == []
 
 
 def test_the_middleware_arm_nudges_a_narrated_call_once(monkeypatch_factory):
@@ -283,3 +310,52 @@ def test_a_failing_corpus_tool_does_not_read_as_an_empty_corpus(monkeypatch_fact
         )
     assert str(result.fallback_reason) == "none"
     assert result.fallback_opened is False
+
+
+
+def _remote_hit():
+    return SimpleNamespace(
+        source="mcp:deepwiki__ask_question", rerank_score=None, vector_distance=None
+    )
+
+
+def test_an_external_answer_keeps_its_source(monkeypatch_factory):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(
+            tool_calls=[_tool_call("b", "deepwiki__ask_question", '{"q": "x"}')],
+            message={"role": "assistant"},
+        ),
+        _turn(text="answered from the tool"),
+    ]
+    (loop, _), (graph, _) = _both(
+        monkeypatch_factory, turns, [_weak_hit()],
+        fallback_policy="corpus_first_weak", max_hops=3,
+    )
+    assert _shape(loop) == _shape(graph)
+    assert [s.source for s in graph.sources] == ["remote"]
+    assert str(graph.outcome) == "answered"
+
+
+def test_the_middleware_arm_keeps_an_external_source_too(monkeypatch_factory):
+    script = [
+        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
+        {"tool_calls": [{"name": "deepwiki__ask_question", "args": {"q": "x"}}]},
+        {"text": "answered from the tool"},
+    ]
+
+    def dispatch(name, args, **kw):
+        import agent_tools
+
+        if name == "search_corpus":
+            return agent_tools.ToolResult(content="weak", meta={"sources": [_weak_hit()]})
+        return agent_tools.ToolResult(content="remote answer", meta={"sources": [_remote_hit()]})
+
+    with monkeypatch_factory() as monkeypatch:
+        result = _middleware_run(
+            monkeypatch, script, [_weak_hit()], dispatch=dispatch,
+            fallback_policy="corpus_first_weak", max_hops=3,
+        )
+    assert [s.source for s in result.sources] == ["mcp:deepwiki__ask_question"]
+    assert str(result.outcome) == "answered"
+    assert result.fallback_opened is True

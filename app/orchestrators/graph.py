@@ -72,6 +72,7 @@ def model_node(state: State, config) -> dict:
         log.error("graph.hop_failed", hop=hop, error=str(e))
         return {"hops": hop, "finished": True}
 
+    ctx["result"].note_prompt(turn.prompt_tokens)
     update = {
         "hops": hop,
         "prompt_tokens": turn.prompt_tokens,
@@ -197,6 +198,7 @@ def final_node(state: State, config) -> dict:
     except RuntimeError as e:
         log.error("graph.final_failed", error=str(e))
         return update
+    ctx["result"].note_prompt(final.prompt_tokens)
     update.update(
         hops=state["hops"] + 1,
         prompt_tokens=final.prompt_tokens,
@@ -263,6 +265,7 @@ def _initial_state(question: str, system: str, external: bool) -> State:
 # the graph answers into the same AgentResult the hand-rolled loop fills, so logging, the judge
 # and every metric downstream cannot tell which orchestrator ran
 def invoke(question, system, ctx, result) -> None:
+    ctx["result"] = result
     graph = build()
     state = graph.invoke(
         _initial_state(question, system, ctx["external"]),

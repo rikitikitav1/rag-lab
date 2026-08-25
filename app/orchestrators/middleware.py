@@ -33,18 +33,25 @@ class Run:
         self.model_calls = 0
 
 
-def _corpus_results(messages: list) -> list:
-    """The tool messages of the turn that just finished, corpus ones only."""
+def _turn_results(messages: list) -> list:
+    """Every tool message of the turn that just finished, newest turn only."""
     tail = []
     for message in reversed(messages):
-        kind = getattr(message, "type", None)
-        if kind == "tool":
+        if getattr(message, "type", None) == "tool":
             tail.append(message)
             continue
         break
-    corpus = [m for m in tail if getattr(m, "name", None) == agent_tools.CORPUS_TOOL]
+    return list(reversed(tail))
+
+
+def _corpus_results(results: list) -> list:
+    corpus = [m for m in results if getattr(m, "name", None) == agent_tools.CORPUS_TOOL]
     # a failed search says nothing about coverage, the loop leaves it out of the verdict
     return [m for m in corpus if not str(m.content).startswith(errors.ERROR_PREFIX)]
+
+
+def _artifacts(messages: list) -> list:
+    return [s for m in messages for s in (getattr(m, "artifact", None) or [])]
 
 
 class CoverageGateMiddleware(AgentMiddleware):
@@ -55,16 +62,19 @@ class CoverageGateMiddleware(AgentMiddleware):
         self.run = run
 
     def before_model(self, state, runtime):
-        results = _corpus_results(state["messages"])
-        if not results:
+        turn = _turn_results(state["messages"])
+        if not turn:
             return None
-        sources = [s for m in results for s in (getattr(m, "artifact", None) or [])]
-        verdict = policy.verdict(sources, self.run.gate)
-        if self.run.gate.off_topic and sources:
+        results = _corpus_results(turn)
+        remote_sources = _artifacts([m for m in turn if m not in results])
+        sources = _artifacts(results)
+        verdict = policy.verdict(sources, self.run.gate) if results else None
+        if verdict and self.run.gate.off_topic:
             verdict = policy.FallbackReason.off_topic
         if not verdict:
-            self.run.sources.extend(sources)
+            self.run.sources.extend(sources + remote_sources)
             return None
+        self.run.sources.extend(remote_sources)
 
         rewritten = []
         if verdict in (policy.FallbackReason.weak, policy.FallbackReason.off_topic) and (
