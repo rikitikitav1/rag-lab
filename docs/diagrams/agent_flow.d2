@@ -1,6 +1,9 @@
 direction: down
 
 q: POST /v1/agent/question\nfallback_policy: corpus_first | corpus_first_weak | agent_choice
+topic: "Topic axis, before any tool is offered\ndistance to the nearest chunk >= topic_threshold (0.50)\n= not our domain: no tools, context dropped, refuse" {
+  style.fill: "#fff3cd"
+}
 toolbox: Build toolbox {
   static: search_corpus
   remote: remote tools from\nactive integrations\n(allowlist x schema cache)
@@ -56,7 +59,10 @@ metrics: |md
   shape: page
 }
 
-q -> toolbox -> hop1
+q -> topic
+topic -> toolbox: within the domain
+topic -> no_evidence: off topic
+toolbox -> hop1
 toolbox -> hop2: "agent_choice: everything\nvisible from hop 1" {
   style.stroke-dash: 3
 }
