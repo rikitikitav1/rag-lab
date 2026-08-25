@@ -15,6 +15,7 @@ def bootstrap_models() -> None:
     _reconcile_with_ollama()
     _ensure_index()
     _ensure_question_embeddings()
+    llm.warn_if_models_do_not_fit()
 
 
 def _ensure_models() -> None:

@@ -221,6 +221,10 @@ service:
         - xgboost-interview-questions
         - xml-interview-questions
 llm:
+  # mirrors OLLAMA_CONTEXT_LENGTH: the server truncates a longer prompt without saying so.
+  # 12288 measured on this card: both models stay resident, 14336 makes ollama swap them
+  # (112 reloads and 16s per question against 12 reloads and 4s)
+  context_length: 12288
   base_url: http://ollama:11434
   roles:
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }

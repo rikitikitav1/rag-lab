@@ -96,6 +96,8 @@ services:
     environment:
       OLLAMA_MAX_LOADED_MODELS: "2"
       OLLAMA_KEEP_ALIVE: "-1"
+      # the server defaults to 4096 and silently truncates: agent hops reached 13k tokens
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-12288}"
     volumes:
       - ollama_data:/root/.ollama
     deploy:

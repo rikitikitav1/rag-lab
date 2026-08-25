@@ -490,6 +490,7 @@ def _log_answer(
                     "distance_threshold": round(
                         config.settings.retrieval.distance_threshold, 3
                     ),
+                    "context_length": config.settings.llm.context_length,
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
                     "corpus": config.settings.corpus.description,

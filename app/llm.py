@@ -67,6 +67,7 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
         raise RuntimeError(f"LLM chat failed ({name}): {e}") from e
 
     usage = resp.usage
+    _warn_if_truncated(usage.prompt_tokens, name)
     log.info(
         "llm.chat",
         model=name,
@@ -98,6 +99,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     choice = resp.choices[0]
     message = choice.message
     usage = resp.usage
+    _warn_if_truncated(usage.prompt_tokens, name)
     log.info(
         "llm.chat_tools",
         model=name,
@@ -114,6 +116,15 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
         completion_tokens=usage.completion_tokens,
         finish_reason=choice.finish_reason,
     )
+
+
+# ollama drops the overflow silently, so a run that lost half its context looks like a bad answer
+def _warn_if_truncated(prompt_tokens: int, model: str) -> None:
+    window = config.settings.llm.context_length
+    if prompt_tokens > window:
+        log.warning(
+            "llm.prompt_over_context", model=model, prompt_tokens=prompt_tokens, context=window
+        )
 
 
 def _params(role, schema) -> dict:
@@ -133,6 +144,28 @@ def embed(prompt, role="embedding"):
 
 def list_models():
     return [m["name"] for m in _get_request("/api/tags")["models"]]
+
+
+# a model that does not fit spills to the CPU and the run gets slower, never louder
+def warn_if_models_do_not_fit() -> list[str]:
+    try:
+        loaded = _get_request("/api/ps").get("models") or []
+    except Exception as e:  # noqa: BLE001 - a probe must not break startup
+        log.warning("llm.ps_failed", error=str(e))
+        return []
+    spilled = []
+    for model in loaded:
+        size, in_vram = model.get("size") or 0, model.get("size_vram") or 0
+        if size and in_vram < size:
+            spilled.append(model.get("name", "?"))
+            log.warning(
+                "llm.model_spilled_to_cpu",
+                model=model.get("name"),
+                size_mb=round(size / 2**20),
+                vram_mb=round(in_vram / 2**20),
+                context=config.settings.llm.context_length,
+            )
+    return spilled
 
 
 def request_embeddings_batch(texts, role="embedding"):
