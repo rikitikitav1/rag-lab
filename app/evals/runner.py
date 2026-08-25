@@ -38,6 +38,7 @@ def _answer_one(
     max_hops: int | None,
     model: str | None,
     fallback_policy: str | None,
+    gate_signal: str | None,
 ) -> None:
     if pipeline == Pipeline.agent:
         agent.run(
@@ -49,6 +50,7 @@ def _answer_one(
             use_rerank=use_rerank,
             model=model,
             fallback_policy=fallback_policy,
+            gate_signal=gate_signal,
         )
     elif pipeline == Pipeline.single_shot:
         chat.answer(
@@ -74,6 +76,7 @@ def _run_sequential(
     max_hops: int | None,
     model: str | None,
     fallback_policy: str | None,
+    gate_signal: str | None,
     job_id: int | None,
 ) -> tuple[int, bool]:
     answered = 0
@@ -82,7 +85,8 @@ def _run_sequential(
             return answered, True
         try:
             _answer_one(
-                text, run_name, use_rerank, pipeline, language, k, max_hops, model, fallback_policy
+                text, run_name, use_rerank, pipeline, language, k, max_hops, model,
+                fallback_policy, gate_signal,
             )
             answered += 1
         except Exception as e:
@@ -218,6 +222,7 @@ def run(
     max_hops: int | None = None,
     model: str | None = None,
     fallback_policy: str | None = None,
+    gate_signal: str | None = None,
     job_id: int | None = None,
     phased: bool | None = None,
 ) -> int:
@@ -235,7 +240,7 @@ def run(
     else:
         answered, cancelled = _run_sequential(
             texts, run_name, use_rerank, pipeline, language, k, max_hops, model,
-            fallback_policy, job_id,
+            fallback_policy, gate_signal, job_id,
         )
     if not cancelled:
         job_queue.enqueue("judge_answers", {"run_name": run_name})

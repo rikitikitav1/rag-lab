@@ -31,6 +31,8 @@ class AgentCfg(BaseModel):
     fallback_policy: str = "corpus_first"
     gate_candidates: int = 5
     weak_threshold: float = 0.5
+    gate_signal: str = "cross_encoder"
+    weak_distance: float = 0.39
 
 
 class IngestionCfg(BaseModel):

@@ -30,6 +30,12 @@ class FallbackPolicy(StrEnum):
     agent_choice = "agent_choice"
 
 
+class GateSignal(StrEnum):
+    cross_encoder = "cross_encoder"
+    distance = "distance"
+    either = "either"
+
+
 class FallbackReason(StrEnum):
     none = "none"
     empty = "empty"
@@ -41,8 +47,10 @@ class FallbackReason(StrEnum):
 
 @dataclass
 class Gate:
+    signal: str = GateSignal.cross_encoder
     top: int | None = None
     threshold: float | None = None
+    distance_threshold: float | None = None
     drop_weak_context: bool = False
     announce: bool = False
     tool_signatures: str = ""
@@ -79,6 +87,7 @@ def run(
     use_rerank: bool | None = None,
     model: str | None = None,
     fallback_policy: str | None = None,
+    gate_signal: str | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
     if max_hops is None:
@@ -101,8 +110,12 @@ def run(
     external = policy == FallbackPolicy.agent_choice
     gate = Gate(tool_signatures=_signatures(remote.values()))
     if policy == FallbackPolicy.corpus_first_weak:
-        gate.top = config.settings.agent.gate_candidates
-        gate.threshold = config.settings.agent.weak_threshold
+        gate.signal = GateSignal(gate_signal or config.settings.agent.gate_signal)
+        if gate.signal != GateSignal.distance:
+            gate.top = config.settings.agent.gate_candidates
+            gate.threshold = config.settings.agent.weak_threshold
+        if gate.signal != GateSignal.cross_encoder:
+            gate.distance_threshold = config.settings.agent.weak_distance
         gate.drop_weak_context = bool(remote)
     nudges = 1
     tools = agent_tools.schemas()
@@ -240,13 +253,27 @@ def _signatures(tools) -> str:
     )
 
 
+def _weak_by_cross_encoder(sources: list, gate: Gate) -> bool:
+    scores = [s.rerank_score for s in sources if s.rerank_score is not None]
+    return bool(scores) and max(scores) < gate.threshold
+
+
+def _weak_by_distance(sources: list, gate: Gate) -> bool:
+    distances = [s.vector_distance for s in sources if s.vector_distance is not None]
+    return bool(distances) and min(distances) >= gate.distance_threshold
+
+
 def _verdict(sources: list, gate: Gate) -> str | None:
     if not sources:
         return FallbackReason.empty
-    if gate.threshold is None:
+    if gate.threshold is None and gate.distance_threshold is None:
         return None
-    scores = [s.rerank_score for s in sources if s.rerank_score is not None]
-    if scores and max(scores) < gate.threshold:
+    checks = {
+        GateSignal.cross_encoder: (_weak_by_cross_encoder,),
+        GateSignal.distance: (_weak_by_distance,),
+        GateSignal.either: (_weak_by_cross_encoder, _weak_by_distance),
+    }[gate.signal]
+    if any(check(sources, gate) for check in checks):
         return FallbackReason.weak
     return None
 
@@ -410,8 +437,13 @@ def _log_answer(
                     "rerank": use_rerank,
                     "fallback_policy": str(fallback_policy),
                     "gate": (
-                        {"top": gate.top, "threshold": gate.threshold}
-                        if gate and gate.threshold is not None
+                        {
+                            "signal": str(gate.signal),
+                            "top": gate.top,
+                            "threshold": gate.threshold,
+                            "distance_threshold": gate.distance_threshold,
+                        }
+                        if gate and (gate.threshold or gate.distance_threshold)
                         else None
                     ),
                     "distance_threshold": round(

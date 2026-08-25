@@ -703,3 +703,44 @@ def test_a_run_with_sources_is_not_asked_to_refuse(monkeypatch):
 
     assert result.no_evidence_prompted is False
     assert result.outcome == outcomes.Outcome.answered
+
+
+def _run_with_signal(monkeypatch, signal, source):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    runtime = []
+    _agent_harness(monkeypatch, turns, corpus_sources=[source], seen_runtime=runtime)
+    result = agent.run("q", max_hops=2, fallback_policy="corpus_first_weak", gate_signal=signal)
+    return result, runtime
+
+
+def _hit(rerank_score=None, vector_distance=None):
+    return SimpleNamespace(source="s.md", rerank_score=rerank_score, vector_distance=vector_distance)
+
+
+def test_distance_signal_flags_a_far_chunk_without_the_cross_encoder(monkeypatch):
+    result, runtime = _run_with_signal(monkeypatch, "distance", _hit(vector_distance=0.48))
+    assert result.fallback_reason == agent.FallbackReason.weak
+    assert runtime[0].get("gate_top") is None
+
+
+def test_distance_signal_lets_a_near_chunk_through(monkeypatch):
+    result, _ = _run_with_signal(monkeypatch, "distance", _hit(vector_distance=0.20))
+    assert result.fallback_reason == agent.FallbackReason.none
+
+
+def test_either_flags_when_only_one_signal_fires(monkeypatch):
+    far_but_relevant = _hit(rerank_score=0.9, vector_distance=0.48)
+    result, _ = _run_with_signal(monkeypatch, "either", far_but_relevant)
+    assert result.fallback_reason == agent.FallbackReason.weak
+
+    close_but_irrelevant = _hit(rerank_score=0.02, vector_distance=0.20)
+    result, _ = _run_with_signal(monkeypatch, "either", close_but_irrelevant)
+    assert result.fallback_reason == agent.FallbackReason.weak
+
+
+def test_cross_encoder_signal_ignores_the_distance(monkeypatch):
+    result, _ = _run_with_signal(monkeypatch, "cross_encoder", _hit(rerank_score=0.9, vector_distance=0.48))
+    assert result.fallback_reason == agent.FallbackReason.none
