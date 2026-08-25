@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import config
 import errors
 import logging_setup
 import mcp_client
@@ -171,8 +172,7 @@ register(
     Tool(
         name=CORPUS_TOOL,
         description=(
-            "Search the technical knowledge corpus (interview banks, "
-            "system-design-primer, redis docs) and return the most relevant "
+            f"Search {config.settings.corpus.description} and return the most relevant "
             "chunks with their [source] markers. Call this before answering."
         ),
         parameters={

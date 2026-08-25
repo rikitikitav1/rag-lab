@@ -486,6 +486,7 @@ def _log_answer(
                     ),
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
+                    "corpus": config.settings.corpus.description,
                     "drop_weak_context": bool(gate and gate.drop_weak_context),
                     "topic": (
                         {

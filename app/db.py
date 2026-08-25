@@ -5,14 +5,12 @@ from sqlalchemy import text
 
 DetectorFactory.seed = 0
 
-TS_CONFIG = {"en": "english", "ru": "russian"}
-
-
 def _ts_config(text_):
+    fts = config.settings.fts
     try:
-        return TS_CONFIG.get(detect(text_), "english")
+        return fts.languages.get(detect(text_), fts.fallback)
     except LangDetectException:
-        return "english"
+        return fts.fallback
 
 
 def cleanup():

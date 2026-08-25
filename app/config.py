@@ -36,6 +36,18 @@ class AgentCfg(BaseModel):
     weak_distance: float = 0.39
 
 
+class FtsCfg(BaseModel):
+    languages: dict[str, str] = {"en": "english", "ru": "russian"}
+    fallback: str = "english"
+
+
+class CorpusCfg(BaseModel):
+    description: str = (
+        "the technical knowledge corpus (interview banks, "
+        "system-design-primer, redis docs)"
+    )
+
+
 class IngestionCfg(BaseModel):
     batch_size: int
     commit_size: int
@@ -83,6 +95,8 @@ class AppConfig(BaseModel):
     rerank: RerankCfg
     agent: AgentCfg
     ingestion: IngestionCfg
+    fts: FtsCfg
+    corpus: CorpusCfg
     ignored_sources: set[str]
     repos_dir: str
     prompts_dir: str
@@ -101,6 +115,8 @@ def _load(path: str) -> AppConfig:
         rerank=service.get("rerank", {}),
         agent=service.get("agent", {}),
         ingestion=service["ingestion"],
+        fts=service.get("fts", {}),
+        corpus=service.get("corpus", {}),
         ignored_sources=service["ignored_sources"],
         repos_dir=service["repos_dir"],
         prompts_dir=service["prompts_dir"],

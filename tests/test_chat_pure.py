@@ -1,4 +1,5 @@
 import time
+from types import SimpleNamespace
 
 import pytest
 from use_cases import chat
@@ -123,3 +124,15 @@ def test_dedup_keeps_the_best_cross_encoder_score():
     sources = chat.take_sources(rows, [0.1, 0.2, 0.9])
     by_path = {s.source: s.rerank_score for s in sources}
     assert by_path == {"a.md": 0.9, "b.md": 0.2}
+
+
+def test_fts_language_comes_from_config(monkeypatch):
+    import config
+
+    import db
+
+    monkeypatch.setattr(
+        config.settings, "fts", SimpleNamespace(languages={"ru": "russian"}, fallback="simple")
+    )
+    assert db._ts_config("что такое хеш-таблица") == "russian"
+    assert db._ts_config("...") == "simple"

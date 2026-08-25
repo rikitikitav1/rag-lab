@@ -70,3 +70,10 @@ def test_search_corpus_empty(monkeypatch):
     result = at._search_corpus("q")
     assert result.content == "No relevant documents found."
     assert result.meta["sources"] == []
+
+
+def test_the_corpus_tool_describes_the_corpus_from_config():
+    import config
+
+    description = at._REGISTRY[at.CORPUS_TOOL].description
+    assert config.settings.corpus.description in description
