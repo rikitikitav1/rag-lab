@@ -1,7 +1,12 @@
+import asyncio
 from types import SimpleNamespace
 
+import errors
+import httpx
+import mcp_client
 import pytest
 from fastapi.testclient import TestClient
+from fastmcp.exceptions import ToolError
 from models.mcp_integration import McpStatus, can_switch
 
 
@@ -174,3 +179,55 @@ def test_create_rejects_double_underscore_name(client):
         "/v1/mcp_integration", json={"name": "my_int", "url": "not-a-url"}
     )
     assert ok.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("exc", "kind"),
+    [
+        (httpx.ReadTimeout("slow"), "timeout"),
+        (httpx.ConnectTimeout("slow connect"), "timeout"),
+        (httpx.ConnectError("refused"), "connect"),
+        (ConnectionRefusedError(), "connect"),
+        (ValueError("nonsense"), "unknown"),
+    ],
+)
+def test_classify_transport_failures(exc, kind):
+    assert mcp_client.classify(exc) == kind
+
+
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [(401, "auth"), (403, "auth"), (400, "client"), (404, "client"), (500, "server"), (503, "server")],
+)
+def test_classify_http_status(status, kind):
+    response = httpx.Response(status, request=httpx.Request("POST", "http://x/mcp"))
+    exc = httpx.HTTPStatusError("boom", request=response.request, response=response)
+    assert mcp_client.classify(exc) == kind
+
+
+def test_classify_unwraps_exception_groups():
+    group = ExceptionGroup("anyio", [ValueError("noise"), httpx.ConnectError("refused")])
+    assert mcp_client.classify(group) == "connect"
+
+
+def test_call_tool_returns_the_kind_instead_of_raising(monkeypatch):
+    integration = SimpleNamespace(name="deepwiki", max_result_chars=100)
+
+    def boom(_integration):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(mcp_client, "build_client", boom)
+    outcome = asyncio.run(mcp_client.call_tool(integration, "ask", {}))
+    assert outcome.error_kind == "connect"
+    assert outcome.text.startswith(errors.ERROR_PREFIX)
+    assert "(connect)" in outcome.text
+
+
+def test_classify_unwraps_the_fastmcp_runtime_wrapper():
+    wrapper = RuntimeError("Client failed to connect: All connection attempts failed")
+    wrapper.__cause__ = ExceptionGroup("TaskGroup", [httpx.ConnectError("refused")])
+    assert mcp_client.classify(wrapper) == "connect"
+
+
+def test_classify_marks_server_side_tool_failures():
+    assert mcp_client.classify(ToolError("unknown tool")) == "tool"

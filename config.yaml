@@ -12,6 +12,9 @@ service:
     top: 5
   agent:
     max_hops: 4
+    fallback_policy: corpus_first
+    gate_candidates: 5
+    weak_threshold: 0.5
   ingestion:
     batch_size: 100
     commit_size: 1000

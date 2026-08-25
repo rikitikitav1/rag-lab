@@ -319,7 +319,7 @@ CREATE TABLE public.prompts (
     template text NOT NULL,
     active boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT prompts_purpose_check CHECK ((purpose = ANY (ARRAY['generate.answer'::text, 'judge.faithfulness'::text, 'judge.relevance'::text, 'judge.completeness'::text, 'paraphrase.question'::text, 'translate.question'::text, 'agent.system'::text])))
+    CONSTRAINT prompts_purpose_check CHECK ((purpose = ANY (ARRAY['generate.answer'::text, 'judge.faithfulness'::text, 'judge.relevance'::text, 'judge.completeness'::text, 'paraphrase.question'::text, 'translate.question'::text, 'agent.system'::text, 'agent.fallback'::text, 'agent.tool_match'::text, 'agent.no_evidence'::text])))
 );
 
 
@@ -752,4 +752,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260728000001'),
     ('20260728000002'),
     ('20260728000003'),
-    ('20260729000001');
+    ('20260729000001'),
+    ('20260824000001'),
+    ('20260824000002'),
+    ('20260825000001');

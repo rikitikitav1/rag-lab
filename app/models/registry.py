@@ -21,6 +21,9 @@ class Purpose(StrEnum):
     paraphrase_question = "paraphrase.question"
     translate_question = "translate.question"
     agent_system = "agent.system"
+    agent_fallback = "agent.fallback"
+    agent_tool_match = "agent.tool_match"
+    agent_no_evidence = "agent.no_evidence"
 
 
 class Status(StrEnum):

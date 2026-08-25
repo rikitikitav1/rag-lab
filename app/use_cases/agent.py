@@ -1,5 +1,6 @@
 import time
 from dataclasses import asdict, dataclass, field
+from enum import StrEnum
 
 import agent_tools
 import config
@@ -7,6 +8,7 @@ import errors
 import job_queue
 import llm
 import logging_setup
+import outcomes
 import prompt_repo
 from models.eval import QuestionLog
 from models.registry import Pipeline, Purpose
@@ -15,6 +17,35 @@ from sqlalchemy.exc import SQLAlchemyError
 from use_cases import chat
 
 log = logging_setup.get_logger(__name__)
+
+TOOL_CALL_NUDGE = (
+    "You described a tool call instead of issuing one. Call the tool for real now, "
+    "with the arguments its schema lists, or answer without it."
+)
+
+
+class FallbackPolicy(StrEnum):
+    corpus_first = "corpus_first"
+    corpus_first_weak = "corpus_first_weak"
+    agent_choice = "agent_choice"
+
+
+class FallbackReason(StrEnum):
+    none = "none"
+    empty = "empty"
+    weak = "weak"
+
+
+
+
+
+@dataclass
+class Gate:
+    top: int | None = None
+    threshold: float | None = None
+    drop_weak_context: bool = False
+    announce: bool = False
+    tool_signatures: str = ""
 
 
 @dataclass
@@ -28,6 +59,13 @@ class AgentResult:
     completion_tokens: int = 0
     max_prompt_tokens: int = 0
     elapsed: float = 0.0
+    fallback_reason: str = FallbackReason.none
+    fallback_announced: bool = False
+    fallback_opened: bool = False
+    no_evidence_prompted: bool = False
+    dropped_sources: list = field(default_factory=list)
+    outcome: str = outcomes.Outcome.error
+    tool_errors: dict = field(default_factory=dict)
 
 
 # uses asyncio.run for remote MCP tools: call from sync context only, never from an event loop
@@ -40,12 +78,14 @@ def run(
     k: int | None = None,
     use_rerank: bool | None = None,
     model: str | None = None,
+    fallback_policy: str | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
     if max_hops is None:
         max_hops = config.settings.agent.max_hops
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
+    policy = FallbackPolicy(fallback_policy or config.settings.agent.fallback_policy)
     system = prompt_repo.active_template(Purpose.agent_system)
     if language:
         system += f"\n\n{chat._language_directive(language)}"
@@ -55,7 +95,19 @@ def run(
     ]
     result = AgentResult(messages=messages)
     remote = {t.name: t for t in agent_tools.remote_tools()}
-    tools = agent_tools.schemas() + [t.schema() for t in remote.values()]
+    configured = sorted({name.split("__")[0] for name in remote})
+    if remote and policy != FallbackPolicy.agent_choice:
+        remote = _admissible(question, remote, result, role=role, model=model)
+    external = policy == FallbackPolicy.agent_choice
+    gate = Gate(tool_signatures=_signatures(remote.values()))
+    if policy == FallbackPolicy.corpus_first_weak:
+        gate.top = config.settings.agent.gate_candidates
+        gate.threshold = config.settings.agent.weak_threshold
+        gate.drop_weak_context = bool(remote)
+    nudges = 1
+    tools = agent_tools.schemas()
+    if external:
+        tools += [t.schema() for t in remote.values()]
 
     for hop in range(1, max_hops + 1):
         result.hops = hop
@@ -67,13 +119,35 @@ def run(
         result.prompt_tokens += turn.prompt_tokens
         result.completion_tokens += turn.completion_tokens
         result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
-        if _apply_turn(turn, messages, result, k, use_rerank, remote):
+        if not turn.tool_calls and nudges and outcomes.narrated_tool_call(
+            turn.text, (*remote, agent_tools.CORPUS_TOOL)
+        ):
+            nudges -= 1
+            log.info("agent.narrated_tool_call", hop=hop)
+            messages.append(turn.message or {"role": "assistant", "content": turn.text})
+            messages.append({"role": "user", "content": TOOL_CALL_NUDGE})
+            continue
+        gate.announce = not external and bool(remote)
+        if _apply_turn(
+            turn, messages, result, k, use_rerank, remote if external else None, gate
+        ):
             break
+        if not external and remote and result.fallback_reason != FallbackReason.none:
+            external = True
+            result.fallback_opened = True
+            tools = tools + [t.schema() for t in remote.values()]
+            log.info("agent.external_opened", hop=hop, reason=result.fallback_reason)
 
     result.sources = _unique_sources(result.sources)
 
-    if not result.success and result.sources:
-        log.info("agent.forcing_final", hops=result.hops)
+    if not result.success:
+        log.info("agent.forcing_final", hops=result.hops, sources=len(result.sources))
+        if not result.sources:
+            messages.append({
+                "role": "user",
+                "content": prompt_repo.active_template(Purpose.agent_no_evidence),
+            })
+            result.no_evidence_prompted = True
         try:
             final = llm.chat(messages, role=role, model=model)
         except RuntimeError as e:
@@ -87,26 +161,94 @@ def run(
             if final.finish_reason == "length":
                 log.warning("agent.truncated", hops=result.hops)
 
-    if result.sources:
-        result.success = bool(result.text)
-    else:
-        result.success = False
-        if not result.text:
-            result.text = chat.NO_RESULTS
+    result.outcome = outcomes.classify(
+        result.text,
+        bool(result.sources),
+        (*remote, agent_tools.CORPUS_TOOL),
+        exhausted=result.hops >= max_hops,
+    )
+    result.success = bool(result.sources and result.text)
 
     result.elapsed = round(time.perf_counter() - start, 3)
     log.info(
         "agent.done",
         hops=result.hops,
         success=result.success,
+        outcome=result.outcome,
         sources=len(result.sources),
     )
     try:
-        mcp_names = sorted({name.split("__")[0] for name in remote})
-        _log_answer(question, result, run_name, language, k, use_rerank, model, mcp_names)
+        admitted = sorted({name.split("__")[0] for name in remote})
+        _log_answer(
+            question, result, run_name, language, k, use_rerank, model,
+            admitted, policy, configured, gate, max_hops,
+        )
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
+
+    if result.outcome in (
+        outcomes.Outcome.narrated_call, outcomes.Outcome.error, outcomes.Outcome.exhausted
+    ):
+        result.text = chat.NO_RESULTS
     return result
+
+
+def _required_values(tool) -> str:
+    props = tool.parameters.get("properties", {})
+    return "; ".join(
+        f"{name}: {' '.join(props.get(name, {}).get('description', name).split())}"
+        for name in tool.parameters.get("required", [])
+    )
+
+
+def _admissible(
+    question: str, tools: dict, result: AgentResult, role: str = "generation", model=None
+) -> dict:
+    system = prompt_repo.active_template(Purpose.agent_tool_match)
+    admitted = {}
+    for name, tool in tools.items():
+        values = _required_values(tool)
+        if not values:
+            admitted[name] = tool
+            continue
+        user = (
+            f"Required values: {values}\n\nQuestion: {question}\n\n"
+            "Does the question state every required value? Answer yes or no."
+        )
+        try:
+            completion = llm.ask(system=system, user=user, role=role, model=model)
+            verdict = (completion.text or "").strip().lower()
+        except RuntimeError as e:
+            log.error("agent.tool_match_failed", tool=name, error=str(e))
+            result.tool_errors[name] = "tool_match"
+            continue
+        if verdict.startswith("yes"):
+            admitted[name] = tool
+        else:
+            log.info("agent.tool_rejected", tool=name)
+    return admitted
+
+
+
+
+
+def _signatures(tools) -> str:
+    return "\n".join(
+        f"- {tool.name}({', '.join(tool.parameters.get('required', []))}): "
+        f"{' '.join(tool.description.split())[:160]}"
+        for tool in tools
+    )
+
+
+def _verdict(sources: list, gate: Gate) -> str | None:
+    if not sources:
+        return FallbackReason.empty
+    if gate.threshold is None:
+        return None
+    scores = [s.rerank_score for s in sources if s.rerank_score is not None]
+    if scores and max(scores) < gate.threshold:
+        return FallbackReason.weak
+    return None
 
 
 def _apply_turn(
@@ -116,6 +258,7 @@ def _apply_turn(
     k: int | None = None,
     use_rerank: bool | None = None,
     remote: dict | None = None,
+    gate: Gate | None = None,
 ) -> bool:
     if not turn.tool_calls:
         result.text = turn.text or ""
@@ -125,6 +268,8 @@ def _apply_turn(
         return True
 
     messages.append(turn.message)
+    gate = gate or Gate()
+    calls = []
 
     for tc in turn.tool_calls:
         log.info("agent.tool_call", tool=tc.function.name, arguments=tc.function.arguments)
@@ -134,11 +279,51 @@ def _apply_turn(
             extra=remote,
             k=k,
             use_rerank=use_rerank,
+            gate_top=gate.top,
         )
-        result.sources.extend(res.meta.get("sources", []))
-        messages.append({"role": "tool", "tool_call_id": tc.id, "content": res.content})
+        if res.meta.get("error_kind"):
+            result.tool_errors[tc.function.name] = res.meta["error_kind"]
+        calls.append([tc, res, res.content, res.meta.get("sources", [])])
+
+    corpus = [
+        c for c in calls
+        if c[0].function.name == agent_tools.CORPUS_TOOL and not c[1].meta.get("error_kind")
+    ]
+    # one verdict per turn: the system prompt asks for a search per subject, and two
+    # searches must not produce two contradicting notices
+    verdict = _verdict([s for c in corpus for s in c[3]], gate) if corpus else None
+    if verdict == FallbackReason.weak and gate.drop_weak_context:
+        # the 8b anchors on whatever sits in context, weak chunks included
+        log.info("agent.weak_context_dropped", hop=result.hops)
+        for call in corpus:
+            result.dropped_sources.extend(s.source for s in call[3])
+            call[2], call[3] = chat.NO_RESULTS, []
+    if verdict and gate.announce:
+        # a system message mid-conversation breaks the llama3.1 template
+        notice = prompt_repo.active_template(Purpose.agent_fallback)
+        last = corpus[-1]
+        last[2] = f"{last[2]}\n\n{notice.replace('{tools}', gate.tool_signatures)}"
+        result.fallback_announced = True
+    if verdict and result.fallback_reason == FallbackReason.none:
+        result.fallback_reason = verdict
+
+    for tc, _res, content, sources in calls:
+        result.sources.extend(sources)
+        messages.append({"role": "tool", "tool_call_id": tc.id, "content": content})
 
     return False
+
+
+def _retrieval_snapshot(sources: list, dropped: list | None = None) -> dict:
+    corpus = [s for s in sources if not s.source.startswith("mcp:")]
+    distances = [s.vector_distance for s in corpus if s.vector_distance is not None]
+    scores = [s.rerank_score for s in corpus if s.rerank_score is not None]
+    return {
+        "results_count": len(corpus),
+        "min_distance": min(distances) if distances else None,
+        "top_rerank_score": max(scores) if scores else None,
+        "dropped_sources": sorted(set(dropped or [])) or None,
+    }
 
 
 def _unique_sources(sources: list) -> list:
@@ -158,7 +343,7 @@ def _context_from_messages(messages) -> str:
         if isinstance(m, dict)
         and m.get("role") == "tool"
         and not m["content"].startswith(errors.ERROR_PREFIX)
-        and m["content"] != chat.NO_RESULTS
+        and not m["content"].startswith(chat.NO_RESULTS)
     )
 
 
@@ -171,6 +356,10 @@ def _log_answer(
     use_rerank: bool | None = None,
     model: str | None = None,
     mcp_names: list[str] | None = None,
+    fallback_policy: str = FallbackPolicy.corpus_first,
+    mcp_configured: list[str] | None = None,
+    gate: Gate | None = None,
+    max_hops: int | None = None,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -189,18 +378,50 @@ def _log_answer(
                 "generation": model or llm.resolve_name("generation"),
                 "embedding": llm.resolve_name("embedding"),
             },
-            prompts={"agent_system": prompt_repo.active_version(Purpose.agent_system)},
+            prompts={
+                "agent_system": prompt_repo.active_version(Purpose.agent_system),
+                **(
+                    {"agent_fallback": prompt_repo.active_version(Purpose.agent_fallback)}
+                    if result.fallback_announced
+                    else {}
+                ),
+                **(
+                    {"agent_no_evidence": prompt_repo.active_version(Purpose.agent_no_evidence)}
+                    if result.no_evidence_prompted
+                    else {}
+                ),
+                **(
+                    {"agent_tool_match": prompt_repo.active_version(Purpose.agent_tool_match)}
+                    if mcp_configured
+                    and str(fallback_policy) != FallbackPolicy.agent_choice.value
+                    else {}
+                ),
+            },
             metrics={
                 "hops": result.hops,
                 "no_evidence": not bool(result.sources),
                 "context_tokens": result.max_prompt_tokens,
+                "retrieval": _retrieval_snapshot(result.sources, result.dropped_sources),
+                "fallback_reason": str(result.fallback_reason),
+                "fallback_opened": result.fallback_opened,
+                "outcome": str(result.outcome),
+                "tool_errors": result.tool_errors or None,
                 "config": {
                     "rerank": use_rerank,
+                    "fallback_policy": str(fallback_policy),
+                    "gate": (
+                        {"top": gate.top, "threshold": gate.threshold}
+                        if gate and gate.threshold is not None
+                        else None
+                    ),
                     "distance_threshold": round(
                         config.settings.retrieval.distance_threshold, 3
                     ),
                     "k": k or config.settings.retrieval.results_limit,
+                    "max_hops": max_hops or config.settings.agent.max_hops,
+                    "drop_weak_context": bool(gate and gate.drop_weak_context),
                     "mcp": mcp_names or [],
+                    "mcp_configured": mcp_configured or [],
                 },
             },
             prompt_tokens=result.prompt_tokens,

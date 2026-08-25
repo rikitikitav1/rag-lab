@@ -28,6 +28,9 @@ class RerankCfg(BaseModel):
 
 class AgentCfg(BaseModel):
     max_hops: int = 4
+    fallback_policy: str = "corpus_first"
+    gate_candidates: int = 5
+    weak_threshold: float = 0.5
 
 
 class IngestionCfg(BaseModel):
