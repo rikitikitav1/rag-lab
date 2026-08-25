@@ -843,7 +843,7 @@ def test_a_question_on_topic_still_reaches_the_toolbox(monkeypatch):
     assert seen_tools[1] == ["search_corpus", "deepwiki__ask_question"]
 
 
-def test_the_topic_axis_is_off_unless_a_threshold_is_given(monkeypatch):
+def test_a_zero_threshold_switches_the_topic_axis_off(monkeypatch):
     turns = [
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
@@ -853,4 +853,39 @@ def test_the_topic_axis_is_off_unless_a_threshold_is_given(monkeypatch):
         agent, "_topic_score", lambda question: pytest.fail("topic must not be scored")
     )
 
+    agent.run("q", max_hops=2, fallback_policy="corpus_first_weak", topic_threshold=0)
+
+
+def test_the_configured_threshold_scores_the_topic_without_being_asked(monkeypatch):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    _agent_harness(monkeypatch, turns, corpus_sources=[_strong_hit()])
+    seen = []
+    monkeypatch.setattr(agent, "_topic_score", lambda question: seen.append(question) or 0.1)
+
     agent.run("q", max_hops=2, fallback_policy="corpus_first_weak")
+
+    assert seen == ["q"]
+
+
+def test_an_off_topic_question_loses_its_context_even_when_the_gate_disagrees(monkeypatch):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    near_hit = _hit(rerank_score=0.9, vector_distance=0.20)
+    _agent_harness(monkeypatch, turns, corpus_sources=[near_hit])
+    monkeypatch.setattr(agent, "_topic_score", lambda question: 0.61)
+
+    result = agent.run(
+        "who was the first president of France",
+        max_hops=2,
+        fallback_policy="corpus_first_weak",
+        topic_threshold=0.5,
+    )
+
+    assert result.fallback_reason == agent.FallbackReason.off_topic
+    assert result.sources == []
+    assert result.dropped_sources == ["s.md"]

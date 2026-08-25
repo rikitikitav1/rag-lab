@@ -27,11 +27,27 @@ def is_empty():
         ).scalar()
 
 
+# thresholds are calibrated against a corpus, so a run has to record which one it saw
+def corpus_fingerprint() -> dict:
+    query = """
+        SELECT count(*) AS chunks,
+               count(DISTINCT source_id) AS sources,
+               max(id) AS last_chunk_id
+        FROM data_chunks
+        WHERE source_id IN (SELECT id FROM data_sources WHERE active)
+    """
+    with engine.connect() as conn:
+        row = conn.execute(text(query)).mappings().one()
+    return dict(row)
+
+
 def nearest_distance(embedding) -> float | None:
+    # same source filter as hybrid_search: the topic axis must not see what retrieval cannot
     query = """
         SELECT embedding <=> CAST(:embedding AS vector) AS distance
         FROM data_chunks
         WHERE embedding IS NOT NULL
+          AND source_id IN (SELECT id FROM data_sources WHERE active)
         ORDER BY distance
         LIMIT 1
     """

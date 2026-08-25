@@ -25,9 +25,10 @@ service:
     gate_signal: distance
     # threshold for the distance signal, tuned to the same flag budget as the cross-encoder (22 of 100)
     weak_distance: 0.39
-    # topic axis, not coverage: null disables it. Measured 25.08 at 0.709 on half the sets,
-    # catching 74% of off-domain questions at 4% false positives on the held-out half
-    topic_threshold: null
+    # topic axis, not coverage: null disables it. Distance to the nearest chunk, same scale as
+    # weak_distance. At 0.50 (measured 25.08) it turns 11 refusals per 100 off-domain questions
+    # into 50, with 0 false refusals per 100 in-corpus paraphrases and 2 per 30 hand-written ones
+    topic_threshold: 0.50
   ingestion:
     batch_size: 100
     commit_size: 1000

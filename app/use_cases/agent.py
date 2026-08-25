@@ -116,23 +116,30 @@ def run(
         {"role": "user", "content": question},
     ]
     result = AgentResult(messages=messages)
-    topic = Topic(
-        threshold=topic_threshold
+    threshold = (
+        topic_threshold
         if topic_threshold is not None
         else config.settings.agent.topic_threshold
     )
+    # zero is how a run switches the axis off now that the config carries a default
+    topic = Topic(threshold=threshold if threshold else None)
     if topic.threshold is not None:
         topic.score = _topic_score(question)
 
     remote = {t.name: t for t in agent_tools.remote_tools()}
     configured = sorted({name.split("__")[0] for name in remote})
-    if remote and policy != FallbackPolicy.agent_choice:
-        remote = _admissible(question, remote, result, role=role, model=model)
-    external = policy == FallbackPolicy.agent_choice
-    gate = Gate(tool_signatures=_signatures(remote.values()))
-    if topic.score is not None and topic.score >= topic.threshold:
+    off_topic = topic.score is not None and topic.score >= topic.threshold
+    admission_ran = False
+    if off_topic:
         log.info("agent.off_topic", score=round(topic.score, 3), threshold=topic.threshold)
         remote = {}
+    # admission costs one llm call per tool: an off-topic question has no tool left to admit
+    elif remote and policy != FallbackPolicy.agent_choice:
+        remote = _admissible(question, remote, result, role=role, model=model)
+        admission_ran = True
+    external = policy == FallbackPolicy.agent_choice
+    gate = Gate(tool_signatures=_signatures(remote.values()))
+    if off_topic:
         gate.off_topic = True
         gate.drop_weak_context = True
     if policy == FallbackPolicy.corpus_first_weak:
@@ -224,7 +231,7 @@ def run(
         admitted = sorted({name.split("__")[0] for name in remote})
         _log_answer(
             question, result, run_name, language, k, use_rerank, model,
-            admitted, policy, configured, gate, max_hops, topic,
+            admitted, policy, configured, gate, max_hops, topic, admission_ran,
         )
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
@@ -357,7 +364,11 @@ def _apply_turn(
     # one verdict per turn: the system prompt asks for a search per subject, and two
     # searches must not produce two contradicting notices
     verdict = _verdict([s for c in corpus for s in c[3]], gate) if corpus else None
-    if verdict == FallbackReason.weak and gate.drop_weak_context:
+    # the axis judges the question, the gate judges the agent's query: once the axis says the
+    # question is not ours, a lucky rewrite must not hand the context back
+    if gate.off_topic and corpus:
+        verdict = FallbackReason.off_topic
+    if verdict in (FallbackReason.weak, FallbackReason.off_topic) and gate.drop_weak_context:
         # the 8b anchors on whatever sits in context, weak chunks included
         log.info("agent.weak_context_dropped", hop=result.hops)
         for call in corpus:
@@ -380,6 +391,15 @@ def _apply_turn(
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": content})
 
     return False
+
+
+# 13ms against a 6s answer, and a cached one would keep lying after a re-index
+def _corpus_fingerprint() -> dict | None:
+    try:
+        return db.corpus_fingerprint()
+    except Exception as e:
+        log.error("agent.corpus_fingerprint_failed", error=str(e))
+        return None
 
 
 def _retrieval_snapshot(sources: list, dropped_hits: list, dropped: list | None = None) -> dict:
@@ -434,6 +454,7 @@ def _log_answer(
     gate: Gate | None = None,
     max_hops: int | None = None,
     topic: Topic | None = None,
+    admission_ran: bool = False,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -466,8 +487,7 @@ def _log_answer(
                 ),
                 **(
                     {"agent_tool_match": prompt_repo.active_version(Purpose.agent_tool_match)}
-                    if mcp_configured
-                    and str(fallback_policy) != FallbackPolicy.agent_choice.value
+                    if admission_ran
                     else {}
                 ),
             },
@@ -501,6 +521,7 @@ def _log_answer(
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
                     "corpus": config.settings.corpus.description,
+                    "corpus_fingerprint": _corpus_fingerprint(),
                     "drop_weak_context": bool(gate and gate.drop_weak_context),
                     "topic": (
                         {
