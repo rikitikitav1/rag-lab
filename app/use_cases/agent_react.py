@@ -53,10 +53,20 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
         tools=tools,
         system_prompt=system,
     )
-    state = agent.invoke(
-        {"messages": [{"role": "user", "content": question}]},
-        config={"recursion_limit": 2 * ctx["max_hops"] + 1},
-    )
+    from langgraph.errors import GraphRecursionError
+
+    try:
+        state = agent.invoke(
+            {"messages": [{"role": "user", "content": question}]},
+            config={"recursion_limit": 2 * ctx["max_hops"] + 1},
+        )
+    except GraphRecursionError:
+        # without this the question vanishes from the run instead of counting as exhausted
+        log.warning("react.recursion_limit", max_hops=ctx["max_hops"])
+        result.hops = ctx["max_hops"]
+        result.text = ""
+        result.success = False
+        return
     messages = state["messages"]
     replies = [m for m in messages if getattr(m, "type", None) == "ai"]
     collected = [

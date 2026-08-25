@@ -150,7 +150,8 @@ def tools_node(state: State, config) -> dict:
     ):
         dropped, dropped_hits = _drop_weak(corpus, state["hops"])
 
-    announced = bool(verdict and gate.announce and corpus)
+    # the loop recomputes announce per hop and it dies once external is open
+    announced = bool(verdict and gate.announce and not state["external"] and corpus)
     if announced:
         _announce(corpus, gate)
     if verdict and gate.off_topic:
@@ -211,7 +212,10 @@ def final_node(state: State, config) -> dict:
 def _after_model(state: State, config) -> str:
     if state.get("finished"):
         return "final"
-    return "tools" if state.get("awaiting_tools") else "model"
+    if state.get("awaiting_tools"):
+        return "tools"
+    # a nudge on the last hop must not buy an extra hop the loop would not take
+    return "model" if state["hops"] < _ctx(config)["max_hops"] else "final"
 
 
 def _after_tools(state: State, config) -> str:

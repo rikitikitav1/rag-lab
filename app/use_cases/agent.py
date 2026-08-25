@@ -230,8 +230,19 @@ def run(
         admitted = sorted({name.split("__")[0] for name in remote})
         _log_answer(
             question, result, run_name, language, k, use_rerank, model,
-            admitted, policy, configured, gate, max_hops, topic, admission_ran,
-            {"name": str(orchestrator), **(agent_graph.versions() if graph_run else {})},
+            admitted, policy, configured,
+            # the idiomatic arm runs no gate, so recording one would describe a run that never was
+            None if orchestrator == Orchestrator.langgraph_idiomatic else gate,
+            max_hops, topic, admission_ran,
+            {
+                "name": str(orchestrator),
+                "client": (
+                    "ChatOllama"
+                    if orchestrator == Orchestrator.langgraph_idiomatic
+                    else "openai-compat"
+                ),
+                **(agent_graph.versions() if graph_run else {}),
+            },
         )
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))

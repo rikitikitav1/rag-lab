@@ -51,6 +51,7 @@ def _shape(result):
         "no_evidence_prompted": result.no_evidence_prompted,
         "tool_errors": result.tool_errors,
         "roles": [m.get("role") for m in result.messages],
+        "contents": [m.get("content") for m in result.messages],
     }
 
 
@@ -177,3 +178,32 @@ def test_the_graph_leaves_a_context_for_the_judge(monkeypatch_factory):
     assert agent._context_from_messages(graph.messages) == agent._context_from_messages(
         loop.messages
     )
+
+
+
+def test_the_notice_is_not_repeated_once_the_toolbox_is_open(monkeypatch_factory):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(tool_calls=[_tool_call("b", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    (loop, _), (graph, _) = _both(
+        monkeypatch_factory, turns, [_weak_hit()],
+        fallback_policy="corpus_first_weak", max_hops=3,
+    )
+    assert _shape(loop) == _shape(graph)
+    notices = [m for m in graph.messages if "tpl:agent.fallback" in str(m.get("content"))]
+    assert len(notices) == 1
+
+
+def test_a_nudge_on_the_last_hop_does_not_buy_another_hop(monkeypatch_factory):
+    narration = '{"name": "deepwiki__ask_question", "parameters": {"q": "x"}}'
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text=narration, message={"role": "assistant", "content": narration}),
+        _turn(text="final after the nudge"),
+    ]
+    (loop, _), (graph, _) = _both(
+        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=2
+    )
+    assert _shape(loop) == _shape(graph)
