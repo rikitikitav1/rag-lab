@@ -13,7 +13,7 @@ This is a **showcase lab**: a bench for practicing LLM/RAG engineering approache
 - **Hybrid retrieval**: vector search (pgvector) + full-text (Postgres FTS with per-language stemming), fused via **RRF** (Reciprocal Rank Fusion). Filter by hierarchical categories (ltree), a distance threshold with an honest refusal on out-of-corpus questions.
 - **Local models** through Ollama, keyed by role: generation, embeddings (`bge-m3`), LLM judge. A role is decoupled from a concrete model: which model serves a role lives in the DB and can be switched at runtime.
 - **Multi-source**, one taxonomy: personal notes (ru) + Devinterview-io interview repos (en, ~170 repos). Per-source ingestion strategies.
-- **Eval bench, 5 quality axes**: retrieval (hit@k / MRR), faithfulness (is the answer grounded in the context), relevance (does it answer to the point), completeness (does it cover the reference answer), refusal accuracy, all via **LLM-as-judge** with structured output.
+- **Eval bench, 5 quality axes**: retrieval (hit@k / MRR), faithfulness (is the answer grounded in the context), relevance (does it answer to the point), completeness (does it cover the reference answer), refusal accuracy, all via **LLM-as-judge** with structured output. Scores are reported per pool: answers grounded in the corpus, answers grounded in an external tool (`remote_grounding` measures grounding in what the tool returned, not whether the tool was right), and refusals, alongside the answer rate and the share of answers with no support at all. A run also records an outcome per question (`answered`, `refused`, `unsupported_answer`, `narrated_call`, `error`), because counting an unsupported answer as a refusal flatters exactly the policy under test.
 - **Async job queue**: heavy operations (model pull/delete, corpus indexing, embedding the question bank) go to a Postgres-backed queue processed by a worker. The service depends only on Postgres: Ollama may be unavailable at startup, jobs defer/retry, the app does not crash.
 - **Reranking (opt-in)**: a cross-encoder (`bge-reranker-v2-m3`) on top of hybrid retrieval (retrieve-wide → rerank → narrow), toggled by a flag (per-request / per-run); A/B tested on a cross-lingual set.
 - **Agent (ReAct, from primitives)**: a hand-rolled tool-calling loop where the model decides when to search the corpus, may refine the query and multi-hop, then answers. Selectable as an eval pipeline (`pipeline: agent`) and benchmarked head-to-head against single-shot RAG (see the experiments log).
@@ -37,7 +37,7 @@ Everything tunable lives in **`config.yaml`** (mounted into the container):
 - `llm.roles` - model + `options` per role (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` - models to pull but not assign.
 - `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, candidate limits.
 - `service.rerank` - `enabled`, `model`, `candidates`, `top`.
-- `service.agent` - `max_hops` (ReAct hop cap).
+- `service.agent` - `max_hops` (ReAct hop cap), `fallback_policy` (`corpus_first` / `corpus_first_weak` / `agent_choice`), `gate_candidates` and `weak_threshold` (the cross-encoder gate over retrieval).
 - `service.ingestion` - `chunk_max_size`, `batch_size`, `commit_size`.
 - `service.sources` - sources (interview repos and their base_url).
 - `postgres` - DB connection.
@@ -79,12 +79,13 @@ Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagram
 
 ### Environment knobs
 
-Everything tunable about the pipeline lives in `config.yaml`; the environment only carries what depends on the machine or must stay out of the repo. Copy `.env.example` to `.env` — compose picks it up, and every value has a working default.
+Everything tunable about the pipeline lives in `config.yaml`; the environment only carries what depends on the machine or must stay out of the repo. Copy `.env.example` to `.env`: compose picks it up, and every value has a working default.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
 | `RERANK_DEVICE` | `cuda` (worker), `cpu` (API) | Where the cross-encoder runs. The asymmetry is deliberate: eval runs rerank in a phase that owns the card, while interactive answers share it with ollama, and a reranker resident there would evict the generator on every question. `auto` picks cuda when a card is visible; CUDA OOM falls back to CPU with a warning. |
 | `LLM_TIMEOUT` | `120` | Seconds per completion. A 70b model on CPU needs minutes; the default kills such runs mid-flight. |
+| `WORKER_RERANK_DEVICE` | `cpu` | Where the worker runs the cross-encoder. The corpus-first gate scores a handful of pairs per question, and on this card a resident reranker fights ollama for VRAM during agent runs; the phased eval path sets `cuda` explicitly when it owns the GPU. |
 | `WORKER_QUEUES` | `default,io` | Queue lanes the worker serves, one thread each. Network and disk jobs (model pulls, MCP health) live on `io` so they never wait behind GPU work. |
 | `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
 
@@ -100,7 +101,7 @@ Health:
 Chat and search:
 - `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
 - `POST /v1/chat/fast_question` (retrieval only, no generation)
-- `POST /v1/agent/question` (ReAct agent answer; optional `max_hops`, `language`, and `debug` for the full message trace)
+- `POST /v1/agent/question` (ReAct agent answer; optional `max_hops`, `language`, `fallback_policy`, and `debug` for the full message trace)
 - `GET /v1/categories` (category tree with chunk counts)
 
 ![Single-shot flow: hybrid retrieval, threshold, optional rerank](docs/diagrams/single_shot_flow.svg)
@@ -114,8 +115,8 @@ Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
-- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops` and `model` (generator) overrides; config only sets the defaults)
-- `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops` or `model`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
+- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops`, `fallback_policy` and `model` (generator) overrides; config only sets the defaults)
+- `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops`, `fallback_policy` or `model`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 
@@ -125,7 +126,7 @@ A single run does not loop per question: it goes through phases so each stage ow
 
 ![Phases inside one eval run](docs/diagrams/phased_run.svg)
 
-Measured on 100 questions with reranking on: **2092s → 652s (3.2x)** while `hit@5` and `MRR` stayed identical to the third decimal. Most of the win did not come from batching — it came from noticing that the card was never actually released between phases, so ollama had been loading the generator as 26 layers of 33. The full story, including what the batch alone did *not* buy, is in [the journal entry](docs/experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md).
+Measured on 100 questions with reranking on: **2092s → 652s (3.2x)** while `hit@5` and `MRR` stayed identical to the third decimal. Most of the win did not come from batching, it came from noticing that the card was never actually released between phases, so ollama had been loading the generator as 26 layers of 33. The full story, including what the batch alone did *not* buy, is in [the journal entry](docs/experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md).
 
 Experiments (first-class entity over the raw sweep route):
 - `POST /v1/experiment` (creates the experiment - dataset + deterministic seed-based sample / procedure snapshot / varied param - and enqueues the run series), `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`
@@ -176,8 +177,9 @@ The pairwise block is what keeps conclusions honest: an early version of this be
 Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment becomes a self-contained artifact: what was varied, on what data, the numbers, the verdict.
 
 Observability:
-- `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs; filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; detail with context)
+- `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs; filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; and over the recorded snapshot: `rerank`, `rerank_device`, `phased`, `empty_retrieval`, `max_distance` - so "show me every answer where the corpus returned nothing" is one request; detail with context)
 - `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed), `POST /v1/job/{id}/cancel` (cancels the job and its dependent judge, cooperative stop for a running eval)
+- `POST /v1/job/cancel` (cancel a whole run or job type at once: cancelling id by id through a paginated listing is how a supposedly stopped eval quietly kept running)
 
 ## MCP
 
@@ -212,6 +214,30 @@ Auth per integration is declared as `{"type": "bearer", "token_env": "HF_TOKEN"}
 Note on trust boundaries: no auth by design; anyone with API access can register an integration pointing anywhere, and allowlisted secrets will be sent to that URL. Do not expose the service.
 
 Seeded integrations (all disabled until you enable them): DeepWiki (no auth), Hugging Face (`HF_TOKEN`), Context7 (`CONTEXT7_API_KEY`).
+
+### Corpus-first: when the agent is allowed to look outside
+
+Handing an 8B model a toolbox and hoping it prefers the local corpus is not a policy. `fallback_policy` makes the order explicit and, more importantly, measurable:
+
+- `corpus_first` (default) - the run starts with `search_corpus` alone. External tools are not in the schema and `dispatch` refuses them by name, so a hallucinated tool call cannot leak out. The moment a corpus search comes back empty, the remote schemas join the toolbox from the next hop and the log records `fallback_reason: empty`.
+- `corpus_first_weak` - same, plus a cross-encoder gate: the top `agent.gate_candidates` hits are scored and if the best one is below `agent.weak_threshold` the retrieval counts as a miss (`fallback_reason: weak`). The weak chunks are then dropped from the conversation instead of being answered from, but only when an external tool exists to take over. The gate does not need reranking to be on: with `rerank: false` it scores five pairs and leaves the ordering alone; with reranking on it reuses the scores already computed.
+- `agent_choice` - everything visible from hop one (the pre-policy behaviour, kept as the A/B baseline).
+
+What is forced is the *fact* of asking the corpus, not the wording: rephrasing and the decision to go outside stay with the model, which is where an 8B is actually decent (cross-language retrieval included).
+
+Before any of that, a tool has to earn its place in the toolbox. Under the corpus-first policies each external tool is checked once per run against a single question: does the question already state the values its required arguments need (for DeepWiki, a repository in `owner/repo` form)? A tool that would force the model to invent an argument is not offered at all. This started as a measurement: with the gate on but no admissibility check, in-corpus questions like "как приготовить карбонару?" were sent to a GitHub-repo tool with `repoName: "carbonara-recipe"`, and faithfulness on those questions fell to zero. Two cheaper routers were tried first and both failed: the cross-encoder scores a (question, tool description) pair at zero for everything (it is trained on question-passage relevance, not on capability blurbs), and bi-encoder cosine puts repo questions at 0.40-0.43 against 0.42 for an unrelated interview question. A rejected tool costs nothing: with no tool to hand off to, the weak chunks are kept and the run degrades to plain corpus behaviour.
+
+When no source answers at all, the run no longer ends in silence: the final turn runs without tools, carrying a versioned instruction (`agent.no_evidence`) to say plainly that the available sources do not cover the question and not to answer from memory. Those runs come back as refusals in the language of the question instead of empty results.
+
+When the toolbox opens, the model is told so: a versioned notice (`agent.fallback` prompt) is appended to the tool result, listing the external tools and their required arguments. It rides in the tool result on purpose. A `system` message injected mid-conversation breaks the llama3.1 chat template badly enough that the model starts printing tool calls as prose, role header included. Two more guards come from the same failure family: `dispatch` answers a call with missing required arguments by naming them (an 8B tends to reuse the argument shape of the previous tool), and a turn that narrates a call instead of issuing one gets exactly one nudge to do it for real.
+
+Every remote failure is classified on the call path (`timeout`, `connect`, `auth`, `client`, `server`, `tool`) and lands in `metrics.tool_errors`, because the kinds carry different policies: `auth` means the key is dead and retrying is pointless, `tool` means our arguments are wrong, the rest are transient. Two traps found by probing real failures: fastmcp hides a dead host under `RuntimeError` with the real `httpx.ConnectError` on `__cause__` inside a TaskGroup `ExceptionGroup`, and an unknown tool name comes back as a server-side `ToolError` rather than any transport error.
+
+Both the policy and the reason ride in the log snapshot, so runs before and after are comparable, and `/v1/question-log?fallback_reason=empty` pulls exactly the questions the corpus could not serve.
+
+Measured on three pools of a hundred questions each (in-corpus, repository internals outside the corpus, and questions no available source answers). The empty rule fires **zero** times, because hybrid search always returns *something* above the distance threshold: `corpus_first` went outside 0 times out of 100. The cross-encoder gate turns that into 60 and lifts grounding on those questions from 2.31 to 5.08 (49 questions better, 17 worse, p<0.001) while the in-corpus half does not move (p=0.84) and `hit@5` stays identical across arms. Against a toolbox open from hop one the gated policy is indistinguishable everywhere (p from 0.25 to 0.87), so corpus priority is free in quality and not in time: the gate adds about two seconds per question and an external hop costs twelve more. Inside the corpus the gate fires on 23 of 100 questions, and they stay inside only because the admission check refuses to offer a repository tool for them.
+
+The same run says something less comfortable: **no policy ever refuses.** On the hundred questions nothing can answer, all three arms answer, with grounding between 0.53 and 0.77 out of ten and relevance between 8.4 and 8.8. The answers are on topic, fluent and supported by nothing, and the citation attached to a carbonara recipe is whatever chunk the hybrid returned. Deciding whether the corpus covers a question is not the same as deciding whether anyone does. Numbers and caveats: [the journal entry](docs/experiments/2026-08-25_the-gate-that-fires-and-the-refusal-that.md).
 
 ## How it is built
 
