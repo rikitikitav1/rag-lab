@@ -139,6 +139,16 @@ def test_question_log_snapshot_filters_are_accepted(client_empty_db):
         assert client_empty_db.get(f"/v1/question-log?{query}&limit=1").status_code == 200
 
 
+def test_compare_needs_at_least_one_run(client):
+    assert client.get("/v1/eval/compare").status_code == 422
+
+
+def test_compare_reports_an_unknown_run_instead_of_empty_pools(client_empty_db):
+    r = client_empty_db.get("/v1/eval/compare?runs=nope&runs=also_nope")
+    assert r.status_code == 404
+    assert "nope" in r.json()["detail"]
+
+
 def test_question_log_rejects_out_of_range_distance(client):
     assert client.get("/v1/question-log?max_distance=5").status_code == 422
 

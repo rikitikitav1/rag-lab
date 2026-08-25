@@ -1,7 +1,9 @@
 import sys
 
-import outcomes
 from evals.loaders import load_logs
+from evals.pools import has_remote_evidence as _has_remote_evidence
+from evals.pools import kind as _kind
+from evals.pools import outcome as _outcome
 
 
 def _num(v):
@@ -11,30 +13,6 @@ def _num(v):
 def _avg(scores):
     vals = [s for s in (_num(x) for x in scores) if s is not None]
     return round(sum(vals) / len(vals), 2) if vals else None
-
-
-def _kind(ql) -> str:
-    kind = ql.question.kind if ql.question else None
-    if kind in ("in_corpus", "out_of_corpus", "off_domain", "rejected"):
-        return kind
-    return "in_corpus" if (ql.question and ql.question.marked_sources) else "out_of_corpus"
-
-
-def _outcome(ql) -> str:
-    metrics = ql.metrics or {}
-    recorded = metrics.get("outcome")
-    if recorded in ("narrated_call", "exhausted"):
-        return recorded
-    config = metrics.get("config") or {}
-    exhausted = metrics.get("hops") is not None and metrics["hops"] >= config.get("max_hops", 4)
-    if recorded == "error":
-        return "exhausted" if exhausted else "error"
-    return outcomes.classify(
-        ql.answer,
-        bool(ql.sources),
-        prefixes=[f"{name}__" for name in config.get("mcp_configured") or []],
-        exhausted=exhausted,
-    )
 
 
 def _share(logs, outcome) -> str:
@@ -124,10 +102,6 @@ def evaluate(run_name=None, verbose=False) -> dict:
         "in_corpus_via_remote": sum(1 for ql in in_corpus if _has_remote_evidence(ql)),
         "answered_via_remote": len(via_remote),
     }
-
-
-def _has_remote_evidence(ql) -> bool:
-    return any(s["source"].startswith("mcp:") for s in (ql.sources or []))
 
 
 if __name__ == "__main__":

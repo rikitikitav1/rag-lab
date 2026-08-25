@@ -3,6 +3,7 @@ import time
 from typing import Literal
 
 import job_queue
+from evals import compare as compare_uc
 from fastapi import APIRouter, Depends, HTTPException, Query
 from models.eval import QuestionLog
 from models.registry import Pipeline
@@ -139,6 +140,32 @@ async def eval_misses(
         misses=len(items),
         items=items[offset : offset + limit],
     )
+
+
+class CompareResponse(BaseModel):
+    runs: list[str]
+    pools: dict
+    overall: dict
+
+
+@router.get("/compare", response_model=CompareResponse)
+async def eval_compare(
+    runs: list[str] = Query(min_length=1),
+    session: AsyncSession = Depends(get_session),
+):
+    loaded = {}
+    for run_name in dict.fromkeys(runs):
+        stmt = (
+            select(QuestionLog)
+            .options(selectinload(QuestionLog.question))
+            .where(QuestionLog.run_name == run_name)
+        )
+        loaded[run_name] = list((await session.scalars(stmt)).all())
+
+    empty = [name for name, logs in loaded.items() if not logs]
+    if empty:
+        raise HTTPException(status_code=404, detail=f"no logs for runs: {empty}")
+    return compare_uc.compare(loaded)
 
 
 def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:

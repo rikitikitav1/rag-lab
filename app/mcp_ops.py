@@ -2,7 +2,8 @@ from typing import Annotated
 
 import job_queue
 import logging_setup
-from evals import generation_metrics, retrieval_metrics
+from evals import compare, generation_metrics, retrieval_metrics
+from evals.loaders import load_logs
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models import Job, JobStatus
@@ -52,6 +53,31 @@ def compare_runs(
     if not run_names:
         raise ToolError("run_names must not be empty")
     return experiment_uc.compute_results("run", run_names, run_names)
+
+
+@mcp_ops.tool(
+    name="compare_pools",
+    description=(
+        "Compare runs pool by pool: in_corpus, out_of_corpus, off_domain. Per arm "
+        "returns judged counts, the three generation axes, how often the answer "
+        "came from a remote tool against the corpus, how often the coverage gate "
+        "fired, latency (avg and p50) and the outcome histogram. Per pair of runs "
+        "returns a paired Wilcoxon test over the same questions. Use instead of "
+        "compare_runs when the question is where a difference comes from, not "
+        "which run wins on average."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def compare_pools(
+    run_names: Annotated[list[str], Field(description="Run names to compare.")],
+) -> dict:
+    if not run_names:
+        raise ToolError("run_names must not be empty")
+    runs = {name: load_logs(name) for name in dict.fromkeys(run_names)}
+    empty = [name for name, logs in runs.items() if not logs]
+    if empty:
+        raise ToolError(f"no logs for runs: {empty}")
+    return compare.compare(runs)
 
 
 @mcp_ops.tool(
