@@ -1,6 +1,5 @@
 import time
 from dataclasses import asdict, dataclass, field
-from enum import StrEnum
 
 import agent_tools
 import config
@@ -14,57 +13,29 @@ from models.eval import QuestionLog
 from models.registry import Pipeline, Purpose
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
-from use_cases import chat
+from use_cases import agent_graph, agent_react, chat
+from use_cases.agent_policy import (
+    TOOL_CALL_NUDGE,
+    FallbackPolicy,
+    FallbackReason,
+    Gate,
+    GateSignal,
+    Orchestrator,
+    Topic,
+)
+from use_cases.agent_policy import (
+    required_values as _required_values,
+)
+from use_cases.agent_policy import (
+    signatures as _signatures,
+)
+from use_cases.agent_policy import (
+    verdict as _verdict,
+)
 
 import db
 
 log = logging_setup.get_logger(__name__)
-
-TOOL_CALL_NUDGE = (
-    "You described a tool call instead of issuing one. Call the tool for real now, "
-    "with the arguments its schema lists, or answer without it."
-)
-
-
-class FallbackPolicy(StrEnum):
-    corpus_first = "corpus_first"
-    corpus_first_weak = "corpus_first_weak"
-    agent_choice = "agent_choice"
-
-
-class GateSignal(StrEnum):
-    cross_encoder = "cross_encoder"
-    distance = "distance"
-    either = "either"
-
-
-class FallbackReason(StrEnum):
-    none = "none"
-    empty = "empty"
-    weak = "weak"
-    off_topic = "off_topic"
-
-
-
-
-
-@dataclass
-class Topic:
-    threshold: float | None = None
-    score: float | None = None
-
-
-@dataclass
-class Gate:
-    signal: str = GateSignal.distance
-    top: int | None = None
-    threshold: float | None = None
-    distance_threshold: float | None = None
-    drop_weak_context: bool = False
-    off_topic: bool = False
-    announce: bool = False
-    tool_signatures: str = ""
-
 
 @dataclass
 class AgentResult:
@@ -101,6 +72,7 @@ def run(
     gate_signal: str | None = None,
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
+    orchestrator: str | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
     if max_hops is None:
@@ -159,38 +131,65 @@ def run(
     if external:
         tools += [t.schema() for t in remote.values()]
 
-    for hop in range(1, max_hops + 1):
-        result.hops = hop
-        try:
-            turn = llm.chat(messages, tools=tools, role=role, model=model)
-        except RuntimeError as e:
-            log.error("agent.hop_failed", hop=hop, error=str(e))
-            break
-        result.prompt_tokens += turn.prompt_tokens
-        result.completion_tokens += turn.completion_tokens
-        result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
-        if not turn.tool_calls and nudges and outcomes.narrated_tool_call(
-            turn.text, (*remote, agent_tools.CORPUS_TOOL)
-        ):
-            nudges -= 1
-            log.info("agent.narrated_tool_call", hop=hop)
-            messages.append(turn.message or {"role": "assistant", "content": turn.text})
-            messages.append({"role": "user", "content": TOOL_CALL_NUDGE})
-            continue
+    orchestrator = Orchestrator(orchestrator or Orchestrator.handrolled)
+    graph_run = orchestrator != Orchestrator.handrolled
+    if orchestrator == Orchestrator.langgraph_idiomatic:
+        agent_react.invoke(
+            question,
+            system,
+            agent_graph.context(
+                remote=remote, k=k, use_rerank=use_rerank, role=role, model=model,
+                max_hops=max_hops,
+            ),
+            result,
+        )
+        messages = result.messages
+    elif graph_run:
         gate.announce = not external and bool(remote)
-        if _apply_turn(
-            turn, messages, result, k, use_rerank, remote if external else None, gate
-        ):
-            break
-        if not external and remote and result.fallback_reason != FallbackReason.none:
-            external = True
-            result.fallback_opened = True
-            tools = tools + [t.schema() for t in remote.values()]
-            log.info("agent.external_opened", hop=hop, reason=result.fallback_reason)
+        agent_graph.invoke(
+            question,
+            system,
+            agent_graph.context(
+                remote=remote, gate=gate, external=external, k=k, use_rerank=use_rerank,
+                role=role, model=model, max_hops=max_hops,
+            ),
+            result,
+        )
+        messages = result.messages
+    else:
+      for hop in range(1, max_hops + 1):
+          result.hops = hop
+          try:
+              turn = llm.chat(messages, tools=tools, role=role, model=model)
+          except RuntimeError as e:
+              log.error("agent.hop_failed", hop=hop, error=str(e))
+              break
+          result.prompt_tokens += turn.prompt_tokens
+          result.completion_tokens += turn.completion_tokens
+          result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
+          if not turn.tool_calls and nudges and outcomes.narrated_tool_call(
+              turn.text, (*remote, agent_tools.CORPUS_TOOL)
+          ):
+              nudges -= 1
+              log.info("agent.narrated_tool_call", hop=hop)
+              messages.append(turn.message or {"role": "assistant", "content": turn.text})
+              messages.append({"role": "user", "content": TOOL_CALL_NUDGE})
+              continue
+          gate.announce = not external and bool(remote)
+          if _apply_turn(
+              turn, messages, result, k, use_rerank, remote if external else None, gate
+          ):
+              break
+          if not external and remote and result.fallback_reason != FallbackReason.none:
+              external = True
+              result.fallback_opened = True
+              tools = tools + [t.schema() for t in remote.values()]
+              log.info("agent.external_opened", hop=hop, reason=result.fallback_reason)
 
     result.sources = _unique_sources(result.sources)
 
-    if not result.success:
+    # the graph runs its own final turn inside the flow, so only the loop needs this one
+    if not result.success and orchestrator == Orchestrator.handrolled:
         log.info("agent.forcing_final", hops=result.hops, sources=len(result.sources))
         if not result.sources:
             messages.append({
@@ -232,6 +231,7 @@ def run(
         _log_answer(
             question, result, run_name, language, k, use_rerank, model,
             admitted, policy, configured, gate, max_hops, topic, admission_ran,
+            {"name": str(orchestrator), **(agent_graph.versions() if graph_run else {})},
         )
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
@@ -241,14 +241,6 @@ def run(
     ):
         result.text = chat.NO_RESULTS
     return result
-
-
-def _required_values(tool) -> str:
-    props = tool.parameters.get("properties", {})
-    return "; ".join(
-        f"{name}: {' '.join(props.get(name, {}).get('description', name).split())}"
-        for name in tool.parameters.get("required", [])
-    )
 
 
 def _admissible(
@@ -282,45 +274,12 @@ def _admissible(
 
 
 
-def _signatures(tools) -> str:
-    return "\n".join(
-        f"- {tool.name}({', '.join(tool.parameters.get('required', []))}): "
-        f"{' '.join(tool.description.split())[:160]}"
-        for tool in tools
-    )
-
-
 def _topic_score(question: str) -> float | None:
     try:
         return db.nearest_distance(llm.embed(question))
     except Exception as e:
         log.error("agent.topic_score_failed", error=str(e))
         return None
-
-
-def _weak_by_cross_encoder(sources: list, gate: Gate) -> bool:
-    scores = [s.rerank_score for s in sources if s.rerank_score is not None]
-    return bool(scores) and max(scores) < gate.threshold
-
-
-def _weak_by_distance(sources: list, gate: Gate) -> bool:
-    distances = [s.vector_distance for s in sources if s.vector_distance is not None]
-    return bool(distances) and min(distances) >= gate.distance_threshold
-
-
-def _verdict(sources: list, gate: Gate) -> str | None:
-    if not sources:
-        return FallbackReason.empty
-    if gate.threshold is None and gate.distance_threshold is None:
-        return None
-    checks = {
-        GateSignal.cross_encoder: (_weak_by_cross_encoder,),
-        GateSignal.distance: (_weak_by_distance,),
-        GateSignal.either: (_weak_by_cross_encoder, _weak_by_distance),
-    }[gate.signal]
-    if any(check(sources, gate) for check in checks):
-        return FallbackReason.weak
-    return None
 
 
 def _apply_turn(
@@ -455,6 +414,7 @@ def _log_answer(
     max_hops: int | None = None,
     topic: Topic | None = None,
     admission_ran: bool = False,
+    orchestrator: dict | None = None,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -504,6 +464,7 @@ def _log_answer(
                 "tool_errors": result.tool_errors or None,
                 "config": {
                     "rerank": use_rerank,
+                    "orchestrator": orchestrator,
                     "fallback_policy": str(fallback_policy),
                     "gate": (
                         {
