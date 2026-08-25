@@ -31,3 +31,4 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 - [2026-08-24 - Phased eval runs, and the unload that freed nothing](experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md)
 - [2026-08-24 - Corpus-first, and the fallback that never fired](experiments/2026-08-24_corpus-first-and-the-fallback-that-never.md)
 - [2026-08-25 - The gate that fires, and the refusal that never comes](experiments/2026-08-25_the-gate-that-fires-and-the-refusal-that.md)
+- [2026-08-25 - A cheaper gate signal, and a win on the wrong axis](experiments/2026-08-25_a-cheaper-gate-signal-and-a.md)
