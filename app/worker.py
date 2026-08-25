@@ -17,6 +17,13 @@ HANDLERS = job_handlers.HANDLERS
 QUEUES = [q.strip() for q in os.getenv("WORKER_QUEUES", "default,io").split(",") if q.strip()]
 
 
+def reclaim(queues: list[str]) -> None:
+    # single worker by design: anything left running is from a process that died
+    stale = job_queue.requeue_stale(queues)
+    if stale:
+        log.warning("worker.requeued_stale", ids=stale)
+
+
 def run_once(queues: list[str]) -> bool:
     claimed = job_queue.claim_next(queues)
     if claimed is None:
@@ -79,6 +86,7 @@ def main() -> None:
     if not QUEUES:
         raise SystemExit("WORKER_QUEUES is empty")
     log.info("worker.start", queues=QUEUES, handlers=list(HANDLERS))
+    reclaim(QUEUES)
     for lane in QUEUES[1:]:
         threading.Thread(target=_loop, args=([lane],), daemon=True).start()
     _loop([QUEUES[0]])

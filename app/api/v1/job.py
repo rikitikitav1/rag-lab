@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from crud import get_or_404
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from models.jobs import Job, JobStatus
 from orm.async_db import get_session
 from pydantic import BaseModel
@@ -76,6 +76,30 @@ class CancelResponse(BaseModel):
 
 
 _ACTIVE = (JobStatus.new, JobStatus.running)
+
+
+class BulkCancelRequest(BaseModel):
+    run_name: str | None = None
+    type: str | None = None
+
+
+@router.post("/cancel", response_model=CancelResponse)
+async def cancel_jobs(
+    request: BulkCancelRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    if not request.run_name and not request.type:
+        raise HTTPException(status_code=400, detail="run_name or type is required")
+    stmt = select(Job).where(Job.status.in_(_ACTIVE))
+    if request.run_name:
+        stmt = stmt.where(Job.options["run_name"].astext == request.run_name)
+    if request.type:
+        stmt = stmt.where(Job.type == request.type)
+    jobs = (await session.scalars(stmt)).all()
+    for job in jobs:
+        job.status = JobStatus.cancelled
+    await session.commit()
+    return CancelResponse(cancelled=[j.id for j in jobs])
 
 
 @router.post("/{id}/cancel", response_model=CancelResponse)
