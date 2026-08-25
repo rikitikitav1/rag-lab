@@ -7,7 +7,7 @@ retrieval: Hybrid retrieval (one SQL query) {
   direction: right
   vector: vector CTE\ntop-N by cosine\ndistance
   keyword: keyword CTE\nFTS per-language
-  rrf: "RRF merge\n1/(60+rank)"
+  rrf: "RRF merge 1/(60+rank)"
   vector -> rrf
   keyword -> rrf
 }
@@ -15,7 +15,7 @@ retrieval: Hybrid retrieval (one SQL query) {
 threshold: "distance threshold (absolute quality gate)"
 gate: Any rows left?
 
-rerank_q: "rerank enabled?\n(default off, per-run override)"
+rerank_q: "rerank enabled? (default off, per-run\noverride)"
 rerank: Cross-encoder rerank\nbge-reranker-v2-m3\ncandidates 20 -> top k {
   style.stroke-dash: 3
 }
@@ -27,7 +27,7 @@ gen: "Generate (llama3.1:8b, temp 0.1)" {
 answer: Answer + sources {
   style.fill: "#d4edda"
 }
-refuse: "\"No relevant documents found.\"\nhonest refusal, no LLM call" {
+refuse: "\"No relevant documents found.\" honest\nrefusal, no LLM call" {
   style.fill: "#fff3cd"
 }
 log: question_log:\nanswer, context, sources, config {
@@ -44,8 +44,7 @@ ctx -> gen -> answer
 answer -> log
 refuse -> log
 
-note: |md
-  Single-shot is deliberately dumb: retrieve once, generate once,
-  no tool calls, no external fallback. It is the measurable
-  baseline the agent pipeline is compared against.
-|
+note: "Deliberately dumb: retrieve once, generate\nonce. No tools, no fallback: the baseline the\nagent pipeline is measured against" {
+  near: bottom-center
+  style.stroke-dash: 3
+}

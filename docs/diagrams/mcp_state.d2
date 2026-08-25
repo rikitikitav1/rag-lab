@@ -22,8 +22,7 @@ unreachable -> disabled: PUT (operator)
 active -> unreachable: probe failed {style.stroke-dash: 3}
 unreachable -> active: probe ok {style.stroke-dash: 3}
 
-legend: |md
-  Solid: operator intent (API).
-  Dashed: observed health (probe / health job).
-  Probes never touch `disabled`.
-|
+legend: "Solid: operator intent (API) Dashed: observed\nhealth (probe / health job) Probes never touch\ndisabled" {
+  near: bottom-center
+  style.stroke-dash: 3
+}

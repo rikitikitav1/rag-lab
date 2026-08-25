@@ -1,7 +1,7 @@
 direction: down
 
 q: POST /v1/agent/question\nfallback_policy: corpus_first | corpus_first_weak | agent_choice
-topic: "Topic axis, before any tool is offered\ndistance to the nearest chunk >= topic_threshold (0.50)\n= not our domain: no tools, context dropped, refuse" {
+topic: "Topic axis, before any tool is offered\ndistance to the nearest chunk >=\ntopic_threshold (0.50) = not our domain: no\ntools, context dropped, refuse" {
   style.fill: "#fff3cd"
 }
 toolbox: Build toolbox {
@@ -10,7 +10,7 @@ toolbox: Build toolbox {
   admit: "admissible? does the question itself carry\nthis tool's required arguments" {
     style.fill: "#fff3cd"
   }
-  withheld: "corpus_first: admitted tools stay out of the schema\nuntil the corpus fails, dispatch refuses them by name" {
+  withheld: "corpus_first: admitted tools stay out of the\nschema until the corpus fails, dispatch\nrefuses them by name" {
     style.fill: "#fff3cd"
   }
   remote -> admit -> withheld
@@ -19,16 +19,16 @@ hop1: "Hop 1: LLM sees search_corpus only" {
   shape: hexagon
 }
 search: search_corpus
-gate: "Coverage gate, once per turn\ncorpus_first: any rows above the distance threshold\ncorpus_first_weak, gate_signal:\ndistance (default): best hit's vector distance <= weak_distance\ncross_encoder: best of the top 5 >= weak_threshold\neither: weak when one of the two says so" {
+gate: "Coverage gate, once per turn\ncorpus_first: any rows above the\ndistance\nthreshold\ncorpus_first_weak, gate_signal:\ndistance (default): best hit's vector\ndistance <= weak_distance\ncross_encoder: best of the top 5 >=\nweak_threshold\neither: weak when one of the two says\nso" {
   style.fill: "#fff3cd"
 }
 answer_corpus: Answer from corpus\nsources = chunks {
   style.fill: "#d4edda"
 }
-open: "fallback_reason: empty | weak\nweak chunks dropped (kept in the log for hit@k),\nadmitted schemas join the toolbox,\nnotice appended to the tool result" {
+open: "fallback_reason: empty | weak weak chunks\ndropped (kept in the log for hit@k), admitted\nschemas join the toolbox, notice appended to\nthe tool result" {
   style.fill: "#fff3cd"
 }
-hop2: "Hop 2: LLM decides,\nadmitted tools now visible" {
+hop2: "Hop 2: LLM decides, admitted tools now visible" {
   shape: hexagon
 }
 remote_call: "deepwiki__ask_question" {
@@ -43,10 +43,10 @@ remote_err: "\"error: tool ... failed (<kind>)\"\nkind: timeout | connect | auth
 no_evidence: "No source answered: final turn without tools,\nagent.no_evidence prompt" {
   style.fill: "#fff3cd"
 }
-refuse: "Refusal in words\noutcome = refused" {
+refuse: "Refusal in words outcome = refused" {
   style.fill: "#fff3cd"
 }
-log: "Log: sources, context, outcome, fallback_reason,\nfallback_opened, tool_errors, retrieval snapshot,\nconfig (gate, mcp + mcp_configured, policy, max_hops)" {
+log: "Log: sources, context, outcome,\nfallback_reason, fallback_opened, tool_errors,\nretrieval snapshot, config (gate, mcp +\nmcp_configured, policy, max_hops)" {
   shape: page
 }
 metrics: |md
@@ -63,7 +63,7 @@ q -> topic
 topic -> toolbox: within the domain
 topic -> no_evidence: off topic
 toolbox -> hop1
-toolbox -> hop2: "agent_choice: everything\nvisible from hop 1" {
+toolbox -> hop2: "agent_choice: everything visible from hop 1" {
   style.stroke-dash: 3
 }
 hop1 -> search: tool call
