@@ -22,6 +22,25 @@ def _both(monkeypatch_factory, turns, corpus_sources, **kwargs):
     return out
 
 
+# the middleware arm talks to a chat model, not to our client, so the same script is replayed
+# through a scripted model instead of a patched llm.chat
+def _middleware_run(monkeypatch, script, corpus_sources, dispatch=None, **kwargs):
+    from fake_chat import ScriptedChatModel
+    from orchestrators import react
+
+    _agent_harness(monkeypatch, [], corpus_sources)
+    if dispatch is not None:
+        import agent_tools
+
+        monkeypatch.setattr(agent_tools, "dispatch", dispatch)
+    model = ScriptedChatModel(script)
+    monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
+    kwargs.setdefault("max_hops", 2)
+    return agent.run(
+        "q", orchestrator=agent_policy.Orchestrator.langgraph_middleware, **kwargs
+    )
+
+
 @pytest.fixture
 def monkeypatch_factory():
     from _pytest.monkeypatch import MonkeyPatch
@@ -207,3 +226,60 @@ def test_a_nudge_on_the_last_hop_does_not_buy_another_hop(monkeypatch_factory):
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=2
     )
     assert _shape(loop) == _shape(graph)
+
+
+def test_the_middleware_arm_answers_from_the_corpus_like_the_loop(monkeypatch_factory):
+    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}, {"text": "final"}]
+    with monkeypatch_factory() as monkeypatch:
+        result = _middleware_run(
+            monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)]
+        )
+    assert str(result.outcome) == "answered"
+    assert result.text == "final"
+    assert [s.source for s in result.sources] == ["s.md"]
+    assert str(result.fallback_reason) == "none"
+
+
+def test_the_middleware_arm_drops_weak_context_and_opens_the_toolbox(monkeypatch_factory):
+    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}, {"text": "final"}]
+    with monkeypatch_factory() as monkeypatch:
+        result = _middleware_run(
+            monkeypatch, script, [_weak_hit()], fallback_policy="corpus_first_weak"
+        )
+    assert str(result.fallback_reason) == "weak"
+    assert result.fallback_opened is True
+    assert result.dropped_sources == ["s.md"]
+    assert result.sources == []
+
+
+def test_the_middleware_arm_nudges_a_narrated_call_once(monkeypatch_factory):
+    narration = '{"name": "deepwiki__ask_question", "parameters": {"q": "x"}}'
+    script = [
+        {"text": narration},
+        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
+        {"text": "final"},
+    ]
+    with monkeypatch_factory() as monkeypatch:
+        result = _middleware_run(
+            monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
+        )
+    assert result.text == "final"
+    assert any(agent_policy.TOOL_CALL_NUDGE in str(m.get("content")) for m in result.messages)
+
+
+def test_a_failing_corpus_tool_does_not_read_as_an_empty_corpus(monkeypatch_factory):
+    import agent_tools
+    import errors
+
+    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}, {"text": "final"}]
+    def failing(name, args, **kw):
+        return agent_tools.ToolResult(
+            content=f"{errors.ERROR_PREFIX}tool failed", meta={"error_kind": "timeout"}
+        )
+
+    with monkeypatch_factory() as monkeypatch:
+        result = _middleware_run(
+            monkeypatch, script, [], dispatch=failing, fallback_policy="corpus_first_weak"
+        )
+    assert str(result.fallback_reason) == "none"
+    assert result.fallback_opened is False
