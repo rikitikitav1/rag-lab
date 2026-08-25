@@ -52,6 +52,7 @@ class AgentResult:
     max_prompt_tokens: int = 0
     truncated_hops: int = 0
     last_prompt_tokens: int = 0
+    failed: bool = False
     elapsed: float = 0.0
     fallback_reason: str = FallbackReason.none
     fallback_announced: bool = False
@@ -231,7 +232,8 @@ def run(
         result.text,
         bool(result.sources),
         (*remote, agent_tools.CORPUS_TOOL),
-        exhausted=result.hops >= max_hops,
+        # a guard that fired is a failure, not a run that politely used up its hops
+        exhausted=result.hops >= max_hops and not result.failed,
     )
     result.success = bool(result.sources and result.text)
 

@@ -79,6 +79,7 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
         result.hops = ctx["max_hops"] + 1
         result.text = ""
         result.success = False
+        result.failed = True
         return
     messages = state["messages"]
     replies = [m for m in messages if getattr(m, "type", None) == "ai"]

@@ -399,3 +399,26 @@ def test_the_middleware_arm_refuses_an_off_topic_question_like_the_loop(monkeypa
     assert str(result.fallback_reason) == "off_topic"
     assert result.sources == []
     assert result.dropped_sources == ["s.md"]
+
+
+def test_the_recursion_guard_is_an_error_not_exhaustion(monkeypatch_factory):
+    from langgraph.errors import GraphRecursionError
+
+    class Looping:
+        def invoke(self, *args, **kwargs):
+            raise GraphRecursionError("limit")
+
+    with monkeypatch_factory() as monkeypatch:
+        import langchain.agents as agents_module
+        from orchestrators import react
+
+        _agent_harness(monkeypatch, [], [])
+        monkeypatch.setattr(react, "chat_model", lambda role=None, model=None: object())
+        monkeypatch.setattr(agents_module, "create_agent", lambda **kw: Looping())
+        result = agent.run(
+            "q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_idiomatic
+        )
+
+    # the budget lives in the middleware now, so the guard firing means the graph looped
+    assert result.failed is True
+    assert str(result.outcome) == "error"
