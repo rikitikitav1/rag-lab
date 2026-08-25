@@ -56,7 +56,7 @@ class Topic:
 
 @dataclass
 class Gate:
-    signal: str = GateSignal.cross_encoder
+    signal: str = GateSignal.distance
     top: int | None = None
     threshold: float | None = None
     distance_threshold: float | None = None
@@ -82,6 +82,7 @@ class AgentResult:
     fallback_opened: bool = False
     no_evidence_prompted: bool = False
     dropped_sources: list = field(default_factory=list)
+    dropped_hits: list = field(default_factory=list)
     outcome: str = outcomes.Outcome.error
     tool_errors: dict = field(default_factory=dict)
 
@@ -98,6 +99,7 @@ def run(
     model: str | None = None,
     fallback_policy: str | None = None,
     gate_signal: str | None = None,
+    weak_distance: float | None = None,
     topic_threshold: float | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
@@ -139,7 +141,11 @@ def run(
             gate.top = config.settings.agent.gate_candidates
             gate.threshold = config.settings.agent.weak_threshold
         if gate.signal != GateSignal.cross_encoder:
-            gate.distance_threshold = config.settings.agent.weak_distance
+            gate.distance_threshold = (
+                weak_distance
+                if weak_distance is not None
+                else config.settings.agent.weak_distance
+            )
         gate.drop_weak_context = gate.off_topic or bool(remote)
     nudges = 1
     tools = agent_tools.schemas()
@@ -356,6 +362,7 @@ def _apply_turn(
         log.info("agent.weak_context_dropped", hop=result.hops)
         for call in corpus:
             result.dropped_sources.extend(s.source for s in call[3])
+            result.dropped_hits.extend(call[3])
             call[2], call[3] = chat.NO_RESULTS, []
     if verdict and gate.announce:
         # a system message mid-conversation breaks the llama3.1 template
@@ -375,12 +382,17 @@ def _apply_turn(
     return False
 
 
-def _retrieval_snapshot(sources: list, dropped: list | None = None) -> dict:
-    corpus = [s for s in sources if not s.source.startswith("mcp:")]
-    distances = [s.vector_distance for s in corpus if s.vector_distance is not None]
-    scores = [s.rerank_score for s in corpus if s.rerank_score is not None]
+def _retrieval_snapshot(sources: list, dropped_hits: list, dropped: list | None = None) -> dict:
+    def corpus_only(rows):
+        return [s for s in rows if not s.source.startswith("mcp:")]
+
+    kept = corpus_only(sources)
+    # the gate decides on what retrieval returned, so its input survives the drop
+    scored = kept + corpus_only(dropped_hits)
+    distances = [s.vector_distance for s in scored if s.vector_distance is not None]
+    scores = [s.rerank_score for s in scored if s.rerank_score is not None]
     return {
-        "results_count": len(corpus),
+        "results_count": len(kept),
         "min_distance": min(distances) if distances else None,
         "top_rerank_score": max(scores) if scores else None,
         "dropped_sources": sorted(set(dropped or [])) or None,
@@ -463,7 +475,9 @@ def _log_answer(
                 "hops": result.hops,
                 "no_evidence": not bool(result.sources),
                 "context_tokens": result.max_prompt_tokens,
-                "retrieval": _retrieval_snapshot(result.sources, result.dropped_sources),
+                "retrieval": _retrieval_snapshot(
+                    result.sources, result.dropped_hits, result.dropped_sources
+                ),
                 "fallback_reason": str(result.fallback_reason),
                 "fallback_opened": result.fallback_opened,
                 "outcome": str(result.outcome),

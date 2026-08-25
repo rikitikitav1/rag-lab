@@ -225,16 +225,24 @@ def test_no_notice_when_the_corpus_answered(monkeypatch):
     assert all(f"tpl:{Purpose.agent_fallback}" not in m.get("content", "") for m in result.messages)
 
 
-def _scored(score, name="s.md"):
-    return SimpleNamespace(source=name, rerank_score=score)
+def _scored(score, name="s.md", distance=None):
+    return SimpleNamespace(source=name, rerank_score=score, vector_distance=distance)
+
+
+def _weak_hit(name="s.md"):
+    return _scored(0.02, name, distance=0.52)
+
+
+def _strong_hit(name="s.md"):
+    return _scored(0.91, name, distance=0.20)
 
 
 def test_verdict_reads_the_cross_encoder_not_the_hit_count():
-    gate = agent.Gate(top=5, threshold=0.5)
+    gate = agent.Gate(signal=agent.GateSignal.cross_encoder, top=5, threshold=0.5)
     assert agent._verdict([], gate) == agent.FallbackReason.empty
     assert agent._verdict([_scored(0.02), _scored(0.4)], gate) == agent.FallbackReason.weak
     assert agent._verdict([_scored(0.02), _scored(0.91)], gate) is None
-    assert agent._verdict([_scored(0.02)], agent.Gate()) is None
+    assert agent._verdict([_scored(0.02)], agent.Gate(signal=agent.GateSignal.cross_encoder)) is None
 
 
 def test_weak_retrieval_opens_the_toolbox_and_drops_the_junk_context(monkeypatch):
@@ -244,10 +252,12 @@ def test_weak_retrieval_opens_the_toolbox_and_drops_the_junk_context(monkeypatch
     ]
     runtime = []
     seen_tools, _ = _agent_harness(
-        monkeypatch, turns, corpus_sources=[_scored(0.02)], seen_runtime=runtime
+        monkeypatch, turns, corpus_sources=[_weak_hit()], seen_runtime=runtime
     )
 
-    result = agent.run("q", max_hops=2, fallback_policy="corpus_first_weak")
+    result = agent.run(
+        "q", max_hops=2, fallback_policy="corpus_first_weak", gate_signal="cross_encoder"
+    )
 
     assert result.fallback_reason == agent.FallbackReason.weak
     assert seen_tools[1] == ["search_corpus", "deepwiki__ask_question"]
@@ -263,7 +273,7 @@ def test_strong_retrieval_keeps_the_context_and_the_gate_shut(monkeypatch):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=[_scored(0.91)])
+    seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=[_strong_hit()])
 
     result = agent.run("q", max_hops=2, fallback_policy="corpus_first_weak")
 
@@ -429,7 +439,7 @@ def test_tools_that_cannot_answer_are_never_offered(monkeypatch):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="I cannot answer this from the available sources"),
     ]
-    seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=[_scored(0.02)])
+    seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=[_weak_hit()])
     monkeypatch.setattr(
         agent.llm, "ask", lambda system, user, **kw: SimpleNamespace(text="no")
     )
@@ -446,7 +456,7 @@ def test_a_matching_tool_is_offered(monkeypatch):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=[_scored(0.02)])
+    seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=[_weak_hit()])
     monkeypatch.setattr(
         agent.llm, "ask", lambda system, user, **kw: SimpleNamespace(text="yes")
     )
@@ -662,7 +672,7 @@ def test_dropped_weak_chunks_still_count_as_retrieval(monkeypatch):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    _agent_harness(monkeypatch, turns, corpus_sources=[_scored(0.02, "redis.md")])
+    _agent_harness(monkeypatch, turns, corpus_sources=[_weak_hit("redis.md")])
     monkeypatch.setattr(
         agent, "_log_answer", lambda question, result, *a, **kw: logged.update(
             dropped=result.dropped_sources
@@ -726,6 +736,62 @@ def test_distance_signal_flags_a_far_chunk_without_the_cross_encoder(monkeypatch
     assert runtime[0].get("gate_top") is None
 
 
+def test_the_snapshot_keeps_what_the_gate_saw_after_the_drop(monkeypatch):
+    logged = {}
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    _agent_harness(monkeypatch, turns, corpus_sources=[_weak_hit("junk.md")])
+    monkeypatch.setattr(
+        agent, "_log_answer", lambda question, result, *a, **kw: logged.update(
+            snapshot=agent._retrieval_snapshot(
+                result.sources, result.dropped_hits, result.dropped_sources
+            )
+        )
+    )
+
+    agent.run("in the repository x/y, what does z do", max_hops=2, fallback_policy="corpus_first_weak")
+
+    assert logged["snapshot"]["results_count"] == 0
+    assert logged["snapshot"]["min_distance"] == 0.52
+    assert logged["snapshot"]["dropped_sources"] == ["junk.md"]
+
+
+def test_a_run_can_override_the_distance_threshold(monkeypatch):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    _agent_harness(monkeypatch, turns, corpus_sources=[_hit(vector_distance=0.40)])
+
+    strict = agent.run("q", max_hops=2, fallback_policy="corpus_first_weak", weak_distance=0.30)
+
+    turns.extend([
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ])
+    loose = agent.run("q", max_hops=2, fallback_policy="corpus_first_weak", weak_distance=0.45)
+
+    assert strict.fallback_reason == agent.FallbackReason.weak
+    assert loose.fallback_reason == agent.FallbackReason.none
+
+
+def test_the_default_signal_is_the_distance(monkeypatch):
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    runtime = []
+    far_but_well_scored = _hit(rerank_score=0.9, vector_distance=0.48)
+    _agent_harness(monkeypatch, turns, corpus_sources=[far_but_well_scored], seen_runtime=runtime)
+
+    result = agent.run("q", max_hops=2, fallback_policy="corpus_first_weak")
+
+    assert result.fallback_reason == agent.FallbackReason.weak
+    assert runtime[0].get("gate_top") is None
+
+
 def test_distance_signal_lets_a_near_chunk_through(monkeypatch):
     result, _ = _run_with_signal(monkeypatch, "distance", _hit(vector_distance=0.20))
     assert result.fallback_reason == agent.FallbackReason.none
@@ -782,7 +848,7 @@ def test_the_topic_axis_is_off_unless_a_threshold_is_given(monkeypatch):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    _agent_harness(monkeypatch, turns, corpus_sources=[_scored(0.9)])
+    _agent_harness(monkeypatch, turns, corpus_sources=[_strong_hit()])
     monkeypatch.setattr(
         agent, "_topic_score", lambda question: pytest.fail("topic must not be scored")
     )

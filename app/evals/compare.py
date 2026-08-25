@@ -3,6 +3,7 @@ import sys
 
 from evals.loaders import load_logs
 from evals.pools import POOLS, has_remote_evidence, outcome, split
+from evals.stats import delta_stats
 
 OUTCOMES = ("answered", "refused", "unsupported_answer", "narrated_call", "exhausted", "error")
 AXES = ("faithfulness", "relevance", "completeness")
@@ -23,6 +24,8 @@ def summarize(logs) -> dict:
         for ql, mark in zip(logs, marks, strict=True)
         if mark == "answered" and not has_remote_evidence(ql)
     ]
+    # an open gate that answered from the corpus anyway is a failed handoff, not a shut gate
+    opened = [ql for ql in home if (ql.metrics or {}).get("fallback_opened")]
     reasons = [(ql.metrics or {}).get("fallback_reason") for ql in logs]
     return {
         "n": len(logs),
@@ -32,6 +35,8 @@ def summarize(logs) -> dict:
         "completeness": _avg(ql.completeness for ql in logs),
         "answered_via_remote": len(remote),
         "answered_from_corpus": len(home),
+        "answered_from_corpus_gate_shut": len(home) - len(opened),
+        "answered_from_corpus_opened_no_evidence": len(opened),
         "answered_from_corpus_rate": round(len(home) / len(logs), 3) if logs else None,
         "gate_fired": sum(1 for r in reasons if r in GATE_REASONS),
         "latency_avg": _avg(latency, digits=1),
@@ -57,13 +62,15 @@ def paired(left, right, axis) -> dict:
         "right": _avg(b for _, b in pairs),
         "better": sum(1 for a, b in pairs if b > a),
         "worse": sum(1 for a, b in pairs if b < a),
+        "mean_delta": None,
+        "ci95": None,
         "p_value": None,
     }
-    if any(a != b for a, b in pairs):
-        from scipy.stats import wilcoxon
-
-        stat = wilcoxon([a for a, _ in pairs], [b for _, b in pairs])
-        result["p_value"] = round(float(stat.pvalue), 4)
+    if pairs:
+        stats = delta_stats([b - a for a, b in pairs])
+        result["mean_delta"] = stats["mean_delta"]
+        result["ci95"] = stats["ci95"]
+        result["p_value"] = stats["p"] if any(a != b for a, b in pairs) else None
     return result
 
 
@@ -96,10 +103,11 @@ def compare(runs: dict[str, list]) -> dict:
         name: [ql for pool, logs in by_pool[name].items() if pool != "rejected" for ql in logs]
         for name in names
     }
+    # pools differ in what they should do, so their blend ranks nothing: kept for latency only
     return {
         "runs": names,
         "pools": pools,
-        "overall": {name: summarize(logs) for name, logs in scored.items()},
+        "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
     }
 
 

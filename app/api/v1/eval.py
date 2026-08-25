@@ -43,6 +43,7 @@ class EvalRunRequest(BaseModel):
     model: str | None = Field(default=None, max_length=128, pattern=MODEL_NAME_RE.pattern)
     fallback_policy: FallbackPolicy | None = None
     gate_signal: GateSignal | None = None
+    weak_distance: float | None = Field(default=None, ge=0, le=2)
     topic_threshold: float | None = Field(default=None, ge=0, le=2)
 
 
@@ -54,9 +55,10 @@ class ExperimentRequest(BaseModel):
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
     param: Literal[
-        "k", "max_hops", "model", "fallback_policy", "gate_signal", "topic_threshold"
+        "k", "max_hops", "model", "fallback_policy", "gate_signal", "weak_distance",
+        "topic_threshold",
     ] = "k"
-    values: list[int | str] = Field(min_length=1)
+    values: list[int | float | str] = Field(min_length=1)
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -145,7 +147,7 @@ async def eval_misses(
 class CompareResponse(BaseModel):
     runs: list[str]
     pools: dict
-    overall: dict
+    blended_do_not_rank: dict
 
 
 @router.get("/compare", response_model=CompareResponse)
@@ -169,7 +171,9 @@ async def eval_compare(
 
 
 def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:
-    agent_only = ("fallback_policy", "max_hops", "gate_signal", "topic_threshold")
+    agent_only = (
+        "fallback_policy", "max_hops", "gate_signal", "weak_distance", "topic_threshold"
+    )
     if param in agent_only and pipeline != Pipeline.agent:
         raise HTTPException(
             status_code=400, detail=f"{param} only applies to the agent pipeline"
@@ -178,10 +182,10 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
         bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.match(v)]
         if bad:
             raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
-    elif param == "topic_threshold":
+    elif param in ("topic_threshold", "weak_distance"):
         bad = [v for v in values if not isinstance(v, int | float) or not 0 <= v <= 2]
         if bad:
-            raise HTTPException(status_code=400, detail=f"topic_threshold must be 0..2: {bad}")
+            raise HTTPException(status_code=400, detail=f"{param} must be 0..2: {bad}")
     elif param in ("fallback_policy", "gate_signal"):
         allowed = {p.value for p in (FallbackPolicy if param == "fallback_policy" else GateSignal)}
         bad = [v for v in values if v not in allowed]
@@ -224,6 +228,7 @@ async def enqueue_eval_run(
             "language": request.language,
             "fallback_policy": request.fallback_policy and request.fallback_policy.value,
             "gate_signal": request.gate_signal and request.gate_signal.value,
+            "weak_distance": request.weak_distance,
             "topic_threshold": request.topic_threshold,
         },
     )

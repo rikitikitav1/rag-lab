@@ -21,8 +21,8 @@ service:
     gate_candidates: 5
     # cross-encoder coverage gate: median 0.916 in-corpus against 0.022 outside (measured 24.08)
     weak_threshold: 0.5
-    # which signal decides that retrieval is weak; picked by A/B, not by taste
-    gate_signal: cross_encoder
+    # which signal decides that retrieval is weak; picked by A/B, not by taste (measured 25.08)
+    gate_signal: distance
     # threshold for the distance signal, tuned to the same flag budget as the cross-encoder (22 of 100)
     weak_distance: 0.39
     # topic axis, not coverage: null disables it. Measured 25.08 at 0.709 on half the sets,

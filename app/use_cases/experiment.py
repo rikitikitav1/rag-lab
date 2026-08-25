@@ -4,16 +4,15 @@ import logging_setup
 import numpy as np
 from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
+from evals.stats import delta_stats as _delta_stats
 from models.eval import QuestionLog
 from models.experiment import Experiment, ExperimentStatus
 from orm.sync_db import Session
-from scipy.stats import wilcoxon
 from sqlalchemy import func, select, update
 
 log = logging_setup.get_logger(__name__)
 
 _RRF_K = 60
-_BOOTSTRAP_N = 10_000
 _AXES = ("faithfulness", "relevance", "completeness")
 _COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")
 
@@ -77,21 +76,6 @@ def _axis_deltas(pairs: list, axis: str) -> list:
         if va is not None and vb is not None:
             deltas.append(vb - va)
     return deltas
-
-
-def _delta_stats(deltas: list, rng) -> dict:
-    arr = np.array(deltas, dtype=float)
-    boot_means = rng.choice(arr, size=(_BOOTSTRAP_N, arr.size), replace=True).mean(axis=1)
-    p = 1.0 if np.all(arr == 0) else float(wilcoxon(arr).pvalue)
-    return {
-        "mean_delta": round(float(arr.mean()), 3),
-        "ci95": [
-            round(float(np.percentile(boot_means, 2.5)), 3),
-            round(float(np.percentile(boot_means, 97.5)), 3),
-        ],
-        "p": round(p, 4),
-        "n": int(arr.size),
-    }
 
 
 def _compare_question_sets(set_a: list, set_b: list) -> dict:

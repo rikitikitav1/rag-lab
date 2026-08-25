@@ -19,11 +19,17 @@ def _log(
     outcome="answered",
     elapsed=None,
     fallback_reason=None,
+    fallback_opened=False,
 ):
+    metrics = {}
+    if fallback_reason:
+        metrics["fallback_reason"] = fallback_reason
+    if fallback_opened:
+        metrics["fallback_opened"] = True
     return SimpleNamespace(
         question_id=question_id,
         question=SimpleNamespace(original_text="q", marked_sources=marked or [], kind=kind),
-        metrics={"fallback_reason": fallback_reason} if fallback_reason else {},
+        metrics=metrics,
         answered=outcome == "answered",
         answer=_TEXT.get(outcome, _TEXT["answered"]),
         faithfulness=faith,
@@ -46,13 +52,13 @@ def test_arms_are_split_by_pool():
     assert set(result["pools"]) == {"in_corpus", "out_of_corpus", "off_domain"}
     assert result["pools"]["in_corpus"]["arms"]["a"]["faithfulness"] == 8
     assert result["pools"]["out_of_corpus"]["arms"]["a"]["n"] == 1
-    assert result["overall"]["a"]["n"] == 3
+    assert result["blended_do_not_rank"]["a"]["n"] == 3
 
 
 def test_rejected_questions_stay_out_of_every_pool():
     rejected = _log(question_id=9, kind="rejected", faith=1)
     result = compare.compare({"a": [rejected, _log(marked=["a.md"], faith=7)]})
-    assert result["overall"]["a"]["n"] == 1
+    assert result["blended_do_not_rank"]["a"]["n"] == 1
     assert "rejected" not in result["pools"]
 
 
@@ -71,6 +77,17 @@ def test_answers_that_never_left_the_corpus_are_the_leak_metric():
     arm = compare.compare({"a": logs})["pools"]["out_of_corpus"]["arms"]["a"]
     assert (arm["answered_from_corpus"], arm["answered_via_remote"]) == (1, 1)
     assert arm["answered_from_corpus_rate"] == 0.333
+
+
+def test_the_leak_separates_a_shut_gate_from_a_tool_that_did_not_deliver():
+    logs = [
+        _log(question_id=1, sources=["a.md"]),
+        _log(question_id=2, sources=["a.md"], fallback_reason="weak", fallback_opened=True),
+    ]
+    arm = compare.compare({"a": logs})["pools"]["out_of_corpus"]["arms"]["a"]
+    assert arm["answered_from_corpus"] == 2
+    assert arm["answered_from_corpus_gate_shut"] == 1
+    assert arm["answered_from_corpus_opened_no_evidence"] == 1
 
 
 def test_a_narrated_call_is_not_an_answer_from_the_corpus():
@@ -110,6 +127,16 @@ def test_identical_arms_get_no_p_value():
     result = compare.paired(logs, logs, "faithfulness")
     assert result["p_value"] is None
     assert (result["better"], result["worse"]) == (0, 0)
+    assert result["ci95"] == [0.0, 0.0]
+
+
+def test_an_interval_that_spans_zero_is_how_no_difference_is_reported():
+    left = [_log(question_id=i, faith=5 + (i % 3)) for i in range(30)]
+    right = [_log(question_id=i, faith=5 + ((i + 1) % 3)) for i in range(30)]
+    result = compare.paired(left, right, "faithfulness")
+    low, high = result["ci95"]
+    assert low < 0 < high
+    assert abs(result["mean_delta"]) < 0.5
 
 
 def test_a_shifted_arm_gets_a_significant_p_value():
