@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from use_cases.agent import FallbackPolicy, GateSignal
+from use_cases.agent_policy import FallbackPolicy, GateSignal, Orchestrator
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
@@ -45,6 +45,7 @@ class EvalRunRequest(BaseModel):
     gate_signal: GateSignal | None = None
     weak_distance: float | None = Field(default=None, ge=0, le=2)
     topic_threshold: float | None = Field(default=None, ge=0, le=2)
+    orchestrator: Orchestrator | None = None
 
 
 class ExperimentRequest(BaseModel):
@@ -56,7 +57,7 @@ class ExperimentRequest(BaseModel):
     language: Literal["ru", "en"] | None = None
     param: Literal[
         "k", "max_hops", "model", "fallback_policy", "gate_signal", "weak_distance",
-        "topic_threshold",
+        "topic_threshold", "orchestrator",
     ] = "k"
     values: list[int | float | str] = Field(min_length=1)
 
@@ -172,7 +173,8 @@ async def eval_compare(
 
 def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:
     agent_only = (
-        "fallback_policy", "max_hops", "gate_signal", "weak_distance", "topic_threshold"
+        "fallback_policy", "max_hops", "gate_signal", "weak_distance", "topic_threshold",
+        "orchestrator",
     )
     if param in agent_only and pipeline != Pipeline.agent:
         raise HTTPException(
@@ -186,12 +188,16 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
         bad = [v for v in values if not isinstance(v, int | float) or not 0 <= v <= 2]
         if bad:
             raise HTTPException(status_code=400, detail=f"{param} must be 0..2: {bad}")
-    elif param in ("fallback_policy", "gate_signal"):
-        allowed = {p.value for p in (FallbackPolicy if param == "fallback_policy" else GateSignal)}
+    elif param in ("fallback_policy", "gate_signal", "orchestrator"):
+        enums = {
+            "fallback_policy": FallbackPolicy, "gate_signal": GateSignal,
+            "orchestrator": Orchestrator,
+        }
+        allowed = {p.value for p in enums[param]}
         bad = [v for v in values if v not in allowed]
         if bad:
             raise HTTPException(
-                status_code=400, detail=f"fallback_policy must be one of {sorted(allowed)}: {bad}"
+                status_code=400, detail=f"{param} must be one of {sorted(allowed)}: {bad}"
             )
     else:
         bad = [v for v in values if not isinstance(v, int) or v < 1]
@@ -229,6 +235,7 @@ async def enqueue_eval_run(
             "fallback_policy": request.fallback_policy and request.fallback_policy.value,
             "gate_signal": request.gate_signal and request.gate_signal.value,
             "weak_distance": request.weak_distance,
+            "orchestrator": request.orchestrator and request.orchestrator.value,
             "topic_threshold": request.topic_threshold,
         },
     )

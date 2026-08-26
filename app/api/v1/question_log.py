@@ -9,7 +9,7 @@ from query_utils import Page, apply_sort_limit_offset
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from use_cases.agent import FallbackPolicy, FallbackReason
+from use_cases.agent_policy import FallbackPolicy, FallbackReason, Orchestrator
 
 router = APIRouter(prefix="/question-log", tags=["question-logs"])
 
@@ -89,6 +89,7 @@ async def list_question_logs(
     phased: bool | None = Query(default=None),
     fallback_policy: list[FallbackPolicy] | None = Query(default=None),
     fallback_reason: list[FallbackReason] | None = Query(default=None),
+    orchestrator: list[Orchestrator] | None = Query(default=None),
     empty_retrieval: bool | None = Query(
         default=None, description="true = the corpus returned nothing"
     ),
@@ -138,6 +139,8 @@ async def list_question_logs(
         stmt = stmt.where(config["fallback_policy"].astext.in_(fallback_policy))
     if fallback_reason is not None:
         stmt = stmt.where(QuestionLog.metrics["fallback_reason"].astext.in_(fallback_reason))
+    if orchestrator is not None:
+        stmt = stmt.where(config["orchestrator"]["name"].astext.in_(orchestrator))
     if empty_retrieval is not None:
         count = retrieval["results_count"].as_integer()
         stmt = stmt.where(count == 0 if empty_retrieval else count > 0)
