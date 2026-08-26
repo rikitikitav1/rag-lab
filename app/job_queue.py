@@ -21,6 +21,19 @@ def enqueue(type: str, options: dict | None = None, queue: str = "default") -> i
         return job.id
 
 
+# a second identical job is not idempotence, it is a queue nobody reads
+def pending_of_type(type: str) -> bool:
+    with Session() as session:
+        return bool(
+            session.scalar(
+                select(Job.id).where(
+                    Job.type == type,
+                    Job.status.in_([JobStatus.new, JobStatus.running]),
+                ).limit(1)
+            )
+        )
+
+
 def add_job(
     session, type: str, options: dict | None = None, queue: str = "default"
 ) -> Job:

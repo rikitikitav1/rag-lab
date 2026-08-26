@@ -16,7 +16,9 @@ def index_data(options: dict) -> None:
     import use_cases.index
 
     require_embedder_ready()
-    use_cases.index.collect_data(list(sources.factory.all_sources()))
+    use_cases.index.collect_data(
+        list(sources.factory.all_sources()), variant=options.get("variant")
+    )
 
 
 @register("embed_questions")

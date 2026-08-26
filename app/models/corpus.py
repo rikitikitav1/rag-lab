@@ -34,6 +34,9 @@ class DataChunk(Base):
         ForeignKey("data_sources.id", ondelete="CASCADE")
     )
     source: Mapped[str]
+    variant: Mapped[str]
+    section: Mapped[str | None]
+    content_hash: Mapped[str | None]
     content: Mapped[str]
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
     chunk_index: Mapped[int]

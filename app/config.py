@@ -17,6 +17,11 @@ class RetrievalCfg(BaseModel):
     limit_vector: int
     limit_keywords: int
     rrf_k: int
+    keyword_query: str = "and"
+    keyword_rank: str = "ts_rank"
+    keyword_norm: int = 0
+    query_lang: str = "function_words"
+    ef_search: int = 100
 
 
 class RerankCfg(BaseModel):
@@ -46,6 +51,14 @@ class CorpusCfg(BaseModel):
         "the technical knowledge corpus (interview banks, "
         "system-design-primer, redis docs)"
     )
+    variant: str = "baseline"
+    variants: dict[str, dict] = {}
+
+    def policy(self, variant: str | None = None) -> dict:
+        name = variant or self.variant
+        if name not in self.variants:
+            raise ValueError(f"corpus variant '{name}' has no declared policy in config")
+        return self.variants[name]
 
 
 class IngestionCfg(BaseModel):

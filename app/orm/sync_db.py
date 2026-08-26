@@ -22,7 +22,11 @@ engine = create_engine(
     pool_pre_ping=True,
     connect_args={
         "connect_timeout": 5,
-        "options": "-c statement_timeout=30000",
+        # a generic plan cannot prove a partial index predicate from a bound parameter
+        "options": (
+            "-c statement_timeout=30000 -c plan_cache_mode=force_custom_plan"
+            f" -c hnsw.ef_search={config.settings.retrieval.ef_search}"
+        ),
     },
 )
 
