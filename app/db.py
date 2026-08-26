@@ -1,11 +1,14 @@
 from functools import lru_cache
 
 import config
+import logging_setup
 from langdetect import DetectorFactory, LangDetectException, detect
 from orm.sync_db import engine
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 DetectorFactory.seed = 0
+log = logging_setup.get_logger(__name__)
 
 RANK_FUNCTIONS = {"ts_rank", "ts_rank_cd"}
 
@@ -33,8 +36,13 @@ def _by_function_words(text_, fts) -> str | None:
     configs = sorted(set(fts.languages.values()) | {fts.fallback})
     if len(configs) < 2:
         return None
-    with engine.connect() as conn:
-        rows = conn.execute(text(FUNCTION_WORDS), {"q": text_, "configs": configs}).all()
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text(FUNCTION_WORDS), {"q": text_, "configs": configs}).all()
+    except SQLAlchemyError as e:
+        # picking a language must not need a database: the alphabet rule answers on its own
+        log.warning("db.function_words_unavailable", error=str(e))
+        return None
     # a tie means no function word of any candidate showed up: this rule has nothing to say
     return None if rows[0][1] == rows[1][1] else _code_of(rows[0][0], fts)
 

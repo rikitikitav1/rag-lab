@@ -226,6 +226,8 @@ def test_rerank_phase_accepts_numpy_scores(monkeypatch):
 def test_agent_runs_get_the_fallback_policy(monkeypatch):
     seen = []
     monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1"])
+    monkeypatch.setattr(runner.db, "corpus_variants", lambda: [{"variant": "baseline"}])
+    monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: False)
     monkeypatch.setattr(runner.job_queue, "enqueue", lambda *a, **kw: None)
     monkeypatch.setattr(runner.agent, "run", lambda text, **kw: seen.append(kw["fallback_policy"]))
 
