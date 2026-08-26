@@ -22,6 +22,10 @@
       "transformers>=5",
       "fastmcp>=2.0",
       "scipy>=1.18.0",
+      "langgraph>=1.0",
+      "langchain>=1.0",
+      "langchain-core>=1.0",
+      "langchain-ollama>=1.0",
       "torch>=2.13.0",
 ]
 

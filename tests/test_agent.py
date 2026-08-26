@@ -166,6 +166,9 @@ def _agent_harness(monkeypatch, turns, corpus_sources, seen_runtime=None):
     )
     monkeypatch.setattr(agent.prompt_repo, "active_template", lambda purpose: f"tpl:{purpose}")
     monkeypatch.setattr(agent, "_log_answer", lambda *a, **kw: None)
+    # without this the axis embeds the question against a live corpus, so the suite passes in CI
+    # and fails on a running stand: tests that mean to score a topic patch this back themselves
+    monkeypatch.setattr(agent, "_topic_score", lambda question: None)
     return seen_tools, seen_extra
 
 
@@ -239,10 +242,10 @@ def _strong_hit(name="s.md"):
 
 def test_verdict_reads_the_cross_encoder_not_the_hit_count():
     gate = agent.Gate(signal=agent.GateSignal.cross_encoder, top=5, threshold=0.5)
-    assert agent._verdict([], gate) == agent.FallbackReason.empty
-    assert agent._verdict([_scored(0.02), _scored(0.4)], gate) == agent.FallbackReason.weak
-    assert agent._verdict([_scored(0.02), _scored(0.91)], gate) is None
-    assert agent._verdict([_scored(0.02)], agent.Gate(signal=agent.GateSignal.cross_encoder)) is None
+    assert agent.gate_verdict([], gate) == agent.FallbackReason.empty
+    assert agent.gate_verdict([_scored(0.02), _scored(0.4)], gate) == agent.FallbackReason.weak
+    assert agent.gate_verdict([_scored(0.02), _scored(0.91)], gate) is None
+    assert agent.gate_verdict([_scored(0.02)], agent.Gate(signal=agent.GateSignal.cross_encoder)) is None
 
 
 def test_weak_retrieval_opens_the_toolbox_and_drops_the_junk_context(monkeypatch):

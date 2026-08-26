@@ -53,6 +53,10 @@ def schemas() -> list[dict]:
     return [t.schema() for t in _REGISTRY.values()]
 
 
+def registry() -> list:
+    return list(_REGISTRY.values())
+
+
 def dispatch(
     name: str, arguments: str, extra: dict[str, Tool] | None = None, **runtime
 ) -> ToolResult:

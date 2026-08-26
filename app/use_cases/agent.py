@@ -1,6 +1,5 @@
 import time
 from dataclasses import asdict, dataclass, field
-from enum import StrEnum
 
 import agent_tools
 import config
@@ -10,60 +9,33 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
+import version
 from models.eval import QuestionLog
 from models.registry import Pipeline, Purpose
+from orchestrators import graph as orch_graph
+from orchestrators import middleware as orch_middleware
+from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import chat
+from use_cases.agent_policy import (
+    TOOL_CALL_NUDGE,
+    FallbackPolicy,
+    FallbackReason,
+    Gate,
+    GateSignal,
+    Orchestrator,
+    Topic,
+    required_values,
+    signatures,
+)
+from use_cases.agent_policy import (
+    verdict as gate_verdict,
+)
 
 import db
 
 log = logging_setup.get_logger(__name__)
-
-TOOL_CALL_NUDGE = (
-    "You described a tool call instead of issuing one. Call the tool for real now, "
-    "with the arguments its schema lists, or answer without it."
-)
-
-
-class FallbackPolicy(StrEnum):
-    corpus_first = "corpus_first"
-    corpus_first_weak = "corpus_first_weak"
-    agent_choice = "agent_choice"
-
-
-class GateSignal(StrEnum):
-    cross_encoder = "cross_encoder"
-    distance = "distance"
-    either = "either"
-
-
-class FallbackReason(StrEnum):
-    none = "none"
-    empty = "empty"
-    weak = "weak"
-    off_topic = "off_topic"
-
-
-
-
-
-@dataclass
-class Topic:
-    threshold: float | None = None
-    score: float | None = None
-
-
-@dataclass
-class Gate:
-    signal: str = GateSignal.distance
-    top: int | None = None
-    threshold: float | None = None
-    distance_threshold: float | None = None
-    drop_weak_context: bool = False
-    off_topic: bool = False
-    announce: bool = False
-    tool_signatures: str = ""
 
 
 @dataclass
@@ -76,6 +48,9 @@ class AgentResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     max_prompt_tokens: int = 0
+    truncated_hops: int = 0
+    last_prompt_tokens: int = 0
+    failed: bool = False
     elapsed: float = 0.0
     fallback_reason: str = FallbackReason.none
     fallback_announced: bool = False
@@ -85,6 +60,15 @@ class AgentResult:
     dropped_hits: list = field(default_factory=list)
     outcome: str = outcomes.Outcome.error
     tool_errors: dict = field(default_factory=dict)
+
+    # history only grows, so a prompt shorter than the previous hop means the server trimmed it.
+    # A hop that reported no count at all says nothing, and counting it as zero reads as a trim
+    def note_prompt(self, tokens: int | None) -> None:
+        if not tokens:
+            return
+        if self.last_prompt_tokens - tokens > 512:
+            self.truncated_hops += 1
+        self.last_prompt_tokens = tokens
 
 
 # uses asyncio.run for remote MCP tools: call from sync context only, never from an event loop
@@ -101,6 +85,7 @@ def run(
     gate_signal: str | None = None,
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
+    orchestrator: str | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
     if max_hops is None:
@@ -138,7 +123,7 @@ def run(
         remote = _admissible(question, remote, result, role=role, model=model)
         admission_ran = True
     external = policy == FallbackPolicy.agent_choice
-    gate = Gate(tool_signatures=_signatures(remote.values()))
+    gate = Gate(tool_signatures=signatures(remote.values()))
     if off_topic:
         gate.off_topic = True
         gate.drop_weak_context = True
@@ -159,38 +144,73 @@ def run(
     if external:
         tools += [t.schema() for t in remote.values()]
 
-    for hop in range(1, max_hops + 1):
-        result.hops = hop
-        try:
-            turn = llm.chat(messages, tools=tools, role=role, model=model)
-        except RuntimeError as e:
-            log.error("agent.hop_failed", hop=hop, error=str(e))
-            break
-        result.prompt_tokens += turn.prompt_tokens
-        result.completion_tokens += turn.completion_tokens
-        result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
-        if not turn.tool_calls and nudges and outcomes.narrated_tool_call(
-            turn.text, (*remote, agent_tools.CORPUS_TOOL)
-        ):
-            nudges -= 1
-            log.info("agent.narrated_tool_call", hop=hop)
-            messages.append(turn.message or {"role": "assistant", "content": turn.text})
-            messages.append({"role": "user", "content": TOOL_CALL_NUDGE})
-            continue
+    orchestrator = Orchestrator(orchestrator or Orchestrator.handrolled)
+    graph_run = orchestrator != Orchestrator.handrolled
+    if orchestrator in (Orchestrator.langgraph_idiomatic, Orchestrator.langgraph_middleware):
+        ctx = orch_graph.context(
+            remote=remote, k=k, use_rerank=use_rerank, role=role, model=model,
+            max_hops=max_hops,
+        )
+        if orchestrator == Orchestrator.langgraph_middleware:
+            gate.announce = not external and bool(remote)
+            mw_run = orch_middleware.Run(remote, gate, external, max_hops)
+            orch_react.invoke(
+                question, system, ctx, result,
+                middleware=orch_middleware.build(mw_run), run=mw_run,
+            )
+        else:
+            orch_react.invoke(question, system, ctx, result)
+        messages = result.messages
+    elif graph_run:
         gate.announce = not external and bool(remote)
-        if _apply_turn(
-            turn, messages, result, k, use_rerank, remote if external else None, gate
-        ):
-            break
-        if not external and remote and result.fallback_reason != FallbackReason.none:
-            external = True
-            result.fallback_opened = True
-            tools = tools + [t.schema() for t in remote.values()]
-            log.info("agent.external_opened", hop=hop, reason=result.fallback_reason)
+        orch_graph.invoke(
+            question,
+            system,
+            orch_graph.context(
+                remote=remote, gate=gate, external=external, k=k, use_rerank=use_rerank,
+                role=role, model=model, max_hops=max_hops,
+            ),
+            result,
+        )
+        messages = result.messages
+    else:
+        for hop in range(1, max_hops + 1):
+            result.hops = hop
+            try:
+                turn = llm.chat(messages, tools=tools, role=role, model=model)
+            except RuntimeError as e:
+                log.error("agent.hop_failed", hop=hop, error=str(e))
+                # the same dropped connection must not read as exhaustion here and as an error
+                # in the arms that do set the flag
+                result.failed = True
+                break
+            result.prompt_tokens += turn.prompt_tokens
+            result.completion_tokens += turn.completion_tokens
+            result.max_prompt_tokens = max(result.max_prompt_tokens, turn.prompt_tokens)
+            result.note_prompt(turn.prompt_tokens)
+            if not turn.tool_calls and nudges and outcomes.narrated_tool_call(
+                turn.text, (*remote, agent_tools.CORPUS_TOOL)
+            ):
+                nudges -= 1
+                log.info("agent.narrated_tool_call", hop=hop)
+                messages.append(turn.message or {"role": "assistant", "content": turn.text})
+                messages.append({"role": "user", "content": TOOL_CALL_NUDGE})
+                continue
+            gate.announce = not external and bool(remote)
+            if _apply_turn(
+                turn, messages, result, k, use_rerank, remote if external else None, gate
+            ):
+                break
+            if not external and remote and result.fallback_reason != FallbackReason.none:
+                external = True
+                result.fallback_opened = True
+                tools = tools + [t.schema() for t in remote.values()]
+                log.info("agent.external_opened", hop=hop, reason=result.fallback_reason)
 
     result.sources = _unique_sources(result.sources)
 
-    if not result.success:
+    # the graph runs its own final turn inside the flow, so only the loop needs this one
+    if not result.success and orchestrator == Orchestrator.handrolled:
         log.info("agent.forcing_final", hops=result.hops, sources=len(result.sources))
         if not result.sources:
             messages.append({
@@ -207,6 +227,7 @@ def run(
             result.prompt_tokens += final.prompt_tokens
             result.completion_tokens += final.completion_tokens
             result.max_prompt_tokens = max(result.max_prompt_tokens, final.prompt_tokens)
+            result.note_prompt(final.prompt_tokens)
             result.text = final.text or ""
             if final.finish_reason == "length":
                 log.warning("agent.truncated", hops=result.hops)
@@ -215,7 +236,8 @@ def run(
         result.text,
         bool(result.sources),
         (*remote, agent_tools.CORPUS_TOOL),
-        exhausted=result.hops >= max_hops,
+        # a guard that fired is a failure, not a run that politely used up its hops
+        exhausted=result.hops >= max_hops and not result.failed,
     )
     result.success = bool(result.sources and result.text)
 
@@ -231,7 +253,20 @@ def run(
         admitted = sorted({name.split("__")[0] for name in remote})
         _log_answer(
             question, result, run_name, language, k, use_rerank, model,
-            admitted, policy, configured, gate, max_hops, topic, admission_ran,
+            admitted, policy, configured,
+            # the idiomatic arm runs no gate, so recording one would describe a run that never was
+            None if orchestrator == Orchestrator.langgraph_idiomatic else gate,
+            max_hops, topic, admission_ran,
+            {
+                "name": str(orchestrator),
+                "client": (
+                    "ChatOllama"
+                    if orchestrator
+                    in (Orchestrator.langgraph_idiomatic, Orchestrator.langgraph_middleware)
+                    else "openai-compat"
+                ),
+                **(orch_graph.versions() if graph_run else {}),
+            },
         )
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
@@ -243,21 +278,13 @@ def run(
     return result
 
 
-def _required_values(tool) -> str:
-    props = tool.parameters.get("properties", {})
-    return "; ".join(
-        f"{name}: {' '.join(props.get(name, {}).get('description', name).split())}"
-        for name in tool.parameters.get("required", [])
-    )
-
-
 def _admissible(
     question: str, tools: dict, result: AgentResult, role: str = "generation", model=None
 ) -> dict:
     system = prompt_repo.active_template(Purpose.agent_tool_match)
     admitted = {}
     for name, tool in tools.items():
-        values = _required_values(tool)
+        values = required_values(tool)
         if not values:
             admitted[name] = tool
             continue
@@ -282,45 +309,12 @@ def _admissible(
 
 
 
-def _signatures(tools) -> str:
-    return "\n".join(
-        f"- {tool.name}({', '.join(tool.parameters.get('required', []))}): "
-        f"{' '.join(tool.description.split())[:160]}"
-        for tool in tools
-    )
-
-
 def _topic_score(question: str) -> float | None:
     try:
         return db.nearest_distance(llm.embed(question))
     except Exception as e:
         log.error("agent.topic_score_failed", error=str(e))
         return None
-
-
-def _weak_by_cross_encoder(sources: list, gate: Gate) -> bool:
-    scores = [s.rerank_score for s in sources if s.rerank_score is not None]
-    return bool(scores) and max(scores) < gate.threshold
-
-
-def _weak_by_distance(sources: list, gate: Gate) -> bool:
-    distances = [s.vector_distance for s in sources if s.vector_distance is not None]
-    return bool(distances) and min(distances) >= gate.distance_threshold
-
-
-def _verdict(sources: list, gate: Gate) -> str | None:
-    if not sources:
-        return FallbackReason.empty
-    if gate.threshold is None and gate.distance_threshold is None:
-        return None
-    checks = {
-        GateSignal.cross_encoder: (_weak_by_cross_encoder,),
-        GateSignal.distance: (_weak_by_distance,),
-        GateSignal.either: (_weak_by_cross_encoder, _weak_by_distance),
-    }[gate.signal]
-    if any(check(sources, gate) for check in checks):
-        return FallbackReason.weak
-    return None
 
 
 def _apply_turn(
@@ -363,7 +357,7 @@ def _apply_turn(
     ]
     # one verdict per turn: the system prompt asks for a search per subject, and two
     # searches must not produce two contradicting notices
-    verdict = _verdict([s for c in corpus for s in c[3]], gate) if corpus else None
+    verdict = gate_verdict([s for c in corpus for s in c[3]], gate) if corpus else None
     # the axis judges the question, the gate judges the agent's query: once the axis says the
     # question is not ours, a lucky rewrite must not hand the context back
     if gate.off_topic and corpus:
@@ -435,7 +429,8 @@ def _context_from_messages(messages) -> str:
         for m in messages
         if isinstance(m, dict)
         and m.get("role") == "tool"
-        and not m["content"].startswith(errors.ERROR_PREFIX)
+        # the standard tool node capitalises its errors, and the judge must not score one
+        and not m["content"].lower().startswith(errors.ERROR_PREFIX)
         and not m["content"].startswith(chat.NO_RESULTS)
     )
 
@@ -455,6 +450,7 @@ def _log_answer(
     max_hops: int | None = None,
     topic: Topic | None = None,
     admission_ran: bool = False,
+    orchestrator: dict | None = None,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -501,9 +497,12 @@ def _log_answer(
                 "fallback_reason": str(result.fallback_reason),
                 "fallback_opened": result.fallback_opened,
                 "outcome": str(result.outcome),
+                # without this the report reads a guard that fired as a run that spent its hops
+                "failed": result.failed or None,
                 "tool_errors": result.tool_errors or None,
                 "config": {
                     "rerank": use_rerank,
+                    "orchestrator": orchestrator,
                     "fallback_policy": str(fallback_policy),
                     "gate": (
                         {
@@ -518,10 +517,15 @@ def _log_answer(
                     "distance_threshold": round(
                         config.settings.retrieval.distance_threshold, 3
                     ),
+                    "context_length": llm.server_context_length(
+                        model or llm.resolve_name("generation")
+                    ),
+                    "truncated_hops": result.truncated_hops or None,
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
                     "corpus": config.settings.corpus.description,
                     "corpus_fingerprint": _corpus_fingerprint(),
+                    "code_version": version.CODE_VERSION,
                     "drop_weak_context": bool(gate and gate.drop_weak_context),
                     "topic": (
                         {
