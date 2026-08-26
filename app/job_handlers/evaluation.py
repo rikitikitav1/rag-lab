@@ -48,5 +48,6 @@ def eval_run(options: dict) -> None:
         allow_cpu=bool(options.get("allow_cpu")),
         topic_threshold=options.get("topic_threshold"),
         job_id=options.get("_job_id"),
+        variant=options.get("variant"),
     )
     log.info("eval_run.done", run_name=options["run_name"], answered=answered)

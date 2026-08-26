@@ -9,14 +9,14 @@ from models.registry import Pipeline
 
 
 def test_search_corpus_returns_content(monkeypatch):
-    monkeypatch.setattr(mcp_server.chat, "search_chunks", lambda q, category=None: ("chunks", []))
+    monkeypatch.setattr(mcp_server.chat, "search_chunks", lambda q, category=None, **kw: ("chunks", []))
     assert mcp_server.search_corpus("redis") == "chunks"
 
 
 def test_search_corpus_forwards_category(monkeypatch):
     seen = {}
 
-    def fake(q, category=None):
+    def fake(q, category=None, **kw):
         seen["category"] = category
         return ("c", [])
 
@@ -43,7 +43,7 @@ def test_search_corpus_rejects_bad_category(bad):
 
 
 def test_search_corpus_masks_unexpected_through_client(monkeypatch):
-    def boom(q, category=None):
+    def boom(q, category=None, **kw):
         raise RuntimeError("SELECT secret_sql FROM data_chunks; embedding=[0.1]")
 
     monkeypatch.setattr(mcp_server.chat, "search_chunks", boom)
@@ -156,7 +156,7 @@ def test_list_categories_maps_rows_with_counts(monkeypatch):
     monkeypatch.setattr(
         mcp_server.db,
         "list_categories",
-        lambda only_top, category: [("databases", 5), ("llm", 3)],
+        lambda only_top, category, variant: [("databases", 5), ("llm", 3)],
     )
     assert mcp_server.list_categories() == {"databases": 5, "llm": 3}
 

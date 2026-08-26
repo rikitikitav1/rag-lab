@@ -42,6 +42,7 @@ def _answer_one(
     weak_distance: float | None,
     topic_threshold: float | None,
     orchestrator: str | None,
+    variant: str,
 ) -> None:
     if pipeline == Pipeline.agent:
         agent.run(
@@ -57,6 +58,7 @@ def _answer_one(
             weak_distance=weak_distance,
             topic_threshold=topic_threshold,
             orchestrator=orchestrator,
+            variant=variant,
         )
     elif pipeline == Pipeline.single_shot:
         chat.answer(
@@ -67,6 +69,7 @@ def _answer_one(
             language=language,
             k=k,
             model=model,
+            variant=variant,
         )
     else:
         raise ValueError(f"unknown pipeline: {pipeline}")
@@ -88,6 +91,7 @@ def _run_sequential(
     orchestrator: str | None,
     job_id: int | None,
     allow_cpu: bool,
+    variant: str,
 ) -> tuple[int, bool]:
     answered = 0
     for text in texts:
@@ -109,6 +113,7 @@ def _run_sequential(
             _answer_one(
                 text, run_name, use_rerank, pipeline, language, k, max_hops, model,
                 fallback_policy, gate_signal, weak_distance, topic_threshold, orchestrator,
+                variant,
             )
             answered += 1
         except Exception as e:
@@ -129,14 +134,20 @@ def _embed_in_batches(texts: list[str]) -> list:
     return vectors
 
 
-def _phase_retrieve(texts: list[str], k: int, use_rerank: bool) -> list:
+def _phase_retrieve(texts: list[str], k: int, use_rerank: bool, variant: str) -> list:
     limit = config.settings.rerank.candidates if use_rerank else k
     retrieved = []
     for text, vector in zip(texts, _embed_in_batches(texts), strict=True):
         if vector is None:
             continue
         try:
-            retrieved.append((text, db.hybrid_search(text, vector, None, limit=limit), None))
+            retrieved.append(
+                (
+                    text,
+                    db.hybrid_search(text, vector, None, limit=limit, variant=variant),
+                    None,
+                )
+            )
         except Exception as e:
             log.error("eval_run.search_failed", run_text=text[:80], error=str(e))
     return retrieved
@@ -165,6 +176,7 @@ def _phase_generate(
     k: int,
     model: str | None,
     job_id: int | None,
+    variant: str,
     rerank_device: str | None = None,
 ) -> tuple[int, bool]:
     answered = 0
@@ -184,6 +196,7 @@ def _phase_generate(
                 model=model,
                 phased=True,
                 rerank_device=rerank_device,
+                variant=variant,
             )
             answered += 1
         except Exception as e:
@@ -199,12 +212,13 @@ def run_phased(
     k: int | None,
     model: str | None,
     job_id: int | None,
+    variant: str,
 ) -> tuple[int, bool]:
     k = k or config.settings.retrieval.results_limit
     rerank_device = None
 
     started = time.perf_counter()
-    retrieved = _phase_retrieve(texts, k, use_rerank)
+    retrieved = _phase_retrieve(texts, k, use_rerank, variant)
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
              elapsed=round(time.perf_counter() - started, 1))
 
@@ -226,7 +240,8 @@ def run_phased(
 
     started = time.perf_counter()
     answered, cancelled = _phase_generate(
-        retrieved, run_name, use_rerank, language, k, model, job_id, rerank_device
+        retrieved, run_name, use_rerank, language, k, model, job_id, variant,
+        rerank_device,
     )
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))
@@ -251,8 +266,19 @@ def run(
     job_id: int | None = None,
     phased: bool | None = None,
     allow_cpu: bool = False,
+    variant: str | None = None,
 ) -> int:
     pipeline = Pipeline(pipeline)
+    variant = variant or config.settings.corpus.variant
+    # both checks belong at the start: an hour of answers is a poor way to learn the variant is wrong
+    config.settings.corpus.policy(variant)
+    known = db.corpus_variants()
+    if db.is_empty(variant=variant):
+        raise RuntimeError(
+            f"corpus variant '{variant}' is empty; known variants: "
+            f"{[v['variant'] for v in known]}"
+        )
+    log.info("eval_run.corpus", variant=variant, known=known)
     texts = _target_texts(set_name, question_ids)
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -261,13 +287,13 @@ def run(
 
     if phased and pipeline == Pipeline.single_shot:
         answered, cancelled = run_phased(
-            run_name, texts, use_rerank, language, k, model, job_id
+            run_name, texts, use_rerank, language, k, model, job_id, variant
         )
     else:
         answered, cancelled = _run_sequential(
             texts, run_name, use_rerank, pipeline, language, k, max_hops, model,
             fallback_policy, gate_signal, weak_distance, topic_threshold, orchestrator,
-            job_id, allow_cpu,
+            job_id, allow_cpu, variant,
         )
     if not cancelled:
         job_queue.enqueue("judge_answers", {"run_name": run_name})

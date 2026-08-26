@@ -108,9 +108,12 @@ def _search_corpus(
     k: int | None = None,
     use_rerank: bool | None = None,
     gate_top: int | None = None,
+    variant: str | None = None,
 ) -> ToolResult:
+    # dispatch drops runtime values that are None, so the orchestrator always supplies this one
     content, sources = chat.search_chunks(
-        query, category, k=k, use_rerank=use_rerank, gate_top=gate_top
+        query, category, k=k, use_rerank=use_rerank, gate_top=gate_top,
+        variant=variant or config.settings.corpus.variant,
     )
     return ToolResult(content=content, meta={"sources": sources})
 

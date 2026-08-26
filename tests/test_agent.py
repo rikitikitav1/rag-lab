@@ -99,7 +99,7 @@ def _agent_harness(monkeypatch, turns, corpus_sources, seen_runtime=None):
     monkeypatch.setattr(agent.prompt_repo, "active_template", lambda purpose: f"tpl:{purpose}")
     monkeypatch.setattr(agent, "_log_answer", lambda *a, **kw: None)
     # otherwise the axis embeds against a live corpus and the suite depends on the stand
-    monkeypatch.setattr(agent, "_topic_score", lambda question: None)
+    monkeypatch.setattr(agent, "_topic_score", lambda question, variant: None)
     return seen_tools, seen_extra
 
 
@@ -730,7 +730,7 @@ def _run_off_topic(monkeypatch, topic_score, corpus_sources, threshold=0.5):
         _turn(text="I cannot answer this from the available sources"),
     ]
     seen_tools, _ = _agent_harness(monkeypatch, turns, corpus_sources=corpus_sources)
-    monkeypatch.setattr(agent, "_topic_score", lambda question: topic_score)
+    monkeypatch.setattr(agent, "_topic_score", lambda question, variant: topic_score)
     result = agent.run(
         "q", max_hops=2, fallback_policy="corpus_first_weak", topic_threshold=threshold
     )
@@ -762,7 +762,7 @@ def test_a_zero_threshold_switches_the_topic_axis_off(monkeypatch):
     ]
     _agent_harness(monkeypatch, turns, corpus_sources=[_strong_hit()])
     monkeypatch.setattr(
-        agent, "_topic_score", lambda question: pytest.fail("topic must not be scored")
+        agent, "_topic_score", lambda question, variant: pytest.fail("topic must not be scored")
     )
 
     agent.run("q", max_hops=2, fallback_policy="corpus_first_weak", topic_threshold=0)
@@ -775,7 +775,7 @@ def test_the_configured_threshold_scores_the_topic_without_being_asked(monkeypat
     ]
     _agent_harness(monkeypatch, turns, corpus_sources=[_strong_hit()])
     seen = []
-    monkeypatch.setattr(agent, "_topic_score", lambda question: seen.append(question) or 0.1)
+    monkeypatch.setattr(agent, "_topic_score", lambda question, variant: seen.append(question) or 0.1)
 
     agent.run("q", max_hops=2, fallback_policy="corpus_first_weak")
 
@@ -789,7 +789,7 @@ def test_an_off_topic_question_loses_its_context_even_when_the_gate_disagrees(mo
     ]
     near_hit = _hit(rerank_score=0.9, vector_distance=0.20)
     _agent_harness(monkeypatch, turns, corpus_sources=[near_hit])
-    monkeypatch.setattr(agent, "_topic_score", lambda question: 0.61)
+    monkeypatch.setattr(agent, "_topic_score", lambda question, variant: 0.61)
 
     result = agent.run(
         "who was the first president of France",

@@ -60,12 +60,17 @@ def _reconcile_with_ollama() -> None:
         log.info("bootstrap.pull_enqueued", name=name)
 
 
+# an empty named variant is a deliberate next step, not a reason to spend the card on its own
 def _ensure_index() -> None:
     import db
 
-    if db.is_empty():
-        job_queue.enqueue("index_data", {"source": "all"})
-        log.info("bootstrap.index_enqueued")
+    variant = config.settings.corpus.variant
+    if db.corpus_variants():
+        if db.is_empty(variant=variant):
+            log.info("bootstrap.variant_empty", variant=variant, hint="index it deliberately")
+        return
+    job_queue.enqueue("index_data", {"source": "all", "variant": variant})
+    log.info("bootstrap.index_enqueued", variant=variant)
 
 
 def _ensure_question_embeddings() -> None:
@@ -73,6 +78,10 @@ def _ensure_question_embeddings() -> None:
 
     with Session() as session:
         pending = session.scalar(select(exists().where(Question.embedding.is_(None))))
-    if pending:
-        job_queue.enqueue("embed_questions", {})
-        log.info("bootstrap.embed_questions_enqueued")
+    if not pending:
+        return
+    if job_queue.pending_of_type("embed_questions"):
+        log.info("bootstrap.embed_questions_already_queued")
+        return
+    job_queue.enqueue("embed_questions", {})
+    log.info("bootstrap.embed_questions_enqueued")

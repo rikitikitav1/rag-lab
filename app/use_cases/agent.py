@@ -102,8 +102,10 @@ def run(
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
     orchestrator: str | None = None,
+    variant: str | None = None,
 ) -> AgentResult:
     start = time.perf_counter()
+    variant = variant or config.settings.corpus.variant
     if max_hops is None:
         max_hops = config.settings.agent.max_hops
     if use_rerank is None:
@@ -126,7 +128,7 @@ def run(
     topic = Topic(threshold=threshold if threshold else None)
     if topic.threshold is not None:
         started = time.perf_counter()
-        topic.score = _topic_score(question)
+        topic.score = _topic_score(question, variant)
         result.took("topic", started)
 
     remote = {t.name: t for t in agent_tools.remote_tools()}
@@ -167,7 +169,7 @@ def run(
     if orchestrator in (Orchestrator.langgraph_idiomatic, Orchestrator.langgraph_middleware):
         ctx = orch_graph.context(
             remote=remote, k=k, use_rerank=use_rerank, role=role, model=model,
-            max_hops=max_hops,
+            max_hops=max_hops, variant=variant,
         )
         if orchestrator == Orchestrator.langgraph_middleware:
             mw_run = orch_middleware.Run(remote, gate, external, max_hops)
@@ -183,7 +185,7 @@ def run(
             system,
             orch_graph.context(
                 remote=remote, gate=gate, external=external, k=k, use_rerank=use_rerank,
-                role=role, model=model, max_hops=max_hops,
+                role=role, model=model, max_hops=max_hops, variant=variant,
             ),
             result,
         )
@@ -226,6 +228,7 @@ def run(
                 ),
                 **orch_graph.versions(),
             },
+            variant=variant,
         )
     except SQLAlchemyError as e:
         log.error("agent_log.insert_failed", reason=str(e))
@@ -268,17 +271,17 @@ def _admissible(
 
 
 
-def _topic_score(question: str) -> float | None:
+def _topic_score(question: str, variant: str) -> float | None:
     try:
-        return db.nearest_distance(llm.embed(question))
+        return db.nearest_distance(llm.embed(question), variant=variant)
     except Exception as e:
         log.error("agent.topic_score_failed", error=str(e))
         return None
 
 
-def _corpus_fingerprint() -> dict | None:
+def _corpus_fingerprint(variant: str) -> dict | None:
     try:
-        return db.corpus_fingerprint()
+        return db.corpus_fingerprint(variant=variant)
     except Exception as e:
         log.error("agent.corpus_fingerprint_failed", error=str(e))
         return None
@@ -339,6 +342,7 @@ def _log_answer(
     topic: Topic | None = None,
     admission_ran: bool = False,
     orchestrator: dict | None = None,
+    *, variant: str,
 ) -> None:
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
@@ -413,7 +417,16 @@ def _log_answer(
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
                     "corpus": config.settings.corpus.description,
-                    "corpus_fingerprint": _corpus_fingerprint(),
+                    "corpus_fingerprint": _corpus_fingerprint(variant),
+                    "variant": variant,
+                    "keyword": {
+                        "query": config.settings.retrieval.keyword_query,
+                        "rank": config.settings.retrieval.keyword_rank,
+                        "norm": config.settings.retrieval.keyword_norm,
+                        "query_lang": config.settings.retrieval.query_lang,
+                    },
+                    "ef_search": config.settings.retrieval.ef_search,
+                    "variant_policy": config.settings.corpus.policy(variant),
                     "code_version": version.CODE_VERSION,
                     "drop_weak_context": bool(gate and gate.drop_weak_context),
                     "topic": (
