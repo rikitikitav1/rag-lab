@@ -24,8 +24,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - name: install d2
         run: curl -fsSL https://d2lang.com/install.sh | sh -s -- --version v0.7.1
+      - name: check the agent graph drawing against the code
+        run: |
+          uv sync --frozen
+          PYTHONPATH=app uv run python scripts/graph_to_d2.py --check
       - name: render and check freshness
         run: |
           ./scripts/render_diagrams.sh
