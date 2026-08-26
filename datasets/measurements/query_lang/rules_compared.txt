@@ -1,0 +1,26 @@
+each rule against the configured default (function_words)
+  langdetect          12 of  3782 (0.3%)
+  cyrillic_ratio       1 of  3782 (0.0%)
+  function_words       0 of  3782 (0.0%)
+
+langdetect against the alphabet rule, by set (20 questions or more)
+  interview                    0 of  2554 (0.0%)
+  paraphrased_v2_ru            0 of   344 (0.0%)
+  paraphrased_v2               0 of   342 (0.0%)
+  off_domain                   2 of   100 (2.0%)
+  paraphrased_ru               0 of   100 (0.0%)
+  out_of_corpus                0 of   100 (0.0%)
+  paraphrased                  0 of   100 (0.0%)
+  curated                      7 of    33 (21.2%)
+  live                         1 of    32 (3.1%)
+  off_domain_extra             0 of    31 (0.0%)
+  rejected_contaminated        1 of    23 (4.3%)
+
+by question length, which is what actually decides it
+  0-40 chars          11 of   340 (3.2%)
+  40-80 chars          0 of  2272 (0.0%)
+  80+ chars            0 of  1170 (0.0%)
+
+longest question the rules disagree on: 36 chars
+shortest they agree on:                 3 chars
+questions longer than that, all agreeing: 3525
