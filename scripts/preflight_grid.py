@@ -83,13 +83,29 @@ def window_matches_config() -> tuple[bool, str]:
     return ok, f"context window: config {configured or 'unknown'}, server {live or 'unknown'}{hint}"
 
 
+# the scheduler keeps reporting free VRAM after the card is gone, so ask what is actually resident
+def models_are_on_the_card() -> tuple[bool, str]:
+    out = sh(
+        "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
+        "import sys, json; sys.path.insert(0, '/app/app'); import llm;"
+        " print(json.dumps(llm.residency()))",
+    )
+    loaded = json.loads(out) if out.startswith("[") else []
+    if not loaded:
+        return False, "no model is loaded: ask one to load before reading the window"
+    off = [e["model"] for e in loaded if e["vram_mb"] == 0]
+    listing = ", ".join(f"{e['model']} {e['vram_mb']}/{e['size_mb']} MiB" for e in loaded)
+    return not off, f"resident: {listing}"
+
+
 def queue_is_idle() -> tuple[bool, str]:
     jobs = get("/v1/job?status=new&status=running&limit=1000")
     return not jobs, f"{len(jobs)} jobs still queued or running"
 
 
 CHECKS = (
-    tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config, queue_is_idle,
+    tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config,
+    models_are_on_the_card, queue_is_idle,
 )
 
 

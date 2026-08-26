@@ -95,6 +95,10 @@ def _run_sequential(
         # after the first answer the generator is loaded, so a spill is finally visible
         if answered == 1:
             llm.warn_if_models_do_not_fit()
+            # nothing in vram means the card is gone: a run measured on the CPU compares to nothing
+            off_card = llm.models_off_the_card()
+            if off_card:
+                raise RuntimeError(f"models are not on the GPU: {', '.join(off_card)}")
         try:
             _answer_one(
                 text, run_name, use_rerank, pipeline, language, k, max_hops, model,

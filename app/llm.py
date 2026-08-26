@@ -152,26 +152,46 @@ def list_models():
     return [m["name"] for m in _get_request("/api/tags")["models"]]
 
 
-# a model that does not fit spills to the CPU and the run gets slower, never louder
-def warn_if_models_do_not_fit() -> list[str]:
+def residency() -> list[dict]:
     try:
         loaded = _get_request("/api/ps").get("models") or []
-    except Exception as e:  # a probe must not break startup
+    except Exception as e:  # a probe must not break a run
         log.warning("llm.ps_failed", error=str(e))
         return []
-    spilled = []
-    for model in loaded:
-        size, in_vram = model.get("size") or 0, model.get("size_vram") or 0
-        if size and in_vram < size:
-            spilled.append(model.get("name", "?"))
-            log.warning(
-                "llm.model_spilled_to_cpu",
-                model=model.get("name"),
-                size_mb=round(size / 2**20),
-                vram_mb=round(in_vram / 2**20),
-                context=config.settings.llm.context_length,
-            )
+    return [
+        {
+            "model": m.get("name", "?"),
+            "size_mb": round((m.get("size") or 0) / 2**20),
+            "vram_mb": round((m.get("size_vram") or 0) / 2**20),
+        }
+        for m in loaded
+        if m.get("size")
+    ]
+
+
+# a model that does not fit spills to the CPU and the run gets slower, never louder. Nothing in
+# vram at all is a different thing: the server still schedules as if the card were there, and the
+# only outward sign is that everything takes ten times longer
+def warn_if_models_do_not_fit() -> list[str]:
+    spilled, off_card = [], []
+    for entry in residency():
+        if entry["vram_mb"] >= entry["size_mb"]:
+            continue
+        spilled.append(entry["model"])
+        if entry["vram_mb"] == 0:
+            off_card.append(entry["model"])
+        log.warning(
+            "llm.model_spilled_to_cpu",
+            **entry,
+            context=config.settings.llm.context_length,
+        )
+    if off_card:
+        log.error("llm.gpu_unavailable", models=off_card)
     return spilled
+
+
+def models_off_the_card() -> list[str]:
+    return [e["model"] for e in residency() if e["vram_mb"] == 0]
 
 
 def request_embeddings_batch(texts, role="embedding"):
