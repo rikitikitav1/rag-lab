@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from use_cases.agent_policy import FallbackPolicy, GateSignal, Orchestrator
+from use_cases.index import VARIANT_RE
 
 # the hand-rolled loop is gone: its value stays queryable in logs but cannot be asked for
 RunnableOrchestrator = StrEnum(
@@ -33,9 +34,11 @@ class JobEnqueuedResponse(BaseModel):
 
 
 class ParaphraseRequest(BaseModel):
-    limit: int = 100
+    limit: int | None = 100
     source: str | None = None
     set_name: str = "paraphrased"
+    seed: str = ""
+    per_source: int | None = None
 
 
 class EvalRunRequest(BaseModel):
@@ -54,6 +57,7 @@ class EvalRunRequest(BaseModel):
     topic_threshold: float | None = Field(default=None, ge=0, le=2)
     orchestrator: RunnableOrchestrator | None = None
     allow_cpu: bool = False
+    variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
 
 
 class ExperimentRequest(BaseModel):
@@ -65,7 +69,7 @@ class ExperimentRequest(BaseModel):
     language: Literal["ru", "en"] | None = None
     param: Literal[
         "k", "max_hops", "model", "fallback_policy", "gate_signal", "weak_distance",
-        "topic_threshold", "orchestrator",
+        "topic_threshold", "orchestrator", "variant",
     ] = "k"
     values: list[int | float | str] = Field(min_length=1)
 
@@ -88,6 +92,8 @@ async def enqueue_paraphrase(
             "limit": request.limit,
             "source": request.source,
             "set_name": request.set_name,
+            "seed": request.seed,
+            "per_source": request.per_source,
         },
     )
 
@@ -196,6 +202,12 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
         bad = [v for v in values if not isinstance(v, int | float) or not 0 <= v <= 2]
         if bad:
             raise HTTPException(status_code=400, detail=f"{param} must be 0..2: {bad}")
+    elif param == "variant":
+        bad = [v for v in values if not isinstance(v, str) or not VARIANT_RE.match(v)]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"variant must match {VARIANT_RE.pattern}: {bad}"
+            )
     elif param in ("fallback_policy", "gate_signal", "orchestrator"):
         enums = {
             "fallback_policy": FallbackPolicy, "gate_signal": GateSignal,

@@ -57,6 +57,14 @@ def split_by_size(text, separators=("\n\n", "\n", ". ", " ")):
     return result
 
 
+# the same rule the backfill migration used, so re-indexing baseline does not lose the axis
+def heading_path(chunk: str) -> str | None:
+    lines = chunk.split("\n", 2)
+    if len(lines) < 2 or not lines[0].startswith("# ") or not lines[1].startswith("## "):
+        return None
+    return " > ".join(re.sub(r"^#+\s*", "", line) for line in lines[:2])
+
+
 def path_to_category(rel_path):
     parts = Path(rel_path).with_suffix("").parts
     return ".".join(re.sub(r"[^\w-]", "_", p) for p in parts)

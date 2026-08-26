@@ -1,6 +1,6 @@
 direction: down
 
-trigger: "index_data job\n(bootstrap when the corpus is empty, or on demand)"
+trigger: "index_data job, always for one corpus variant\n(bootstrap only on an empty database, otherwise on demand)"
 
 sources: Source registry (reader pattern) {
   direction: right
@@ -9,15 +9,19 @@ sources: Source registry (reader pattern) {
   hooks: "each source class:\ndiscover / category_for / read / postprocess"
 }
 
-idem: "Idempotent per source: upsert data_source by name,\ndelete its old chunks"
+idem: "Idempotent per (source, variant): upsert data_source by name,\ndelete its old chunks of THIS variant only"
 
-chunk: chunk_markdown\nsplit by H2 + recursive\nmax 1024 chars
+chunk: chunk_markdown\nsplit by H2 + recursive\nmax 1024 chars (the baseline variant)
 cat: "path -> ltree category"
 embed: Batch embed\nbge-m3 via /api/embed {
   shape: hexagon
 }
-insert: Bulk insert data_chunks {
+insert: "Bulk insert data_chunks\n(variant, section, content_hash)" {
   shape: cylinder
+}
+
+idx: "Partial hnsw index for this variant,\nbuilt after the insert, never a catch-all" {
+  style.stroke-dash: 3
 }
 tsv: "FTS trigger: to_tsvector per language (rus/eng)" {
   style.stroke-dash: 3
@@ -30,9 +34,14 @@ questions: embed_questions job\nquestion bank vectors {
 trigger -> sources
 sources -> idem -> chunk -> cat -> embed -> insert
 insert -> tsv: on write
+insert -> idx: once, at the end
 trigger -> questions
 
 note: |md
   Corpus quality rule learned the hard way: RAG is exactly as good
   as the corpus is clean. Re-running any source is safe by design.
+
+  Variants let two chunkings live side by side, so re-indexing is a
+  comparison rather than a border. Every reader of the corpus has to
+  name the variant it reads; the topic axis included.
 |

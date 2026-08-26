@@ -17,6 +17,9 @@ class Doc:
     title: str
     links: list[str]
     tags: list[str]
+    # what the dedup hash is taken from: the answer, never the heading path prefix
+    body: str | None = None
+    section: str | None = None
 
 
 @dataclass
@@ -68,7 +71,9 @@ class Base(ABC):
         parsed = self.read(file, rel)
         if parsed is None:
             return
+        section = None
         for i, chunk in enumerate(ingest.chunk_markdown(parsed.content)):
+            section = ingest.heading_path(chunk) or section
             yield Doc(
                 content=chunk,
                 source=f"{self.root.name}/{rel}",
@@ -78,6 +83,7 @@ class Base(ABC):
                 links=parsed.links,
                 tags=parsed.tags,
                 chunk_index=i,
+                section=section,
             )
 
     def postprocess(self, docs: list[Doc]):

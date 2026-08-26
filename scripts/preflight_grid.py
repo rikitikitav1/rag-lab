@@ -1,7 +1,7 @@
+import argparse
 import json
 import re
 import subprocess
-import sys
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -88,14 +88,24 @@ def models_are_on_the_card() -> tuple[bool, str]:
     out = sh(
         "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
         "import sys, json; sys.path.insert(0, '/app/app'); import llm;"
-        " print(json.dumps(llm.residency()))",
+        " roles = {r: llm.resolve_name(r) for r in"
+        " ('generation', 'embedding', 'judging', 'paraphrasing')};"
+        " print(json.dumps({'roles': roles, 'loaded': llm.residency()}))",
     )
-    loaded = json.loads(out) if out.startswith("[") else []
+    if not out.startswith("{"):
+        return False, f"residency: cannot read ({out[:60] or 'no answer'})"
+    state = json.loads(out)
+    loaded = {e["model"]: e for e in state["loaded"]}
     if not loaded:
         return False, "no model is loaded: ask one to load before reading the window"
-    off = [e["model"] for e in loaded if e["vram_mb"] == 0]
-    listing = ", ".join(f"{e['model']} {e['vram_mb']}/{e['size_mb']} MiB" for e in loaded)
-    return not off, f"resident: {listing}"
+    # naming the role matters: a job runs one model, and the others being resident proves nothing
+    lines = []
+    for role, name in state["roles"].items():
+        entry = loaded.get(name)
+        where = f"{entry['vram_mb']}/{entry['size_mb']} MiB" if entry else "not resident"
+        lines.append(f"{role}={name} {where}")
+    off = [e["model"] for e in state["loaded"] if e["vram_mb"] == 0]
+    return not off, "; ".join(lines) + (f"; ON CPU: {', '.join(off)}" if off else "")
 
 
 def queue_is_idle() -> tuple[bool, str]:
@@ -103,9 +113,127 @@ def queue_is_idle() -> tuple[bool, str]:
     return not jobs, f"{len(jobs)} jobs still queued or running"
 
 
+
+def _in_worker(code: str) -> str:
+    return sh(
+        "docker", "compose", "exec", "-T", "worker", "python", "-c",
+        "import sys; sys.path.insert(0, '/app/app');" + code,
+    )
+
+
+def corpus_variant_is_usable() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, config, db;"
+        " v = config.settings.corpus.variant;"
+        " print(json.dumps({'variant': v, 'known': db.corpus_variants()}))"
+    )
+    if not out.startswith("{"):
+        return False, f"corpus variant: cannot read ({out or 'no answer'})"
+    state = json.loads(out)
+    counts = {row["variant"]: row["chunks"] for row in state["known"]}
+    chunks = counts.get(state["variant"], 0)
+    listing = ", ".join(f"{k}={v}" for k, v in counts.items()) or "none"
+    return chunks > 0, f"corpus variant {state['variant']}: {chunks} chunks (known: {listing})"
+
+
+# a generic plan cannot use a partial index, and the fallback is silent
+def variant_index_is_used() -> tuple[bool, str]:
+    out = _in_worker(
+        "import config;"
+        " from orm.sync_db import engine; from sqlalchemy import text;"
+        " v = config.settings.corpus.variant;"
+        " q = 'SELECT id FROM data_chunks WHERE variant = :v AND embedding IS NOT NULL"
+        " ORDER BY embedding <=> (SELECT embedding FROM data_chunks WHERE variant = :v LIMIT 1)"
+        " LIMIT 20';"
+        " c = engine.connect();"
+        " [c.execute(text(q), {'v': v}).all() for _ in range(6)];"
+        " plan = ' '.join(r[0] for r in c.execute(text('EXPLAIN (COSTS OFF) ' + q), {'v': v}));"
+        " print(plan)"
+    )
+    wanted = "data_chunks_embedding_"
+    ok = wanted in out and "Index Scan" in out
+    return ok, f"vector index in the plan: {'partial, per variant' if ok else out[:90] or 'none'}"
+
+
+def table_is_vacuumed() -> tuple[bool, str]:
+    out = _in_worker(
+        "from orm.sync_db import engine; from sqlalchemy import text;"
+        " print(engine.connect().execute(text(\"SELECT n_dead_tup FROM pg_stat_user_tables"
+        " WHERE relname = 'data_chunks'\")).scalar())"
+    )
+    dead = int(out) if out.isdigit() else -1
+    # a mass update leaves dead entries in the hnsw graph, and retrieval shrinks quietly
+    return 0 <= dead <= 1000, f"dead tuples in data_chunks: {out or 'unknown'}"
+
+
+def keyword_switches_match_the_worker() -> tuple[bool, str]:
+    logs = get("/v1/question-log?limit=1")
+    if not logs:
+        return True, "keyword switches: no logged run to compare against yet"
+    config_row = (logs[0].get("metrics") or {}).get("config", {})
+    logged = config_row.get("keyword")
+    if logged is not None:
+        logged = {**logged, "ef_search": config_row.get("ef_search")}
+    out = _in_worker(
+        "import json, config;"
+        " r = config.settings.retrieval;"
+        " print(json.dumps({'query': r.keyword_query, 'rank': r.keyword_rank,"
+        " 'norm': r.keyword_norm, 'query_lang': r.query_lang, 'ef_search': r.ef_search}))"
+    )
+    live = json.loads(out) if out.startswith("{") else None
+    if logged is None:
+        return True, f"keyword switches: worker {live}, last run predates the field"
+    ok = logged == live
+    return ok, f"keyword switches: worker {live}, last run {logged}"
+
+
+# only these decide a verdict; elsewhere an unreachable label is a note, not a stop
+CRITERION_SETS = ("paraphrased_ru", "paraphrased")
+
+
+def marks_are_reachable() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, config;"
+        " from orm.sync_db import engine; from sqlalchemy import text;"
+        " sql = text(\"\"\"SELECT q.set_name, count(*) AS unreachable FROM questions q"
+        " WHERE array_length(q.marked_sources, 1) > 0 AND NOT EXISTS ("
+        "   SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m"
+        "   WHERE dc.variant = :v AND dc.source LIKE '%' || m || '%')"
+        " GROUP BY q.set_name ORDER BY 2 DESC\"\"\");"
+        " rows = engine.connect().execute(sql, {'v': config.settings.corpus.variant}).all();"
+        " print(json.dumps([[r[0], r[1]] for r in rows]))"
+    )
+    rows = json.loads(out) if out.startswith("[") else None
+    if rows is None:
+        return False, f"label reachability: cannot read ({out[:60] or 'no answer'})"
+    if not rows:
+        return True, "label reachability: every marked question can be hit"
+    listing = ", ".join(f"{name}={n}" for name, n in rows)
+    blocking = [name for name, _ in rows if name in CRITERION_SETS]
+    verdict = "" if not blocking else f"; blocks the criterion sets {blocking}"
+    return not blocking, f"questions no chunk can satisfy: {listing}{verdict}"
+
+
+# the agent path goes through hnsw, so a variant whose index lost recall would read as bad chunking
+def index_recall_is_intact() -> tuple[bool, str]:
+    out = sh(
+        "docker", "compose", "exec", "-T", "worker", "python",
+        "/app/scripts/retrieval_report.py", "--set", "paraphrased_ru", "--recall",
+        "--limit", "40",
+    )
+    score = out.rsplit(":", 1)[-1].strip()
+    try:
+        value = float(score)
+    except ValueError:
+        return False, f"index recall: cannot read ({out[-60:] or 'no answer'})"
+    return value >= 0.98, f"hnsw recall@20 against exact search: {value}"
+
+
 CHECKS = (
     tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config,
-    models_are_on_the_card, queue_is_idle,
+    models_are_on_the_card, queue_is_idle, corpus_variant_is_usable, variant_index_is_used,
+    table_is_vacuumed, keyword_switches_match_the_worker, marks_are_reachable,
+    index_recall_is_intact,
 )
 
 
@@ -173,8 +301,9 @@ def verify_run(spec: str, expect: int | None, shared: set | None) -> int:
 
 # what has to be identical across arms, or the runs are not comparable at all
 PINNED = (
-    "corpus_fingerprint", "k", "max_hops", "fallback_policy", "gate", "topic",
-    "context_length", "rerank", "distance_threshold", "mcp_configured", "code_version",
+    "corpus_fingerprint", "variant", "variant_policy", "keyword", "ef_search", "k", "max_hops",
+    "fallback_policy", "gate", "topic", "context_length", "rerank", "distance_threshold",
+    "mcp_configured", "code_version",
 )
 
 
@@ -229,25 +358,32 @@ def compare_runs(specs: list[str]) -> int:
     return 1 if problems else 0
 
 
-def _verify(argv: list[str]) -> int:
-    expect = None
-    if "--expect" in argv:
-        at = argv.index("--expect")
-        expect = int(argv[at + 1])
-        argv = argv[:at] + argv[at + 2 :]
-    if not argv:
-        print("usage: preflight_grid.py --verify [--expect N] <run>[=orchestrator] ...")
-        return 1
+def _verify(runs: list[str], expect: int | None) -> int:
     # every arm answers the same questions, so a short run shows up as a difference between runs
-    seen = [{row["question_id"] for row in _rows(spec.partition("=")[0])} for spec in argv]
-    shared = set().union(*seen) if len(argv) > 1 else None
-    failed = max(verify_run(spec, expect, shared) for spec in argv)
-    return max(failed, compare_runs(argv))
+    seen = [{row["question_id"] for row in _rows(spec.partition("=")[0])} for spec in runs]
+    shared = set().union(*seen) if len(runs) > 1 else None
+    failed = max(verify_run(spec, expect, shared) for spec in runs)
+    return max(failed, compare_runs(runs))
 
 
-def main(argv: list[str]) -> int:
-    if argv and argv[0] == "--verify":
-        return _verify(argv[1:])
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--verify", action="store_true", help="check runs that already happened, not the stand"
+    )
+    parser.add_argument("--expect", type=int, help="how many rows each run must have")
+    parser.add_argument(
+        "runs", nargs="*", metavar="RUN[=ORCHESTRATOR]", help="run names to verify"
+    )
+    args = parser.parse_args(argv)
+
+    if args.verify:
+        if not args.runs:
+            parser.error("--verify needs at least one run name")
+        return _verify(args.runs, args.expect)
+    if args.runs or args.expect is not None:
+        parser.error("run names and --expect only make sense with --verify")
+
     failed = 0
     for check in CHECKS:
         ok, message = check()
@@ -257,4 +393,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(main())

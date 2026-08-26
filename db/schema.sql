@@ -81,7 +81,10 @@ CREATE TABLE public.data_chunks (
     chunk_index integer NOT NULL,
     category public.ltree NOT NULL,
     language text NOT NULL,
-    content_tsv tsvector
+    content_tsv tsvector,
+    variant text NOT NULL,
+    section text,
+    content_hash text
 );
 
 
@@ -637,6 +640,13 @@ CREATE INDEX data_chunks_category_idx ON public.data_chunks USING gist (category
 
 
 --
+-- Name: data_chunks_content_hash_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_content_hash_idx ON public.data_chunks USING btree (content_hash);
+
+
+--
 -- Name: data_chunks_content_tsv_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -644,10 +654,10 @@ CREATE INDEX data_chunks_content_tsv_idx ON public.data_chunks USING gin (conten
 
 
 --
--- Name: data_chunks_embedding_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: data_chunks_embedding_baseline_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX data_chunks_embedding_idx ON public.data_chunks USING hnsw (embedding public.vector_cosine_ops);
+CREATE INDEX data_chunks_embedding_baseline_idx ON public.data_chunks USING hnsw (embedding public.vector_cosine_ops) WHERE (variant = 'baseline'::text);
 
 
 --
@@ -655,6 +665,13 @@ CREATE INDEX data_chunks_embedding_idx ON public.data_chunks USING hnsw (embeddi
 --
 
 CREATE INDEX data_chunks_source_id_idx ON public.data_chunks USING btree (source_id);
+
+
+--
+-- Name: data_chunks_variant_source_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (variant, source_id);
 
 
 --
@@ -755,4 +772,8 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260729000001'),
     ('20260824000001'),
     ('20260824000002'),
-    ('20260825000001');
+    ('20260825000001'),
+    ('20260826000001'),
+    ('20260826000002'),
+    ('20260826000003'),
+    ('20260826000004');

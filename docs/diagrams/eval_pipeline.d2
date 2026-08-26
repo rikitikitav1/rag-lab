@@ -4,7 +4,7 @@ exp: POST /v1/experiment {
   shape: hexagon
 }
 
-runs: "eval_run jobs (one per param value: k / max_hops / model)" {
+runs: "eval_run jobs, one per swept value\n(k / max_hops / model / variant / agent policies)" {
   r1: run k=01
   r2: run k=05
   r3: run k=10

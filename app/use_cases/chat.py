@@ -9,7 +9,6 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
-from langdetect import LangDetectException, detect
 from models.eval import Question, QuestionLog
 from models.registry import Purpose
 from orm.sync_db import Session
@@ -110,7 +109,7 @@ def take_sources(rows, rerank_scores=None) -> list[Source]:
     scores = rerank_scores or [None] * len(rows)
     kept: dict[str, Source] = {}
     for row, rerank_score in zip(rows, scores, strict=True):
-        _, src, _, _, vector_rank, keyword_rank, vector_distance, score = row
+        _, src, _, _, vector_rank, keyword_rank, vector_distance, score, *_ = row
         if is_ignored_source(src):
             continue
         if src in kept:
@@ -125,14 +124,23 @@ def take_sources(rows, rerank_scores=None) -> list[Source]:
     return list(kept.values())
 
 
-def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool):
+def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str):
     if not rerank_enabled:
-        return db.hybrid_search(question, llm.embed(question), category, limit=k), None
+        return (
+            db.hybrid_search(
+                question, llm.embed(question), category, limit=k, variant=variant
+            ),
+            None,
+        )
 
     import rerank
 
     candidates = db.hybrid_search(
-        question, llm.embed(question), category, limit=config.settings.rerank.candidates
+        question,
+        llm.embed(question),
+        category,
+        limit=config.settings.rerank.candidates,
+        variant=variant,
     )
     ranked = rerank.rerank(question, candidates, top=k)
     return [row for row, _ in ranked], [score for _, score in ranked]
@@ -158,11 +166,13 @@ def search_chunks(
     k: int | None = None,
     use_rerank: bool | None = None,
     gate_top: int | None = None,
+    *,
+    variant: str,
 ) -> tuple[str, list[Source]]:
     k = k or config.settings.retrieval.results_limit
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
-    rows, rerank_scores = _retrieve_rows(query, category, k, use_rerank)
+    rows, rerank_scores = _retrieve_rows(query, category, k, use_rerank, variant)
     if not rows:
         return NO_RESULTS, []
     if rerank_scores is None and gate_top:
@@ -175,9 +185,13 @@ def retrieve(
     question: str,
     category: str | None = None,
     k: int | None = None,
+    *,
+    variant: str,
 ) -> Retrieval:
     k = k or config.settings.retrieval.results_limit
-    rows, rerank_scores = _retrieve_rows(question, category, k, config.settings.rerank.enabled)
+    rows, rerank_scores = _retrieve_rows(
+        question, category, k, config.settings.rerank.enabled, variant
+    )
     return Retrieval(sources=take_sources(rows, rerank_scores))
 
 
@@ -190,12 +204,14 @@ def answer(
     use_rerank: bool | None = None,
     language: str | None = None,
     model: str | None = None,
+    variant: str | None = None,
 ) -> Answer:
     start = time.perf_counter()
     if use_rerank is None:
         use_rerank = config.settings.rerank.enabled
     k = k or config.settings.retrieval.results_limit
-    rows, rerank_scores = _retrieve_rows(question, category, k, use_rerank)
+    variant = variant or config.settings.corpus.variant
+    rows, rerank_scores = _retrieve_rows(question, category, k, use_rerank, variant)
     return answer_from_rows(
         question,
         rows,
@@ -207,6 +223,7 @@ def answer(
         model=model,
         k=k,
         started_at=start,
+        variant=variant,
     )
 
 
@@ -223,6 +240,8 @@ def answer_from_rows(
     started_at: float | None = None,
     phased: bool = False,
     rerank_device: str | None = None,
+    *,
+    variant: str,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
     lang = _resolve_language(question, language)
@@ -262,7 +281,7 @@ def answer_from_rows(
     try:
         _log_answer(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
-            _retrieval_snapshot(rows, ans.sources),
+            _retrieval_snapshot(rows, ans.sources), variant=variant,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -274,10 +293,8 @@ _LANG_NAMES = {"ru": "Russian", "en": "English"}
 
 
 def _detect_language(text) -> str:
-    try:
-        return detect(text)
-    except LangDetectException:
-        return "en"
+    # same rule as the search config: a wrong guess here answers a Russian question in English
+    return db.detect_language(text)
 
 
 def _resolve_language(question: str, language: str | None) -> str:
@@ -298,14 +315,32 @@ def _retrieval_snapshot(rows, sources) -> dict:
     }
 
 
-def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device=None) -> dict:
+def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str) -> dict:
     return {
         "rerank": use_rerank,
         "rerank_device": (rerank_device or _rerank_device()) if use_rerank else None,
         "distance_threshold": distance_threshold,
         "k": k,
         "phased": phased,
+        "variant": variant,
+        "keyword": {
+            "query": config.settings.retrieval.keyword_query,
+            "rank": config.settings.retrieval.keyword_rank,
+            "norm": config.settings.retrieval.keyword_norm,
+            "query_lang": config.settings.retrieval.query_lang,
+        },
+        "ef_search": config.settings.retrieval.ef_search,
+        "variant_policy": config.settings.corpus.policy(variant),
+        "corpus_fingerprint": _corpus_fingerprint(variant),
     }
+
+
+def _corpus_fingerprint(variant) -> dict | None:
+    try:
+        return db.corpus_fingerprint(variant=variant)
+    except Exception as e:
+        log.error("chat.corpus_fingerprint_failed", error=str(e))
+        return None
 
 
 def _rerank_device() -> str | None:
@@ -320,6 +355,7 @@ def _rerank_device() -> str | None:
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
+    *, variant: str,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -339,7 +375,8 @@ def _log_answer(
             },
             metrics={
                 "config": _config_snapshot(
-                    use_rerank, k, phased, ans.metrics.distance_threshold, rerank_device
+                    use_rerank, k, phased, ans.metrics.distance_threshold,
+                    rerank_device, variant,
                 ),
                 "retrieval": retrieval,
             },

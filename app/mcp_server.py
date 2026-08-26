@@ -1,6 +1,7 @@
 import re
 from typing import Annotated, Literal
 
+import config
 import logging_setup
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -81,7 +82,9 @@ def search_corpus(
 ) -> str:
     _check_text(query, "query")
     category = _safe_category(category)
-    content, _ = chat.search_chunks(query, category)
+    content, _ = chat.search_chunks(
+        query, category, variant=config.settings.corpus.variant
+    )
     return content
 
 
@@ -141,7 +144,7 @@ def list_categories(
     if only_top and category:
         raise ToolError("only_top cannot be combined with a category filter")
     try:
-        rows = db.list_categories(only_top=only_top, category=category)
+        rows = db.list_categories(only_top=only_top, category=category, variant=config.settings.corpus.variant)
     except SQLAlchemyError as e:
         log.error("mcp.list_categories_failed", error=str(e))
         raise

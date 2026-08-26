@@ -9,6 +9,19 @@ service:
     limit_vector: 20
     limit_keywords: 20
     rrf_k: 60
+    # AND over every lexeme is a precision filter: OR costs 0.15-0.23 MRR on paraphrases,
+    # and loses on every set once the search is really exact (measured 26.08)
+    keyword_query: and
+    keyword_rank: ts_rank
+    keyword_norm: 0
+    # ask each text-search config whether it recognises the question's own function words, fall
+    # back to the alphabet share when none show up. No library, no LLM, scales to any config
+    # Postgres ships. Chosen for correctness, not ranking: identical to the fourth decimal on all
+    # three sets (datasets/measurements/query_lang/), and it decides the one question the alphabet
+    # rule gets wrong. Also picks the language the answer comes back in (26.08)
+    query_lang: function_words
+    # hnsw recall@20 vs exact: 0.9148 at the server default 40, 1.0 at 100 (measured 26.08)
+    ef_search: 100
   rerank:
     enabled: false
     model: BAAI/bge-reranker-v2-m3
@@ -36,6 +49,13 @@ service:
   corpus:
     description: >-
       the technical knowledge corpus (interview banks, system-design-primer, redis docs)
+    variant: baseline
+    variants:
+      baseline:
+        chunker: legacy
+        max_chunk_size: 1024
+        header_prefix: false
+        boilerplate: kept
   fts:
     languages: { en: english, ru: russian }
     fallback: english

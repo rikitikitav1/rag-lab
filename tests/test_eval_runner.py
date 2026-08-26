@@ -12,7 +12,9 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
     )
     monkeypatch.setattr(
         runner.db, "hybrid_search",
-        lambda text, vector, category, limit: calls.append(("search", text, limit)) or _rows(text),
+        lambda text, vector, category, limit, variant: (
+            calls.append(("search", text, limit, variant)) or _rows(text)
+        ),
     )
     monkeypatch.setattr(
         runner.rerank, "score_pairs",
@@ -33,7 +35,7 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
 def test_phases_run_in_order_and_free_vram(monkeypatch):
     calls = _stub_phases(monkeypatch)
     answered, cancelled = runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None
+        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None, variant="baseline"
     )
     assert (answered, cancelled) == (2, False)
     kinds = [c[0] for c in calls]
@@ -49,7 +51,7 @@ def test_phases_run_in_order_and_free_vram(monkeypatch):
 def test_rerank_runs_once_for_the_whole_set(monkeypatch):
     calls = _stub_phases(monkeypatch)
     runner.run_phased(
-        "run", ["q1", "q2", "q3"], use_rerank=True, language=None, k=2, model=None, job_id=None
+        "run", ["q1", "q2", "q3"], use_rerank=True, language=None, k=2, model=None, job_id=None, variant="baseline"
     )
     reranks = [c for c in calls if c[0] == "rerank"]
     assert len(reranks) == 1
@@ -58,11 +60,11 @@ def test_rerank_runs_once_for_the_whole_set(monkeypatch):
 
 def test_retrieval_widens_only_when_reranking(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    runner.run_phased("run", ["q"], use_rerank=True, language=None, k=3, model=None, job_id=None)
+    runner.run_phased("run", ["q"], use_rerank=True, language=None, k=3, model=None, job_id=None, variant="baseline")
     wide = [c[2] for c in calls if c[0] == "search"][0]
 
     calls.clear()
-    runner.run_phased("run", ["q"], use_rerank=False, language=None, k=3, model=None, job_id=None)
+    runner.run_phased("run", ["q"], use_rerank=False, language=None, k=3, model=None, job_id=None, variant="baseline")
     narrow = [c[2] for c in calls if c[0] == "search"][0]
 
     assert wide == runner.config.settings.rerank.candidates
@@ -72,7 +74,7 @@ def test_retrieval_widens_only_when_reranking(monkeypatch):
 
 def test_generation_marks_logs_as_phased(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    runner.run_phased("run", ["q"], use_rerank=False, language=None, k=2, model=None, job_id=None)
+    runner.run_phased("run", ["q"], use_rerank=False, language=None, k=2, model=None, job_id=None, variant="baseline")
     assert [c[2] for c in calls if c[0] == "generate"] == [True]
 
 
@@ -80,7 +82,7 @@ def test_cancel_stops_generation_midway(monkeypatch):
     calls = _stub_phases(monkeypatch)
     monkeypatch.setattr(runner.job_queue, "is_cancelled", lambda job_id: True)
     answered, cancelled = runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=False, language=None, k=2, model=None, job_id=7
+        "run", ["q1", "q2"], use_rerank=False, language=None, k=2, model=None, job_id=7, variant="baseline"
     )
     assert (answered, cancelled) == (0, True)
     assert not [c for c in calls if c[0] == "generate"]
@@ -142,7 +144,7 @@ def test_unload_targets_the_overridden_generator(monkeypatch):
         lambda role="embedding", model=None: unloaded.append((role, model)),
     )
     runner.run_phased(
-        "run", ["q"], use_rerank=True, language=None, k=2, model="hf.co/some/model:Q4", job_id=None
+        "run", ["q"], use_rerank=True, language=None, k=2, model="hf.co/some/model:Q4", job_id=None, variant="baseline"
     )
     assert ("generation", "hf.co/some/model:Q4") in unloaded
     assert calls
@@ -159,7 +161,7 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
 
     monkeypatch.setattr(runner.llm, "request_embeddings_batch", flaky)
 
-    out = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], k=3, use_rerank=False)
+    out = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], k=3, use_rerank=False, variant="baseline")
 
     assert [text for text, _, _ in out] == ["ok1", "ok2"]
     assert len([c for c in calls if c[0] == "search"]) == 2
@@ -168,14 +170,14 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
 def test_search_failure_skips_one_question(monkeypatch):
     _stub_phases(monkeypatch)
 
-    def flaky(text, vector, category, limit):
+    def flaky(text, vector, category, limit, variant):
         if text == "bad":
             raise RuntimeError("pg down")
         return _rows(text)
 
     monkeypatch.setattr(runner.db, "hybrid_search", flaky)
 
-    out = runner._phase_retrieve(["good", "bad"], k=3, use_rerank=False)
+    out = runner._phase_retrieve(["good", "bad"], k=3, use_rerank=False, variant="baseline")
     assert [text for text, _, _ in out] == ["good"]
 
 
@@ -184,7 +186,7 @@ def test_cancel_between_phases_skips_rerank_and_generation(monkeypatch):
     monkeypatch.setattr(runner.job_queue, "is_cancelled", lambda job_id: True)
 
     answered, cancelled = runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=7
+        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=7, variant="baseline"
     )
 
     assert (answered, cancelled) == (0, True)
@@ -201,7 +203,7 @@ def test_phased_snapshot_keeps_the_device_used_during_rerank(monkeypatch):
     monkeypatch.setattr(runner.rerank, "device", lambda: "cpu")
 
     runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None
+        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None, variant="baseline"
     )
 
     assert logged == ["cpu", "cpu"]
@@ -224,6 +226,8 @@ def test_rerank_phase_accepts_numpy_scores(monkeypatch):
 def test_agent_runs_get_the_fallback_policy(monkeypatch):
     seen = []
     monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1"])
+    monkeypatch.setattr(runner.db, "corpus_variants", lambda: [{"variant": "baseline"}])
+    monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: False)
     monkeypatch.setattr(runner.job_queue, "enqueue", lambda *a, **kw: None)
     monkeypatch.setattr(runner.agent, "run", lambda text, **kw: seen.append(kw["fallback_policy"]))
 

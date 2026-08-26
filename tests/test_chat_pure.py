@@ -36,7 +36,7 @@ def _stub_generation(monkeypatch):
     monkeypatch.setattr(chat.llm, "resolve_name", lambda role: "stub-model")
     monkeypatch.setattr(chat.prompt_repo, "active_template", lambda purpose: "sys")
     logged = {}
-    monkeypatch.setattr(chat, "_log_answer", lambda *a: logged.update(args=a))
+    monkeypatch.setattr(chat, "_log_answer", lambda *a, **kw: logged.update(args=a, kwargs=kw))
     return logged
 
 
@@ -47,7 +47,7 @@ def test_answer_from_rows_skips_retrieval(monkeypatch):
         raise AssertionError("retrieval must not run in answer_from_rows")
 
     monkeypatch.setattr(chat, "_retrieve_rows", boom)
-    ans = chat.answer_from_rows("q", [_row("a.md")], k=5)
+    ans = chat.answer_from_rows("q", [_row("a.md")], k=5, variant="baseline")
     assert ans.success is True
     assert ans.text == "answer text"
     assert [s.source for s in ans.sources] == ["a.md"]
@@ -56,33 +56,33 @@ def test_answer_from_rows_skips_retrieval(monkeypatch):
 def test_answer_from_rows_empty_is_a_refusal(monkeypatch):
     _stub_generation(monkeypatch)
     monkeypatch.setattr(chat.llm, "ask", lambda **kw: pytest.fail("no generation on empty rows"))
-    ans = chat.answer_from_rows("q", [], k=5)
+    ans = chat.answer_from_rows("q", [], k=5, variant="baseline")
     assert ans.success is False
     assert ans.text == chat.NO_RESULTS
 
 
 def test_answer_from_rows_logs_phased_flag(monkeypatch):
     logged = _stub_generation(monkeypatch)
-    chat.answer_from_rows("q", [_row("a.md")], k=5, phased=True)
+    chat.answer_from_rows("q", [_row("a.md")], k=5, phased=True, variant="baseline")
     phased_arg = logged["args"][7]
     assert phased_arg is True
 
 
 def test_answer_from_rows_keeps_caller_start(monkeypatch):
     _stub_generation(monkeypatch)
-    ans = chat.answer_from_rows("q", [_row("a.md")], k=5, started_at=time.perf_counter() - 3)
+    ans = chat.answer_from_rows("q", [_row("a.md")], k=5, started_at=time.perf_counter() - 3, variant="baseline")
     assert ans.elapsed >= 3
 
 
 def test_config_snapshot_records_device_only_when_reranking(monkeypatch):
     monkeypatch.setattr(chat, "_rerank_device", lambda: "cuda")
 
-    assert chat._config_snapshot(True, 5, False, 0.55)["rerank_device"] == "cuda"
-    assert chat._config_snapshot(False, 5, False, 0.55)["rerank_device"] is None
+    assert chat._config_snapshot(True, 5, False, 0.55, None, "baseline")["rerank_device"] == "cuda"
+    assert chat._config_snapshot(False, 5, False, 0.55, None, "baseline")["rerank_device"] is None
 
 
 def test_config_snapshot_carries_procedure_fields():
-    snap = chat._config_snapshot(False, 7, True, 0.42)
+    snap = chat._config_snapshot(False, 7, True, 0.42, None, "baseline")
     assert (snap["k"], snap["phased"], snap["distance_threshold"]) == (7, True, 0.42)
 
 
@@ -104,7 +104,7 @@ def test_search_chunks_attaches_gate_scores_with_rerank_off(monkeypatch):
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, None))
     monkeypatch.setattr(chat, "_gate_scores", lambda query, rows, top: [0.42, None])
 
-    _, sources = chat.search_chunks("q", use_rerank=False, gate_top=1)
+    _, sources = chat.search_chunks("q", use_rerank=False, gate_top=1, variant="baseline")
 
     assert [s.rerank_score for s in sources] == [0.42, None]
 
@@ -114,7 +114,7 @@ def test_search_chunks_leaves_rerank_scores_alone(monkeypatch):
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, [0.77]))
     monkeypatch.setattr(chat, "_gate_scores", lambda *a, **kw: pytest.fail("gate ran anyway"))
 
-    _, sources = chat.search_chunks("q", use_rerank=True, gate_top=5)
+    _, sources = chat.search_chunks("q", use_rerank=True, gate_top=5, variant="baseline")
 
     assert [s.rerank_score for s in sources] == [0.77]
 

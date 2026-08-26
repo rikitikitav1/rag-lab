@@ -117,6 +117,7 @@ def _dispatch(state: State, ctx: dict) -> tuple[list, dict]:
             k=ctx["k"],
             use_rerank=ctx["use_rerank"],
             gate_top=ctx["gate"].top,
+            variant=ctx["variant"],
         )
         ctx["result"].took(f"tool:{tc.function.name.split('__')[0]}", started)
         if res.meta.get("error_kind"):

@@ -30,7 +30,7 @@ def chat_model(role: str = "generation", model: str | None = None):
 
 
 # two-layer contract: content to the model, artifact to the pipeline. No room for error kinds
-def as_tools(remote: dict, k=None, use_rerank=None, run=None, result=None) -> list:
+def as_tools(remote: dict, k=None, use_rerank=None, run=None, result=None, variant=None) -> list:
     def make(name: str, tool):
         def call(**kwargs) -> tuple[str, list]:
             # the tool node is built once from every tool, so the gate has to refuse here
@@ -38,7 +38,7 @@ def as_tools(remote: dict, k=None, use_rerank=None, run=None, result=None) -> li
             started = time.perf_counter()
             res = agent_tools.dispatch(
                 name, json.dumps(kwargs), extra=extra, k=k, use_rerank=use_rerank,
-                gate_top=run.gate.top if run else None,
+                gate_top=run.gate.top if run else None, variant=variant,
             )
             if result is not None:
                 result.took(f"tool:{name.split('__')[0]}", started)
@@ -81,6 +81,7 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
     try:
         tools = as_tools(
             ctx["remote"], k=ctx["k"], use_rerank=ctx["use_rerank"], run=run, result=result,
+            variant=ctx["variant"],
         )
         agent = create_agent(
             model=ctx.get("model_client") or chat_model(ctx["role"], ctx["model"]),

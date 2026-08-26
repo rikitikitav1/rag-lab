@@ -1,5 +1,6 @@
 from typing import Literal
 
+import config
 from fastapi import APIRouter
 from pydantic import BaseModel
 from use_cases import chat
@@ -92,7 +93,9 @@ def ask(question: QuestionRequest) -> QuestionResponse:
 @router.post("/fast_question", response_model=RetrievalResponse)
 def quick_ask(question: QuestionRequest) -> RetrievalResponse:
     category = question.filter.category if question.filter else None
-    res = chat.retrieve(question.text, category)
+    res = chat.retrieve(
+        question.text, category, variant=config.settings.corpus.variant
+    )
     return RetrievalResponse(
         sources=[
             AnswerSource(

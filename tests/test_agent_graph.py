@@ -48,7 +48,7 @@ def _idiomatic_run(monkeypatch, script, corpus_sources, **kwargs):
     from orchestrators import react
 
     _agent_harness(monkeypatch, [], corpus_sources)
-    monkeypatch.setattr(agent, "_topic_score", lambda question: None)
+    monkeypatch.setattr(agent, "_topic_score", lambda question, variant: None)
     model = ScriptedChatModel(script)
     monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
     kwargs.setdefault("max_hops", 2)
@@ -61,7 +61,7 @@ def _middleware_run(monkeypatch, script, corpus_sources, dispatch=None, topic_sc
     from orchestrators import react
 
     _agent_harness(monkeypatch, [], corpus_sources)
-    monkeypatch.setattr(agent, "_topic_score", lambda question: topic_score)
+    monkeypatch.setattr(agent, "_topic_score", lambda question, variant: topic_score)
     if dispatch is not None:
         import agent_tools
 
@@ -161,7 +161,7 @@ def test_an_off_topic_question_is_refused_the_same_way(monkeypatch_factory):
     hit = _hit(rerank_score=0.9, vector_distance=0.2)
     with monkeypatch_factory() as monkeypatch:
         _agent_harness(monkeypatch, list(turns), [hit])
-        monkeypatch.setattr(agent, "_topic_score", lambda question: 0.61)
+        monkeypatch.setattr(agent, "_topic_score", lambda question, variant: 0.61)
         graph = agent.run(
             "how do I cook carbonara",
             max_hops=2,
