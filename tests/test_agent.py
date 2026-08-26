@@ -7,7 +7,7 @@ import mcp_client
 import outcomes
 import pytest
 from models.registry import Purpose
-from use_cases import agent, chat
+from use_cases import agent, agent_policy, chat
 
 _REAL_DISPATCH = agent_tools.dispatch
 
@@ -26,49 +26,6 @@ def _tool_call(call_id, name, arguments):
     return SimpleNamespace(
         id=call_id, function=SimpleNamespace(name=name, arguments=arguments)
     )
-
-
-def test_apply_turn_final_answer_stops_loop():
-    result = agent.AgentResult()
-    messages = []
-    done = agent._apply_turn(_turn(text="the answer"), messages, result)
-    assert done is True
-    assert result.success is True
-    assert result.text == "the answer"
-    assert messages == []
-
-
-def test_apply_turn_coerces_none_text():
-    result = agent.AgentResult()
-    assert agent._apply_turn(_turn(text=None), [], result) is True
-    assert result.text == ""
-    assert result.success is False
-
-
-def test_apply_turn_executes_tools_and_continues(monkeypatch):
-    monkeypatch.setattr(
-        agent_tools,
-        "dispatch",
-        lambda name, args, **kwargs: agent_tools.ToolResult(
-            content="chunks", meta={"sources": ["S1"]}
-        ),
-    )
-    tc = _tool_call("call_1", "search_corpus", '{"query": "x"}')
-    turn = _turn(tool_calls=[tc], message={"role": "assistant"})
-    messages = [{"role": "user", "content": "x"}]
-    result = agent.AgentResult()
-
-    done = agent._apply_turn(turn, messages, result)
-
-    assert done is False
-    assert result.success is False
-    assert result.sources == ["S1"]
-    assert messages[1] == {"role": "assistant"}
-    assert messages[2] == {
-        "role": "tool",
-        "tool_call_id": "call_1",
-        "content": "chunks",
-    }
 
 
 def test_context_from_messages_joins_only_tool_contents():
@@ -100,31 +57,6 @@ def test_unique_sources_dedups_by_source():
     b = SimpleNamespace(source="b.md")
     out = agent._unique_sources([a1, a2, b])
     assert [s.source for s in out] == ["a.md", "b.md"]
-
-
-def test_apply_turn_accumulates_across_multiple_calls(monkeypatch):
-    monkeypatch.setattr(
-        agent_tools,
-        "dispatch",
-        lambda name, args, **kwargs: agent_tools.ToolResult(content="c", meta={"sources": [name]}),
-    )
-    turn = _turn(
-        tool_calls=[
-            _tool_call("a", "search_corpus", "{}"),
-            _tool_call("b", "search_corpus", "{}"),
-        ],
-        message={"role": "assistant"},
-    )
-    messages = []
-    result = agent.AgentResult()
-
-    agent._apply_turn(turn, messages, result)
-
-    assert result.sources == ["search_corpus", "search_corpus"]
-    assert [m.get("tool_call_id") for m in messages if m.get("role") == "tool"] == [
-        "a",
-        "b",
-    ]
 
 
 def _remote_tool(name="deepwiki__ask_question"):
@@ -166,6 +98,8 @@ def _agent_harness(monkeypatch, turns, corpus_sources, seen_runtime=None):
     )
     monkeypatch.setattr(agent.prompt_repo, "active_template", lambda purpose: f"tpl:{purpose}")
     monkeypatch.setattr(agent, "_log_answer", lambda *a, **kw: None)
+    # otherwise the axis embeds against a live corpus and the suite depends on the stand
+    monkeypatch.setattr(agent, "_topic_score", lambda question: None)
     return seen_tools, seen_extra
 
 
@@ -239,10 +173,10 @@ def _strong_hit(name="s.md"):
 
 def test_verdict_reads_the_cross_encoder_not_the_hit_count():
     gate = agent.Gate(signal=agent.GateSignal.cross_encoder, top=5, threshold=0.5)
-    assert agent._verdict([], gate) == agent.FallbackReason.empty
-    assert agent._verdict([_scored(0.02), _scored(0.4)], gate) == agent.FallbackReason.weak
-    assert agent._verdict([_scored(0.02), _scored(0.91)], gate) is None
-    assert agent._verdict([_scored(0.02)], agent.Gate(signal=agent.GateSignal.cross_encoder)) is None
+    assert agent_policy.verdict([], gate) == agent.FallbackReason.empty
+    assert agent_policy.verdict([_scored(0.02), _scored(0.4)], gate) == agent.FallbackReason.weak
+    assert agent_policy.verdict([_scored(0.02), _scored(0.91)], gate) is None
+    assert agent_policy.verdict([_scored(0.02)], agent.Gate(signal=agent.GateSignal.cross_encoder)) is None
 
 
 def test_weak_retrieval_opens_the_toolbox_and_drops_the_junk_context(monkeypatch):
@@ -305,28 +239,6 @@ def test_agent_choice_exposes_remote_tools_from_the_first_hop(monkeypatch):
     agent.run("q", max_hops=2, fallback_policy="agent_choice")
 
     assert seen_tools == [["search_corpus", "deepwiki__ask_question"]]
-
-
-def test_apply_turn_records_the_tool_error_kind(monkeypatch):
-    monkeypatch.setattr(
-        agent_tools,
-        "dispatch",
-        lambda name, args, **kw: agent_tools.ToolResult(
-            content=f"{errors.ERROR_PREFIX}tool 'ask' failed (auth): HTTPStatusError",
-            meta={"error_kind": "auth"},
-        ),
-    )
-    result = agent.AgentResult()
-    turn = _turn(
-        tool_calls=[_tool_call("a", "deepwiki__ask_question", "{}")],
-        message={"role": "assistant"},
-    )
-
-    agent._apply_turn(turn, [], result)
-
-    assert result.tool_errors == {"deepwiki__ask_question": "auth"}
-    assert result.sources == []
-    assert result.fallback_reason == agent.FallbackReason.none
 
 
 def test_dispatch_routes_extra_tools():
@@ -420,7 +332,7 @@ def test_a_narrated_tool_call_gets_one_nudge(monkeypatch):
 
     result = agent.run("q", max_hops=4, fallback_policy="agent_choice")
 
-    assert agent.TOOL_CALL_NUDGE in [m.get("content") for m in result.messages]
+    assert agent_policy.TOOL_CALL_NUDGE in [m.get("content") for m in result.messages]
     assert result.text == "real answer"
 
 
@@ -430,7 +342,7 @@ def test_plain_final_answer_is_not_nudged(monkeypatch):
 
     result = agent.run("q", max_hops=4, fallback_policy="agent_choice")
 
-    assert agent.TOOL_CALL_NUDGE not in [m.get("content") for m in result.messages]
+    assert agent_policy.TOOL_CALL_NUDGE not in [m.get("content") for m in result.messages]
     assert result.text == "the corpus says hello"
 
 
@@ -662,7 +574,7 @@ def test_the_nudge_also_covers_the_corpus_tool(monkeypatch):
 
     result = agent.run("q", max_hops=3)
 
-    assert agent.TOOL_CALL_NUDGE in [m.get("content") for m in result.messages]
+    assert agent_policy.TOOL_CALL_NUDGE in [m.get("content") for m in result.messages]
     assert result.text == "real answer"
 
 
@@ -889,3 +801,26 @@ def test_an_off_topic_question_loses_its_context_even_when_the_gate_disagrees(mo
     assert result.fallback_reason == agent.FallbackReason.off_topic
     assert result.sources == []
     assert result.dropped_sources == ["s.md"]
+
+
+def test_stages_add_up_per_call():
+    result = agent.AgentResult()
+    import time as _time
+
+    start = _time.perf_counter()
+    result.took("model", start)
+    result.took("model", start)
+    result.took("topic", start)
+
+    assert result.stages["model"]["calls"] == 2
+    assert result.stages["topic"]["calls"] == 1
+    assert result.stages["model"]["ms"] >= 0
+
+
+def test_server_timings_are_taken_only_when_reported():
+    result = agent.AgentResult()
+    result.note_server_timings({"prompt_eval_duration": 31_282_000, "eval_duration": 49_192_000})
+    result.note_server_timings({})
+
+    assert result.stages["prefill"] == {"ms": 31, "calls": 1}
+    assert result.stages["decode"] == {"ms": 49, "calls": 1}
