@@ -202,6 +202,14 @@ def unload(role="embedding", model=None):
         log.warning("llm.unload_failed", model=name, error=str(e))
 
 
+# an empty generate loads the weights and answers nothing
+def load_into_memory(role="generation", model=None) -> dict:
+    name = model or resolve_name(role)
+    _post_request("/api/generate", {"model": name})
+    log.info("llm.loaded", model=name)
+    return {"model": name, "context_length": server_context_length(name)}
+
+
 def delete_model(model):
     response = requests.delete(
         f"{LLM_BASE}/api/delete", json={"model": model}, timeout=_HTTP_TIMEOUT
