@@ -344,7 +344,7 @@ def main() -> int:
             "query_lang": config.settings.retrieval.query_lang,
         },
         "questions": len(rows),
-        "questions_hash": hashlib.md5(ids.encode()).hexdigest()[:12],
+        "questions_hash": hashlib.md5(ids.encode(), usedforsecurity=False).hexdigest()[:12],
         "fingerprint": fingerprint,
         "policy": config.settings.corpus.policy(variant),
         "file": summarise(rows, "file"),

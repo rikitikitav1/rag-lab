@@ -70,7 +70,9 @@ def _provision_source(session, source, variant) -> DataSource:
 
 # whitespace must not decide whether two repositories hold the same answer
 def _body_hash(body: str) -> str:
-    return hashlib.md5(re.sub(r"\s+", " ", body).strip().encode()).hexdigest()
+    normalised = re.sub(r"\s+", " ", body).strip().encode()
+    # a content fingerprint for deduplication, never a credential
+    return hashlib.md5(normalised, usedforsecurity=False).hexdigest()
 
 
 def _chunk(source_id, doc, variant) -> DataChunk:
