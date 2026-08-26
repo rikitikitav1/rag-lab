@@ -33,8 +33,7 @@ logs -> judge
 judge -> agg: live trigger on\nlast run judged
 agg -> results
 
-note: |md
-  Retrieval axes (hit@k, MRR) stay out of the
-  composite: hit@k is monotonic in k and
-  would confound the fusion.
-|
+note: "hit@k and MRR stay out of the composite:\nhit@k grows with k and would confound it" {
+  near: bottom-center
+  style.stroke-dash: 3
+}

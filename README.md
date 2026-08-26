@@ -86,6 +86,7 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 | `RERANK_DEVICE` | `cuda` (worker), `cpu` (API) | Where the cross-encoder runs. The asymmetry is deliberate: eval runs rerank in a phase that owns the card, while interactive answers share it with ollama, and a reranker resident there would evict the generator on every question. `auto` picks cuda when a card is visible; CUDA OOM falls back to CPU with a warning. |
 | `LLM_TIMEOUT` | `120` | Seconds per completion. A 70b model on CPU needs minutes; the default kills such runs mid-flight. |
 | `WORKER_RERANK_DEVICE` | `cpu` | Where the worker runs the cross-encoder. The corpus-first gate scores a handful of pairs per question, and on this card a resident reranker fights ollama for VRAM during agent runs; the phased eval path sets `cuda` explicitly when it owns the GPU. |
+| `OLLAMA_CONTEXT_LENGTH` | `8192` | Context window the server loads models with. Ollama defaults to 4096 and drops whole messages to fit, reporting the trimmed count, so an over-long prompt never appears as a number above the window. The longest single hop ever logged here is 4075 tokens, so 8192 covers it twice over. Raising it costs VRAM for the KV cache and the embedder shares the card: at 14336 the two evict each other on every switch (112 model loads and 16s per question against 12 loads and 4s). After a change, check `llm.model_spilled_to_cpu` in the log, and note that the run snapshot records the window the server reports rather than this value. |
 | `WORKER_QUEUES` | `default,io` | Queue lanes the worker serves, one thread each. Network and disk jobs (model pulls, MCP health) live on `io` so they never wait behind GPU work. |
 | `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
 
@@ -248,6 +249,27 @@ The same run says something less comfortable: **no policy ever refuses.** On the
 Coverage and topic are different questions, and the run above answers only the first. `agent.topic_threshold` adds the second: the distance from the question to the nearest chunk in the corpus, computed before any tool is offered. Above 0.50 the question is not ours, no external tool is admitted, whatever retrieval returned is dropped, and the run answers with a refusal instead. Measured against the same pools: refusals on the off-domain hundred go from 11 to 50 (paired, p<0.001), false refusals on in-corpus paraphrases stay at 0 of 100, and external questions turning into refusals instead of tool calls move from 7 to 9 of 100 (p=0.77). Both limits were written down before the run. The price shows up on hand-written questions rather than paraphrases: 4 answers of 30 are lost there, two refused and two replaced by a bare "no documents found".
 
 The half that does not work is the more interesting one. The catch is 11 → 49 of 83 on distant topics (cooking, chemistry, law) and 0 → 1 of 17 on legacy stacks and post-cutoff technology: to a distance metric, FoxPro and Postgres are the same topic. Those questions are not off-topic, they are inside the topic and outside the corpus, which is coverage plus recency and needs a different mechanism. Numbers, the veto rules and the threshold that first measured nothing at all: [the journal entry](docs/experiments/2026-08-25_a-refusal-at-last-and-the.md).
+
+### Four ways to write the same agent
+
+The loop above is hand-rolled: our own hop counter, our own dispatch, the coverage gate stitched between the turns. `orchestrator` selects which implementation runs it, and every one of them fills the same `AgentResult`, so logging, the judge and the metrics cannot tell them apart.
+
+| `orchestrator` | implementation | what it applies |
+|---|---|---|
+| `agent` (default) | the hand-rolled loop, `app/use_cases/agent.py` | everything |
+| `langgraph_ported` | `StateGraph`, `app/orchestrators/graph.py` | everything, node for node |
+| `langgraph_middleware` | `create_agent` plus our policies as middleware hooks, `app/orchestrators/middleware.py` | everything, expressed the way the framework wants it |
+| `langgraph_idiomatic` | bare `create_agent`, `app/orchestrators/react.py` | tool admission and the topic axis (they run before the branch point), no coverage gate, no context drop, no fallback notice, no nudge, no final turn without tools |
+
+![The ported agent graph, generated from the compiled graph](docs/diagrams/agent_graph.svg)
+
+The graph picture is generated from the compiled graph by `scripts/graph_to_d2.py`, and CI fails if the committed drawing no longer matches the code.
+
+`/v1/question-log?orchestrator=langgraph_ported` slices the logs by implementation, the same way `fallback_policy` and `fallback_reason` do.
+
+The policies themselves live in `app/use_cases/agent_policy.py` as plain functions, and all four call the same ones. What differs is the harness, which is the point: it makes "what does the standard cost" a measurable question rather than an opinion. Two things do not survive the move to the standard tool contract, and both are recorded rather than hidden: error kinds (`timeout`, `auth`, `tool`, ...) collapse into success-or-error, and the bare arm has no final turn, so a question that wants a fifth hop ends without an answer instead of with a refusal.
+
+Two implementation notes worth stealing. Under `corpus_first` the withheld external tools have to be refused at dispatch, not merely hidden from the model: the standard tool node is built once from the full tool list, so narrowing what the model sees does not stop a call the model invents. And the fallback notice rides in the tool result rather than in a system message, for the template reason described above.
 
 ## How it is built
 

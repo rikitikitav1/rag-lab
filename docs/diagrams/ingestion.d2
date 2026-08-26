@@ -1,15 +1,15 @@
 direction: down
 
-trigger: "index_data job (bootstrap when corpus is empty, or on demand)"
+trigger: "index_data job\n(bootstrap when the corpus is empty, or on demand)"
 
 sources: Source registry (reader pattern) {
   direction: right
   notes: notes\nmarkdown, ru
   interview: Devinterview repos\n~170 x README, en
-  hooks: "each source class: discover / category_for / read / postprocess"
+  hooks: "each source class:\ndiscover / category_for / read / postprocess"
 }
 
-idem: "Idempotent per source: upsert data_source by name, delete its old chunks"
+idem: "Idempotent per source: upsert data_source by name,\ndelete its old chunks"
 
 chunk: chunk_markdown\nsplit by H2 + recursive\nmax 1024 chars
 cat: "path -> ltree category"

@@ -19,7 +19,7 @@ hop1: "Hop 1: LLM sees search_corpus only" {
   shape: hexagon
 }
 search: search_corpus
-gate: "Coverage gate, once per turn\ncorpus_first: any rows above the distance threshold\ncorpus_first_weak, gate_signal:\ndistance (default): best hit's vector distance <= weak_distance\ncross_encoder: best of the top 5 >= weak_threshold\neither: weak when one of the two says so" {
+gate: "Coverage gate, once per turn\ncorpus_first: any rows above the distance threshold\ncorpus_first_weak, gate_signal:\ndistance (default): best hit's vector distance\n  <= weak_distance\ncross_encoder: best of the top 5 >= weak_threshold\neither: weak when one of the two says so" {
   style.fill: "#fff3cd"
 }
 answer_corpus: Answer from corpus\nsources = chunks {
