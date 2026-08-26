@@ -44,8 +44,7 @@ lab.worker.default -> lab.ollama: generate / judge / embed
 lab.worker.io -> lab.ollama: model pull / delete\n(ollama downloads from hf.co / registry)
 lab.api -> lab.ollama: chat, agent hops
 
-lab.api -> external: discover / probe
 lab.worker.io -> external: health jobs
-lab.api -> external: agent tool calls\n(namespaced integration__tool) {
+lab.api -> external: discover / probe /\nagent tool calls (namespaced integration__tool) {
   style.stroke-width: 3
 }
