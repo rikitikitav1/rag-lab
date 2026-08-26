@@ -10,6 +10,7 @@ This is a **showcase lab**: a bench for practicing LLM/RAG engineering approache
 
 ## What it is
 
+- **Corpus variants**: the same corpus can hold several chunkings side by side, each with its own partial vector index and its own policy in the run snapshot. Re-indexing stops being a one-way border and becomes a swept parameter (see [the entry](docs/experiments/2026-08-26_a-corpus-you-can-keep-two-of.md)).
 - **Hybrid retrieval**: vector search (pgvector) + full-text (Postgres FTS with per-language stemming), fused via **RRF** (Reciprocal Rank Fusion). Filter by hierarchical categories (ltree), a distance threshold with an honest refusal on out-of-corpus questions.
 - **Local models** through Ollama, keyed by role: generation, embeddings (`bge-m3`), LLM judge. A role is decoupled from a concrete model: which model serves a role lives in the DB and can be switched at runtime.
 - **Multi-source**, one taxonomy: personal notes (ru) + Devinterview-io interview repos (en, ~170 repos). Per-source ingestion strategies.
@@ -28,17 +29,18 @@ Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg)
 
 - **Model / ModelRole**: `Model` (name + status: available/loading/ready), `ModelRole` (role as PK → one model per role by construction, FK `ON DELETE RESTRICT` so the DB refuses to delete an assigned model). The resolver `llm.resolve_name(role)` reads the name from the DB, inference params come from `config.yaml`.
 - **Prompt**: versioned in the DB (`purpose` + `version`, exactly one `active` per purpose). Prompt sources are files in `prompts/` (format `<purpose>.v<N>.txt`), the seed loads them into the DB, the freshest version becomes active.
-- **Bootstrap on startup** (idempotent): ensure Model rows from config → seed roles → reconcile with Ollama (not pulled → status `loading` + a pull job) → enqueue indexing if the corpus is empty → enqueue embedding of questions without a vector.
+- **Bootstrap on startup** (idempotent): ensure Model rows from config → seed roles → reconcile with Ollama (not pulled → status `loading` + a pull job) → enqueue indexing only if the database holds no corpus variant at all → enqueue embedding of questions without a vector, unless such a job is already queued. A named but empty variant is logged, not indexed: indexing a variant is a deliberate, measured step.
 
 ## Configuration
 
 Everything tunable lives in **`config.yaml`** (mounted into the container):
 
 - `llm.roles` - model + `options` per role (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` - models to pull but not assign.
-- `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, candidate limits.
+- `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, candidate limits, and the keyword-leg switches `keyword_query` (`and` joins every lexeme, `or` fires on any), `keyword_rank`, `keyword_norm`, `query_lang` (`langdetect` or `cyrillic_ratio`). Their values were picked by measurement and are recorded in every run's snapshot.
 - `service.rerank` - `enabled`, `model`, `candidates`, `top`.
 - `service.agent` - `max_hops` (agent hop cap), `fallback_policy` (`corpus_first` / `corpus_first_weak` / `agent_choice`), `gate_signal` (what calls retrieval weak: `distance`, `cross_encoder` or `either`) with its thresholds `weak_distance` and `weak_threshold`, `gate_candidates` (how many hits the cross-encoder scores), `topic_threshold` (the topic axis: distance to the nearest chunk above which the run refuses instead of reaching out, 0.50 by default, `0` in a run switches it off).
 - `service.ingestion` - `chunk_max_size`, `batch_size`, `commit_size`.
+- `service.corpus` - `description`, `variant` (which corpus variant everything reads by default) and `variants` (the chunking policy of each, recorded in run snapshots).
 - `service.sources` - sources (interview repos and their base_url).
 - `postgres` - DB connection.
 
@@ -124,7 +126,7 @@ Eval platform:
 
 ![Eval pipeline](docs/diagrams/eval_pipeline.svg)
 
-A single run does not loop per question: it goes through phases so each stage owns the GPU alone, which is what makes reranking affordable in bulk.
+A single run does not loop per question: it goes through phases so each stage owns the GPU alone, which is what makes reranking affordable in bulk. Per question the loop needed the embedder, then the reranker, then the generator, and the three do not fit in 8 GB together, so ollama evicted and reloaded a model on every single question. Phases cost two model swaps per run instead of two per question, and the reranker finally gets a real batch: 44 s for 100 questions on the card against about 16 min on CPU.
 
 ![Phases inside one eval run](docs/diagrams/phased_run.svg)
 
