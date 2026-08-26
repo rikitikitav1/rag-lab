@@ -12,10 +12,12 @@ from sqlalchemy import select
 
 LLM_BASE = config.settings.llm.base_url
 
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
+
 _client = OpenAI(
     base_url=f"{LLM_BASE}/v1",
     api_key="ollama",
-    timeout=float(os.getenv("LLM_TIMEOUT", "120")),
+    timeout=LLM_TIMEOUT,
     max_retries=1,
 )
 
@@ -131,8 +133,45 @@ def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
 
 
+# the server reports the window it actually loaded, which is not always the one in our config
+def server_context_length(model: str) -> int | None:
+    try:
+        loaded = _get_request("/api/ps").get("models") or []
+    except Exception as e:  # a probe must not break a run
+        log.warning("llm.ps_failed", error=str(e))
+        return None
+    # the full tag, or llama3.1:8b would read the window of a loaded llama3.1:70b
+    wanted = {model, f"{model}:latest"}
+    for entry in loaded:
+        if entry.get("name") in wanted:
+            return entry.get("context_length")
+    return None
+
+
 def list_models():
     return [m["name"] for m in _get_request("/api/tags")["models"]]
+
+
+# a model that does not fit spills to the CPU and the run gets slower, never louder
+def warn_if_models_do_not_fit() -> list[str]:
+    try:
+        loaded = _get_request("/api/ps").get("models") or []
+    except Exception as e:  # a probe must not break startup
+        log.warning("llm.ps_failed", error=str(e))
+        return []
+    spilled = []
+    for model in loaded:
+        size, in_vram = model.get("size") or 0, model.get("size_vram") or 0
+        if size and in_vram < size:
+            spilled.append(model.get("name", "?"))
+            log.warning(
+                "llm.model_spilled_to_cpu",
+                model=model.get("name"),
+                size_mb=round(size / 2**20),
+                vram_mb=round(in_vram / 2**20),
+                context=config.settings.llm.context_length,
+            )
+    return spilled
 
 
 def request_embeddings_batch(texts, role="embedding"):
