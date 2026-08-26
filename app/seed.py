@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 import os
@@ -145,19 +146,73 @@ def _question_rows() -> list[dict]:
     return rows
 
 
+EXPORTED_SETS = Path("datasets/questions")
+
+
+# a paraphrase is worthless without its original: the section-level gold comes from that link
+def _exported_rows() -> list[dict]:
+    answers = _reference_answers()
+    rows = []
+    for file in sorted(EXPORTED_SETS.glob("*.tsv")):
+        with file.open(encoding="utf-8", newline="") as fh:
+            # csv, not split: the writer quotes fields containing quotes, and a naive split keeps them
+            reader = csv.DictReader(fh, delimiter="\t")
+            for row in reader:
+                origin = row.get("source_question_text") or None
+                rows.append(
+                    {
+                        "text_hash": _text_hash(row["original_text"]),
+                        "original_text": row["original_text"],
+                        "set_name": row["set_name"] or None,
+                        "language": row["language"] or None,
+                        "kind": row["kind"] or None,
+                        "marked_sources": [s for s in row["marked_sources"].split(",") if s],
+                        "reference_answer": answers.get(origin or row["original_text"]),
+                        # every row carries the key, or the insert would drop it for the whole batch
+                        "source_question_id": None,
+                        "_source_text": origin,
+                    }
+                )
+    return rows
+
+
+def _link_originals(session, rows: list[dict]) -> None:
+    wanted = {r["_source_text"] for r in rows if r["_source_text"]}
+    if not wanted:
+        return
+    ids = dict(
+        session.execute(
+            select(Question.text_hash, Question.id).where(
+                Question.text_hash.in_([_text_hash(t) for t in wanted])
+            )
+        ).all()
+    )
+    for row in rows:
+        origin = row.pop("_source_text", None)
+        if origin:
+            row["source_question_id"] = ids.get(_text_hash(origin))
+
+
+def _insert_questions(session, rows: list[dict]) -> None:
+    size = config.settings.ingestion.commit_size
+    for i in range(0, len(rows), size):
+        stmt = pg_insert(Question).values(
+            rows[i : i + size]
+        ).on_conflict_do_nothing(index_elements=["text_hash"])
+        session.execute(stmt)
+        session.commit()
+
+
 def seed_questions() -> None:
     rows = _question_rows()
-    if not rows:
-        return
-    size = config.settings.ingestion.commit_size
     with Session() as session:
-        for i in range(0, len(rows), size):
-            stmt = pg_insert(Question).values(
-                rows[i : i + size]
-            ).on_conflict_do_nothing(index_elements=["text_hash"])
-            session.execute(stmt)
-            session.commit()
-    log.info("seed.questions", total=len(rows))
+        if rows:
+            _insert_questions(session, rows)
+        exported = _exported_rows()
+        if exported:
+            _link_originals(session, exported)
+            _insert_questions(session, exported)
+    log.info("seed.questions", total=len(rows), exported=len(exported))
 
 
 MCP_INTEGRATIONS = [

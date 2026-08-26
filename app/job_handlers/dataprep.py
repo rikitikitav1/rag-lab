@@ -15,6 +15,8 @@ def paraphrase_questions(options: dict) -> None:
         options.get("limit", 100),
         source=options.get("source"),
         set_name=options.get("set_name", "paraphrased"),
+        seed=options.get("seed", ""),
+        per_source=options.get("per_source"),
     )
     log.info("paraphrase_questions.done", made=made)
     job_queue.enqueue("embed_questions", {})
