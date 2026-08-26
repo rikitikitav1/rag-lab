@@ -41,6 +41,7 @@ def _answer_one(
     gate_signal: str | None,
     weak_distance: float | None,
     topic_threshold: float | None,
+    orchestrator: str | None,
 ) -> None:
     if pipeline == Pipeline.agent:
         agent.run(
@@ -55,6 +56,7 @@ def _answer_one(
             gate_signal=gate_signal,
             weak_distance=weak_distance,
             topic_threshold=topic_threshold,
+            orchestrator=orchestrator,
         )
     elif pipeline == Pipeline.single_shot:
         chat.answer(
@@ -83,16 +85,30 @@ def _run_sequential(
     gate_signal: str | None,
     weak_distance: float | None,
     topic_threshold: float | None,
+    orchestrator: str | None,
     job_id: int | None,
+    allow_cpu: bool,
 ) -> tuple[int, bool]:
     answered = 0
     for text in texts:
         if job_id is not None and job_queue.is_cancelled(job_id):
             return answered, True
+        # after the first answer the generator is loaded, so a spill is finally visible
+        if answered == 1:
+            llm.warn_if_models_do_not_fit()
+            # nothing in vram means the card is gone, and a CPU run compares to nothing
+            off_card = llm.models_off_the_card()
+            if off_card and not allow_cpu:
+                raise RuntimeError(
+                    f"models are not on the GPU: {', '.join(off_card)}."
+                    " Pass allow_cpu if this run is meant to measure the CPU"
+                )
+            if off_card:
+                log.warning("eval_run.cpu_allowed", models=off_card)
         try:
             _answer_one(
                 text, run_name, use_rerank, pipeline, language, k, max_hops, model,
-                fallback_policy, gate_signal, weak_distance, topic_threshold,
+                fallback_policy, gate_signal, weak_distance, topic_threshold, orchestrator,
             )
             answered += 1
         except Exception as e:
@@ -231,8 +247,10 @@ def run(
     gate_signal: str | None = None,
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
+    orchestrator: str | None = None,
     job_id: int | None = None,
     phased: bool | None = None,
+    allow_cpu: bool = False,
 ) -> int:
     pipeline = Pipeline(pipeline)
     texts = _target_texts(set_name, question_ids)
@@ -248,7 +266,8 @@ def run(
     else:
         answered, cancelled = _run_sequential(
             texts, run_name, use_rerank, pipeline, language, k, max_hops, model,
-            fallback_policy, gate_signal, weak_distance, topic_threshold, job_id,
+            fallback_policy, gate_signal, weak_distance, topic_threshold, orchestrator,
+            job_id, allow_cpu,
         )
     if not cancelled:
         job_queue.enqueue("judge_answers", {"run_name": run_name})
