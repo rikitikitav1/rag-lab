@@ -45,6 +45,14 @@ def summarize(logs) -> dict:
     }
 
 
+def _client(logs) -> str | None:
+    for ql in logs:
+        orchestrator = ((ql.metrics or {}).get("config") or {}).get("orchestrator") or {}
+        if orchestrator.get("client"):
+            return orchestrator["client"]
+    return None
+
+
 def paired(left, right, axis) -> dict:
     by_question = {ql.question_id: ql for ql in left if ql.question_id is not None}
     pairs = []
@@ -86,6 +94,9 @@ def compare(runs: dict[str, list]) -> dict:
             {
                 "left": left,
                 "right": right,
+                # a pair that also swaps the model client measures two changes, not one
+                "isolates_orchestrator": _client(by_pool[left][pool])
+                == _client(by_pool[right][pool]),
                 **{
                     axis: paired(by_pool[left][pool], by_pool[right][pool], axis)
                     for axis in AXES

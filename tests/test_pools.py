@@ -47,6 +47,16 @@ def test_an_error_at_the_hop_cap_is_exhaustion_not_a_crash():
     assert pools.outcome(crashed) == "error"
 
 
+def test_a_guard_that_fired_stays_an_error_at_the_same_hop_count():
+    guarded = _log(
+        answer="",
+        metrics={"outcome": "error", "hops": 5, "failed": True, "config": {"max_hops": 4}},
+    )
+    spent = _log(answer="", metrics={"outcome": "error", "hops": 5, "config": {"max_hops": 4}})
+    assert pools.outcome(guarded) == "error"
+    assert pools.outcome(spent) == "exhausted"
+
+
 def test_an_answer_without_sources_is_unsupported_not_answered():
     assert pools.outcome(_log(sources=["a.md"])) == "answered"
     assert pools.outcome(_log()) == "unsupported_answer"

@@ -44,6 +44,8 @@ def eval_run(options: dict) -> None:
         fallback_policy=options.get("fallback_policy"),
         gate_signal=options.get("gate_signal"),
         weak_distance=options.get("weak_distance"),
+        orchestrator=options.get("orchestrator"),
+        allow_cpu=bool(options.get("allow_cpu")),
         topic_threshold=options.get("topic_threshold"),
         job_id=options.get("_job_id"),
     )

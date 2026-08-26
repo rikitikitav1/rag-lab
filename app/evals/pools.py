@@ -17,7 +17,11 @@ def outcome(ql) -> str:
     if recorded in ("narrated_call", "exhausted"):
         return recorded
     config = metrics.get("config") or {}
-    exhausted = metrics.get("hops") is not None and metrics["hops"] >= config.get("max_hops", 4)
+    exhausted = (
+        metrics.get("hops") is not None
+        and metrics["hops"] >= config.get("max_hops", 4)
+        and not metrics.get("failed")
+    )
     if recorded == "error":
         return "exhausted" if exhausted else "error"
     return outcomes.classify(

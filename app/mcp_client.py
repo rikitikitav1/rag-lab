@@ -1,6 +1,7 @@
 import time
 from dataclasses import dataclass
 
+import anyio
 import config
 import errors
 import httpx
@@ -35,9 +36,14 @@ def classify(exc: BaseException, depth: int = 0) -> str:
         return "timeout"
     if isinstance(exc, httpx.ConnectError | OSError):
         return "connect"
+    # the stream dies in the writer task, so the real status lands in a traceback we never see
+    if isinstance(exc, anyio.BrokenResourceError | anyio.ClosedResourceError):
+        return "connect"
     cause = exc.__cause__ or exc.__context__
     if cause is not None and depth < 5:
         return classify(cause, depth + 1)
+    if depth == 0:
+        log.warning("mcp.unclassified_error", type=type(exc).__name__, error=repr(exc)[:200])
     return "unknown"
 
 

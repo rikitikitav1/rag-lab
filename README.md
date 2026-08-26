@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/rikitikitav1/rag-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/rikitikitav1/rag-lab/actions/workflows/ci.yml)
 
-A RAG system over a personal knowledge base and external IT repositories. It answers technical questions and returns the sources it retrieved. Built **from primitives** (no LangChain/LlamaIndex) on **local inference** (Ollama on a single GPU, via the OpenAI-compatible protocol).
+A RAG system over a personal knowledge base and external IT repositories. It answers technical questions and returns the sources it retrieved. Retrieval is built **from primitives** (no framework); the agent was built from primitives too, then ported to **LangGraph** and the port was measured against the original before the original was retired (see [the entry](docs/experiments/2026-08-26_the-same-agent-written-four-ways.md)). Inference is **local** (Ollama on a single GPU).
 
 This is a **showcase lab**: a bench for practicing LLM/RAG engineering approaches by hand (retrieval, LLM-as-judge eval, model lifecycle, reranking, async queues) and showing results as numbers. Not a production service, a playground for approaches.
 
@@ -16,7 +16,7 @@ This is a **showcase lab**: a bench for practicing LLM/RAG engineering approache
 - **Eval bench, 5 quality axes**: retrieval (hit@k / MRR), faithfulness (is the answer grounded in the context), relevance (does it answer to the point), completeness (does it cover the reference answer), refusal accuracy, all via **LLM-as-judge** with structured output. Scores are reported per pool: answers grounded in the corpus, answers grounded in an external tool (`remote_grounding` measures grounding in what the tool returned, not whether the tool was right), and refusals, alongside the answer rate and the share of answers with no support at all. A run also records an outcome per question (`answered`, `refused`, `unsupported_answer`, `narrated_call`, `error`), because counting an unsupported answer as a refusal flatters exactly the policy under test.
 - **Async job queue**: heavy operations (model pull/delete, corpus indexing, embedding the question bank) go to a Postgres-backed queue processed by a worker. The service depends only on Postgres: Ollama may be unavailable at startup, jobs defer/retry, the app does not crash.
 - **Reranking (opt-in)**: a cross-encoder (`bge-reranker-v2-m3`) on top of hybrid retrieval (retrieve-wide → rerank → narrow), toggled by a flag (per-request / per-run); A/B tested on a cross-lingual set.
-- **Agent (ReAct, from primitives)**: a hand-rolled tool-calling loop where the model decides when to search the corpus, may refine the query and multi-hop, then answers. Selectable as an eval pipeline (`pipeline: agent`) and benchmarked head-to-head against single-shot RAG (see the experiments log).
+- **Agent on LangGraph**: a tool-calling graph where the model decides when to search the corpus, may refine the query and multi-hop, then answers. It started as a hand-rolled loop; the loop and the graph were run against each other on the same questions, agreed within the bench's own noise, and the loop was dropped. The policies around the loop (coverage gate, topic axis, tool admission) stayed ours and are measured, not assumed. Selectable as an eval pipeline (`pipeline: agent`) and benchmarked head-to-head against single-shot RAG (see the experiments log).
 - **Route-driven eval platform**: generating non-circular eval sets (LLM paraphrase of interview questions + translation to ru), importing questions from a file, runs and judging, all bulk through the queue; observability via the request log (`question-log`) and jobs with `elapsed`.
 - **Layering**: transport-neutral `use_cases` → thin adapters (CLI / FastAPI REST).
 
@@ -37,7 +37,7 @@ Everything tunable lives in **`config.yaml`** (mounted into the container):
 - `llm.roles` - model + `options` per role (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` - models to pull but not assign.
 - `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, candidate limits.
 - `service.rerank` - `enabled`, `model`, `candidates`, `top`.
-- `service.agent` - `max_hops` (ReAct hop cap), `fallback_policy` (`corpus_first` / `corpus_first_weak` / `agent_choice`), `gate_signal` (what calls retrieval weak: `distance`, `cross_encoder` or `either`) with its thresholds `weak_distance` and `weak_threshold`, `gate_candidates` (how many hits the cross-encoder scores), `topic_threshold` (the topic axis: distance to the nearest chunk above which the run refuses instead of reaching out, 0.50 by default, `0` in a run switches it off).
+- `service.agent` - `max_hops` (agent hop cap), `fallback_policy` (`corpus_first` / `corpus_first_weak` / `agent_choice`), `gate_signal` (what calls retrieval weak: `distance`, `cross_encoder` or `either`) with its thresholds `weak_distance` and `weak_threshold`, `gate_candidates` (how many hits the cross-encoder scores), `topic_threshold` (the topic axis: distance to the nearest chunk above which the run refuses instead of reaching out, 0.50 by default, `0` in a run switches it off).
 - `service.ingestion` - `chunk_max_size`, `batch_size`, `commit_size`.
 - `service.sources` - sources (interview repos and their base_url).
 - `postgres` - DB connection.
@@ -86,6 +86,7 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 | `RERANK_DEVICE` | `cuda` (worker), `cpu` (API) | Where the cross-encoder runs. The asymmetry is deliberate: eval runs rerank in a phase that owns the card, while interactive answers share it with ollama, and a reranker resident there would evict the generator on every question. `auto` picks cuda when a card is visible; CUDA OOM falls back to CPU with a warning. |
 | `LLM_TIMEOUT` | `120` | Seconds per completion. A 70b model on CPU needs minutes; the default kills such runs mid-flight. |
 | `WORKER_RERANK_DEVICE` | `cpu` | Where the worker runs the cross-encoder. The corpus-first gate scores a handful of pairs per question, and on this card a resident reranker fights ollama for VRAM during agent runs; the phased eval path sets `cuda` explicitly when it owns the GPU. |
+| `OLLAMA_CONTEXT_LENGTH` | `8192` | Context window the server loads models with. Ollama defaults to 4096 and drops whole messages to fit, reporting the trimmed count, so an over-long prompt never appears as a number above the window. The longest single hop ever logged here is 4075 tokens, so 8192 covers it twice over. Raising it costs VRAM for the KV cache and the embedder shares the card: at 14336 the two evict each other on every switch (112 model loads and 16s per question against 12 loads and 4s). After a change, check `llm.model_spilled_to_cpu` in the log, and note that the run snapshot records the window the server reports rather than this value. |
 | `WORKER_QUEUES` | `default,io` | Queue lanes the worker serves, one thread each. Network and disk jobs (model pulls, MCP health) live on `io` so they never wait behind GPU work. |
 | `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
 
@@ -101,7 +102,7 @@ Health:
 Chat and search:
 - `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
 - `POST /v1/chat/fast_question` (retrieval only, no generation)
-- `POST /v1/agent/question` (ReAct agent answer; optional `max_hops`, `language`, `fallback_policy`, and `debug` for the full message trace)
+- `POST /v1/agent/question` (agent answer; optional `max_hops`, `language`, `fallback_policy`, and `debug` for the full message trace)
 - `GET /v1/categories` (category tree with chunk counts)
 
 ![Single-shot flow: hybrid retrieval, threshold, optional rerank](docs/diagrams/single_shot_flow.svg)
@@ -175,6 +176,14 @@ When the series is judged, `GET /v1/experiment/{id}` returns per-value metrics a
 
 The pairwise block is what keeps conclusions honest: an early version of this bench "concluded" k=5 beats k=10 from a composite-score gap in the third decimal - the paired test shows that comparison is a coin flip (p=0.37), and the corrected flags mark which of the 15 grid tests survive at all. See [docs/experiments.md](docs/experiments.md) for the cases where this reversed our own verdicts.
 
+Before a grid starts, `scripts/preflight_grid.py` refuses the ways a run silently stops meaning
+anything: a worker older than the newest source file (it holds its code in memory, unlike the API),
+a dirty tree (the commit recorded in the snapshot would name code that never ran), a context window
+the server disagrees with, models that are loaded but not on the GPU, a queue that is not empty.
+`--verify` checks a finished run instead: one row per question, the expected orchestrator, and every
+setting the arms have to share, from the corpus fingerprint to the prompt versions. Most of those
+checks exist because the corresponding trap had already cost a grid.
+
 Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment becomes a self-contained artifact: what was varied, on what data, the numbers, the verdict.
 
 Observability:
@@ -202,6 +211,8 @@ A second, separate ops server is mounted at `/mcp-ops` - an eval control plane k
 The lab is both sides of the protocol: its own MCP server above, and an MCP *client* below. External hosted MCP servers are registered as `McpIntegration` rows and their tools join the agent's toolbox next to `search_corpus`, namespaced `integration__tool` (e.g. `deepwiki__ask_question`). The agent decides per hop whether to look outside the corpus; a successful remote call is recorded as an `mcp:` source (provenance), a failed one degrades to an error string the agent can route around.
 
 ![Agent flow with remote fallback](docs/diagrams/agent_flow.svg)
+
+This is the policy flow, the same for every implementation of the loop. What executes it is the graph, and its picture is generated from the compiled graph itself: see [the implementations](#three-ways-to-run-the-same-agent-and-the-fourth-that-was-retired).
 
 Registry lifecycle via `/v1/mcp_integration`:
 - CRUD with filters; new integrations start `disabled`, a state machine (`disabled/active/unreachable`) separates operator intent from observed health (probes flip `active <-> unreachable`, never touch `disabled`).
@@ -249,6 +260,28 @@ Coverage and topic are different questions, and the run above answers only the f
 
 The half that does not work is the more interesting one. The catch is 11 → 49 of 83 on distant topics (cooking, chemistry, law) and 0 → 1 of 17 on legacy stacks and post-cutoff technology: to a distance metric, FoxPro and Postgres are the same topic. Those questions are not off-topic, they are inside the topic and outside the corpus, which is coverage plus recency and needs a different mechanism. Numbers, the veto rules and the threshold that first measured nothing at all: [the journal entry](docs/experiments/2026-08-25_a-refusal-at-last-and-the.md).
 
+### Three ways to run the same agent (and the fourth that was retired)
+
+The flow above started as a hand-rolled loop: our own hop counter, our own dispatch, the coverage gate stitched between the turns. It now runs on a graph, and `orchestrator` selects which implementation executes the same policies. Every one of them fills the same `AgentResult`, so logging, the judge and the metrics cannot tell them apart.
+
+| `orchestrator` | implementation | what it applies |
+|---|---|---|
+| `langgraph_ported` (default) | `StateGraph`, `app/orchestrators/graph.py` | everything |
+| `langgraph_middleware` | `create_agent` plus our policies as middleware hooks, `app/orchestrators/middleware.py` | everything, expressed the way the framework wants it |
+| `langgraph_idiomatic` | bare `create_agent`, `app/orchestrators/react.py` | tool admission and the topic axis (they run before the branch point), no coverage gate, no context drop, no fallback notice, no nudge, no final turn without tools |
+
+The loop itself is gone. It was kept only until the port was measured against it: same questions, same settings, and agreement within the bench's own noise on every key the pipeline reads. Keeping a second implementation of behaviour that is already pinned by tests buys nothing and costs a branch in every future change. Its runs are still in the log under `orchestrator=agent`, and the numbers are in [the entry](docs/experiments/2026-08-26_the-same-agent-written-four-ways.md).
+
+![The ported agent graph, generated from the compiled graph](docs/diagrams/agent_graph.svg)
+
+The graph picture is generated from the compiled graph by `scripts/graph_to_d2.py`, and CI fails if the committed drawing no longer matches the code.
+
+`/v1/question-log?orchestrator=langgraph_ported` slices the logs by implementation, the same way `fallback_policy` and `fallback_reason` do. The value `agent` is readable there and nowhere else: runs cannot ask for the retired loop.
+
+The policies themselves live in `app/use_cases/agent_policy.py` as plain functions, and both arms that carry policies call the same ones. What differs is the harness, which is the point: it makes "what does the standard cost" a measurable question rather than an opinion. Two things do not survive the move to the standard tool contract, and both are recorded rather than hidden: error kinds (`timeout`, `auth`, `tool`, ...) collapse into success-or-error, and the bare arm has no final turn, so a question that wants a fifth hop ends without an answer instead of with a refusal.
+
+Two implementation notes worth stealing. Under `corpus_first` the withheld external tools have to be refused at dispatch, not merely hidden from the model: the standard tool node is built once from the full tool list, so narrowing what the model sees does not stop a call the model invents. And the fallback notice rides in the tool result rather than in a system message, for the template reason described above.
+
 ## How it is built
 
 - `app/config.py` - `config.yaml` loader.
@@ -260,7 +293,8 @@ The half that does not work is the more interesting one. The catch is 11 → 49 
 - `app/bootstrap.py` - idempotent startup init.
 - `app/sources/` - per-source ingestion (reader pattern: `Base` ABC + sources).
 - `app/db.py` - hybrid search (raw SQL: pgvector `<=>`, FTS, ltree, RRF).
-- `app/use_cases/` - `chat` (retrieve/answer), `agent` (ReAct tool-calling loop), `index` (corpus build), `judge` (answer scoring), `experiment` (series aggregator + RRF composite).
+- `app/use_cases/` - `chat` (retrieve/answer), `agent` (policies, logging and the snapshot around the agent run), `agent_policy` (the policies themselves as plain functions), `index` (corpus build), `judge` (answer scoring), `experiment` (series aggregator + RRF composite).
+- `app/orchestrators/` - adapters to the framework: `graph` (StateGraph), `middleware` (our policies as hooks), `react` (bare `create_agent`). No langchain import reaches `use_cases`.
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
 - `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `list_jobs` / `cancel_job` over the eval platform.
@@ -272,4 +306,4 @@ The half that does not work is the more interesting one. The catch is 11 → 49 
 
 ## Status
 
-A learning project: the goal is to master RAG/LLM engineering by hand, from primitives. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 5-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform, MCP server).
+A learning project: the goal is to master RAG/LLM engineering by hand, from primitives, and where the industry has a standard, to move onto it and measure what the move costs. RAG from primitives (hybrid, ltree, FTS) + FastAPI server + 5-axis LLM-judge eval + production layer (uv packaging, central config, SQLAlchemy ORM sync+async, OpenAI-compatible client, role-keyed model lifecycle, prompt versioning, async job queue, question bank, reranking, route-driven eval platform, MCP server).

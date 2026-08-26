@@ -1,6 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
+import anyio
 import errors
 import httpx
 import mcp_client
@@ -188,6 +189,9 @@ def test_create_rejects_double_underscore_name(client):
         (httpx.ConnectTimeout("slow connect"), "timeout"),
         (httpx.ConnectError("refused"), "connect"),
         (ConnectionRefusedError(), "connect"),
+        # a 503 from the server kills the stream, and this is all that reaches the caller
+        (anyio.BrokenResourceError(), "connect"),
+        (anyio.ClosedResourceError(), "connect"),
         (ValueError("nonsense"), "unknown"),
     ],
 )

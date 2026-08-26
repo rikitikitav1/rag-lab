@@ -12,10 +12,12 @@ from sqlalchemy import select
 
 LLM_BASE = config.settings.llm.base_url
 
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
+
 _client = OpenAI(
     base_url=f"{LLM_BASE}/v1",
     api_key="ollama",
-    timeout=float(os.getenv("LLM_TIMEOUT", "120")),
+    timeout=LLM_TIMEOUT,
     max_retries=1,
 )
 
@@ -131,8 +133,63 @@ def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
 
 
+# the server reports the window it actually loaded, which is not always the one in our config
+def server_context_length(model: str) -> int | None:
+    try:
+        loaded = _get_request("/api/ps").get("models") or []
+    except Exception as e:  # a probe must not break a run
+        log.warning("llm.ps_failed", error=str(e))
+        return None
+    # the full tag, or llama3.1:8b would read the window of a loaded llama3.1:70b
+    wanted = {model, f"{model}:latest"}
+    for entry in loaded:
+        if entry.get("name") in wanted:
+            return entry.get("context_length")
+    return None
+
+
 def list_models():
     return [m["name"] for m in _get_request("/api/tags")["models"]]
+
+
+def residency() -> list[dict]:
+    try:
+        loaded = _get_request("/api/ps").get("models") or []
+    except Exception as e:  # a probe must not break a run
+        log.warning("llm.ps_failed", error=str(e))
+        return []
+    return [
+        {
+            "model": m.get("name", "?"),
+            "size_mb": round((m.get("size") or 0) / 2**20),
+            "vram_mb": round((m.get("size_vram") or 0) / 2**20),
+        }
+        for m in loaded
+        if m.get("size")
+    ]
+
+
+# a spill makes the run slower and never louder; nothing in vram at all means the card is gone
+def warn_if_models_do_not_fit() -> list[str]:
+    spilled, off_card = [], []
+    for entry in residency():
+        if entry["vram_mb"] >= entry["size_mb"]:
+            continue
+        spilled.append(entry["model"])
+        if entry["vram_mb"] == 0:
+            off_card.append(entry["model"])
+        log.warning(
+            "llm.model_spilled_to_cpu",
+            **entry,
+            context=config.settings.llm.context_length,
+        )
+    if off_card:
+        log.error("llm.gpu_unavailable", models=off_card)
+    return spilled
+
+
+def models_off_the_card() -> list[str]:
+    return [e["model"] for e in residency() if e["vram_mb"] == 0]
 
 
 def request_embeddings_batch(texts, role="embedding"):
@@ -161,6 +218,14 @@ def unload(role="embedding", model=None):
         _post_request("/api/generate", {"model": name, "keep_alive": 0})
     except Exception as e:
         log.warning("llm.unload_failed", model=name, error=str(e))
+
+
+# an empty generate loads the weights and answers nothing
+def load_into_memory(role="generation", model=None) -> dict:
+    name = model or resolve_name(role)
+    _post_request("/api/generate", {"model": name})
+    log.info("llm.loaded", model=name)
+    return {"model": name, "context_length": server_context_length(name)}
 
 
 def delete_model(model):

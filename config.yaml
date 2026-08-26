@@ -221,6 +221,9 @@ service:
         - xgboost-interview-questions
         - xml-interview-questions
 llm:
+  # what we expect OLLAMA_CONTEXT_LENGTH to be. Nothing here reaches the server: it is the
+  # number preflight compares against the live window, so the two drifting apart is visible
+  context_length: 8192
   base_url: http://ollama:11434
   roles:
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }

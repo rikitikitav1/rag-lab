@@ -1,6 +1,7 @@
 import re
 
 import job_queue
+import llm
 from crud import get_or_404
 from fastapi import APIRouter, Depends, HTTPException, Query
 from models.registry import Model, ModelRole, Status
@@ -83,6 +84,22 @@ async def create_model(
     session.add(model)
     job_queue.add_job(session, "pull_llm_model", {"name": request.name}, queue="io")
     return await commit_and_refresh(session, model)
+
+
+class LoadedResponse(BaseModel):
+    model: str
+    context_length: int | None
+
+    model_config = {"protected_namespaces": ()}
+
+
+@router.post("/{id}/load", response_model=LoadedResponse)
+async def load_model(id: int, session: AsyncSession = Depends(get_session)):
+    model = await get_or_404(Model, id, session)
+    try:
+        return llm.load_into_memory(model=model.name)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @router.delete("/{id}", response_model=ModelResponse)
