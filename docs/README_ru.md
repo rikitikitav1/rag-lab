@@ -38,7 +38,7 @@ Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg)
 Всё тюнингуемое вынесено в **`config.yaml`** (монтируется в контейнер):
 
 - `llm.roles` - модель + `options` на каждую роль (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` - модели, которые тоже скачать, но не назначить.
-- `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, лимиты кандидатов и тумблеры ключевой ноги: `keyword_query` (`and` требует все лексемы, `or` срабатывает на любую), `keyword_rank`, `keyword_norm`, `query_lang` (по умолчанию `function_words`, ещё `langdetect` и `cyrillic_ratio`), и глубина векторного индекса: `ef_search` плюс лестница и ворота, которыми эта глубина судится (`ef_ladder`, `recall_gate`, `max_mrr_loss`, `max_questions_lost`). Значения выбраны замером и пишутся в снапшот каждого прогона.
+- `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, лимиты кандидатов и тумблеры ключевой ноги: `keyword_query` (`and` требует все лексемы, `or` срабатывает на любую), `keyword_rank`, `keyword_norm`, `query_lang` (по умолчанию `function_words`, ещё `langdetect` и `cyrillic_ratio`), и глубина векторного индекса: `ef_search` плюс лестница и ворота, которыми эта глубина судится (`ef_ladder`, `recall_gate`, `max_mrr_loss`, `max_questions_lost`), плюс дымовой тест preflight, который говорит только «индекс жив» (`index_alive_recall`, `index_alive_questions`). Значения выбраны замером и пишутся в снапшот каждого прогона.
 - `service.rerank` - `enabled` (выключен; запрос или прогон просит явно), `model`, `candidates`, `top`.
 - `service.agent` - `max_hops` (кап хопов агента), `fallback_policy` (`corpus_first` / `corpus_first_weak` / `agent_choice`), `gate_signal` (что считает ретривал слабым: `distance`, `cross_encoder` или `either`) с порогами `weak_distance` и `weak_threshold`, `gate_candidates` (сколько результатов скорит кросс-энкодер), `topic_threshold` (ось темы: расстояние до ближайшего чанка, выше которого прогон отказывается вместо похода наружу, по умолчанию 0.50, ноль в прогоне её выключает).
 - `service.ingestion` - `chunk_max_size`, `batch_size`, `commit_size`.
@@ -110,7 +110,7 @@ curl -X POST localhost:8000/v1/chat/question \
 | `seed` | заливает промпты и банк вопросов, отрабатывает один раз после миграций |
 | `bootstrap` | готовит модели, роли и джобы индексации, отрабатывает до старта остальных |
 | `rag-lab` | FastAPI-сервер (uvicorn) |
-| `worker` | разбирает job-queue (pull/delete/index/build-vector-index/analyze-source/embed/paraphrase/eval/judge) |
+| `worker` | разбирает job-queue (pull/delete/index/build-vector-index/analyze-source/embed/paraphrase/eval/judge/compare-retrieval/mcp-health) |
 | `ollama` | локальный инференс на GPU |
 
 ### Переменные окружения
@@ -301,7 +301,7 @@ Auth интеграции описывается как `{"type": "bearer", "tok
 | `clean_1024` | `rooted` | тот же рез по размеру, но путь заголовков берётся из объявленного корня, frontmatter разобран, мусор выброшен. Изолирует гигиену источников от смены сплиттера |
 | `prefix_1024` | `structured` | то же плюс ещё один уровень: секция режется по подзаголовкам раньше, чем по размеру |
 
-Политика несёт всё правило целиком, поэтому вариант получает ровно ту нарезку, которую просит: `chunker`, `max_chunk_size`, `header_prefix` и `ceiling_on` (потолок считается по телу или вместе с префиксом), типизированные с `extra: forbid`, чтобы ключ, который никто не читает, ронял старт, а не читался как переключатель. Ничего не выбрасывается, не разбирается и не префиксуется без указания политики, а preflight перенарезает каждый проиндексированный вариант и сверяет **текст** каждого чанка с тем, что лежит в таблице: источник, у которого нарезка поменялась, вполне может сохранить прежнее число строк.
+Политика несёт всё правило целиком, поэтому вариант получает ровно ту нарезку, которую просит: `chunker`, `max_chunk_size` и `ceiling_on` (потолок считается по телу или вместе с префиксом), типизированные с `extra: forbid`, чтобы ключ, который никто не читает, ронял старт, а не читался как переключатель. `header_prefix` выводится из `chunker`, а не объявляется: два ключа, решающие одно, так и разъехались. Ничего не выбрасывается, не разбирается и не префиксуется без указания политики, а preflight перенарезает каждый проиндексированный вариант и сверяет **текст** каждого чанка с тем, что лежит в таблице: источник, у которого нарезка поменялась, вполне может сохранить прежнее число строк.
 
 `baseline → clean_1024` на 823 вопросах даёт **+0.0435 MRR по разделу**, все шесть интервалов не задевают ноль, отчёт на предрегистрированной половине.
 

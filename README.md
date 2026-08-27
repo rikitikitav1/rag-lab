@@ -38,7 +38,7 @@ From the LangChain family, three packages and nothing else: **langgraph** runs t
 Everything tunable lives in **`config.yaml`** (mounted into the container):
 
 - `llm.roles` - model + `options` per role (`generation` / `embedding` / `judging` / `paraphrasing`); `llm.candidates` - models to pull but not assign.
-- `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, candidate limits, and the keyword-leg switches `keyword_query` (`and` joins every lexeme, `or` fires on any), `keyword_rank`, `keyword_norm`, `query_lang` (`function_words` by default, also `langdetect` and `cyrillic_ratio`), and the depth of the vector index: `ef_search` plus the ladder and gates the depth is judged by (`ef_ladder`, `recall_gate`, `max_mrr_loss`, `max_questions_lost`). Their values were picked by measurement and are recorded in every run's snapshot.
+- `service.retrieval` - `distance_threshold`, `results_limit`, `rrf_k`, candidate limits, and the keyword-leg switches `keyword_query` (`and` joins every lexeme, `or` fires on any), `keyword_rank`, `keyword_norm`, `query_lang` (`function_words` by default, also `langdetect` and `cyrillic_ratio`), and the depth of the vector index: `ef_search` plus the ladder and gates the depth is judged by (`ef_ladder`, `recall_gate`, `max_mrr_loss`, `max_questions_lost`) and the preflight smoke test that only says the index is alive (`index_alive_recall`, `index_alive_questions`). Their values were picked by measurement and are recorded in every run's snapshot.
 - `service.rerank` - `enabled` (off; a request or a run asks for it), `model`, `candidates`, `top`.
 - `service.agent` - `max_hops` (agent hop cap), `fallback_policy` (`corpus_first` / `corpus_first_weak` / `agent_choice`), `gate_signal` (what calls retrieval weak: `distance`, `cross_encoder` or `either`) with its thresholds `weak_distance` and `weak_threshold`, `gate_candidates` (how many hits the cross-encoder scores), `topic_threshold` (the topic axis: distance to the nearest chunk above which the run refuses instead of reaching out, 0.50 by default, `0` in a run switches it off).
 - `service.ingestion` - `chunk_max_size`, `batch_size`, `commit_size`.
@@ -85,7 +85,7 @@ Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagram
 | `seed` | loads prompts and the question bank, runs once after migrations |
 | `bootstrap` | prepares models, roles and indexing jobs, runs to completion before the rest |
 | `rag-lab` | FastAPI server (uvicorn) |
-| `worker` | processes the job queue (pull/delete/index/build-vector-index/analyze-source/embed/paraphrase/eval/judge) |
+| `worker` | processes the job queue (pull/delete/index/build-vector-index/analyze-source/embed/paraphrase/eval/judge/compare-retrieval/mcp-health) |
 | `ollama` | local inference on GPU |
 
 ### Environment knobs
@@ -306,7 +306,7 @@ A corpus variant is a named cut of the same sources living beside the others, wi
 | `clean_1024` | `rooted` | the same size cut, but the heading path comes from a declared root, frontmatter is parsed and the junk is gone. Isolates source hygiene from the splitter |
 | `prefix_1024` | `structured` | the same again plus one more level: a section is cut by its subheadings before it is cut by size |
 
-The policy carries the whole rule, so a variant gets the cut it asks for and nothing else: `chunker`, `max_chunk_size`, `header_prefix` and `ceiling_on` (whether the ceiling counts the body alone or the prefix with it), typed with `extra: forbid` so a key nobody reads fails the start rather than reading as a switch. Nothing is dropped, parsed or prefixed unless a policy says so, and the preflight re-cuts every indexed variant and compares the text of each chunk against what the table holds, because a source that changed can keep its row count exactly.
+The policy carries the whole rule, so a variant gets the cut it asks for and nothing else: `chunker`, `max_chunk_size` and `ceiling_on` (whether the ceiling counts the body alone or the prefix with it), typed with `extra: forbid` so a key nobody reads fails the start rather than reading as a switch. `header_prefix` is derived from `chunker` rather than declared, because two keys deciding one thing is how they came to disagree. Nothing is dropped, parsed or prefixed unless a policy says so, and the preflight re-cuts every indexed variant and compares the text of each chunk against what the table holds, because a source that changed can keep its row count exactly.
 
 `baseline → clean_1024` on 823 questions is **+0.0435 section MRR** with all six intervals clear of zero, reported on the pre-registered half.
 

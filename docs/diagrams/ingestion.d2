@@ -10,7 +10,7 @@ sources: Source registry (reader pattern) {
   hooks: "each source class: discover / read\ncategory_for / section_root_for / postprocess"
 }
 
-policy: "Variant policy from config.yaml\nchunker, max_chunk_size, ceiling_on, header_prefix,\nboilerplate, frontmatter, parser, levels" {
+policy: "Variant policy from config.yaml\nchunker, max_chunk_size, ceiling_on\n(extra: forbid; header_prefix derived)" {
   shape: document
 }
 
@@ -24,7 +24,7 @@ cut: The cut {
     style.stroke-dash: 3
   }
   rooted: "rooted: root from section_root_for + H2,\nceiling on the body, prefix repeated whole"
-  structured: "structured: H2 -> H3 -> size,\nslivers merged into the neighbour beside them"
+  structured: "structured: H2 -> H3 -> size,\nslivers and pieces with no text join a neighbour,\nand the join is cut back by size"
   marks -> fallback: when unbalanced
   marks -> rooted
   marks -> structured
