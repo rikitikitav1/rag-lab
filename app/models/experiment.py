@@ -7,6 +7,14 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 
+# a comparison is an experiment of another kind: the dataset, the fixed question ids and
+# the state machine are the same, the unit of a run is not. Generation spends the card and
+# a judge; retrieval reads ranks, in minutes, with neither
+class ExperimentKind(StrEnum):
+    generation = "generation"
+    retrieval = "retrieval"
+
+
 class ExperimentStatus(StrEnum):
     draft = "draft"
     running = "running"
@@ -36,6 +44,9 @@ class Experiment(Base):
     status: Mapped[ExperimentStatus] = mapped_column(
         Enum(ExperimentStatus, native_enum=False), default=ExperimentStatus.draft
     )
+    kind: Mapped[ExperimentKind] = mapped_column(
+        Enum(ExperimentKind, native_enum=False), default=ExperimentKind.generation
+    )
     dataset: Mapped[str]
     sample_size: Mapped[int | None]
     sample_seed: Mapped[int | None]
@@ -44,6 +55,9 @@ class Experiment(Base):
     procedure: Mapped[dict] = mapped_column(JSONB, default=dict)
     param: Mapped[str]
     param_values: Mapped[list] = mapped_column(JSONB, default=list)
+    # every variable this comparison moves, {name: [values]}. param names the one it is
+    # reported along, and it has to be a key here or the headline disagrees with the grid
+    axes: Mapped[dict] = mapped_column(JSONB, default=dict)
     run_names: Mapped[list] = mapped_column(JSONB, default=list)
     results: Mapped[dict | None] = mapped_column(JSONB)
     conclusion: Mapped[str | None]

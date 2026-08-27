@@ -2,24 +2,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-@pytest.fixture
-def client(monkeypatch):
-    import bootstrap
-
-    monkeypatch.setattr(bootstrap, "bootstrap_models", lambda: None)
-
-    import server
-    from orm.async_db import get_session
-
-    async def _dummy_session():
-        yield None
-
-    server.app.dependency_overrides[get_session] = _dummy_session
-    with TestClient(server.app) as c:
-        yield c
-    server.app.dependency_overrides.clear()
-
-
 def test_agent_max_hops_zero_422(client):
     r = client.post("/v1/agent/question", json={"text": "x", "max_hops": 0})
     assert r.status_code == 422

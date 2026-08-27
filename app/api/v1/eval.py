@@ -3,9 +3,11 @@ import time
 from enum import StrEnum
 from typing import Literal
 
+import config
 import job_queue
 from evals import compare as compare_uc
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from models.eval import QuestionLog
 from models.registry import Pipeline
 from orm.async_db import commit_and_refresh, get_session
@@ -13,13 +15,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from use_cases.agent_policy import FallbackPolicy, GateSignal, Orchestrator
+from use_cases import retrieval_compare
+from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
+from use_cases.chat import resolve_rerank
 from use_cases.index import VARIANT_RE
 
-# the hand-rolled loop is gone: its value stays queryable in logs but cannot be asked for
+# what a run may ask for, which is not what a log may hold: both retired arms stay
+# queryable, and which they are is the domain's fact, declared in agent_policy
 RunnableOrchestrator = StrEnum(
     "RunnableOrchestrator",
-    {o.name: o.value for o in Orchestrator if o != Orchestrator.handrolled},
+    {o.name: o.value for o in Orchestrator if o not in GONE},
 )
 
 router = APIRouter(prefix="/eval", tags=["eval"])
@@ -39,6 +44,7 @@ class ParaphraseRequest(BaseModel):
     set_name: str = "paraphrased"
     seed: str = ""
     per_source: int | None = None
+    grow: bool = False
 
 
 class EvalRunRequest(BaseModel):
@@ -85,17 +91,23 @@ async def enqueue_paraphrase(
     request: ParaphraseRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    return await _enqueue(
-        session,
-        "paraphrase_questions",
-        {
-            "limit": request.limit,
-            "source": request.source,
-            "set_name": request.set_name,
-            "seed": request.seed,
-            "per_source": request.per_source,
-        },
-    )
+    from evals import build_paraphrased
+
+    options = {
+        "limit": request.limit,
+        "source": request.source,
+        "set_name": request.set_name,
+        "seed": request.seed,
+        "per_source": request.per_source,
+        "grow": request.grow,
+    }
+    # resolved at enqueue, not at run: the worker returns a stale job to the queue and
+    # a second pick would take a second helping of originals, which is how the set grew
+    # past its plan on 27.08. The list is also the recipe, readable in the queue
+    # plan() opens a sync session, so it goes to a thread: on the loop it blocks every
+    # other request for the length of that query
+    options["originals"] = await run_in_threadpool(build_paraphrased.plan, **options)
+    return await _enqueue(session, "paraphrase_questions", options)
 
 
 class MissItem(BaseModel):
@@ -185,7 +197,24 @@ async def eval_compare(
     return compare_uc.compare(loaded)
 
 
+# rules live beside `measure`, so AXES and the rules cannot name different sets
+def validate_axis_values(axis: str, values: list) -> None:
+    rule = retrieval_compare.AXIS_RULES.get(axis)
+    if rule is None:
+        raise HTTPException(status_code=400, detail=f"no rule for axis {axis!r}")
+    bad = [v for v in values if not rule(v)]
+    if bad:
+        detail = f"{axis} takes {retrieval_compare.AXIS_LIMITS[axis]}, got: {bad}"
+        if axis == "variant":
+            detail += f", declared: {sorted(config.settings.corpus.variants)}"
+        raise HTTPException(status_code=400, detail=detail)
+
+
 def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:
+    # the axis validator learned that declared is not measurable; this one swept `variant`
+    # over a corpus with no rows and reported the difference between something and nothing
+    if param == "variant":
+        validate_axis_values("variant", values)
     agent_only = (
         "fallback_policy", "max_hops", "gate_signal", "weak_distance", "topic_threshold",
         "orchestrator",
@@ -208,6 +237,15 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
             raise HTTPException(
                 status_code=400, detail=f"variant must match {VARIANT_RE.pattern}: {bad}"
             )
+        # the shape is not the question: an undeclared variant passes the regex and dies
+        # per question inside the runner, and whether it is declared is knowable here
+        declared = set(config.settings.corpus.variants)
+        missing = [v for v in values if v not in declared]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"no such variant in config: {missing}, declared: {sorted(declared)}",
+            )
     elif param in ("fallback_policy", "gate_signal", "orchestrator"):
         enums = {
             "fallback_policy": FallbackPolicy, "gate_signal": GateSignal,
@@ -215,7 +253,7 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
         }
         allowed = {p.value for p in enums[param]}
         if param == "orchestrator":
-            allowed -= {Orchestrator.handrolled.value}
+            allowed -= {o.value for o in GONE}
         bad = [v for v in values if v not in allowed]
         if bad:
             raise HTTPException(
@@ -248,7 +286,7 @@ async def enqueue_eval_run(
             "run_name": run_name,
             "set_name": request.set_name,
             "question_ids": request.question_ids,
-            "rerank": request.rerank,
+            "rerank": resolve_rerank(request.rerank),
             "k": request.k,
             "max_hops": request.max_hops,
             "model": request.model,
@@ -280,7 +318,7 @@ async def enqueue_experiment(
                 "run_name": f"{base}_{request.param}_{value_suffix(value)}",
                 "set_name": request.set_name,
                 "question_ids": request.question_ids,
-                "rerank": request.rerank,
+                "rerank": resolve_rerank(request.rerank),
                 "pipeline": request.pipeline.value,
                 "language": request.language,
                 request.param: value,

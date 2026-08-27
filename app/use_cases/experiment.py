@@ -6,7 +6,7 @@ from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
 from evals.stats import delta_stats as _delta_stats
 from models.eval import QuestionLog
-from models.experiment import Experiment, ExperimentStatus
+from models.experiment import Experiment, ExperimentKind, ExperimentStatus
 from orm.sync_db import Session
 from sqlalchemy import func, select, update
 
@@ -204,6 +204,7 @@ def try_aggregate_for_run(run_name: str) -> None:
         ids = list(
             session.scalars(
                 select(Experiment.id).where(
+                    Experiment.kind == ExperimentKind.generation,
                     Experiment.status == ExperimentStatus.running,
                     Experiment.run_names.contains([run_name]),
                 )
