@@ -95,12 +95,26 @@ def cleanup(*, variant):
         )
 
 
+# the same population retrieval reads: rows under an inactive source answer nothing
 def is_empty(*, variant):
     with engine.connect() as conn:
         return conn.execute(
-            text("SELECT NOT EXISTS (SELECT 1 FROM data_chunks WHERE variant = :variant)"),
+            text("""SELECT NOT EXISTS (
+                      SELECT 1 FROM data_chunks
+                      WHERE variant = :variant
+                        AND source_id IN (SELECT id FROM data_sources WHERE active))"""),
             {"variant": variant},
         ).scalar()
+
+
+# losing the bookkeeping must not cost the work it describes: three call sites wrote the
+# same try/except around it, each with its own log event
+def fingerprint_or_none(*, variant) -> dict | None:
+    try:
+        return corpus_fingerprint(variant=variant)
+    except Exception as e:
+        log.error("corpus.fingerprint_failed", variant=variant, error=str(e))
+        return None
 
 
 # thresholds are calibrated against a corpus, so a run has to record which one it saw
@@ -185,15 +199,17 @@ def hybrid_search(
     query = f"""WITH vector_search AS (
                     SELECT id,
                            embedding <=> CAST(:embedding AS vector) AS distance,
-                           ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:embedding AS vector) ASC) AS rank
+                           ROW_NUMBER() OVER (
+                               ORDER BY embedding <=> CAST(:embedding AS vector) ASC, id
+                           ) AS rank
                     FROM data_chunks WHERE embedding <=> CAST(:embedding AS vector) <= :distance_threshold {cat_filter} {src_filter}
-                    ORDER BY distance
+                    ORDER BY distance, id
                     LIMIT :limit_vector
                 ),
                 keyword_search AS (
                     SELECT id,
                            ROW_NUMBER() OVER (
-                               ORDER BY {rank_fn}(content_tsv, q, :keyword_norm) DESC
+                               ORDER BY {rank_fn}(content_tsv, q, :keyword_norm) DESC, id
                            ) AS rank
                     FROM data_chunks, {keyword_query} q
                     WHERE content_tsv @@ q {cat_filter} {src_filter}
@@ -208,7 +224,10 @@ def hybrid_search(
                 LEFT JOIN vector_search v ON d.id = v.id
                 LEFT JOIN keyword_search k ON d.id = k.id
                 WHERE v.id IS NOT NULL OR k.id IS NOT NULL
-                ORDER BY score DESC
+                -- RRF ties are structural (best by vector and best by keyword both score
+                -- 1/(k+1)); without a second key the physical row order decides, and any
+                -- migration or vacuum silently reshuffles the answer
+                ORDER BY score DESC, d.id
                 LIMIT :limit
                 """
     params = {

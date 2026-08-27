@@ -1,0 +1,41 @@
+{
+  "set": "paraphrased_v2_ru",
+  "note": "taken on an idle stand, no generation or indexing running; ef applied on pool checkout so it reaches the connection hybrid_search opens",
+  "by_variant": {
+    "baseline": {
+      "100": {
+        "median_ms": 15.3,
+        "p95_ms": 20.5,
+        "questions": 100
+      },
+      "200": {
+        "median_ms": 56.8,
+        "p95_ms": 64.0,
+        "questions": 100
+      },
+      "400": {
+        "median_ms": 56.4,
+        "p95_ms": 63.9,
+        "questions": 100
+      }
+    },
+    "clean_1024": {
+      "100": {
+        "median_ms": 14.6,
+        "p95_ms": 18.0,
+        "questions": 100
+      },
+      "200": {
+        "median_ms": 52.8,
+        "p95_ms": 59.4,
+        "questions": 100
+      },
+      "400": {
+        "median_ms": 51.5,
+        "p95_ms": 60.1,
+        "questions": 100
+      }
+    }
+  },
+  "serving_ef_search": 200
+}

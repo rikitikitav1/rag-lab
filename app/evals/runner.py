@@ -248,6 +248,11 @@ def run_phased(
     return answered, cancelled
 
 
+# the runner asks the same resolver every other caller does: a default is only one
+# default if one place decides it
+from use_cases.chat import resolve_rerank  # noqa: E402
+
+
 def run(
     run_name: str,
     set_name: str | None = None,
@@ -280,8 +285,7 @@ def run(
         )
     log.info("eval_run.corpus", variant=variant, known=known)
     texts = _target_texts(set_name, question_ids)
-    if use_rerank is None:
-        use_rerank = config.settings.rerank.enabled
+    use_rerank = resolve_rerank(use_rerank)
     if phased is None:
         phased = pipeline == Pipeline.single_shot
 

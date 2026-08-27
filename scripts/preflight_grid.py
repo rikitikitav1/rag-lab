@@ -2,12 +2,16 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 API = "http://localhost:8000"
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "app"))
+
+from use_cases.index import VECTOR_INDEX_PREFIX  # noqa: E402
 
 
 def sh(*args: str) -> str:
@@ -60,7 +64,7 @@ def worker_imports() -> tuple[bool, str]:
     out = sh(
         "docker", "compose", "exec", "-T", "worker", "python", "-c",
         "import sys; sys.path.insert(0, '/app/app');"
-        " from orchestrators import graph, middleware, react;"
+        " from orchestrators import graph, react;"
         " from use_cases import agent; print('ok')",
     )
     return out.endswith("ok"), f"imports inside the worker: {out or 'failed'}"
@@ -150,7 +154,7 @@ def variant_index_is_used() -> tuple[bool, str]:
         " plan = ' '.join(r[0] for r in c.execute(text('EXPLAIN (COSTS OFF) ' + q), {'v': v}));"
         " print(plan)"
     )
-    wanted = "data_chunks_embedding_"
+    wanted = VECTOR_INDEX_PREFIX
     ok = wanted in out and "Index Scan" in out
     return ok, f"vector index in the plan: {'partial, per variant' if ok else out[:90] or 'none'}"
 
@@ -164,6 +168,90 @@ def table_is_vacuumed() -> tuple[bool, str]:
     dead = int(out) if out.isdigit() else -1
     # a mass update leaves dead entries in the hnsw graph, and retrieval shrinks quietly
     return 0 <= dead <= 1000, f"dead tuples in data_chunks: {out or 'unknown'}"
+
+
+def one_question_per_original() -> tuple[bool, str]:
+    out = _in_worker(
+        "from orm.sync_db import engine; from sqlalchemy import text;"
+        " print(engine.connect().execute(text(\"SELECT coalesce(string_agg(set_name || '=' ||"
+        " n, ', '), 'none') FROM (SELECT set_name, count(*) n FROM (SELECT set_name,"
+        " source_question_id FROM questions WHERE source_question_id IS NOT NULL"
+        " GROUP BY 1, 2 HAVING count(*) > 1) d GROUP BY set_name) s\")).scalar())"
+    )
+    # a job the worker requeues can paraphrase the same original twice, and the second
+    # paraphrase is new text with a new hash, so nothing else catches it
+    return out == "none", f"originals paraphrased more than once: {out or 'unknown'}"
+
+
+PAIRED_SETS = """
+SELECT coalesce(string_agg(base || '=' || cnt, ', '), 'none') FROM (
+  SELECT base, count(*) cnt FROM (
+    SELECT base, source_question_id FROM (
+      SELECT CASE WHEN set_name LIKE '%%\\_ru'
+                  THEN left(set_name, length(set_name) - 3) ELSE set_name END AS base,
+             source_question_id
+      FROM questions WHERE source_question_id IS NOT NULL
+    ) q GROUP BY base, source_question_id HAVING count(*) <> 2
+  ) d GROUP BY base
+) s
+"""
+
+
+# the strongest check this branch has, and it used to look at baseline alone, the one
+# variant frozen by definition. Every indexed variant is asked, and by the text of each
+# chunk rather than by a count per source: fourteen of the sixteen sources that changed
+# under the new parser kept their counts exactly. notes drifts by design, its directory
+# is live and the owner writes in it
+def every_variant_cuts_into_its_own_rows() -> tuple[bool, str]:
+    out = _in_worker("import runpy; runpy.run_path('scripts/cut_digest.py', run_name='__main__')")
+    line = next(
+        (row for row in reversed(out.splitlines()) if row.startswith("[")), ""
+    )
+    try:
+        report = json.loads(line)
+    except ValueError:
+        return False, "variants cut into their own rows: unknown"
+
+    bad = []
+    for entry in report:
+        drift_only = entry["differing"] == ["notes"]
+        if entry["sources_differing"] and not drift_only:
+            bad.append(
+                f"{entry['variant']}: {entry['sources_differing']} sources, "
+                f"{entry['files_differing']} files, {entry['chunks_changed']} chunks changed"
+            )
+    listing = "; ".join(bad) or "all variants reproduce (notes drifts, by design)"
+    return not bad, f"variants cut into their own rows: {listing}"
+
+
+def halves_of_pairs_are_counted() -> tuple[bool, str]:
+    out = _in_worker(
+        "from orm.sync_db import engine; from sqlalchemy import text;"
+        f' print(engine.connect().execute(text("""{PAIRED_SETS}""")).scalar())'
+    )
+    # descriptive on purpose, hence the name: an original makes a pair, a paraphrase and
+    # its translation, and a run that died between them leaves a half. A half with only
+    # the russian side is skipped by the generator now rather than paired with a fresh
+    # paraphrase, so it stays until someone removes it, and that is not a failure
+    return True, f"(descriptive) originals missing half of their pair: {out or 'unknown'}"
+
+
+def schema_holds_no_variant_indexes() -> tuple[bool, str]:
+    dump = ROOT / "db" / "schema.sql"
+    if not dump.exists():
+        return False, "db/schema.sql is missing"
+    leaked = [
+        line.replace(" IF NOT EXISTS", "").split()[2]
+        for line in dump.read_text().splitlines()
+        if VECTOR_INDEX_PREFIX in line and line.startswith("CREATE INDEX")
+    ]
+    # a variant is a line in the config, so its index is built at runtime; one in the
+    # dump means the dump has become a function of what happened to be indexed locally
+    return not leaked, (
+        f"schema.sql carries variant indexes: {leaked}"
+        if leaked
+        else "schema.sql holds no variant indexes"
+    )
 
 
 def keyword_switches_match_the_worker() -> tuple[bool, str]:
@@ -214,26 +302,50 @@ def marks_are_reachable() -> tuple[bool, str]:
     return not blocking, f"questions no chunk can satisfy: {listing}{verdict}"
 
 
-# the agent path goes through hnsw, so a variant whose index lost recall would read as bad chunking
-def index_recall_is_intact() -> tuple[bool, str]:
+# a liveness check, not the gate: what the depth is judged by is max_mrr_loss. The floor
+# and the question count live in config, next to the value they qualify
+def index_is_alive() -> tuple[bool, str]:
+    thresholds = _alive_thresholds()
+    if thresholds is None:
+        return False, "index recall: cannot read the thresholds from the worker"
+    floor, asked = thresholds
     out = sh(
         "docker", "compose", "exec", "-T", "worker", "python",
         "/app/scripts/retrieval_report.py", "--set", "paraphrased_ru", "--recall",
-        "--limit", "40",
+        "--limit", str(asked),
     )
     score = out.rsplit(":", 1)[-1].strip()
     try:
         value = float(score)
     except ValueError:
         return False, f"index recall: cannot read ({out[-60:] or 'no answer'})"
-    return value >= 0.98, f"hnsw recall@20 against exact search: {value}"
+    return value >= floor, (
+        f"index alive: recall@20 against exact {value} on {asked} questions "
+        f"(liveness, floor {floor}; the gate is max_mrr_loss)"
+    )
+
+
+def _alive_thresholds() -> tuple[float, int] | None:
+    # sh() returns "" on any non-zero exit, which is what a downed worker looks like:
+    # the condition this check exists to report, not one to crash on
+    out = _in_worker(
+        "import config;"
+        " r = config.settings.retrieval;"
+        " print(f'{r.index_alive_recall} {r.index_alive_questions}')"
+    )
+    try:
+        floor, asked = out.split()
+        return float(floor), int(asked)
+    except ValueError:
+        return None
 
 
 CHECKS = (
     tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config,
     models_are_on_the_card, queue_is_idle, corpus_variant_is_usable, variant_index_is_used,
-    table_is_vacuumed, keyword_switches_match_the_worker, marks_are_reachable,
-    index_recall_is_intact,
+    table_is_vacuumed, schema_holds_no_variant_indexes, one_question_per_original,
+    halves_of_pairs_are_counted, every_variant_cuts_into_its_own_rows,
+    keyword_switches_match_the_worker, marks_are_reachable, index_is_alive,
 )
 
 
