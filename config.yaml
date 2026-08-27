@@ -20,9 +20,65 @@ service:
     # three sets (datasets/measurements/query_lang/), and it decides the one question the alphabet
     # rule gets wrong. Also picks the language the answer comes back in (26.08)
     query_lang: function_words
-    # hnsw recall@20 vs exact: 0.9148 at the server default 40, 1.0 at 100 (measured 26.08)
+    # hnsw recall@20 vs exact: 0.9148 at the server default 40, 1.0 at 100 (measured 26.08).
+    # Raised to 200 on 27.08 for two reasons that turned out to be separate. Rebuilding
+    # the ladder and the gate live here, not in the script, because they are procedure:
+    # they belong in the snapshot next to the value they produced
+    #
+    # the depth is not free and not monotone in the way it looks. pgvector prices the
+    # hnsw path linearly in ef_search (~34 units per unit here) while sorting the whole
+    # table costs a fixed 7752 over 13068 rows, so above ef ~197 the planner drops the
+    # index and sorts exactly instead. That is why 400 used to cost the same as 200 and
+    # why recall read exactly 1.0 there: both rungs were exact search, not a better
+    # graph. The crossover is a property of the corpus size, so it moves up as the
+    # corpus grows and has to be re-checked per variant, never inherited.
+    #
+    # 100, and the reason is the path, not the recall. The crossover moves up with the
+    # row count, so 100 keeps the same plan as the corpus grows while 200 would switch
+    # from exact search to the index silently, changing latency and recall with nothing
+    # touched. It would also put clean_1024 (12k rows) and prefix_1024 (17.7k) on
+    # different sides of it, and then the pair compares two plans, not two cuts.
+    # Measured through the index at 100: recall 0.9769 on baseline, 0.9677 on
+    # clean_1024, both under the gate below. The gate was set by hand and is the thing
+    # to argue with, not the depth
     ef_search: 100
+    # left as it was taken: rungs above the crossover are exact search, and a denser
+    # ladder under it is a measurement to run deliberately, not a default to drift into
+    ef_ladder: [100, 200, 400]
+    # recall@20 stays as a diagnostic, not as the gate: it counts neighbours the graph
+    # failed to find, and a neighbour lost at rank 18 costs the answer nothing. What the
+    # depth is judged by is what it costs the metric we are paid for, measured on the same
+    # questions, paired, with an interval. The gate is the worst end of that interval
+    recall_gate: 0.98
+    # порог не ставится рукой ниже того, что набор умеет различать: полуширина интервала на
+    # 823 вопросах около 0.0036, поэтому 0.005 сработал бы как монетка у порога
+    max_mrr_loss: 0.01
+    # средняя прячет катастрофу на одном вопросе: на clean_1024 два вопроса, где точный
+    # поиск давал правильный раздел ПЕРВЫМ, при индексе выпали из топ-20 целиком, а дельта
+    # осталась -0.0014 с интервалом через ноль. Это отдельные ворота, и они жёсткие
+    max_questions_lost: 0
+    # the preflight smoke test, not a gate: enough questions to catch an empty or
+    # half-built index, and the floor is low so nobody mistakes it for the gate above
+    index_alive_recall: 0.9
+    index_alive_questions: 40
   rerank:
+    # off by default, and the decision has a history worth keeping. In July it was off
+    # because of latency. On 27.08 it went on for runs on the strength of the control
+    # hundred, and then the big sets arrived and disagreed with each other:
+    #
+    #   paraphrased_v2_ru, 823   rerank on baseline  +0.0369 [+0.0155, +0.0596]
+    #   paraphrased_v2,    820   rerank on baseline  -0.0245 [-0.0460, -0.0021]
+    #
+    # It helps the cross-lingual set and hurts the same-language one, both with intervals
+    # clear of zero, so a default set on either half would be set on the half that agrees.
+    # It also may not be about language at all: an english question lights the keyword leg
+    # and a russian one does not, so reranking may be replacing a fusion of two signals
+    # with one. Until that is measured, a run asks for it (`rerank: true`) rather than
+    # getting it. Cost, measured through the path production calls and written down in
+    # datasets/measurements/rerank_latency.json: 2.76 s per question on cpu against 86 ms
+    # on an idle card, twenty candidates of average length. On a card a run already owns
+    # the same work reads about twice as slow, which is the other half of why an
+    # interactive answer does not do it
     enabled: false
     model: BAAI/bge-reranker-v2-m3
     candidates: 20
@@ -51,15 +107,58 @@ service:
       the technical knowledge corpus (interview banks, system-design-primer, redis docs)
     variant: baseline
     variants:
+      # every key here is read by the code, and `header_prefix` is derived from `chunker`
+      # rather than declared: two keys deciding one thing is how they came to disagree
       baseline:
         chunker: legacy
         max_chunk_size: 1024
-        header_prefix: false
-        boilerplate: kept
+      # point zero of the ceiling grid: same size cut, but the prefix comes from the
+      # declared root, frontmatter is parsed and the junk is gone. Isolates hygiene of
+      # the sources from the change of splitter that comes after it
+      clean_1024:
+        chunker: rooted
+        max_chunk_size: 1024
+        # what the ceiling counts. This point was cut and measured with it spent on the
+        # body alone, so it says so out loud instead of inheriting a default that moves
+        ceiling_on: body
+      # the same rules as clean_1024 and one more level of cutting: a section is split by
+      # its subheadings before it is split by size. Isolates the splitter from the hygiene
+      prefix_1024:
+        chunker: structured
+        max_chunk_size: 1024
+        # same as clean_1024 on purpose: the pair differs by splitter, and a different
+        # budget for the body would make it differ by two things at once
+        ceiling_on: body
+  ingest_quality:
+    # what makes a source broken, in shares of its chunks. Turned by hand, printed in
+    # every report, so a verdict from last month says which gates it stood on
+    # strawman, argue with the numbers: they decide what "a clean source" means.
+    # prefix_broken used to sit here and was removed rather than repaired: it compared the
+    # rendered prefix against the same root string the prefix was rendered from, so it
+    # read 0.0 on every source of every variant and carried 25 of the weight for free
+    # hard means the cut is broken, soft means it is dirty and a human should look
+    # пороги поставлены от измеренного по 177 источникам, а не от круглых чисел. В скобках
+    # то, что читается сегодня, чтобы было видно, где запас, а где ворота реально близко
+    hard_gates:
+      section_coverage: { min: 0.4 }   # сегодня минимум по источникам 0.58, среднее 0.99
+      prefix_dominates: { max: 0.05 }  # сегодня 0.008
+    soft_gates:
+      dup_in_file: { max: 0.1 }
+      dup_in_source: { max: 0.15 }     # сегодня от 0.001 до 0.246, primer выходит грязным
+      boilerplate: { max: 0.1 }
+      tiny: { max: 0.15 }              # сегодня от 0.03 до 0.07
+    # the score sorts variants of one source; it never decides the verdict
+    weights:
+      section_coverage: 40
+      prefix_dominates: 15
+      dup_in_source: 10
+      tiny: 10
+    history_per_variant: 20
+    score_formula: v1
+
   fts:
     languages: { en: english, ru: russian }
     fallback: english
-  ignored_sources: [index.md]
   repos_dir: /repos
   prompts_dir: prompts
   sources:
