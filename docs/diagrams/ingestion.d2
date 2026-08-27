@@ -1,29 +1,53 @@
 direction: down
 
-trigger: "index_data job, always for one corpus variant\n(bootstrap only on an empty database, otherwise on demand)"
+trigger: "index_data job, one corpus variant\n(bootstrap only on an empty database)"
 
 sources: Source registry (reader pattern) {
   direction: right
   notes: notes\nmarkdown, ru
-  interview: Devinterview repos\n~170 x README, en
-  hooks: "each source class:\ndiscover / category_for / read / postprocess"
+  interview: Devinterview repos\n173 x README, en
+  docs: primer / redis-doc / cheatsheets\nfrontmatter titles, junk rules
+  hooks: "each source class: discover / read\ncategory_for / section_root_for / postprocess"
 }
 
-idem: "Idempotent per (source, variant): upsert data_source by name,\ndelete its old chunks of THIS variant only"
+policy: "Variant policy from config.yaml\nchunker, max_chunk_size, ceiling_on, header_prefix,\nboilerplate, frontmatter, parser, levels" {
+  shape: document
+}
 
-chunk: chunk_markdown\nsplit by H2 + recursive\nmax 1024 chars (the baseline variant)
+idem: "Idempotent per (source, variant):\ndelete its old chunks of THIS variant only"
+
+cut: The cut {
+  direction: down
+  legacy: "legacy (baseline, frozen)\nsplit on the literal H2, then by size"
+  marks: "MarkdownHeaderTextSplitter says which lines are headings\n(fences, tilde fences, indented headings)\noccurrences counted on the file"
+  fallback: "fences do not balance ->\nread fence-blind, and log it" {
+    style.stroke-dash: 3
+  }
+  rooted: "rooted: root from section_root_for + H2,\nceiling on the body, prefix repeated whole"
+  structured: "structured: H2 -> H3 -> size,\nslivers merged into the neighbour beside them"
+  marks -> fallback: when unbalanced
+  marks -> rooted
+  marks -> structured
+}
+
+record: "Each chunk carries what decided it:\nsection, prefix_len, cut_by"
+
 cat: "path -> ltree category"
 embed: Batch embed\nbge-m3 via /api/embed {
   shape: hexagon
 }
-insert: "Bulk insert data_chunks\n(variant, section, content_hash)" {
+insert: "Bulk insert data_chunks\n(variant, section, prefix_len, content_hash)" {
   shape: cylinder
 }
 
-idx: "Partial hnsw index for this variant,\nbuilt after the insert, never a catch-all" {
+idx: "build_vector_index job: partial hnsw\nper variant, built after the insert" {
   style.stroke-dash: 3
 }
 tsv: "FTS trigger: to_tsvector per language (rus/eng)" {
+  style.stroke-dash: 3
+}
+
+quality: "analyze_source job, one per source:\ncoverage report from the text alone,\nhard and soft gates, score 0-100" {
   style.stroke-dash: 3
 }
 
@@ -32,16 +56,24 @@ questions: embed_questions job\nquestion bank vectors {
 }
 
 trigger -> sources
-sources -> idem -> chunk -> cat -> embed -> insert
+policy -> cut: decides every rule
+sources -> idem -> cut -> record -> cat -> embed -> insert
 insert -> tsv: on write
-insert -> idx: once, at the end
+insert -> idx: queued, then built
+insert -> quality: queued per source
 trigger -> questions
 
 note: |md
-  Corpus quality rule learned the hard way: RAG is exactly as good
-  as the corpus is clean. Re-running any source is safe by design.
+  The cut is a parameter, not a fact: variants
+  live side by side, so re-indexing is a
+  comparison rather than a border.
 
-  Variants let two chunkings live side by side, so re-indexing is a
-  comparison rather than a border. Every reader of the corpus has to
-  name the variant it reads; the topic axis included.
+  What counts as a heading is the parser's
+  answer; the text between them is sliced from
+  the file, so nothing is rewritten on the way
+  in.
+
+  The preflight re-cuts every variant and
+  compares the text of each chunk: a changed cut
+  can keep its row count exactly.
 |

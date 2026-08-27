@@ -59,11 +59,15 @@ log: "Log: sources, context, outcome, fallback_reason,\nfallback_opened, tool_er
   shape: page
 }
 metrics: |md
-  ## Measured per pool, not in one average
-  - in-corpus: faithfulness / relevance / completeness, hit@k / MRR
-  - answered from a tool: remote_grounding (grounded in what the tool said, not in truth)
-  - off-domain: off_domain_grounding, refusals, answers with no support
-  - outcome histogram: answered / refused / unsupported / narrated call / exhausted / error
+  ## Per pool, never in one average
+  - in-corpus: faithfulness, relevance,
+    completeness, hit@k / MRR
+  - from a tool: remote_grounding
+    (grounded in what the tool said)
+  - off-domain: off_domain_grounding,
+    refusals, answers with no support
+  - outcomes: answered / refused /
+    unsupported / narrated / exhausted
 | {
   shape: page
 }

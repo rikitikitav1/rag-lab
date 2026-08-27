@@ -12,18 +12,27 @@ answer the same questions. Chunking stops being a border and becomes a swept par
 Nothing was re-chunked yet. This is the instrument, and the entry is mostly about what the
 instrument got wrong three times before it was trusted.
 
+## Setup
+
+**Set** `paraphrased_v2_ru` (n=344) and `paraphrased_v2` (n=342), with `curated` (n=30) as a
+descriptive set · **corpus** `baseline`, the frozen pre-variant corpus · **judge** none, retrieval
+only
+
+No generator and no judge in this entry: the instrument is a script over the question embeddings
+already stored in the bank, reporting hit@k and MRR@20 at file and section level.
+
 ## What a variant is
 
-A row in `data_chunks` names the recipe that produced it. `baseline` is the corpus as it stood on
-26 August: 13 068 chunks, 1 023 files, 177 sources, cut by `chunk_markdown` at 1 024 characters,
+A row in `data_chunks` names the recipe that produced it. `baseline` is the corpus as it stood on 26
+August: 13 068 chunks, 1 023 files, 177 sources, cut by `chunk_markdown` at 1 024 characters,
 `chunker: legacy` recorded in its policy. It was frozen where it lay rather than re-indexed by the
 new code with hygiene switched off, because "the old splitter with old settings" and "the new
 splitter with old settings" are not the same thing, and only the first is what every previous run
 actually measured.
 
 Two columns were backfilled onto it without re-embedding. `content_hash` for deduplication, and
-`section` for the heading path, recovered with a window function over `chunk_index`: 7 918 of the
-8 091 interview chunks got one, and the 173 that did not are exactly the boilerplate chunk 0 of each
+`section` for the heading path, recovered with a window function over `chunk_index`: 7 918 of the 8
+091 interview chunks got one, and the 173 that did not are exactly the boilerplate chunk 0 of each
 repository. `redis-doc` and `cheatsheets` have no `##` structure to recover, so their section is
 unknown and counts as a miss at section level, which is honest, because that is what it was.
 
@@ -75,14 +84,21 @@ of the index with itself. `hnsw.ef_search` is now a setting in `service.retrieva
 both engines and recorded in every run's snapshot. This is a change to the measured system, made
 before the controls were taken, on a number rather than a taste.
 
+**Correction, measured on 2026-08-27.** The two 1.0 rows above are not what they look like. pgvector
+prices the hnsw path linearly in `ef_search` while sorting the whole table costs a fixed amount, so
+above about ef 197 on this corpus the planner drops the index and sorts exactly: the ladder was
+comparing exact search with exact search. Re-measured through the index on 823 questions, recall@20
+at ef 100 is 0.9769 on `baseline` and 0.9677 on `clean_1024`, and recall itself stopped being the
+gate. See [the hygiene entry](2026-08-27_hygiene-that-moved-the-number.md).
+
 **Its candidate pool was a quarter of what it claimed.** The script asked for 100 candidates, but
 the per-leg limits still came from the config at 20 and 20, so the final limit cut a union of at
-most 40 rows and cut nothing. Fixing the limits only got the pool to 40, because the index was
-still capping it at `ef_search`; it took the fourth lie above to actually reach 100, and the guard
-that would have caught both - a warning when the pool comes back shorter than the one asked for -
-was only written afterwards. This mattered less for the numbers than for their comparability: with
-one chunk per section, 20 rows yield 20 sections; with `baseline`, the same 20 rows yield 8. The
-"after" corpus would have won mechanically. The bias was removed before it could be collected.
+most 40 rows and cut nothing. Fixing the limits only got the pool to 40, because the index was still
+capping it at `ef_search`; it took the fourth lie above to actually reach 100, and the guard that
+would have caught both - a warning when the pool comes back shorter than the one asked for - was
+only written afterwards. This mattered less for the numbers than for their comparability: with one
+chunk per section, 20 rows yield 20 sections; with `baseline`, the same 20 rows yield 8. The "after"
+corpus would have won mechanically. The bias was removed before it could be collected.
 
 **It left a probe index in the measured system.** While proving that a generic plan cannot use a
 partial index, two throwaway indexes were created; one was dropped and one was not, and dbmate
@@ -95,8 +111,8 @@ A variant needs its own vector index, or an approximate search over all variants
 foreign ones away and returns fewer rows than asked - a quiet loss that reads as bad chunking. So:
 one partial hnsw index per variant, and no catch-all.
 
-Both database drivers here bind parameters on the server, and a generic plan cannot prove
-`WHERE variant = 'x'` from `variant = $1`. Measured on our own table:
+Both database drivers here bind parameters on the server, and a generic plan cannot prove `WHERE
+variant = 'x'` from `variant = $1`. Measured on our own table:
 
 ```
 forced generic plan  ->  Index Scan using data_chunks_source_id_idx   (partial index NOT used)
@@ -165,9 +181,9 @@ question the two rules disagree on is 36 characters, and all 3 525 questions lon
 agree.**
 
 There is now a third rule, and it is the default. Ask each text-search configuration whether it
-recognises the question's own function words: the one that drops the most tokens as stopwords is
-the language, and if none of them react, fall back to the alphabet share. No library and no model,
-and it extends to any of the 29 configurations Postgres ships simply by naming the language in the
+recognises the question's own function words: the one that drops the most tokens as stopwords is the
+language, and if none of them react, fall back to the alphabet share. No library and no model, and
+it extends to any of the 29 configurations Postgres ships simply by naming the language in the
 config. Bulgarian is not among those 29, which is the same wall our search hits anyway.
 
 Measured before it was switched on (`datasets/measurements/query_lang/`): identical to the fourth
@@ -182,9 +198,8 @@ The same rule now also picks **the language the answer comes back in**, which wa
 `Respond in English` directive. Like `hnsw.ef_search`, this is a change to the measured system made
 before the controls are taken, chosen on correctness rather than on a metric, and recorded in the
 snapshot; `query_lang` is a pinned field, so agent runs from before this commit are not comparable
-on it. `langdetect` is reliable on a sentence and fails on a fragment; `curated` is
-the set made of fragments, which is why it was the only one where the switch appeared to matter. That distinction - kept for a reason, not for a
-number - is the whole point of keeping this journal.
+on it. `langdetect` is reliable on a sentence and fails on a fragment, and `curated` is the set made
+of fragments, which is why it was the only one where the switch appeared to matter.
 
 Grid summary on disk: `datasets/measurements/2026-08-26_keyword_switch_grid.txt`. The 48 per-point
 reports are 14 MB and stayed out of the repository; `scripts/keyword_switch_grid.sh` regenerates
@@ -210,7 +225,9 @@ it differently next time - so a criterion set is reproducible by storage, not by
 is why it lives in a file with the text of its original beside it, and why seeding restores the link
 by hashing that text.
 
-**The "before" for the hygiene arc**, exact search, pool 100:
+## Result: the "before" line
+
+Exact search, pool 100:
 
 | set | level | hit@1 | hit@5 | hit@10 | MRR@20 | n |
 |---|---|---|---|---|---|---|
@@ -229,8 +246,9 @@ and headings are intact rather than the corpus being good. Files:
 
 Note where the headroom is. At file level the hybrid already reaches 0.945 at depth 10 - there is
 almost nothing left to win, and the dense leg carries nearly all of it. At section level - the right
-section inside a four-hundred-page README - hit@5 is 0.770. That is the number the hygiene is for, and it is the reason the primary
-criterion is MRR at section level rather than any hit@k at file level.
+section inside a four-hundred-page README - hit@5 is 0.770. That is the number the hygiene is for,
+and it is the reason the primary criterion is MRR at section level rather than any hit@k at file
+level.
 
 ## The decision rule, written before the numbers
 
@@ -281,10 +299,30 @@ preflight checks that now stand between a run and the traps above.
 Worth separating, because in a month this entry is the only witness: preflight caught none of the
 three lies listed here. The probe index and the residency check aimed at the wrong model were found
 by the auditor reading the schema and the job options; the candidate pool and the exact-search
-question were found by the auditor reading the script. Preflight is what keeps them from coming
-back - it holds the plan check, the dead-tuple bound, the recall gate and the switch comparison -
-but it was written after the fact, and every check in it exists because something got past first.
+question were found by the auditor reading the script. Preflight is what keeps them from coming back
+- it holds the plan check, the dead-tuple bound, the recall gate and the switch comparison - but it
+was written after the fact, and every check in it exists because something got past first.
 
 It bought no retrieval improvement at all. Not one chunk has been re-cut. The numbers above are the
 line the hygiene has to beat, and the point of the whole exercise was to make sure that line is
 worth something before drawing it.
+
+## Decision
+
+The corpus keeps a `variant` column and `baseline` is frozen as it stood: re-chunking becomes a
+swept parameter instead of a border. `hnsw.ef_search` becomes a setting in `service.retrieval`,
+pinned and recorded in every snapshot; `plan_cache_mode=force_custom_plan` on both engines so a
+partial index is actually used; the keyword leg stays on AND; `query_lang` moves to the
+function-word rule; the primary criterion runs on exact search, with what the index costs reported
+beside it. `paraphrased_v2` and `paraphrased_v2_ru` become the criterion sets, seeded and exported;
+`curated` is descriptive from here on.
+
+## Caveats
+
+- not one chunk has been re-cut here, so nothing in this entry is a statement about chunking; it is
+  the line the hygiene has to beat
+- the criterion sets are drawn from the interview repositories alone, so they say nothing about the
+  three documentation sources
+- `curated` carries 20 of 53 marks pointing at a source no longer in the corpus and 2 of 30
+  questions unhittable by construction; its numbers stay in the entry as description only
+- the recall rows in this entry were corrected the next day, see the correction above

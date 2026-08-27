@@ -1,17 +1,62 @@
 # Experiments log
 
-A lab journal of RAG-quality experiments: hypothesis → setup → result → delta → decision. The point is a reproducible, data-driven loop, not intuition.
+A lab journal of RAG-quality experiments: question → setup → result → decision. The point is a reproducible, data-driven loop, not intuition.
 
 ## Methodology
 
 - **Eval sets** live in the question bank (`set_name`). The discriminating set is `paraphrased_ru`: interview questions paraphrased and translated to Russian, so retrieval must work cross-lingually (ru query over an en corpus, FTS misses, vector-only) instead of matching source text verbatim. Raw interview questions are near-verbatim to their source (hit@k ~99%), so they hide quality differences.
-- **Metrics** come from `question_logs` per `run_name`: retrieval (hit@k / MRR against `marked_sources`), generation (faithfulness / relevance / refusal via LLM-as-judge, judge = `qwen2.5:7b`, neutral to the generator to avoid co-hallucination).
+- **Metrics** come from `question_logs` per `run_name`: retrieval (hit@k / MRR against `marked_sources`), generation (faithfulness / relevance / completeness / refusal via LLM-as-judge, judge = `qwen2.5:7b`, neutral to the generator to avoid co-hallucination).
 - **Isolation**: change one variable at a time; hold the rest constant.
 - **Reproducibility**: generation `temperature: 0` during tuning so a metric change is attributable to the change under test, not to sampling noise.
 - Each run is one `eval_run` job (answers, bulk) → one `judge_answers` job (verdicts, bulk).
 
----
+## How an entry is written
 
+The format is a rule of this repository, not a preference. Entries are read months later, by
+someone deciding whether a number still holds, so every entry carries the same load-bearing
+sections in the same order:
+
+```
+# YYYY-MM-DD - Title
+
+Lead: two to five lines. The question this run asks, and why it is worth asking.
+
+## Setup            opens with the coordinates line below, then what varies, what is pinned, which code ran
+## Result           the numbers, in a table, with n
+## <free sections>  as many as the analysis needs, named for what they say
+## Decision         what became the default, what changed in code or config, what was rejected
+## Caveats          what this entry does not show, and what dies on the next re-index
+```
+
+`Setup` opens with one line naming where the numbers come from, so a reader who scrolls straight to
+a table can find the coordinates directly above it:
+
+```
+**Set** `paraphrased_v2_ru` (n=823) · **corpus** `clean_1024` against `baseline` · **judge** `qwen2.5:7b`
+```
+
+Rules that decide whether an entry is worth keeping:
+
+- **One entry, one question.** A second question gets a second entry, linked, not a longer file.
+- **Every number carries its n, its set and its corpus variant.** Not once in the entry: beside the
+  table it belongs to, so a number cannot be lifted out of the file without them. Two numbers taken
+  on different sets are not two measurements of one thing, and without the n printed next to them
+  that difference reads as instrument noise. This rule exists because a set difference was nearly
+  reported as hnsw instability. For runs older than the `variant` column, name the corpus of that
+  era in words rather than leaving the field blank.
+- **Every comparison carries an interval** or says out loud that it is a point estimate. A delta
+  without a spread is not a result.
+- **The decision rule is written before the run** for anything shaped as an A/B, and the entry
+  says where it was written down. A criterion chosen after seeing the numbers is named as such.
+- **Corrections are appended, never rewritten.** A later run that overturns an earlier number gets
+  a `## Correction, measured on YYYY-MM-DD` section in the entry it corrects, pointing at the entry
+  that did the correcting. The original text stays as it was written.
+- **Link files, not lines.** `app/use_cases/chat.py`, never `chat.py:180`: line numbers rot within
+  a week and the reader cannot tell a stale pointer from a wrong one.
+- **No praise of the method.** The entry records what was measured and what it cost. Whether that
+  was a good way to work is the reader's call.
+
+---
 
 ## Entries (chronological)
 
@@ -35,3 +80,4 @@ A lab journal of RAG-quality experiments: hypothesis → setup → result → de
 - [2026-08-25 - A refusal at last, and a threshold that measured nothing](experiments/2026-08-25_a-refusal-at-last-and-the.md)
 - [2026-08-26 - The same agent written four ways, and what the standard costs](experiments/2026-08-26_the-same-agent-written-four-ways.md)
 - [2026-08-26 - A corpus you can keep two of, and the instrument that measures it](experiments/2026-08-26_a-corpus-you-can-keep-two-of.md)
+- [2026-08-27 - Corpus hygiene that moved the number, and four instruments that were lying](experiments/2026-08-27_hygiene-that-moved-the-number.md)

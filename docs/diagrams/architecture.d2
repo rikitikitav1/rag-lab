@@ -4,7 +4,11 @@ client: Client {
   shape: person
 }
 
-lab: rag-lab (docker compose) {
+lab: rag-lab (docker compose, runtime) {
+  boot: "startup pipeline, runs to completion first:\ndbmate -> seed -> bootstrap\n(the API and the worker gate on it)" {
+    style.stroke-dash: 3
+  }
+
   api: FastAPI\n(uvicorn --reload) {
     rest: REST /v1/*
     mcp: MCP /mcp

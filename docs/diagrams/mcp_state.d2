@@ -1,4 +1,4 @@
-direction: right
+direction: down
 
 disabled: disabled {
   style.fill: "#e2e3e5"
@@ -23,7 +23,7 @@ active -> unreachable: probe failed {style.stroke-dash: 3}
 unreachable -> active: probe ok {style.stroke-dash: 3}
 
 legend: |md
-  Solid: operator intent (API).
-  Dashed: observed health (probe / health job).
-  Probes never touch `disabled`.
+  Solid: operator
+  Dashed: health probe
+  Never probes disabled
 |

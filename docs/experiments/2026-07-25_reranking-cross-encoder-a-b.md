@@ -1,12 +1,17 @@
 # 2026-07-25 - Reranking (cross-encoder) A/B
 
-**Hypothesis:** a cross-encoder reranker over hybrid retrieval (retrieve-wide → rerank → narrow) improves which chunks reach the generator, most on the cross-lingual set where retrieval is vector-only.
+Does a cross-encoder reranker over hybrid retrieval (retrieve-wide → rerank → narrow) improve
+which chunks reach the generator, and does it help most on the cross-lingual set where retrieval
+is effectively vector-only?
 
-**Change:** `bge-reranker-v2-m3` (CPU, in-process) reranks the top-20 candidates down to top-3. Baseline = hybrid RRF only.
+## Setup
 
-**Setup:** sets `paraphrased_ru` / `paraphrased` (100 each); generator `llama3.1:8b`, temp 0.1 (single run each; noisy). Caveat: temp 0.1 → part of any delta is sampling.
+**Set** `paraphrased_ru` and `paraphrased` (n=100 each) · **corpus** pre-variant era, `developer-roadmap` still in · **judge** `qwen2.5:7b`, categorical
 
-**Result:**
+`bge-reranker-v2-m3` on CPU, in-process, reranks the top 20 candidates down to top 3. Baseline is
+hybrid RRF alone. Generator `llama3.1:8b` at temp 0.1, one run per arm.
+
+## Result
 
 | set | metric | base | rerank |
 |-----|--------|------|--------|
@@ -18,8 +23,17 @@
 | en | hit@k | 79% | 76% |
 | en | faithful | 61 | 65 |
 
-**Delta:** retrieval hit@k/MRR ~flat (en slightly worse); faithfulness up markedly on ru (+17 faithful, −14 unfaithful), small on en.
+Retrieval hit@k and MRR stay flat, en slightly worse. Faithfulness moves markedly on ru (+17
+faithful, −14 unfaithful) and barely on en: reranking does little to which file is found and more to the ordering inside the top k.
 
-**Conclusion:** reranking barely moves the file-level hit@k, but improves chunk ordering within the top-k enough to lift faithfulness on hard cross-lingual queries. Cost ~10s/query on CPU. **Decision: default OFF, opt-in flag** (per-request in `/chat/question`, per-run in `/eval/run`) - the latency is not worth it in the general case, but it is available for cross-lingual/noisy workloads.
+## Decision
 
----
+Default off, opt-in by flag (per-request in `/chat/question`, per-run in `/eval/run`). Roughly 10s
+per query on CPU is not worth it in the general case and is available for cross-lingual or noisy
+workloads.
+
+## Caveats
+
+- temp 0.1 with one run per arm, so part of every delta is sampling
+- counts, not scores; [the numeric re-measurement](2026-07-28_reranking-re-measured-with-the-numeric.md)
+  later sized this effect very differently
