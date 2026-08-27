@@ -54,8 +54,7 @@ def test_search_corpus_formats_content_and_sources(monkeypatch):
 
     rows = [("chunk one", "src/a.md"), ("chunk two", "src/b.md")]
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: (rows, None))
-    monkeypatch.setattr(chat, "is_ignored_source", lambda s: False)
-    monkeypatch.setattr(chat, "take_sources", lambda r, scores=None: ["S1", "S2"])
+    monkeypatch.setattr(chat, "take_sources", lambda r, scores=None, variant=None: ["S1", "S2"])
 
     result = at._search_corpus("q")
     assert "[src/a.md]\nchunk one" in result.content

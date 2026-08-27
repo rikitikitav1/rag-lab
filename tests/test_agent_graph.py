@@ -28,19 +28,15 @@ def script_from_turns(turns) -> list:
     return out
 
 
-# equivalence is graph against hooks, compared on everything the pipeline reads
-def _both(monkeypatch_factory, turns, corpus_sources, **kwargs):
+# the middleware arm is gone (owner, 27.08: the graph is the implementation), so what was
+# an equivalence harness is now one arm. The assertions about the graph are the point and
+# they stay; what disappeared is the second side of the comparison
+def _graph_run(monkeypatch_factory, turns, corpus_sources, **kwargs):
     with monkeypatch_factory() as monkeypatch:
-        graph, seen_tools = _scenario(
+        return _scenario(
             monkeypatch, turns, corpus_sources,
             orchestrator=agent_policy.Orchestrator.langgraph_ported, **kwargs
         )
-    with monkeypatch_factory() as monkeypatch:
-        hooks = _middleware_run(
-            monkeypatch, script_from_turns(turns), corpus_sources, **kwargs
-        )
-    assert _core(graph) == _core(hooks), "the graph and the hooks disagree"
-    return (graph, seen_tools), (hooks, seen_tools)
 
 
 def _idiomatic_run(monkeypatch, script, corpus_sources, **kwargs):
@@ -53,25 +49,6 @@ def _idiomatic_run(monkeypatch, script, corpus_sources, **kwargs):
     monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
     kwargs.setdefault("max_hops", 2)
     return agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_idiomatic, **kwargs)
-
-
-# the hooks arm talks to a chat model, so the same script is replayed through a scripted one
-def _middleware_run(monkeypatch, script, corpus_sources, dispatch=None, topic_score=None, **kwargs):
-    from fake_chat import ScriptedChatModel
-    from orchestrators import react
-
-    _agent_harness(monkeypatch, [], corpus_sources)
-    monkeypatch.setattr(agent, "_topic_score", lambda question, variant: topic_score)
-    if dispatch is not None:
-        import agent_tools
-
-        monkeypatch.setattr(agent_tools, "dispatch", dispatch)
-    model = ScriptedChatModel(script)
-    monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
-    kwargs.setdefault("max_hops", 2)
-    return agent.run(
-        "q", orchestrator=agent_policy.Orchestrator.langgraph_middleware, **kwargs
-    )
 
 
 @pytest.fixture
@@ -135,10 +112,12 @@ def test_a_plain_corpus_answer_is_identical(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    (graph, graph_tools), (hooks, hooks_tools) = _both(
+    graph, graph_tools = _graph_run(
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
     )
-    assert graph_tools == hooks_tools
+    # one toolbox per hop, and the corpus tool is the only thing offered while it holds
+    assert graph_tools == [["search_corpus"], ["search_corpus"]]
+    assert graph.fallback_reason == agent.FallbackReason.none
 
 
 def test_weak_retrieval_opens_the_toolbox_the_same_way(monkeypatch_factory):
@@ -146,10 +125,9 @@ def test_weak_retrieval_opens_the_toolbox_the_same_way(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    (graph, graph_tools), (hooks, hooks_tools) = _both(
+    graph, graph_tools = _graph_run(
         monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak"
     )
-    assert graph_tools == hooks_tools
     assert graph.fallback_reason == agent.FallbackReason.weak
 
 
@@ -169,12 +147,6 @@ def test_an_off_topic_question_is_refused_the_same_way(monkeypatch_factory):
             topic_threshold=0.5,
             orchestrator=agent_policy.Orchestrator.langgraph_ported,
         )
-    with monkeypatch_factory() as monkeypatch:
-        hooks = _middleware_run(
-            monkeypatch, script_from_turns(turns), [hit], topic_score=0.61,
-            fallback_policy="corpus_first_weak", topic_threshold=0.5,
-        )
-    assert _core(graph) == _core(hooks)
     assert graph.fallback_reason == agent.FallbackReason.off_topic
     assert graph.sources == []
 
@@ -185,7 +157,7 @@ def test_an_empty_corpus_ends_in_the_same_no_evidence_turn(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("b", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="nothing here covers it"),
     ]
-    (graph, _), (hooks, _) = _both(monkeypatch_factory, turns, [])
+    graph, _ = _graph_run(monkeypatch_factory, turns, [])
     assert graph.no_evidence_prompted
 
 
@@ -196,7 +168,7 @@ def test_a_narrated_call_is_nudged_the_same_way(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
     )
     assert agent_policy.TOOL_CALL_NUDGE in [m.get("content") for m in graph.messages]
@@ -219,11 +191,6 @@ def test_a_failing_tool_is_reported_the_same_way(monkeypatch_factory):
         graph = agent.run(
             "q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_ported
         )
-    with monkeypatch_factory() as monkeypatch:
-        hooks = _middleware_run(
-            monkeypatch, script_from_turns(turns), [], dispatch=failing, max_hops=2
-        )
-    assert _core(graph) == _core(hooks)
     assert graph.tool_errors == {"search_corpus": "timeout"}
 
 
@@ -232,10 +199,10 @@ def test_the_graph_reports_the_same_hop_count_when_it_runs_out(monkeypatch_facto
         _turn(tool_calls=[_tool_call(str(i), "search_corpus", "{}")], message={"role": "assistant"})
         for i in range(4)
     ] + [_turn(text="late answer")]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
     )
-    assert graph.hops == hooks.hops == 3
+    assert graph.hops == 3
 
 
 def test_the_graph_leaves_a_context_for_the_judge(monkeypatch_factory):
@@ -243,15 +210,11 @@ def test_the_graph_leaves_a_context_for_the_judge(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
     )
     # a run whose context comes back empty is silently skipped by the judge
     assert agent._context_from_messages(graph.messages)
-    assert agent._context_from_messages(graph.messages) == agent._context_from_messages(
-        hooks.messages
-    )
-
 
 
 def test_the_notice_is_not_repeated_once_the_toolbox_is_open(monkeypatch_factory):
@@ -260,7 +223,7 @@ def test_the_notice_is_not_repeated_once_the_toolbox_is_open(monkeypatch_factory
         _turn(tool_calls=[_tool_call("b", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_weak_hit()],
         fallback_policy="corpus_first_weak", max_hops=3,
     )
@@ -275,68 +238,9 @@ def test_a_nudge_on_the_last_hop_does_not_buy_another_hop(monkeypatch_factory):
         _turn(text=narration, message={"role": "assistant", "content": narration}),
         _turn(text="final after the nudge"),
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=2
     )
-
-
-def test_the_middleware_arm_answers_from_the_corpus_like_the_loop(monkeypatch_factory):
-    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}, {"text": "final"}]
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)]
-        )
-    (graph, _), _ = _both(
-        monkeypatch_factory, turns_for(script), [_hit(rerank_score=0.9, vector_distance=0.2)]
-    )
-    assert _core(graph) == _core(result)
-
-
-def test_the_middleware_arm_drops_weak_context_and_opens_the_toolbox(monkeypatch_factory):
-    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}, {"text": "final"}]
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch, script, [_weak_hit()], fallback_policy="corpus_first_weak"
-        )
-    (graph, _), _ = _both(
-        monkeypatch_factory, turns_for(script), [_weak_hit()], fallback_policy="corpus_first_weak"
-    )
-    assert _core(graph) == _core(result)
-    assert result.dropped_sources == ["s.md"]
-
-
-def test_the_middleware_arm_nudges_a_narrated_call_once(monkeypatch_factory):
-    narration = '{"name": "deepwiki__ask_question", "parameters": {"q": "x"}}'
-    script = [
-        {"text": narration},
-        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
-        {"text": "final"},
-    ]
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
-        )
-    assert result.text == "final"
-    assert any(agent_policy.TOOL_CALL_NUDGE in str(m.get("content")) for m in result.messages)
-
-
-def test_a_failing_corpus_tool_does_not_read_as_an_empty_corpus(monkeypatch_factory):
-    import agent_tools
-    import errors
-
-    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}, {"text": "final"}]
-    def failing(name, args, **kw):
-        return agent_tools.ToolResult(
-            content=f"{errors.ERROR_PREFIX}tool failed", meta={"error_kind": "timeout"}
-        )
-
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch, script, [], dispatch=failing, fallback_policy="corpus_first_weak"
-        )
-    assert str(result.fallback_reason) == "none"
-    assert result.fallback_opened is False
-
 
 
 def _remote_hit():
@@ -354,7 +258,7 @@ def test_an_external_answer_keeps_its_source(monkeypatch_factory):
         ),
         _turn(text="answered from the tool"),
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_weak_hit()],
         fallback_policy="corpus_first_weak", max_hops=3,
     )
@@ -362,71 +266,15 @@ def test_an_external_answer_keeps_its_source(monkeypatch_factory):
     assert str(graph.outcome) == "answered"
 
 
-def test_the_middleware_arm_keeps_an_external_source_too(monkeypatch_factory):
-    script = [
-        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
-        {"tool_calls": [{"name": "deepwiki__ask_question", "args": {"q": "x"}}]},
-        {"text": "answered from the tool"},
-    ]
-
-    def dispatch(name, args, **kw):
-        import agent_tools
-
-        if name == "search_corpus":
-            return agent_tools.ToolResult(content="weak", meta={"sources": [_weak_hit()]})
-        return agent_tools.ToolResult(content="remote answer", meta={"sources": [_remote_hit()]})
-
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch, script, [_weak_hit()], dispatch=dispatch,
-            fallback_policy="corpus_first_weak", max_hops=3,
-        )
-    assert [s.source for s in result.sources] == ["mcp:deepwiki__ask_question"]
-    assert str(result.outcome) == "answered"
-    assert result.fallback_opened is True
-
-
-def test_a_model_that_only_calls_tools_stops_at_the_hop_cap(monkeypatch_factory):
-    script = [{"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]}] * 8
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
-        )
-    # the cap lives in the middleware, so the guard must never be the thing that stops a run
-    assert str(result.outcome) != "error"
-    assert result.hops <= 4
-
-
 def test_the_loop_and_the_graph_stop_at_the_same_hop_cap(monkeypatch_factory):
     turns = [
         _turn(tool_calls=[_tool_call(str(i), "search_corpus", "{}")], message={"role": "assistant"})
         for i in range(8)
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
     )
     assert graph.hops == 4
-
-
-def test_the_middleware_arm_refuses_an_off_topic_question_like_the_loop(monkeypatch_factory):
-    script = [
-        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
-        {"text": "I cannot answer this from the available sources"},
-    ]
-    strong = _hit(rerank_score=0.9, vector_distance=0.2)
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch,
-            script,
-            [strong],
-            topic_score=0.61,
-            fallback_policy="corpus_first_weak",
-            topic_threshold=0.5,
-        )
-    # a strong retrieval must not rescue a question the axis has already ruled out
-    assert str(result.fallback_reason) == "off_topic"
-    assert result.sources == []
-    assert result.dropped_sources == ["s.md"]
 
 
 def test_the_bare_arm_answers_and_fills_the_same_result(monkeypatch_factory):
@@ -459,40 +307,6 @@ def test_the_bare_arm_reports_no_evidence_when_the_corpus_is_empty(monkeypatch_f
     assert result.sources == []
 
 
-def test_the_last_turn_prompt_reaches_the_transcript_not_only_the_model(monkeypatch_factory):
-    script = [
-        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
-        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
-        {"text": "nothing here covers it"},
-    ]
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(monkeypatch, script, [], max_hops=2)
-
-    assert result.no_evidence_prompted is True
-    contents = [str(m.get("content")) for m in result.messages]
-    assert any("agent.no_evidence" in c for c in contents)
-
-
-def test_a_remote_call_before_the_gate_opens_is_refused_by_dispatch(monkeypatch_factory):
-    import agent_tools
-
-    seen = []
-
-    def spying_dispatch(name, arguments, extra=None, **runtime):
-        seen.append((name, extra))
-        return agent_tools.ToolResult(content="c", meta={"sources": []})
-
-    script = [
-        {"tool_calls": [{"name": "deepwiki__ask_question", "args": {"question": "q"}}]},
-        {"text": "final"},
-    ]
-    with monkeypatch_factory() as monkeypatch:
-        _middleware_run(monkeypatch, script, [], dispatch=spying_dispatch, max_hops=2)
-
-    # the model can name a tool the gate has not opened, and dispatch is the thing that says no
-    assert seen == [("deepwiki__ask_question", None)]
-
-
 def _run_into_the_recursion_limit(monkeypatch_factory, orchestrator):
     from langgraph.errors import GraphRecursionError
 
@@ -520,15 +334,6 @@ def test_the_bare_arm_runs_out_of_hops_at_the_limit_rather_than_breaking(monkeyp
     assert str(result.outcome) == "exhausted"
 
 
-def test_the_recursion_guard_is_an_error_where_the_budget_lives_elsewhere(monkeypatch_factory):
-    result = _run_into_the_recursion_limit(
-        monkeypatch_factory, agent_policy.Orchestrator.langgraph_middleware
-    )
-
-    assert result.failed is True
-    assert str(result.outcome) == "error"
-
-
 def test_a_client_failure_is_logged_as_an_error_not_a_missing_row(monkeypatch_factory):
     class Broken:
         def invoke(self, *args, **kwargs):
@@ -550,38 +355,13 @@ def test_a_client_failure_is_logged_as_an_error_not_a_missing_row(monkeypatch_fa
     assert str(result.outcome) == "error"
 
 
-def test_an_empty_turn_gets_the_same_last_answer_the_loop_asks_for(monkeypatch_factory):
-    script = [
-        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
-        {"text": ""},
-        {"text": "the corpus says hello"},
-    ]
-    with monkeypatch_factory() as monkeypatch:
-        result = _middleware_run(
-            monkeypatch, script, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=4
-        )
-
-    assert result.text == "the corpus says hello"
-    assert result.success is True
-
-
-def test_a_tool_error_from_the_standard_node_is_not_read_as_an_empty_corpus(monkeypatch_factory):
-    from langchain_core.messages import ToolMessage
-    from orchestrators import middleware as mw
-
-    failed = ToolMessage(content="Error: boom", tool_call_id="a", name="search_corpus")
-    assert mw._corpus_results([failed]) == []
-    ours = ToolMessage(content="error: timeout", tool_call_id="b", name="search_corpus")
-    assert mw._corpus_results([ours]) == []
-
-
 # a cross-check misses a mistake both sides make, so the plain path is pinned to a literal
 def test_the_plain_corpus_path_matches_a_written_down_shape(monkeypatch_factory):
     turns = [
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    (graph, offered), _ = _both(
+    graph, offered = _graph_run(
         monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
     )
 
@@ -612,7 +392,7 @@ def test_two_corpus_calls_in_one_turn_get_one_verdict_and_one_notice(monkeypatch
         ),
         _turn(text="final"),
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak"
     )
 
@@ -622,7 +402,6 @@ def test_two_corpus_calls_in_one_turn_get_one_verdict_and_one_notice(monkeypatch
     assert len(notices) == 1, "the notice rides on one tool result, not on every one of them"
     tool_ids = [m.get("tool_call_id") for m in graph.messages if m.get("role") == "tool"]
     assert tool_ids == ["a", "b"]
-    assert hooks.fallback_opened is True
 
 
 # the last hop's results must reach the verdict before anything decides there is no evidence
@@ -639,33 +418,6 @@ def _empty_then_hit(hit):
     return dispatch
 
 
-def test_a_hit_on_the_last_hop_is_not_thrown_away(monkeypatch_factory):
-    import agent_tools
-
-    turns = [
-        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
-        _turn(tool_calls=[_tool_call("b", "search_corpus", "{}")], message={"role": "assistant"}),
-        _turn(text="final"),
-    ]
-    hit = _hit(rerank_score=0.9, vector_distance=0.2)
-    with monkeypatch_factory() as monkeypatch:
-        _agent_harness(monkeypatch, list(turns), [])
-        monkeypatch.setattr(agent_tools, "dispatch", _empty_then_hit(hit))
-        graph = agent.run(
-            "q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_ported
-        )
-    with monkeypatch_factory() as monkeypatch:
-        hooks = _middleware_run(
-            monkeypatch, script_from_turns(turns), [], dispatch=_empty_then_hit(hit), max_hops=2
-        )
-
-    assert _core(graph) == _core(hooks)
-    assert [s.source for s in graph.sources] == [hit.source]
-    assert graph.no_evidence_prompted is False
-    assert str(graph.outcome) == "answered"
-
-
-# the first corpus call lands on the last hop after a nudge, and comes back empty
 def test_an_empty_first_call_on_the_last_hop_still_opens_the_toolbox(monkeypatch_factory):
     narration = '{"name": "search_corpus", "parameters": {"query": "x"}}'
     turns = [
@@ -673,26 +425,12 @@ def test_an_empty_first_call_on_the_last_hop_still_opens_the_toolbox(monkeypatch
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="nothing here covers it"),
     ]
-    (graph, _), (hooks, _) = _both(
+    graph, _ = _graph_run(
         monkeypatch_factory, turns, [], max_hops=2, fallback_policy="corpus_first_weak"
     )
 
     assert str(graph.fallback_reason) == "empty"
     assert graph.fallback_opened is True
-    assert str(hooks.fallback_reason) == "empty"
-    assert hooks.fallback_opened is True
 
 
 # an empty turn before the cap still ends in the no-evidence turn when nothing was found
-def test_an_empty_turn_without_sources_still_gets_the_no_evidence_prompt(monkeypatch_factory):
-    script = [
-        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
-        {"text": ""},
-        {"text": "nothing here covers it"},
-    ]
-    with monkeypatch_factory() as monkeypatch:
-        hooks = _middleware_run(monkeypatch, script, [], max_hops=4)
-
-    assert hooks.no_evidence_prompted is True
-    contents = [str(m.get("content")) for m in hooks.messages]
-    assert any("agent.no_evidence" in c for c in contents)
