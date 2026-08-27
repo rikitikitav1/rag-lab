@@ -1,3 +1,4 @@
+from sources import base
 from sources.base import Base
 
 
@@ -20,3 +21,16 @@ class InterviewSource(Base):
     def category_for(self, rel_path):
         topic = self.name.removesuffix("-interview-questions")
         return f"interview.{topic}"
+
+    # the badge above the first question: a logo, a link and a line offering the rest
+    # of the answers. It answers nothing and it is identical in all 173 repositories
+    BOILERPLATE = "You can also find all"
+
+    def postprocess(self, docs, policy=None):
+        docs = super().postprocess(docs, policy)
+        if not base.hygienic(policy):
+            return docs
+        kept = [d for d in docs if self.BOILERPLATE not in d.content]
+        for i, doc in enumerate(kept):
+            doc.chunk_index = i
+        return kept

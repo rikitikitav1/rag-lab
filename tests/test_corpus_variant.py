@@ -101,14 +101,14 @@ def test_the_search_mode_is_set_on_checkout_not_on_connect():
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-    import retrieval_report
     from orm.sync_db import engine
     from sqlalchemy import event
+    from use_cases import retrieval_compare
 
-    retrieval_report.prepare(True)
-    listener = retrieval_report._APPLIED
+    retrieval_compare.prepare(True)
+    listener = retrieval_compare._APPLIED
     assert listener is not None
     assert event.contains(engine, "checkout", listener)
     assert not event.contains(engine, "connect", listener)
     event.remove(engine, "checkout", listener)
-    retrieval_report._APPLIED = None
+    retrieval_compare._APPLIED = None

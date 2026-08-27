@@ -75,6 +75,14 @@ def _body_hash(body: str) -> str:
     return hashlib.md5(normalised, usedforsecurity=False).hexdigest()
 
 
+def _prefix_len(doc) -> int | None:
+    # only when the body really is the tail of the content: a guessed length would
+    # silently hand the metrics a body that was never there
+    if doc.body is None or not doc.content.endswith(doc.body):
+        return None
+    return len(doc.content) - len(doc.body)
+
+
 def _chunk(source_id, doc, variant) -> DataChunk:
     return DataChunk(
         source_id=source_id,
@@ -83,6 +91,7 @@ def _chunk(source_id, doc, variant) -> DataChunk:
         content=doc.content,
         content_hash=_body_hash(doc.body or doc.content),
         section=doc.section,
+        prefix_len=_prefix_len(doc),
         category=Ltree(doc.category),
         language=doc.language,
         chunk_index=doc.chunk_index,
@@ -101,19 +110,21 @@ def _flush(session, chunks: list[DataChunk], embed_size: int) -> int:
 
 
 @measure_elapsed
-def collect_data(sources, commit_size=None, embed_size=None, variant=None) -> IndexResult:
+def collect_data(
+    sources, commit_size=None, embed_size=None, variant=None, build_index=True
+) -> IndexResult:
     commit_size = commit_size or config.settings.ingestion.commit_size
     embed_size = embed_size or config.settings.ingestion.batch_size
     variant = check_variant(variant or config.settings.corpus.variant)
-    config.settings.corpus.policy(variant)
+    policy = config.settings.corpus.policy(variant)
     log.info("index.start", sources=len(sources), variant=variant)
     total, buffer = 0, []
 
     with Session() as session:
         for source in sources:
             data_source = _provision_source(session, source, variant)
-            for file in source.discover():
-                for doc in source.to_documents(file):
+            for file in source.discover(policy):
+                for doc in source.to_documents(file, policy):
                     buffer.append(_chunk(data_source.id, doc, variant))
                     if len(buffer) >= commit_size:
                         total += _flush(session, buffer, embed_size)
@@ -122,14 +133,35 @@ def collect_data(sources, commit_size=None, embed_size=None, variant=None) -> In
         if buffer:
             total += _flush(session, buffer, embed_size)
 
-    _ensure_vector_index(variant)
+    if build_index:
+        ensure_vector_index(variant)
     log.info("index.done", chunks=total, variant=variant)
     return IndexResult(sources=len(sources), chunks=total)
 
 
+# the one owner of the name, so the three readers of "an index that belongs to a variant"
+# ask here instead of each spelling the prefix out
+VECTOR_INDEX_PREFIX = "data_chunks_embedding_"
+
+
+def vector_index_name(variant: str) -> str:
+    return f"{VECTOR_INDEX_PREFIX}{check_variant(variant)}_idx"
+
+
+def has_vector_index(variant: str) -> bool:
+    with Session() as session:
+        return bool(
+            session.scalar(
+                sa_text("SELECT to_regclass(:name) IS NOT NULL").bindparams(
+                    name=vector_index_name(variant)
+                )
+            )
+        )
+
+
 # built after the bulk insert: hnsw over finished data is cheaper than maintained row by row
-def _ensure_vector_index(variant: str) -> None:
-    name = f"data_chunks_embedding_{check_variant(variant)}_idx"
+def ensure_vector_index(variant: str) -> None:
+    name = vector_index_name(variant)
     with Session() as session:
         # the session carries statement_timeout=30s, and an hnsw build outlives it
         session.execute(sa_text("SET LOCAL statement_timeout = 0"))

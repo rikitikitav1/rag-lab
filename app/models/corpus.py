@@ -1,7 +1,9 @@
+from datetime import datetime
+
 from orm import Base
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, String
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_utils import LtreeType
 
@@ -15,6 +17,10 @@ class DataSource(Base):
     git_url: Mapped[str | None]
     path: Mapped[str | None]
     active: Mapped[bool] = mapped_column(default=True)
+    ingest_quality: Mapped[str | None]
+    ingest_variant: Mapped[str | None]
+    ingest_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ingest_reports: Mapped[dict] = mapped_column(JSONB, default=dict)
     chunks: Mapped[list["DataChunk"]] = relationship(
         back_populates="data_source", cascade="all, delete-orphan"
     )
@@ -37,6 +43,7 @@ class DataChunk(Base):
     variant: Mapped[str]
     section: Mapped[str | None]
     content_hash: Mapped[str | None]
+    prefix_len: Mapped[int | None]
     content: Mapped[str]
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
     chunk_index: Mapped[int]
