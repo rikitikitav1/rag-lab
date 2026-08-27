@@ -22,16 +22,22 @@ def enqueue(type: str, options: dict | None = None, queue: str = "default") -> i
 
 
 # a second identical job is not idempotence, it is a queue nobody reads
-def pending_of_type(type: str) -> bool:
+# the options matter as well as the type: two variants may each be honestly waiting for
+# their own index, and a job for one is not a job for the other
+def pending_of_type(type: str, **options) -> bool:
     with Session() as session:
-        return bool(
-            session.scalar(
-                select(Job.id).where(
-                    Job.type == type,
-                    Job.status.in_([JobStatus.new, JobStatus.running]),
-                ).limit(1)
-            )
+        query = select(Job.id).where(
+            Job.type == type,
+            Job.status.in_([JobStatus.new, JobStatus.running]),
         )
+        for key, value in options.items():
+            # a json null renders as the string "None" through astext and matches nothing,
+            # so the caller's null and the row's null would look like different jobs
+            if value is None:
+                query = query.where(Job.options[key].astext.is_(None))
+            else:
+                query = query.where(Job.options[key].astext == str(value))
+        return bool(session.scalar(query.limit(1)))
 
 
 def add_job(
