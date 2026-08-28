@@ -22,7 +22,6 @@ DEPTH = 20
 CUTOFFS = (1, 3, 5, 10)
 BOOTSTRAP = 2000
 NO_THRESHOLD = 2.0
-EF_SEARCH = config.settings.retrieval.ef_search
 
 log = logging_setup.get_logger(__name__)
 
@@ -39,8 +38,10 @@ class ComparisonPlan:
 
 # one reading of the arm: derived twice, the label and the depth drift apart
 def depth_of(arm: dict) -> tuple[bool, int]:
+    from use_cases import search_depth
+
     ef = arm.get("ef_search")
-    return ef is None, ef or EF_SEARCH
+    return ef is None, ef or search_depth.resolve(arm.get("variant"))
 
 
 def _clean(text):
@@ -77,7 +78,10 @@ def questions(conn, set_name, limit, ids=None):
 
 
 def ranked_lists(db, question, variant, depth=DEPTH, limit_keyword=CANDIDATES,
-                 limit_vector=CANDIDATES, distance_threshold=NO_THRESHOLD, rerank_top=0):
+                 limit_vector=CANDIDATES, distance_threshold=NO_THRESHOLD, rerank_top=0,
+                 ef_search=None, exact=False):
+    # the depth travels with the call: a measurement that let the search resolve its own
+    # would name one number in the record and run at another
     rows = db.hybrid_search(
         question["original_text"],
         question["emb"],
@@ -87,6 +91,8 @@ def ranked_lists(db, question, variant, depth=DEPTH, limit_keyword=CANDIDATES,
         limit=CANDIDATES,
         variant=variant,
         distance_threshold=distance_threshold,
+        ef_search=ef_search,
+        exact=exact,
     )
     if rerank_top:
         rows = _reranked(question["original_text"], rows, rerank_top)
@@ -122,7 +128,7 @@ def rank_of_file(files, marked):
 _APPLIED = None
 
 
-def prepare(exact: bool, ef: int = EF_SEARCH) -> None:
+def prepare(exact: bool, ef: int | None = None) -> None:
     """Exact search measures the corpus; hnsw measures the index, and it is not reproducible.
 
     On checkout, not on connect: hybrid_search opens its own connection, and a pooled one created
@@ -136,6 +142,10 @@ def prepare(exact: bool, ef: int = EF_SEARCH) -> None:
         event.remove(engine, "checkout", _APPLIED)
         _APPLIED = None
 
+    if not exact and ef is None:
+        from use_cases import search_depth
+
+        ef = search_depth.resolve()
     setting = "SET enable_indexscan = off" if exact else f"SET hnsw.ef_search = {int(ef)}"
 
     def apply(dbapi_conn, _record, _proxy):
@@ -174,7 +184,7 @@ def search_mode_restored():
 
 
 @contextlib.contextmanager
-def search_mode(exact: bool, ef: int = EF_SEARCH):
+def search_mode(exact: bool, ef: int | None = None):
     with search_mode_restored():
         prepare(exact, ef)
         yield
@@ -231,7 +241,7 @@ def rank_of_section(sections, marked, gold_heading):
     return None
 
 
-def measure(db, conn, set_name, variant, limit, exact, ef=EF_SEARCH, limit_keyword=CANDIDATES,
+def measure(db, conn, set_name, variant, limit, exact, ef=None, limit_keyword=CANDIDATES,
             limit_vector=CANDIDATES, distance_threshold=NO_THRESHOLD, rerank_top=0,
             question_ids=None, source=None):
     qs = questions(conn, set_name, limit, ids=question_ids)
@@ -243,6 +253,8 @@ def measure(db, conn, set_name, variant, limit, exact, ef=EF_SEARCH, limit_keywo
         files, sections, rows = ranked_lists(
             db, q, variant, limit_keyword=limit_keyword, limit_vector=limit_vector,
             distance_threshold=distance_threshold, rerank_top=rerank_top,
+            ef_search=None if exact else ef,
+            exact=exact,
         )
         assert_pool(rows, q["id"], min(limit_vector, CANDIDATES))
         scorable = section_exists(conn, variant, q["marked_sources"], q["gold_heading"])

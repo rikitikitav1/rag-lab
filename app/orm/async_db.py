@@ -34,7 +34,6 @@ engine = create_async_engine(
             "statement_timeout": "30000",
             # a generic plan cannot prove a partial index predicate from a bound parameter
             "plan_cache_mode": "force_custom_plan",
-            "hnsw.ef_search": str(config.settings.retrieval.ef_search),
         },
     },
 )

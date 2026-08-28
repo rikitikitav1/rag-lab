@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from timing_wrappers import measure_elapsed
+from use_cases import search_depth
 
 import db
 
@@ -147,13 +148,19 @@ def _hidden_by_cut(source: str, variant: str) -> bool:
     return Path(source).name in LEGACY_SKIP_NAMES
 
 
-def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str):
+# returns the depth it searched at along with the rows: the snapshot has to record what
+# the search used, and resolving a second time is a second answer, not the same one
+def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str,
+                   ef_search: int | None = None):
+    depth = search_depth.resolve(variant, ef_search)
     if not rerank_enabled:
         return (
             db.hybrid_search(
-                question, llm.embed(question), category, limit=k, variant=variant
+                question, llm.embed(question), category, limit=k, variant=variant,
+                ef_search=depth,
             ),
             None,
+            depth,
         )
 
     import rerank
@@ -164,9 +171,10 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
         category,
         limit=config.settings.rerank.candidates,
         variant=variant,
+        ef_search=depth,
     )
     ranked = rerank.rerank(question, candidates, top=k)
-    return [row for row, _ in ranked], [score for _, score in ranked]
+    return [row for row, _ in ranked], [score for _, score in ranked], depth
 
 
 def format_chunks(rows, variant: str | None = None) -> str:
@@ -197,7 +205,7 @@ def search_chunks(
 ) -> tuple[str, list[Source]]:
     k = k or config.settings.retrieval.results_limit
     use_rerank = resolve_rerank(use_rerank)
-    rows, rerank_scores = _retrieve_rows(query, category, k, use_rerank, variant)
+    rows, rerank_scores, _depth = _retrieve_rows(query, category, k, use_rerank, variant)
     if not rows:
         return NO_RESULTS, []
     if rerank_scores is None and gate_top:
@@ -215,10 +223,11 @@ def retrieve(
     k: int | None = None,
     *,
     variant: str,
+    ef_search: int | None = None,
 ) -> Retrieval:
     k = k or config.settings.retrieval.results_limit
-    rows, rerank_scores = _retrieve_rows(
-        question, category, k, resolve_rerank(None), variant
+    rows, rerank_scores, _depth = _retrieve_rows(
+        question, category, k, resolve_rerank(None), variant, ef_search
     )
     return Retrieval(sources=take_sources(rows, rerank_scores, variant))
 
@@ -233,12 +242,15 @@ def answer(
     language: str | None = None,
     model: str | None = None,
     variant: str | None = None,
+    ef_search: int | None = None,
 ) -> Answer:
     start = time.perf_counter()
     use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
     variant = variant or config.settings.corpus.variant
-    rows, rerank_scores = _retrieve_rows(question, category, k, use_rerank, variant)
+    rows, rerank_scores, depth = _retrieve_rows(
+        question, category, k, use_rerank, variant, ef_search
+    )
     return answer_from_rows(
         question,
         rows,
@@ -251,6 +263,7 @@ def answer(
         k=k,
         started_at=start,
         variant=variant,
+        ef_search=depth,
     )
 
 
@@ -267,6 +280,7 @@ def answer_from_rows(
     started_at: float | None = None,
     phased: bool = False,
     rerank_device: str | None = None,
+    ef_search: int | None = None,
     *,
     variant: str,
 ) -> Answer:
@@ -307,7 +321,7 @@ def answer_from_rows(
     try:
         _log_answer(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
-            _retrieval_snapshot(rows, ans.sources), variant=variant,
+            _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -341,7 +355,8 @@ def _retrieval_snapshot(rows, sources) -> dict:
     }
 
 
-def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str) -> dict:
+def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
+                     ef_search: int | None = None) -> dict:
     return {
         "rerank": use_rerank,
         "rerank_device": (rerank_device or _rerank_device()) if use_rerank else None,
@@ -355,7 +370,7 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
             "norm": config.settings.retrieval.keyword_norm,
             "query_lang": config.settings.retrieval.query_lang,
         },
-        "ef_search": config.settings.retrieval.ef_search,
+        "ef_search": ef_search,
         "variant_policy": config.settings.corpus.policy(variant),
         "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
     }
@@ -373,7 +388,7 @@ def _rerank_device() -> str | None:
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
-    *, variant: str,
+    *, variant: str, ef_search: int | None = None,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -394,7 +409,7 @@ def _log_answer(
             metrics={
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
-                    rerank_device, variant,
+                    rerank_device, variant, ef_search,
                 ),
                 "retrieval": retrieval,
             },

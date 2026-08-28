@@ -153,7 +153,10 @@ def nearest_distance(embedding, *, variant) -> float | None:
         ORDER BY distance
         LIMIT 1
     """
+    from use_cases import search_depth
+
     with engine.connect() as conn:
+        conn.execute(text(f"SET LOCAL hnsw.ef_search = {search_depth.resolve(variant)}"))
         row = conn.execute(
             text(query), {"embedding": str(list(embedding)), "variant": variant}
         ).scalar()
@@ -184,6 +187,8 @@ def hybrid_search(
     *,
     variant,
     distance_threshold=None,
+    ef_search=None,
+    exact=False,
 ):
     retrieval = config.settings.retrieval
     limit = limit or retrieval.results_limit
@@ -244,5 +249,14 @@ def hybrid_search(
     }
     if category:
         params["category"] = f"*.{category}.*"
+    # set on the connection this search uses, not on every connection in the pool: the
+    # depth can be overridden per request, and a pooled connection outlives the request
+    from use_cases import search_depth
+
+    # an exact arm has no depth: the caller turned index scans off, and asking how deep
+    # to walk a graph nobody walks costs a probe and answers nothing
+    depth = None if exact else search_depth.resolve(variant, ef_search)
     with engine.connect() as conn:
+        if depth is not None:
+            conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
         return conn.execute(text(query), params).fetchall()

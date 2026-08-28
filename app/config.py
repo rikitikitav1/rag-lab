@@ -22,7 +22,9 @@ class RetrievalCfg(BaseModel):
     keyword_rank: str = "ts_rank"
     keyword_norm: int = 0
     query_lang: str = "function_words"
-    ef_search: int = 100
+    # a number pins the depth; "auto" asks the planner for the deepest rung of the ladder
+    # that still walks the index, because where it stops walking moves with the table
+    ef_search: int | Literal["auto"] = "auto"
     ef_ladder: list[int] = [100, 200, 400]
     recall_gate: float = 0.98
     max_mrr_loss: float = 0.01

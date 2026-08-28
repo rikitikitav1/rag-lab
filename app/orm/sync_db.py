@@ -23,10 +23,10 @@ engine = create_engine(
     connect_args={
         "connect_timeout": 5,
         # a generic plan cannot prove a partial index predicate from a bound parameter
-        "options": (
-            "-c statement_timeout=30000 -c plan_cache_mode=force_custom_plan"
-            f" -c hnsw.ef_search={config.settings.retrieval.ef_search}"
-        ),
+        # no hnsw.ef_search here: the depth is resolved per search and set on the
+        # statement, because "auto" needs a connection to answer and this is where one
+        # is made
+        "options": "-c statement_timeout=30000 -c plan_cache_mode=force_custom_plan",
     },
 )
 

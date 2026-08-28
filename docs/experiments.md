@@ -81,3 +81,4 @@ Rules that decide whether an entry is worth keeping:
 - [2026-08-26 - The same agent written four ways, and what the standard costs](experiments/2026-08-26_the-same-agent-written-four-ways.md)
 - [2026-08-26 - A corpus you can keep two of, and the instrument that measures it](experiments/2026-08-26_a-corpus-you-can-keep-two-of.md)
 - [2026-08-27 - Corpus hygiene that moved the number, and four instruments that were lying](experiments/2026-08-27_hygiene-that-moved-the-number.md)
+- [2026-08-28 - A third heading level in the cut, and what it did not buy](experiments/2026-08-28_a-third-heading-level-in-the-cut.md)

@@ -53,7 +53,7 @@ def test_search_corpus_formats_content_and_sources(monkeypatch):
     from use_cases import chat
 
     rows = [("chunk one", "src/a.md"), ("chunk two", "src/b.md")]
-    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: (rows, None))
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: (rows, None, 200))
     monkeypatch.setattr(chat, "take_sources", lambda r, scores=None, variant=None: ["S1", "S2"])
 
     result = at._search_corpus("q")
@@ -65,7 +65,7 @@ def test_search_corpus_formats_content_and_sources(monkeypatch):
 def test_search_corpus_empty(monkeypatch):
     from use_cases import chat
 
-    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: ([], None))
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: ([], None, 200))
     result = at._search_corpus("q")
     assert result.content == "No relevant documents found."
     assert result.meta["sources"] == []

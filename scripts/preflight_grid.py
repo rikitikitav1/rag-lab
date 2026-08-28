@@ -2,21 +2,27 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 import urllib.parse
 import urllib.request
+from functools import lru_cache
 from pathlib import Path
 
 API = "http://localhost:8000"
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "app"))
-
-from use_cases.index import VECTOR_INDEX_PREFIX  # noqa: E402
 
 
 def sh(*args: str) -> str:
     done = subprocess.run(args, capture_output=True, text=True)
     return done.stdout.strip() if done.returncode == 0 else ""
+
+
+# asked of the worker rather than imported: this script runs on the host, where the
+# application's dependencies are not installed, and importing app code to read one
+# constant is what broke it. One owner still, just reached the way everything else is
+@lru_cache(maxsize=1)
+def vector_index_prefix() -> str:
+    out = _in_worker("from use_cases.index import VECTOR_INDEX_PREFIX as p; print(p)")
+    return out or "data_chunks_embedding_"
 
 
 def get(path: str):
@@ -118,11 +124,15 @@ def queue_is_idle() -> tuple[bool, str]:
 
 
 
+# the answer is the last line: anything that touches the application may log on the way,
+# and a check that reads the first line calls a log line a broken answer
 def _in_worker(code: str) -> str:
-    return sh(
+    out = sh(
         "docker", "compose", "exec", "-T", "worker", "python", "-c",
         "import sys; sys.path.insert(0, '/app/app');" + code,
     )
+    lines = [line for line in out.splitlines() if line.strip()]
+    return lines[-1] if lines else ""
 
 
 def corpus_variant_is_usable() -> tuple[bool, str]:
@@ -141,22 +151,29 @@ def corpus_variant_is_usable() -> tuple[bool, str]:
 
 
 # a generic plan cannot use a partial index, and the fallback is silent
-def variant_index_is_used() -> tuple[bool, str]:
+# every indexed variant, not only the served one: the depth at which the planner stops
+# walking the index is priced against a read of the whole table, so indexing one variant
+# changes where every other one stops. Checking only the served variant is how the
+# crossover moved twice without anybody noticing
+def every_variant_walks_its_index() -> tuple[bool, str]:
     out = _in_worker(
-        "import config;"
-        " from orm.sync_db import engine; from sqlalchemy import text;"
-        " v = config.settings.corpus.variant;"
-        " q = 'SELECT id FROM data_chunks WHERE variant = :v AND embedding IS NOT NULL"
-        " ORDER BY embedding <=> (SELECT embedding FROM data_chunks WHERE variant = :v LIMIT 1)"
-        " LIMIT 20';"
-        " c = engine.connect();"
-        " [c.execute(text(q), {'v': v}).all() for _ in range(6)];"
-        " plan = ' '.join(r[0] for r in c.execute(text('EXPLAIN (COSTS OFF) ' + q), {'v': v}));"
-        " print(plan)"
+        "import json; from use_cases import search_depth;"
+        " print(json.dumps(search_depth.audit()))"
     )
-    wanted = VECTOR_INDEX_PREFIX
-    ok = wanted in out and "Index Scan" in out
-    return ok, f"vector index in the plan: {'partial, per variant' if ok else out[:90] or 'none'}"
+    if not out.startswith("["):
+        return False, f"depth audit: cannot read ({out[-60:] or 'no answer'})"
+    rows = json.loads(out)
+    if not rows:
+        return True, "depth: no variant holds rows yet"
+    sorting = [r["variant"] for r in rows if not r["serving_uses_index"]]
+    reading = ", ".join(
+        f"{r['variant']}@{r['serving']}"
+        + ("" if r["serving_uses_index"] else " SORTS")
+        for r in rows
+    )
+    return not sorting, (
+        f"depth ({rows[0]['declared']}, {rows[0]['rows_estimate']} rows estimated): {reading}"
+    )
 
 
 def table_is_vacuumed() -> tuple[bool, str]:
@@ -243,7 +260,7 @@ def schema_holds_no_variant_indexes() -> tuple[bool, str]:
     leaked = [
         line.replace(" IF NOT EXISTS", "").split()[2]
         for line in dump.read_text().splitlines()
-        if VECTOR_INDEX_PREFIX in line and line.startswith("CREATE INDEX")
+        if vector_index_prefix() in line and line.startswith("CREATE INDEX")
     ]
     # a variant is a line in the config, so its index is built at runtime; one in the
     # dump means the dump has become a function of what happened to be indexed locally
@@ -262,11 +279,15 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
     logged = config_row.get("keyword")
     if logged is not None:
         logged = {**logged, "ef_search": config_row.get("ef_search")}
+    # the depth is resolved, not declared: a run records the number it searched at, and
+    # comparing it against the word `auto` in the config makes this check fail for as
+    # long as the config says `auto`
     out = _in_worker(
-        "import json, config;"
+        "import json, config; from use_cases import search_depth;"
         " r = config.settings.retrieval;"
         " print(json.dumps({'query': r.keyword_query, 'rank': r.keyword_rank,"
-        " 'norm': r.keyword_norm, 'query_lang': r.query_lang, 'ef_search': r.ef_search}))"
+        " 'norm': r.keyword_norm, 'query_lang': r.query_lang,"
+        " 'ef_search': search_depth.resolve()}))"
     )
     live = json.loads(out) if out.startswith("{") else None
     if logged is None:
@@ -342,7 +363,8 @@ def _alive_thresholds() -> tuple[float, int] | None:
 
 CHECKS = (
     tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config,
-    models_are_on_the_card, queue_is_idle, corpus_variant_is_usable, variant_index_is_used,
+    models_are_on_the_card, queue_is_idle, corpus_variant_is_usable,
+    every_variant_walks_its_index,
     table_is_vacuumed, schema_holds_no_variant_indexes, one_question_per_original,
     halves_of_pairs_are_counted, every_variant_cuts_into_its_own_rows,
     keyword_switches_match_the_worker, marks_are_reachable, index_is_alive,

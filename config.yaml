@@ -20,28 +20,36 @@ service:
     # three sets (datasets/measurements/query_lang/), and it decides the one question the alphabet
     # rule gets wrong. Also picks the language the answer comes back in (26.08)
     query_lang: function_words
-    # hnsw recall@20 vs exact: 0.9148 at the server default 40, 1.0 at 100 (measured 26.08).
-    # Raised to 200 on 27.08 for two reasons that turned out to be separate. Rebuilding
-    # the ladder and the gate live here, not in the script, because they are procedure:
-    # they belong in the snapshot next to the value they produced
+    # 200, and the number is the smaller half of what is written here.
     #
-    # the depth is not free and not monotone in the way it looks. pgvector prices the
-    # hnsw path linearly in ef_search (~34 units per unit here) while sorting the whole
-    # table costs a fixed 7752 over 13068 rows, so above ef ~197 the planner drops the
-    # index and sorts exactly instead. That is why 400 used to cost the same as 200 and
-    # why recall read exactly 1.0 there: both rungs were exact search, not a better
-    # graph. The crossover is a property of the corpus size, so it moves up as the
-    # corpus grows and has to be re-checked per variant, never inherited.
+    # Where the planner abandons the index is a property of the WHOLE table, not of the
+    # variant being searched: the alternative to the hnsw walk is a sequential read of
+    # data_chunks filtered by variant, so rows of every other variant pay into its cost.
+    # Indexing prefix_1024 moved the crossover from ~197 (25177 rows, two variants) to
+    # ~265 (42668 rows, three), which is why the previous note here, and the rule of
+    # thumb it rested on, said the opposite of what EXPLAIN says today. There is no rule
+    # of thumb: the crossover is nonlinear in rows and moves with random_page_cost.
+    # Ask the plan, never a formula, and never inherit an answer from another day.
     #
-    # 100, and the reason is the path, not the recall. The crossover moves up with the
-    # row count, so 100 keeps the same plan as the corpus grows while 200 would switch
-    # from exact search to the index silently, changing latency and recall with nothing
-    # touched. It would also put clean_1024 (12k rows) and prefix_1024 (17.7k) on
-    # different sides of it, and then the pair compares two plans, not two cuts.
-    # Measured through the index at 100: recall 0.9769 on baseline, 0.9677 on
-    # clean_1024, both under the gate below. The gate was set by hand and is the thing
-    # to argue with, not the depth
-    ef_search: 100
+    # Measured 28.08 with three variants in the table. Plan: index at 100 and 200 on all
+    # three, exact sort at 400. Through the index at 200: recall@20 against exact 1.0 on
+    # clean_1024, 0.9912 on baseline, 0.9852 on prefix_1024; paired section MRR against
+    # exact 0.0000 [0, 0] and zero questions lost, against one lost at 100. Cost, in wall
+    # clock rather than planner units: the vector leg reads 1.75 ms at 100 and 2.15 ms at
+    # 200 (medians over 100 questions), which is inside the spread, and 45.31 ms at 400
+    # because that rung is the sort. The whole hybrid query reads 23-25 ms at both 100 and
+    # 200. So the depth is free here and the deeper rung is the one that loses nothing.
+    #
+    # The fragility is real and measurable: 200 sits about 65 units of ef inside the
+    # index zone today, and dropping a variant would put it outside. That is what the
+    # depth audit guards; the number alone cannot.
+    # auto: the deepest rung of the ladder whose plan still walks the index, asked of the
+    # planner and re-asked when the table's page count or row estimate moves. Pages are
+    # the load-bearing half: the alternative to the walk is a sequential read priced per
+    # page, so a DELETE moves the crossover not at all and a table rewrite moves it a lot. A number here pins it
+    # instead, and so does `ef_search` on a request, a run or a comparison axis. What a
+    # run actually used is in its snapshot, never inferred from this file
+    ef_search: auto
     # left as it was taken: rungs above the crossover are exact search, and a denser
     # ladder under it is a measurement to run deliberately, not a default to drift into
     ef_ladder: [100, 200, 400]

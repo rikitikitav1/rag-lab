@@ -13,10 +13,10 @@ import config  # noqa: E402  the path above is what makes it importable
 
 # the measuring lives in the app so the comparison job and this script read a rank the
 # same way; what stays here is the CLI, the artifacts and the comparison of two files
+from use_cases import search_depth  # noqa: E402
 from use_cases.retrieval_compare import (  # noqa: E402
     CANDIDATES,
     DEPTH,
-    EF_SEARCH,
     NO_THRESHOLD,
     POOL_SHORTFALL,
     arm_procedure,
@@ -48,7 +48,7 @@ def vector_plan(conn, variant: str, ef: int) -> str:
     return "index" if "Index Scan" in plan else "sort"
 
 
-def recall_against_exact(db, conn, set_name, variant, limit, ef=EF_SEARCH):
+def recall_against_exact(db, conn, set_name, variant, limit, ef=None):
     """The agent and the interactive path go through hnsw, so its recall is a run-level fact."""
     exact = {r["id"]: r for r in measure(db, conn, set_name, variant, limit, True)}
     approx = measure(db, conn, set_name, variant, limit, False, ef)
@@ -244,9 +244,11 @@ def main() -> int:
 
     import db
 
-    # default to what the server runs, or a gate would pass while production loses recall
+    # default to what the server runs, or a gate would pass while production loses recall.
+    # Resolved, never `auto`: what a report says it measured has to be a number
+    variant_for_depth = args.variant or config.settings.corpus.variant
     if args.ef is None:
-        args.ef = config.settings.retrieval.ef_search
+        args.ef = search_depth.resolve(variant_for_depth)
 
     for name in ("keyword_query", "keyword_rank", "keyword_norm", "query_lang"):
         chosen = getattr(args, name)
@@ -256,7 +258,7 @@ def main() -> int:
     variant = check_variant(args.variant or config.settings.corpus.variant)
     if args.production_limits:
         args.hnsw = True
-        args.ef = config.settings.retrieval.ef_search
+        args.ef = search_depth.resolve(variant)
         args.limit_keyword = config.settings.retrieval.limit_keywords
         args.limit_vector = config.settings.retrieval.limit_vector
         args.distance_threshold = config.settings.retrieval.distance_threshold
