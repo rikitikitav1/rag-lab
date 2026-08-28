@@ -5,7 +5,7 @@ embed: "Embed query (bge-m3, 1024d)"
 
 retrieval: Hybrid retrieval (one SQL query) {
   direction: right
-  vector: vector CTE\ntop-N by cosine\nhnsw, ef_search 100
+  vector: vector CTE\ntop-N by cosine\nhnsw at the resolved depth (auto)
   keyword: keyword CTE\nFTS per-language\nquery_lang: function_words
   rrf: "RRF merge\n1/(60+rank)\nties by id"
   vector -> rrf

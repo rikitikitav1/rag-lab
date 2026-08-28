@@ -30,7 +30,7 @@ card: GPU (8 GB) {
     gen -> logrow
   }
 
-  p1 -> p2: "embedder unloaded once retrieval is over,\nand the generator with it (keep_alive 0)" {
+  p1 -> p2: "is the card still there? asked here,\nbefore the generator is paid for\nembedder unloaded, and the generator with it" {
     style.stroke-width: 2
   }
   p2 -> p3: "reranker unloaded,\ncuda cache emptied" {
@@ -38,7 +38,7 @@ card: GPU (8 GB) {
   }
 }
 
-done: "generator unloaded when the run ends:\nthe next run in the queue starts\non a card nobody is holding"
+done: "on EVERY exit, not only the last line:\nreranker, embedder and generator freed,\nso a refusal does not leave its own\ngenerator on the card for the retry"
 
 card.p3 -> done
 

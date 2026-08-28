@@ -125,6 +125,11 @@ Caveat: retrieval hit@k/MRR are computed the same way for both pipelines, but fo
 
 `POST /v1/eval/experiment` queues one run per value of a swept parameter, keeping set, pipeline and language fixed for a clean single-variable comparison. Swept params: `k` (retrieval width, chunks fed to the generator), `max_hops` (agent hop cap), `model` (generator model name; a model absent from the registry is created and pulled, the run waits for it), `variant` (which corpus variant the run reads, so a chunking can be swept like any other parameter), and, for the agent pipeline only, `fallback_policy`, `gate_signal`, `weak_distance` (the coverage gate's distance threshold) and `topic_threshold`. Runs are auto-named `<base>_<param>_<value>` and each enqueues its own judge pass; the worker drains them one at a time, so it is fire-and-forget.
 
+A corpus can be pinned as well as swept. `variant` on `POST /v1/eval/run` and on either
+experiment route names the cut every arm reads, and when `variant` is itself the swept
+parameter the swept value wins. Without it a run reads the corpus named in the config, and
+the snapshot then records that one rather than the one somebody meant.
+
 Comparing cuts rather than answers is the same route with another kind:
 
 ```bash

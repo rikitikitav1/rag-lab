@@ -10,6 +10,7 @@ services:
        "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       RERANK_DEVICE: cpu
+      HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
     ports:
@@ -94,6 +95,9 @@ services:
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
       WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
       RERANK_DEVICE: ${WORKER_RERANK_DEVICE:-cpu}
+      # the reranker's weights are in hf_cache; without this sentence_transformers still
+      # asks huggingface whether they moved, and a router blinking took a run down with it
+      HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
     depends_on:

@@ -77,9 +77,16 @@ service:
     # their own answer, and both still said `paraphrased_ru` after the arc moved to v2
     criterion_sets: [paraphrased_v2_ru, paraphrased_v2]
   rerank:
-    # off by default, and the decision has a history worth keeping. In July it was off
-    # because of latency. On 27.08 it went on for runs on the strength of the control
-    # hundred, and then the big sets arrived and disagreed with each other:
+    # off by default, and the reason has to be a quality reason. Cost is not one: the
+    # owner's rule is that the default pipeline is the whole standard pipeline, and
+    # "the reranker is slow" is an argument about where it runs, not about whether the
+    # answer needs it. On the card the same work takes 86 ms against 2.76 s on the
+    # processor, so the cost half of this decision is a placement problem, and for the
+    # eval path it is solved: reranking happens in a phase that owns the card.
+    #
+    # What is left is a quality reason, and it is real. On 27.08 the flag went on for
+    # runs on the strength of the control hundred, and then the big sets arrived and
+    # disagreed with each other:
     #
     #   paraphrased_v2_ru, 823   rerank on baseline  +0.0369 [+0.0155, +0.0596]
     #   paraphrased_v2,    820   rerank on baseline  -0.0245 [-0.0460, -0.0021]
@@ -88,12 +95,18 @@ service:
     # clear of zero, so a default set on either half would be set on the half that agrees.
     # It also may not be about language at all: an english question lights the keyword leg
     # and a russian one does not, so reranking may be replacing a fusion of two signals
-    # with one. Until that is measured, a run asks for it (`rerank: true`) rather than
-    # getting it. Cost, measured through the path production calls and written down in
-    # datasets/measurements/rerank_latency.json: 2.76 s per question on cpu against 86 ms
-    # on an idle card, twenty candidates of average length. On a card a run already owns
-    # the same work reads about twice as slow, which is the other half of why an
-    # interactive answer does not do it
+    # with one. Until that is measured at the level of the answer rather than the
+    # ranking, a run asks for it (`rerank: true`) rather than getting it, and the burden
+    # is on the measurement to show harm rather than on the reranker to earn its place.
+    #
+    # The interactive path is a separate problem and not a cost excuse either. One
+    # question needs the embedder, then the reranker, then the generator, so phases
+    # cannot help it and ollama swaps a model per question. Giving it the whole pipeline
+    # means a resident reranker sharing the card, which is a question about how much of
+    # the card the generator may have. Latency, through the path production calls, is in
+    # datasets/measurements/rerank_latency.json: 2.76 s per question on cpu, 86 ms on an
+    # idle card, about twice that on a card a run already owns, twenty candidates of
+    # average length
     enabled: false
     model: BAAI/bge-reranker-v2-m3
     candidates: 20
