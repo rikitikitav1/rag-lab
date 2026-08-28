@@ -88,10 +88,6 @@ def _compare_question_sets(set_a: list, set_b: list) -> dict:
     return out
 
 
-def pairwise_stats(run_a: str, run_b: str) -> dict:
-    return _compare_question_sets(load_logs(run_a), load_logs(run_b))
-
-
 def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
     tests = [s for axes in comparisons.values() for s in axes.values() if s is not None]
     threshold = alpha / len(tests) if tests else None

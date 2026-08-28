@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+import logging_setup
 from models import Job, JobStatus
 from orm.sync_db import Session
 from sqlalchemy import func, select
+
+log = logging_setup.get_logger(__name__)
 
 
 @dataclass
@@ -120,10 +123,24 @@ def cancel(ids: list[int]) -> list[int]:
             )
         ).all()
         cancelled = [j.id for j in jobs]
+        stranded = [
+            (j.options or {}).get("run_name")
+            for j in jobs
+            if j.type in ("eval_run", "judge_answers") and (j.options or {}).get("run_name")
+        ]
         for job in jobs:
             job.status = JobStatus.cancelled
         session.commit()
-        return cancelled
+    # after the commit, and outside this session: an experiment waiting on a cancelled
+    # arm waits for ever, because aggregation is reachable only through judging
+    for run_name in stranded:
+        try:
+            from use_cases import experiment
+
+            experiment.mark_failed_for_run(run_name)
+        except Exception as e:
+            log.warning("job.experiment_not_failed", run_name=run_name, error=str(e))
+    return cancelled
 
 
 def is_cancelled(id: int) -> bool:

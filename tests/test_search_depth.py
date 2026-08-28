@@ -88,12 +88,18 @@ def test_the_probe_asks_for_the_index_back_before_it_looks(monkeypatch):
                 def all(self_inner):
                     return ["Index Scan using data_chunks_embedding_baseline_idx"]
 
+                def scalar(self_inner):
+                    return "off"
+
             return _R()
 
     assert search_depth.uses_index(_Conn(), "baseline", 200) is True
     assert any("enable_indexscan = on" in q for q in issued), (
         "the probe must undo the exact-search mode for its own statement"
     )
+    # and put it back: the connection belongs to the caller, and a caller measuring
+    # exactly would go on measuring something else for the rest of its transaction
+    assert issued[-1] == "SET LOCAL enable_indexscan = off"
 
 
 @pytest.mark.skipif(not _stack_is_up(), reason="needs the database this probe asks")

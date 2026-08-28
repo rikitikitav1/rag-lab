@@ -31,13 +31,13 @@ class RetrievalCfg(BaseModel):
     max_questions_lost: int = 0
     index_alive_recall: float = 0.9
     index_alive_questions: int = 40
+    criterion_sets: list[str] = ["paraphrased_v2_ru", "paraphrased_v2"]
 
 
 class RerankCfg(BaseModel):
     enabled: bool = False
     model: str = "BAAI/bge-reranker-v2-m3"
     candidates: int = 20
-    top: int = 3
 
 
 class AgentCfg(BaseModel):

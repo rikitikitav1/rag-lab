@@ -196,7 +196,10 @@ def _stub_session(exp, rows_won: int | None = None):
             else:
                 where = str(statement.compile()).split("WHERE", 1)
                 guarded = len(where) > 1 and "status" in where[1]
-                won = int(guarded and exp.status == ExperimentStatus.running)
+                # an unguarded UPDATE lands, it does not abstain. Modelling a missing
+                # guard as "nothing happened" let the guard be deleted with the tests
+                # named after it still green
+                won = int(exp.status == ExperimentStatus.running) if guarded else 1
             if won:
                 for key, value in statement.compile().params.items():
                     if hasattr(exp, key):
@@ -394,3 +397,25 @@ def test_a_record_says_whether_its_two_arms_were_comparable():
     assert [f for f, _, _ in rc.comparable({**base, field: None}, {**wider, field: None})] == [
         "limit_vector"
     ]
+
+
+def test_two_prepares_leave_exactly_one_listener(monkeypatch):
+    # the swap read the old listener, removed it, and installed the new one in three
+    # steps; two lanes interleaving there left one listener on the engine forever
+    from orm.sync_db import engine
+    from sqlalchemy import event
+    from use_cases import retrieval_compare as rc
+
+    installed = []
+    monkeypatch.setattr(event, "listen", lambda t, n, fn: installed.append(fn))
+    monkeypatch.setattr(
+        event, "remove", lambda t, n, fn: installed.remove(fn) if fn in installed else None
+    )
+    monkeypatch.setattr(engine, "dispose", lambda: None)
+    monkeypatch.setattr(rc, "_APPLIED", None)
+
+    rc.prepare(exact=True)
+    rc.prepare(exact=False, ef=200)
+    assert len(installed) == 1
+    rc.release()
+    assert installed == []

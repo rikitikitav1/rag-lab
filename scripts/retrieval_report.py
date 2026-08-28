@@ -34,19 +34,10 @@ from use_cases.retrieval_compare import (  # noqa: E402
 # construction. The crossover moves with the row count, so this is asked per variant and
 # per depth rather than remembered
 def vector_plan(conn, variant: str, ef: int) -> str:
-    probe = (
-        "SELECT id FROM data_chunks WHERE variant = :v AND embedding IS NOT NULL "
-        "ORDER BY embedding <=> (SELECT embedding FROM data_chunks WHERE variant = :v "
-        f"LIMIT 1) LIMIT {DEPTH}"
-    )
-    from sqlalchemy import text as sa_text
-
-    conn.execute(sa_text("RESET enable_indexscan"))
-    conn.execute(sa_text(f"SET hnsw.ef_search = {int(ef)}"))
-    plan = " ".join(
-        r[0] for r in conn.execute(sa_text("EXPLAIN (COSTS OFF) " + probe), {"v": variant})
-    )
-    return "index" if "Index Scan" in plan else "sort"
+    # one owner for the question: this used to ask its own EXPLAIN, with another LIMIT
+    # and an inner select that could pick a row with no embedding, so the two answers
+    # agreed only by luck
+    return "index" if search_depth.uses_index(conn, variant, ef) else "sort"
 
 
 def recall_against_exact(db, conn, set_name, variant, limit, ef=None):
@@ -70,7 +61,9 @@ def _rr(rank):
 # would be a number chosen from the data it is meant to judge. It lives in the config
 # with the value it produces, so the two cannot drift apart
 def ef_ladder() -> tuple[int, ...]:
-    return tuple(config.settings.retrieval.ef_ladder)
+    # sorted, through the same accessor production uses: two readings of one ladder, one
+    # of them sorted, is two different ladders whenever somebody writes it out of order
+    return tuple(search_depth.ladder())
 
 
 def recall_gate() -> float:
@@ -156,7 +149,11 @@ def compare_half(before, after, level, which):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--variant", default=None)
-    ap.add_argument("--set", dest="set_name", default="paraphrased_ru")
+    ap.add_argument(
+        "--set", dest="set_name",
+        default=config.settings.retrieval.criterion_sets[0],
+        help="defaults to the first criterion set declared in config",
+    )
     ap.add_argument("--limit", type=int, default=1000)
     ap.add_argument("--out", default=None)
     ap.add_argument("--hnsw", action="store_true", help="measure through the index, not exactly")
@@ -253,6 +250,15 @@ def main() -> int:
                     continue
                 cost = index_cost(db, conn, args.set_name, variant, args.limit, ef)
                 costs[ef] = cost
+                # `paired_delta` answers "no shared questions" with an error and no
+                # interval; reading `ci95` off that shape blew up two lines below and
+                # called a failure to measure a crash
+                if "error" in cost["section"]:
+                    print(
+                        f"variant={variant} ef_search={ef} not measured: "
+                        f"{cost['section']['error']}"
+                    )
+                    continue
                 worst = -cost["section"]["ci95"][0]
                 lost = cost["section"]["lost"]
                 print(
@@ -270,8 +276,12 @@ def main() -> int:
                     continue
                 if cheapest is None and worst <= mrr_loss_gate():
                     cheapest = ef
-            print(f"cheapest_ef={cheapest} (gate: worst-case section MRR loss "
-                  f"{mrr_loss_gate()})")
+            # not the depth production serves: `search_depth` takes the deepest rung
+            # that still walks the index, this takes the shallowest rung inside the
+            # gate. Two questions, two numbers, and only this one is a recommendation
+            print(f"cheapest_ef={cheapest} (shallowest rung inside the gate: worst-case "
+                  f"section MRR loss {mrr_loss_gate()}; the served depth is the deepest "
+                  f"rung that still walks the index, see search_depth)")
             if args.out:
                 path = Path(args.out)
                 report = json.loads(path.read_text()) if path.exists() else {}

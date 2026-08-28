@@ -50,10 +50,20 @@ def _shape(conn) -> tuple[int, int]:
 def uses_index(conn, variant: str, ef: int) -> bool:
     # the measuring path disables index scans on every pooled connection to force exact
     # search, and this asks the same pool: without turning it back on the probe reads
-    # "the planner wants a sort" for every rung and answers a question nobody asked
+    # "the planner wants a sort" for every rung and answers a question nobody asked.
+    # Put back afterwards: the connection belongs to the caller, and a caller that was
+    # measuring exactly would go on measuring something else for the rest of its
+    # transaction
+    was = conn.execute(text("SHOW enable_indexscan")).scalar()
     conn.execute(text("SET LOCAL enable_indexscan = on"))
     conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(ef)}"))
-    plan = conn.execute(text("EXPLAIN (COSTS OFF) " + _PROBE), {"variant": variant}).scalars().all()
+    try:
+        plan = (
+            conn.execute(text("EXPLAIN (COSTS OFF) " + _PROBE), {"variant": variant})
+            .scalars().all()
+        )
+    finally:
+        conn.execute(text(f"SET LOCAL enable_indexscan = {'on' if was == 'on' else 'off'}"))
     return any(INDEX_SCAN in line for line in plan)
 
 

@@ -82,15 +82,29 @@ def window_matches_config() -> tuple[bool, str]:
         "import sys; sys.path.insert(0, '/app/app'); import config;"
         " print(config.settings.llm.context_length)",
     )
-    live = sh(
-        "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import sys; sys.path.insert(0, '/app/app'); import llm;"
-        " print(llm.server_context_length(llm.resolve_name('generation')))",
+    # whichever generator is actually loaded, not only the configured one: a run with a
+    # model override leaves the configured name unloaded, and the check then read
+    # "the server says nothing" as though the window disagreed
+    out = _in_worker(
+        "import json, llm;"
+        " print(json.dumps({'loaded': [e['model'] for e in llm.residency()],"
+        " 'configured': llm.resolve_name('generation')}))"
     )
+    if not out.startswith("{"):
+        return False, f"context window: cannot read the residency ({out[:40] or 'no answer'})"
+    state = json.loads(out)
+    asked = state["configured"] if state["configured"] in state["loaded"] else next(
+        (m for m in state["loaded"] if "embed" not in m and "bge" not in m), None
+    )
+    if asked is None:
+        return True, (
+            f"context window: config {configured or 'unknown'}, no generator loaded"
+            " (descriptive: nothing to compare, ask one a question first)"
+        )
+    live = _in_worker(f"import llm; print(llm.server_context_length({asked!r}))")
     # the server is the authority: a stray env var in a running container beat the config once
     ok = bool(configured) and live == configured
-    hint = "" if live else " (the generator is not loaded, ask it one question first)"
-    return ok, f"context window: config {configured or 'unknown'}, server {live or 'unknown'}{hint}"
+    return ok, f"context window: config {configured or 'unknown'}, {asked} says {live or 'unknown'}"
 
 
 # the scheduler keeps reporting free VRAM after the card is gone, so ask what is actually resident
@@ -250,7 +264,7 @@ def halves_of_pairs_are_counted() -> tuple[bool, str]:
     # its translation, and a run that died between them leaves a half. A half with only
     # the russian side is skipped by the generator now rather than paired with a fresh
     # paraphrase, so it stays until someone removes it, and that is not a failure
-    return True, f"(descriptive) originals missing half of their pair: {out or 'unknown'}"
+    return True, f"originals missing half of their pair: {out or 'unknown'}"
 
 
 def schema_holds_no_variant_indexes() -> tuple[bool, str]:
@@ -277,17 +291,27 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
         return True, "keyword switches: no logged run to compare against yet"
     config_row = (logs[0].get("metrics") or {}).get("config", {})
     logged = config_row.get("keyword")
-    if logged is not None:
+    # an agent answer that never called the corpus tool searched at no depth and records
+    # none. That is not a mismatch, so it abstains from this comparison instead of
+    # failing it, and the worker is asked without the depth in that case
+    searched = logged is not None and config_row.get("ef_search") is not None
+    if searched:
         logged = {**logged, "ef_search": config_row.get("ef_search")}
     # the depth is resolved, not declared: a run records the number it searched at, and
     # comparing it against the word `auto` in the config makes this check fail for as
-    # long as the config says `auto`
+    # long as the config says `auto`. Resolved for the variant the row was taken on: the
+    # crossover is a property of the table and the answer differs per variant
+    variant = json.dumps(config_row.get("variant"))
+    depth = (
+        f" 'ef_search': search_depth.resolve({variant})," if searched else ""
+    )
     out = _in_worker(
         "import json, config; from use_cases import search_depth;"
         " r = config.settings.retrieval;"
         " print(json.dumps({'query': r.keyword_query, 'rank': r.keyword_rank,"
         " 'norm': r.keyword_norm, 'query_lang': r.query_lang,"
-        " 'ef_search': search_depth.resolve()}))"
+        f"{depth}"
+        "}))"
     )
     live = json.loads(out) if out.startswith("{") else None
     if logged is None:
@@ -296,8 +320,15 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
     return ok, f"keyword switches: worker {live}, last run {logged}"
 
 
-# only these decide a verdict; elsewhere an unreachable label is a note, not a stop
-CRITERION_SETS = ("paraphrased_ru", "paraphrased")
+# only these decide a verdict; elsewhere an unreachable label is a note, not a stop.
+# Asked of the worker rather than written here twice: this list said `paraphrased_ru`
+# for a day after every measurement had moved to v2, and nothing complained
+@lru_cache(maxsize=1)
+def criterion_sets() -> tuple[str, ...]:
+    out = _in_worker(
+        "import config; print(','.join(config.settings.retrieval.criterion_sets))"
+    )
+    return tuple(name for name in out.split(",") if name) or ("paraphrased_v2_ru",)
 
 
 def marks_are_reachable() -> tuple[bool, str]:
@@ -318,7 +349,7 @@ def marks_are_reachable() -> tuple[bool, str]:
     if not rows:
         return True, "label reachability: every marked question can be hit"
     listing = ", ".join(f"{name}={n}" for name, n in rows)
-    blocking = [name for name, _ in rows if name in CRITERION_SETS]
+    blocking = [name for name, _ in rows if name in criterion_sets()]
     verdict = "" if not blocking else f"; blocks the criterion sets {blocking}"
     return not blocking, f"questions no chunk can satisfy: {listing}{verdict}"
 
@@ -332,7 +363,7 @@ def index_is_alive() -> tuple[bool, str]:
     floor, asked = thresholds
     out = sh(
         "docker", "compose", "exec", "-T", "worker", "python",
-        "/app/scripts/retrieval_report.py", "--set", "paraphrased_ru", "--recall",
+        "/app/scripts/retrieval_report.py", "--set", criterion_sets()[0], "--recall",
         "--limit", str(asked),
     )
     score = out.rsplit(":", 1)[-1].strip()
@@ -366,9 +397,13 @@ CHECKS = (
     models_are_on_the_card, queue_is_idle, corpus_variant_is_usable,
     every_variant_walks_its_index,
     table_is_vacuumed, schema_holds_no_variant_indexes, one_question_per_original,
-    halves_of_pairs_are_counted, every_variant_cuts_into_its_own_rows,
+    every_variant_cuts_into_its_own_rows,
     keyword_switches_match_the_worker, marks_are_reachable, index_is_alive,
 )
+
+# these read something out and never refuse: standing among fifteen things that can fail
+# made them look like gates with a permanently green light
+NOTES = (halves_of_pairs_are_counted,)
 
 
 def _rows(run_name: str) -> list:
@@ -389,15 +424,21 @@ def verify_run(spec: str, expect: int | None, shared: set | None) -> int:
         print(f"{run_name}: no rows yet")
         return 1
     questions = {row["question_id"] for row in logs}
-    snapshots = [(row.get("metrics") or {}).get("config") or {} for row in logs]
+    # the orchestrator and the context window are the agent's to record; a single-shot
+    # snapshot has neither, so requiring them made this check unable to pass on the
+    # default pipeline
+    agent_rows = [row for row in logs if row.get("pipeline") == "agent"]
+    agent_snapshots = [(row.get("metrics") or {}).get("config") or {} for row in agent_rows]
     missing = [
         key
         for key in ("orchestrator", "context_length")
-        if any(key not in snapshot for snapshot in snapshots)
+        if any(key not in snapshot for snapshot in agent_snapshots)
     ]
-    windows = {snapshot.get("context_length") for snapshot in snapshots}
+    windows = {snapshot.get("context_length") for snapshot in agent_snapshots}
     # an options payload without an orchestrator silently runs the hand-rolled loop
-    orchestrators = {(snapshot.get("orchestrator") or {}).get("name") for snapshot in snapshots}
+    orchestrators = {
+        (snapshot.get("orchestrator") or {}).get("name") for snapshot in agent_snapshots
+    }
     broken = [
         row
         for row in logs
@@ -406,8 +447,10 @@ def verify_run(spec: str, expect: int | None, shared: set | None) -> int:
     ]
     problems = []
     if None in windows:
-        problems.append(f"{sum(1 for s in snapshots if not s.get('context_length'))} rows without a"
-                        " context window: the server could not be asked")
+        problems.append(
+            f"{sum(1 for s in agent_snapshots if not s.get('context_length'))} agent rows without"
+            " a context window: the server could not be asked"
+        )
     if len(broken) > len(logs) // 10:
         problems.append(f"{len(broken)} of {len(logs)} rows are errors")
     if len(logs) != len(questions):
@@ -418,9 +461,9 @@ def verify_run(spec: str, expect: int | None, shared: set | None) -> int:
         problems.append(f"{len(shared - questions)} questions missing against the other runs")
     if missing:
         problems.append(f"snapshot keys missing: {missing}")
-    if len(windows) != 1:
+    if len(windows) > 1:
         problems.append(f"more than one context window: {sorted(w for w in windows if w)}")
-    if len(orchestrators) != 1:
+    if len(orchestrators) > 1:
         problems.append(f"more than one orchestrator: {sorted(o for o in orchestrators if o)}")
     if wanted and orchestrators != {wanted}:
         problems.append(f"orchestrator is {sorted(orchestrators)}, expected {wanted}")
@@ -461,6 +504,11 @@ def _pinned(spec: str) -> dict:
         for key in PINNED:
             # the arm without a gate records none on purpose, that is not a settings mismatch
             if key == "gate" and gateless:
+                continue
+            # an agent answer that never called the corpus tool searched at no depth, so
+            # it records none. Rows that did search must still agree with each other, and
+            # a run of both kinds is a normal run, not a settings mismatch
+            if key == "ef_search" and config.get("ef_search") is None:
                 continue
             values.setdefault(key, set()).add(json.dumps(_setting(key, config), sort_keys=True))
         # which prompts a run used depends on what fired, so compare a version per name
@@ -523,6 +571,9 @@ def main(argv: list[str] | None = None) -> int:
         ok, message = check()
         print(f"{'ok  ' if ok else 'FAIL'} {message}")
         failed += not ok
+    for note in NOTES:
+        _, message = note()
+        print(f"note {message}")
     return 1 if failed else 0
 
 

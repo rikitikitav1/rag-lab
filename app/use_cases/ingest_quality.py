@@ -7,14 +7,16 @@ import ingest
 import logging_setup
 import sources.base
 from ingest import MAX_CHUNK_SIZE
-from models.corpus import DataChunk, DataSource
+from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import flag_modified
 
 log = logging_setup.get_logger(__name__)
 
-VERDICTS = ("ok", "dirty", "broken")
+# named by the model, not here: two declarations of one closed set is how the column
+# came to accept any string while a migration said it did not
+VERDICTS = tuple(v.value for v in Verdict)
 MODES = ("dry", "indexed")
 
 

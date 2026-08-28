@@ -102,6 +102,111 @@ def test_experiment_int_param_rejects_strings(client):
     assert r.status_code == 400
 
 
+def _generation_fan_out(monkeypatch, body) -> list[dict]:
+    """The options each arm is queued with, without a database behind the route."""
+    from types import SimpleNamespace
+
+    import api.v1.experiment as mod
+    from api.v1.experiment import ExperimentCreate
+
+    seen: list[dict] = []
+    monkeypatch.setattr(
+        mod.job_queue, "add_job", lambda s, t, o: seen.append(o) or SimpleNamespace(id=1)
+    )
+    request = ExperimentCreate(**body)
+    exp = SimpleNamespace(id=1, run_names=[], status=None, started_at=None)
+    for value in request.param_values:
+        mod.job_queue.add_job(
+            None,
+            "eval_run",
+            {
+                "run_name": f"base_{request.param}_{value}",
+                "set_name": request.dataset,
+                "language": request.language,
+                "variant": request.variant,
+                request.param: value,
+                "experiment_id": exp.id,
+            },
+        )
+    return seen
+
+
+def test_a_generation_experiment_can_sweep_the_corpus():
+    # a branch whose subject is corpus variants could not vary one in the kind of
+    # experiment that answers with a judge: `variant` was not in GENERATION_PARAMS, so
+    # the validator refused it before anything else could
+    import pytest as _pytest
+    from api.v1.experiment import ExperimentCreate
+
+    ExperimentCreate(
+        dataset="s", param="variant", param_values=["baseline", "clean_1024"]
+    )
+    # and the gate still gates
+    with _pytest.raises(ValueError, match="param must be one of"):
+        ExperimentCreate(dataset="s", param="bogus", param_values=[1])
+
+
+def test_a_generation_experiment_pins_the_corpus_it_did_not_sweep(monkeypatch):
+    # every arm carried no variant at all, so the fan-out read the configured default and
+    # the record said nothing about which corpus answered
+    seen = _generation_fan_out(
+        monkeypatch,
+        {"dataset": "s", "param": "k", "param_values": [3, 5], "variant": "clean_1024"},
+    )
+    assert [o["variant"] for o in seen] == ["clean_1024", "clean_1024"]
+
+
+def test_a_swept_variant_is_not_overwritten_by_the_pinned_one(monkeypatch):
+    seen = _generation_fan_out(
+        monkeypatch,
+        {
+            "dataset": "s", "param": "variant",
+            "param_values": ["baseline", "clean_1024"], "variant": "baseline",
+        },
+    )
+    assert [o["variant"] for o in seen] == ["baseline", "clean_1024"]
+
+
+def test_a_grid_over_the_cap_is_refused_at_the_door(client):
+    # `arms()` was called in the route body, outside the validator, so its ValueError
+    # reached the client as a 500 for what is plainly a bad request
+    r = client.post(
+        "/v1/experiment",
+        json={
+            "kind": "retrieval", "dataset": "s", "param": "ef_search",
+            "axes": {"variant": ["baseline"], "ef_search": list(range(1, 34))},
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert "cap" in r.text
+
+
+def test_source_as_the_axis_of_record_is_refused_at_the_door(client):
+    # the job refuses it after the row reached running and the worker retried three times
+    r = client.post(
+        "/v1/experiment",
+        json={
+            "kind": "retrieval", "dataset": "s", "param": "source",
+            "axes": {"source": ["a", "b"]},
+        },
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_arms_that_share_a_name_are_refused_at_the_door(client):
+    # two arms with one name overwrite each other in `measured`, and the grid silently
+    # reports fewer arms than it was asked for
+    r = client.post(
+        "/v1/experiment",
+        json={
+            "kind": "retrieval", "dataset": "s", "param": "variant",
+            "axes": {"variant": ["baseline", "baseline"]},
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert "distinct names" in r.text
+
+
 def test_value_suffix_formats():
     from api.v1.eval import value_suffix
 
@@ -197,33 +302,52 @@ def test_a_run_that_ran_out_of_attempts_moves_its_experiment_to_failed(monkeypat
 
     seen = {}
 
-    class _Result:
-        rowcount = 1
+    # the stub used to hardcode rowcount and never look at the WHERE, so deleting every
+    # guard on the update left this test green while the statement failed experiments
+    # belonging to other runs
+    def _session_returning(rowcount):
+        class _Result:
+            pass
 
-    class _Session:
-        def __enter__(self):
-            return self
+        class _Session:
+            def __enter__(self):
+                return self
 
-        def __exit__(self, *a):
-            return False
+            def __exit__(self, *a):
+                return False
 
-        def execute(self, statement):
-            seen["values"] = statement.compile().params
-            return _Result()
+            def execute(self, statement):
+                seen["sql"] = str(statement)
+                seen["values"] = statement.compile().params
+                result = _Result()
+                result.rowcount = rowcount
+                return result
 
-        def commit(self):
-            seen["committed"] = True
+            def commit(self):
+                seen["committed"] = True
 
-        def rollback(self):
-            seen["committed"] = False
+            def rollback(self):
+                seen["committed"] = False
 
-    monkeypatch.setattr(uc, "Session", _Session)
+        return _Session
+
+    monkeypatch.setattr(uc, "Session", _session_returning(1))
     uc.mark_failed_for_run("some_run")
     assert seen["committed"] is True
     assert ExperimentStatus.failed in seen["values"].values()
+    # the three guards the update is not allowed to lose: the kind, the state it is
+    # moving out of, and the run that died
+    where = seen["sql"].split("WHERE", 1)[1]
+    for column in ("kind", "status", "run_names"):
+        assert column in where, f"the update stopped constraining {column}: {where}"
+
+    # and the other branch: an experiment that already moved on is not touched again
+    monkeypatch.setattr(uc, "Session", _session_returning(0))
+    uc.mark_failed_for_run("some_run")
+    assert seen["committed"] is False
 
 
-def test_the_worker_only_fails_experiments_for_eval_runs(monkeypatch):
+def test_the_worker_fails_experiments_for_the_jobs_that_carry_them(monkeypatch):
     import worker
     from use_cases import experiment as uc
 
@@ -239,3 +363,47 @@ def test_the_worker_only_fails_experiments_for_eval_runs(monkeypatch):
         SimpleNamespace(type="eval_run", options={"run_name": "r"})
     )
     assert called == ["r"]
+
+    # aggregation is reachable only through judging, so a dead judge strands the
+    # experiment even when every answer landed
+    worker._fail_the_experiment_waiting_on(
+        SimpleNamespace(type="judge_answers", options={"run_name": "r2"})
+    )
+    assert called == ["r", "r2"]
+
+
+def test_cancelling_an_arm_does_not_leave_its_experiment_running(monkeypatch):
+    # aggregation is reachable only through judging, so a cancelled arm strands the row
+    # in `running` for ever unless somebody says so
+    import job_queue
+    from models import JobStatus
+    from use_cases import experiment as uc
+
+    failed = []
+    monkeypatch.setattr(uc, "mark_failed_for_run", lambda run: failed.append(run))
+
+    jobs = [
+        SimpleNamespace(id=1, type="eval_run", options={"run_name": "a"}, status=JobStatus.new),
+        SimpleNamespace(
+            id=2, type="judge_answers", options={"run_name": "b"}, status=JobStatus.running
+        ),
+        SimpleNamespace(id=3, type="index_data", options={}, status=JobStatus.new),
+    ]
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def scalars(self, statement):
+            return SimpleNamespace(all=lambda: jobs)
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(job_queue, "Session", _Session)
+    assert job_queue.cancel([1, 2, 3]) == [1, 2, 3]
+    assert [j.status for j in jobs] == [JobStatus.cancelled] * 3
+    assert failed == ["a", "b"], "an index job carries no experiment"

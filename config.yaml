@@ -41,9 +41,10 @@ service:
     # The earlier three-variant file was taken with a script whose `apply_ef` was
     # overridden by hybrid_search's own SET LOCAL, so its ladder is not reproducible.
     #
-    # The fragility is real and measurable: 200 sits about 65 units of ef inside the
-    # index zone today, and dropping a variant would put it outside. That is what the
-    # depth audit guards; the number alone cannot.
+    # The fragility is in the other direction, and the branch measured it: dropping
+    # `prefix_1024` moved neither the page count nor the crossover, because a DELETE
+    # leaves the pages where they were. What moves it is indexing another variant, or a
+    # rewrite of the table. That is what the depth audit guards; the number alone cannot.
     # auto: the deepest rung of the ladder whose plan still walks the index, asked of the
     # planner and re-asked when the table's page count or row estimate moves. Pages are
     # the load-bearing half: the alternative to the walk is a sequential read priced per
@@ -58,6 +59,8 @@ service:
     # failed to find, and a neighbour lost at rank 18 costs the answer nothing. What the
     # depth is judged by is what it costs the metric we are paid for, measured on the same
     # questions, paired, with an interval. The gate is the worst end of that interval
+    # what it still does, so nobody reads it as a gate: it picks `required_ef` in
+    # `--required-ef`, which reports a rung and refuses nothing
     recall_gate: 0.98
     # порог не ставится рукой ниже того, что набор умеет различать: полуширина интервала на
     # 823 вопросах около 0.0036, поэтому 0.005 сработал бы как монетка у порога
@@ -70,6 +73,9 @@ service:
     # half-built index, and the floor is low so nobody mistakes it for the gate above
     index_alive_recall: 0.9
     index_alive_questions: 40
+    # the sets a verdict is read on. Named once: the preflight and the report each carried
+    # their own answer, and both still said `paraphrased_ru` after the arc moved to v2
+    criterion_sets: [paraphrased_v2_ru, paraphrased_v2]
   rerank:
     # off by default, and the decision has a history worth keeping. In July it was off
     # because of latency. On 27.08 it went on for runs on the strength of the control
@@ -91,7 +97,6 @@ service:
     enabled: false
     model: BAAI/bge-reranker-v2-m3
     candidates: 20
-    top: 5
   agent:
     max_hops: 4
     fallback_policy: corpus_first

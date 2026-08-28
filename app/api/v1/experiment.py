@@ -22,7 +22,9 @@ from api.v1.eval import validate_axis_values, validate_param_values, value_suffi
 
 router = APIRouter(prefix="/experiment", tags=["experiments"])
 
-GENERATION_PARAMS = frozenset({"k", "max_hops", "model"})
+# `variant` belongs here for the same reason it is a retrieval axis: a generation
+# experiment that cannot sweep the corpus is the one sweep this branch exists to run
+GENERATION_PARAMS = frozenset({"k", "max_hops", "model", "variant"})
 
 
 class ExperimentCreate(BaseModel):
@@ -34,6 +36,9 @@ class ExperimentCreate(BaseModel):
     sample_size: int | None = None
     sample_seed: int = 0
     question_ids: list[int] | None = None
+    # the corpus every arm reads unless `variant` is the swept parameter. Without it the
+    # fan-out ran the configured default while the record said nothing about it
+    variant: str | None = None
     data_prep: dict = Field(default_factory=dict)
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
@@ -72,6 +77,15 @@ class ExperimentCreate(BaseModel):
             raise ValueError(
                 f"param must name one of the axes, got {self.param!r} against {sorted(self.axes)}"
             )
+        # the job refuses these too, and it refuses them after the row reached `running`
+        # and the worker retried three times. They are properties of the request, so the
+        # door is where they belong
+        if self.param == "source":
+            raise ValueError("source stratifies a comparison, it cannot be the axis of record")
+        grid = retrieval_compare.arms(self.axes)
+        names = [retrieval_compare.arm_name(arm) for arm in grid]
+        if len(set(names)) != len(names):
+            raise ValueError(f"arms do not have distinct names: {sorted(names)}")
         self.param_values = list(self.axes[self.param])
         return self
 
@@ -141,6 +155,10 @@ async def create_experiment(
         # is agent-only, so without it the allow-list admitted a value the validator
         # refused for every request, agent ones included
         validate_param_values(request.param, request.param_values, request.pipeline)
+        # the pinned corpus is checked like a swept one: an undeclared or empty variant
+        # dies per question inside the runner, and it is knowable here
+        if request.variant:
+            validate_axis_values("variant", [request.variant])
     ids = await _resolve_sample(
         session,
         request.dataset,
@@ -203,6 +221,9 @@ async def create_experiment(
                 "rerank": rerank,
                 "pipeline": request.pipeline.value,
                 "language": request.language,
+                # the swept value wins: `request.param: value` comes after, so a sweep
+                # over `variant` is not overwritten by the pinned one
+                "variant": request.variant,
                 request.param: value,
                 "experiment_id": exp.id,
             },

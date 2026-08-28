@@ -109,22 +109,27 @@ def _run_sequential(
     variant: str,
 ) -> tuple[int, bool]:
     answered = 0
-    for text in texts:
-        if job_id is not None and job_queue.is_cancelled(job_id):
-            return answered, True
-        # after the first answer the generator is loaded, so a spill is finally visible
-        if answered == 1:
-            _refuse_a_cpu_run(allow_cpu)
-        try:
-            _answer_one(
-                text, run_name, use_rerank, pipeline, language, k, max_hops, model,
-                fallback_policy, gate_signal, weak_distance, topic_threshold, orchestrator,
-                variant,
-            )
-            answered += 1
-        except Exception as e:
-            log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
-    return answered, False
+    # the agent path is this one, and a sweep over `model` runs several of them back to
+    # back: without giving the card back, arm two loads its generator beside arm one's
+    try:
+        for text in texts:
+            if job_id is not None and job_queue.is_cancelled(job_id):
+                return answered, True
+            # after the first answer the generator is loaded, so a spill is finally visible
+            if answered == 1:
+                _refuse_a_cpu_run(allow_cpu)
+            try:
+                _answer_one(
+                    text, run_name, use_rerank, pipeline, language, k, max_hops, model,
+                    fallback_policy, gate_signal, weak_distance, topic_threshold,
+                    orchestrator, variant,
+                )
+                answered += 1
+            except Exception as e:
+                log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
+        return answered, False
+    finally:
+        _free_the_card(model)
 
 
 def _embed_in_batches(texts: list[str]) -> list:
@@ -235,12 +240,44 @@ def run_phased(
     allow_cpu: bool = False,
 ) -> tuple[int, bool]:
     k = k or config.settings.retrieval.results_limit
-    rerank_device = None
+    try:
+        return _phased(
+            run_name, texts, use_rerank, language, k, model, job_id, variant, allow_cpu
+        )
+    finally:
+        # every exit, not only the last line: the refusal below raises, a cancel returns
+        # early, and a rerank that throws skips both unloads. A run that leaves its own
+        # generator on the card makes the retry refuse too, and the loop never breaks
+        _free_the_card(model)
 
+
+def _free_the_card(model: str | None) -> None:
+    rerank.unload()
+    llm.unload("embedding")
+    llm.unload("generation", model=model)
+
+
+def _phased(
+    run_name: str,
+    texts: list[str],
+    use_rerank: bool,
+    language: str | None,
+    k: int,
+    model: str | None,
+    job_id: int | None,
+    variant: str,
+    allow_cpu: bool,
+) -> tuple[int, bool]:
+    rerank_device = None
     started = time.perf_counter()
     retrieved, ef_search = _phase_retrieve(texts, k, use_rerank, variant)
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
              elapsed=round(time.perf_counter() - started, 1))
+
+    # asked here and not only after the first answer: the embedder is loaded and a lost
+    # card is already visible, so a run that would answer off the card stops two minutes
+    # in rather than after the generator has been loaded onto the processor
+    _refuse_a_cpu_run(allow_cpu)
 
     # retrieval is over, and its model is 1.2 GiB the generator is about to want on a
     # card that holds 8
@@ -268,9 +305,6 @@ def run_phased(
     )
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))
-    # the card is left as it was found: a queue of runs alternating generators fills
-    # 8 GiB with two of them and the next run answers off the card
-    llm.unload("generation", model=model)
     return answered, cancelled
 
 

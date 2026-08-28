@@ -78,6 +78,8 @@ class ExperimentRequest(BaseModel):
         "topic_threshold", "orchestrator", "variant",
     ] = "k"
     values: list[int | float | str] = Field(min_length=1)
+    # the corpus every arm reads unless `variant` is the swept parameter
+    variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -309,6 +311,8 @@ async def enqueue_experiment(
     session: AsyncSession = Depends(get_session),
 ):
     validate_param_values(request.param, request.values, request.pipeline)
+    if request.variant:
+        validate_axis_values("variant", [request.variant])
     base = request.run_name or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
     jobs = []
     for value in request.values:
@@ -322,6 +326,8 @@ async def enqueue_experiment(
                 "rerank": resolve_rerank(request.rerank),
                 "pipeline": request.pipeline.value,
                 "language": request.language,
+                # the swept value wins: it comes after the pinned one
+                "variant": request.variant,
                 request.param: value,
             },
         )

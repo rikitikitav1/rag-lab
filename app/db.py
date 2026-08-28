@@ -156,7 +156,10 @@ def nearest_distance(embedding, *, variant) -> float | None:
     from use_cases import search_depth
 
     with engine.connect() as conn:
-        conn.execute(text(f"SET LOCAL hnsw.ef_search = {search_depth.resolve(variant)}"))
+        # on the connection already held: `resolve` opens its own otherwise, and the pool
+        # is five plus five
+        depth = search_depth.resolve(variant, conn=conn)
+        conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
         row = conn.execute(
             text(query), {"embedding": str(list(embedding)), "variant": variant}
         ).scalar()
@@ -169,8 +172,11 @@ def list_categories(category=None, only_top=None, *, variant):
     params = {"variant": variant}
     if category:
         params["category"] = f"*.{category}.*"
+    # every neighbour filters on active; without it the listing counts chunks retrieval
+    # will never return
     query = f"""SELECT {cat_select} AS cat, COUNT(*) FROM data_chunks
                 WHERE variant = :variant {cat_filter}
+                  AND source_id IN (SELECT id FROM data_sources WHERE active)
                 GROUP BY cat ORDER BY {cat_select}"""
 
     with engine.connect() as conn:

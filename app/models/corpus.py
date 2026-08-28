@@ -1,11 +1,20 @@
 from datetime import datetime
+from enum import StrEnum
 
 from orm import Base
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_utils import LtreeType
+
+
+# the migration that dropped the CHECK says the model is the one place that decides what
+# a value may be. For three of the four columns that was true; this one was plain text
+class Verdict(StrEnum):
+    ok = "ok"
+    dirty = "dirty"
+    broken = "broken"
 
 
 class DataSource(Base):
@@ -17,7 +26,9 @@ class DataSource(Base):
     git_url: Mapped[str | None]
     path: Mapped[str | None]
     active: Mapped[bool] = mapped_column(default=True)
-    ingest_quality: Mapped[str | None]
+    ingest_quality: Mapped[Verdict | None] = mapped_column(
+        Enum(Verdict, native_enum=False, values_callable=lambda e: [m.value for m in e])
+    )
     ingest_variant: Mapped[str | None]
     ingest_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ingest_reports: Mapped[dict] = mapped_column(JSONB, default=dict)

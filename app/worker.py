@@ -71,11 +71,16 @@ def run_once(queues: list[str]) -> bool:
     return True
 
 
-# an eval_run that ran out of attempts leaves its experiment waiting for a sibling that
-# is not coming: the series never completes, so nothing aggregates and nothing moves it
+# a job that ran out of attempts leaves its experiment waiting for a sibling that is not
+# coming: the series never completes, so nothing aggregates and nothing moves it. Judging
+# counts as well as answering, and more so: aggregation is reachable only through it, so
+# a dead judge strands the experiment even when every answer landed
+_EXPERIMENT_JOBS = ("eval_run", "judge_answers")
+
+
 def _fail_the_experiment_waiting_on(claimed) -> None:
     run_name = (claimed.options or {}).get("run_name")
-    if claimed.type != "eval_run" or not run_name:
+    if claimed.type not in _EXPERIMENT_JOBS or not run_name:
         return
     try:
         from use_cases import experiment

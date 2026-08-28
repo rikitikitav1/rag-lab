@@ -20,7 +20,10 @@ class SourceResponse(BaseModel):
     name: str
     kind: str
     active: bool
+    # every variant's rows, which is what it always meant. The verdict beside it is about
+    # one cut, so the cut's own count travels next to it rather than being read into this
     chunks: int
+    chunks_in_variant: int = 0
     ingest_quality: str | None = None
     ingest_variant: str | None = None
     ingest_checked_at: datetime | None = None
@@ -60,13 +63,14 @@ class SourceReportResponse(BaseModel):
     reports: dict
 
 
-def _response(source, chunks: int) -> SourceResponse:
+def _response(source, chunks: int, in_variant: int = 0) -> SourceResponse:
     return SourceResponse(
         id=source.id,
         name=source.name,
         kind=source.kind,
         active=source.active,
         chunks=chunks,
+        chunks_in_variant=in_variant,
         ingest_quality=source.ingest_quality,
         ingest_variant=source.ingest_variant,
         ingest_checked_at=source.ingest_checked_at,
@@ -83,7 +87,22 @@ async def list_sources(session: AsyncSession = Depends(get_session)):
         ).all()
     )
     sources = (await session.scalars(select(DataSource).order_by(DataSource.name))).all()
-    return [_response(s, counts.get(s.id, 0)) for s in sources]
+    # per source and per the cut its own verdict is about, which is `ingest_variant` and
+    # not the configured one: the two numbers beside each other have to describe the same
+    # thing or the pair is worse than either alone
+    per_variant = {
+        (source_id, variant): n
+        for source_id, variant, n in (
+            await session.execute(
+                select(DataChunk.source_id, DataChunk.variant, func.count())
+                .group_by(DataChunk.source_id, DataChunk.variant)
+            )
+        ).all()
+    }
+    return [
+        _response(s, counts.get(s.id, 0), per_variant.get((s.id, s.ingest_variant), 0))
+        for s in sources
+    ]
 
 
 @router.put("/{id}", response_model=SourceResponse)
@@ -98,7 +117,12 @@ async def set_source_active(
     count = await session.scalar(
         select(func.count()).select_from(DataChunk).where(DataChunk.source_id == id)
     )
-    return _response(source, count or 0)
+    in_variant = await session.scalar(
+        select(func.count())
+        .select_from(DataChunk)
+        .where(DataChunk.source_id == id, DataChunk.variant == source.ingest_variant)
+    ) if source.ingest_variant else 0
+    return _response(source, count or 0, in_variant or 0)
 
 
 # no job and no re-measuring: the reports are already written per source and per variant,

@@ -18,6 +18,14 @@ def index_data(options: dict) -> None:
 
     require_embedder_ready()
     built = list(sources.factory.all_sources())
+    # the option was written by the bootstrap and read by nobody, so a job asking for one
+    # source re-indexed all 177 and said nothing
+    wanted = options.get("source") or "all"
+    if wanted != "all":
+        built = [s for s in built if s.name == wanted]
+        if not built:
+            known = sorted(s.name for s in sources.factory.all_sources())
+            raise ValueError(f"no such source: {wanted!r}; known: {known}")
     # resolved once for this job: the call below used to take it bare and requeue itself
     # with a null that nothing could match
     variant = options.get("variant") or config.settings.corpus.variant

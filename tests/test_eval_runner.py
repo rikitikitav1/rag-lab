@@ -53,8 +53,10 @@ def test_phases_run_in_order_and_free_vram(monkeypatch):
         "rerank",
         "unload",
         "generate", "generate",
-        "unload",
+        # teardown, on every exit: reranker, embedder, generator
+        "unload", "unload", "unload",
     ]
+    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
 
 
 def test_rerank_runs_once_for_the_whole_set(monkeypatch):
@@ -79,9 +81,11 @@ def test_retrieval_widens_only_when_reranking(monkeypatch):
     assert wide == runner.config.settings.rerank.candidates
     assert narrow == 3
     assert not [c for c in calls if c[0] == "rerank"]
-    # a run without a rerank phase still frees the embedder before generating, and the
-    # generator when it is done, so the next run in the queue starts on an empty card
-    assert [c[1] for c in calls if c[0] == "unload"] == ["embedding", "generation"]
+    # a run without a rerank phase still frees the embedder before generating, and gives
+    # the whole card back when it is done, so the next run starts on an empty one
+    assert [c[1] for c in calls if c[0] == "unload"] == [
+        "embedding", "reranker", "embedding", "generation"
+    ]
 
 
 def test_generation_marks_logs_as_phased(monkeypatch):
@@ -263,6 +267,26 @@ def test_a_phased_run_records_the_depth_it_searched_at(monkeypatch):
     assert snap["ef_search"] == 200
 
 
+def test_the_card_is_asked_about_before_the_generator_is_paid_for(monkeypatch):
+    # the check used to fire only after the first answer, which is after the generator has
+    # been loaded onto the processor. The embedder is enough to see the card is gone
+    import pytest
+
+    calls = _stub_phases(monkeypatch)
+    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["bge-m3"])
+    with pytest.raises(RuntimeError, match="not on the GPU"):
+        runner.run_phased(
+            "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None,
+            job_id=None, variant="baseline",
+        )
+    assert [c[0] for c in calls] == ["search", "search", "unload", "unload", "unload"], (
+        "nothing after retrieval should have run, and the card goes back anyway"
+    )
+    # the refusal used to raise past the unload, so the run that found the card full left
+    # its own generator on it and every retry refused for the same reason
+    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+
+
 def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
     # the sequential path refused from the start and the phased path, which is the
     # default for single_shot, did not. ollama kept answering off the card at four
@@ -287,3 +311,42 @@ def test_a_phased_run_measuring_the_cpu_says_so_and_proceeds(monkeypatch):
     )
     assert (answered, cancelled) == (2, False)
     assert [c[0] for c in calls].count("generate") == 2
+
+
+def test_a_rerank_that_throws_still_gives_the_card_back(monkeypatch):
+    # the third uncovered exit: a failure in the rerank phase skipped `rerank.unload()`
+    # and the final unload, so the reranker and the generator both stayed resident
+    import pytest
+
+    calls = _stub_phases(monkeypatch)
+
+    def _boom(pairs):
+        raise RuntimeError("cuda is unhappy")
+
+    monkeypatch.setattr(runner.rerank, "score_pairs", _boom)
+    with pytest.raises(RuntimeError, match="cuda is unhappy"):
+        runner.run_phased(
+            "run", ["q1"], use_rerank=True, language=None, k=2, model=None,
+            job_id=None, variant="baseline",
+        )
+    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+
+
+def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
+    # a sweep over `model` on the agent pipeline runs several of these back to back
+    calls = []
+    monkeypatch.setattr(
+        runner.llm, "unload",
+        lambda role="embedding", model=None: calls.append(("unload", role)),
+    )
+    monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
+    monkeypatch.setattr(runner, "_answer_one", lambda *a, **kw: calls.append(("answer",)))
+    monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda allow_cpu: None)
+    answered, cancelled = runner._run_sequential(
+        ["q1", "q2"], "run", None, runner.Pipeline.agent, None, None, None, "llama3.1:8b",
+        None, None, None, None, None, None, False, "baseline",
+    )
+    assert (answered, cancelled) == (2, False)
+    assert [c[1] for c in calls if c[0] == "unload"] == [
+        "reranker", "embedding", "generation"
+    ]

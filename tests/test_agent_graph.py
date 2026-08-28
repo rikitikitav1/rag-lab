@@ -434,3 +434,57 @@ def test_an_empty_first_call_on_the_last_hop_still_opens_the_toolbox(monkeypatch
 
 
 # an empty turn before the cap still ends in the no-evidence turn when nothing was found
+
+def _dispatch_with_depth(monkeypatch, depth):
+    import agent_tools
+
+    def fake(name, arguments, extra=None, **runtime):
+        meta = {"sources": [_hit()]}
+        if depth is not None:
+            meta["ef_search"] = depth
+        return agent_tools.ToolResult(content="c", meta=meta)
+
+    monkeypatch.setattr(agent_tools, "dispatch", fake)
+
+
+def test_the_graph_records_the_depth_the_tool_searched_at(monkeypatch_factory):
+    # three lines carry the depth out of the tool and into the record, and none of them
+    # were covered: an agent run wrote whatever the recorder felt like
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    with monkeypatch_factory() as monkeypatch:
+        _agent_harness(monkeypatch, turns, [_hit()])
+        _dispatch_with_depth(monkeypatch, 200)
+        result = agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_ported)
+    assert result.ef_search == 200
+
+
+def test_an_agent_answer_without_a_search_records_no_depth(monkeypatch_factory):
+    # and it must stay None rather than borrow the configured one: no search happened,
+    # so there is no depth to report, and a number here would describe nothing
+    turns = [_turn(text="final")]
+    with monkeypatch_factory() as monkeypatch:
+        _agent_harness(monkeypatch, turns, [_hit()])
+        _dispatch_with_depth(monkeypatch, 200)
+        result = agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_ported)
+    assert result.ef_search is None
+
+
+def test_the_idiomatic_arm_records_the_depth_too(monkeypatch_factory):
+    from fake_chat import ScriptedChatModel
+    from orchestrators import react
+
+    with monkeypatch_factory() as monkeypatch:
+        _agent_harness(monkeypatch, [], [_hit()])
+        # after the harness, not before: it patches the same dispatch
+        _dispatch_with_depth(monkeypatch, 400)
+        model = ScriptedChatModel(
+            [{"tool_calls": [{"name": "search_corpus", "args": {}, "id": "a"}]}, {"text": "final"}]
+        )
+        monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
+        result = agent.run(
+            "q", orchestrator=agent_policy.Orchestrator.langgraph_idiomatic, max_hops=2
+        )
+    assert result.ef_search == 400

@@ -9,6 +9,7 @@ import contextlib
 import itertools
 import random
 import re
+import threading
 from dataclasses import dataclass, field
 
 import config
@@ -60,6 +61,9 @@ def questions(conn, set_name, limit, ids=None):
     from sqlalchemy import text as sql
 
     where = "q.set_name = :set_name" if not ids else "q.id = ANY(:ids)"
+    # the limit samples a set; it has no business trimming a list the experiment fixed,
+    # because `questions_hash` would then record the prefix as though it were the plan
+    cap = "" if ids else "LIMIT :limit"
     rows = conn.execute(
         sql(f"""
             SELECT q.id, q.original_text, q.marked_sources, q.embedding::text AS emb,
@@ -70,7 +74,7 @@ def questions(conn, set_name, limit, ids=None):
               AND q.embedding IS NOT NULL
               AND array_length(q.marked_sources, 1) > 0
             ORDER BY q.id
-            LIMIT :limit
+            {cap}
         """),
         {"set_name": set_name, "ids": ids, "limit": limit},
     ).mappings().all()
@@ -126,6 +130,10 @@ def rank_of_file(files, marked):
 
 
 _APPLIED = None
+# two threads in one worker: the lanes share this module, and an interleaved pair of
+# prepare() calls used to install two listeners and remember one, leaving the other on
+# the engine for the life of the process
+_APPLY_LOCK = threading.Lock()
 
 
 def prepare(exact: bool, ef: int | None = None) -> None:
@@ -137,10 +145,6 @@ def prepare(exact: bool, ef: int | None = None) -> None:
     global _APPLIED
     from orm.sync_db import engine
     from sqlalchemy import event
-
-    if _APPLIED is not None:
-        event.remove(engine, "checkout", _APPLIED)
-        _APPLIED = None
 
     if not exact and ef is None:
         from use_cases import search_depth
@@ -154,8 +158,11 @@ def prepare(exact: bool, ef: int | None = None) -> None:
         cursor.execute(setting)
         cursor.close()
 
-    event.listen(engine, "checkout", apply)
-    _APPLIED = apply
+    with _APPLY_LOCK:
+        if _APPLIED is not None:
+            event.remove(engine, "checkout", _APPLIED)
+        event.listen(engine, "checkout", apply)
+        _APPLIED = apply
 
 
 # the listener is on the process-wide engine, so a job that leaves it installed hands its
@@ -167,9 +174,10 @@ def release() -> None:
     from orm.sync_db import engine
     from sqlalchemy import event
 
-    if _APPLIED is not None:
-        event.remove(engine, "checkout", _APPLIED)
-        _APPLIED = None
+    with _APPLY_LOCK:
+        if _APPLIED is not None:
+            event.remove(engine, "checkout", _APPLIED)
+            _APPLIED = None
     engine.dispose()
 
 
@@ -537,6 +545,12 @@ def run(experiment) -> dict:
     # arms along `source` share no questions, so every delta would be "no shared questions"
     if param == "source":
         raise ValueError("source stratifies a comparison, it cannot be the axis of record")
+    # without this the grid measures, `_reference_for` returns None for every arm, and the
+    # record lands with `deltas: {}` and no complaint: a comparison that compared nothing
+    if not param or param not in experiment.axes:
+        raise ValueError(
+            f"param must name one of the axes, got {param!r} against {sorted(experiment.axes)}"
+        )
 
     # before the connection: a cancelled job must not open one to find out it is cancelled
     job_id = getattr(experiment, "job_id", None)

@@ -148,9 +148,11 @@ set, split by a hash of the question id and fixed by a seed, so a rule that pick
 winner on half A and reports on half B can be checked against the record instead of
 against somebody's memory.
 
-The corpus itself has two routes of its own. `POST /v1/source/{id}/analyze` runs the coverage report over a source (`mode: dry` cuts it in memory and says what the cut would be, `mode: indexed` reads the rows that are actually served) and `GET /v1/source/{id}/report` reads the history back, per variant, newest first.
+The corpus itself has two routes of its own. `POST /v1/source/{id}/analyze` runs the coverage report over a source (`mode: dry` cuts it in memory and says what the cut would be, `mode: indexed` reads the rows that are actually served) and `GET /v1/source/{id}/report` reads the history back, per variant, oldest first.
 `GET /v1/source/compare?variants=baseline&variants=clean_1024` puts the latest verdict of
-each variant beside the other and counts the sources whose verdict moved. Neither needs embeddings or labelled questions: the metrics come from the text, so a source can be judged the moment it is added and long before anyone writes a question about it.
+each variant beside the other and counts the sources whose verdict moved. In the source
+listing, `chunks` is every variant's rows and `chunks_in_variant` counts only the cut named
+by `ingest_variant`, which is the one the verdict beside it is about. Neither needs embeddings or labelled questions: the metrics come from the text, so a source can be judged the moment it is added and long before anyone writes a question about it.
 
 ```bash
 # sweep retrieval width k over the agent pipeline (5 runs, each judged)
