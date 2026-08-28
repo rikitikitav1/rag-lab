@@ -23,7 +23,7 @@ cut: The cut {
   fallback: "fences do not balance ->\nread fence-blind, and log it" {
     style.stroke-dash: 3
   }
-  rooted: "rooted: root from section_root_for + H2,\nceiling on the body, prefix repeated whole"
+  rooted: "rooted: root from section_root_for + H2,\nceiling on the body, prefix repeated whole,\npieces with no text join a neighbour"
   structured: "structured: H2 -> H3 -> size,\nslivers and pieces with no text join a neighbour,\nand the join is cut back by size"
   marks -> fallback: when unbalanced
   marks -> rooted

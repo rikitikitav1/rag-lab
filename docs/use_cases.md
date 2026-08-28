@@ -141,7 +141,16 @@ one of the axes. `GET /v1/experiment/{id}` returns each arm's hit@k and MRR plus
 paired delta of every other arm against the first point of that axis, with a bootstrap
 interval and the counts of questions that moved either way.
 
-The corpus itself has two routes of its own. `POST /v1/source/{id}/analyze` runs the coverage report over a source (`mode: dry` cuts it in memory and says what the cut would be, `mode: indexed` reads the rows that are actually served) and `GET /v1/source/{id}/report` reads the history back, per variant, newest first. Neither needs embeddings or labelled questions: the metrics come from the text, so a source can be judged the moment it is added and long before anyone writes a question about it.
+Every delta carries two more fields. `not_comparable` lists what else differs between the
+pair besides the axis of record, so an empty list is the record's own statement that the
+comparison has one variable. `halves` repeats each delta on two halves of the question
+set, split by a hash of the question id and fixed by a seed, so a rule that picks its
+winner on half A and reports on half B can be checked against the record instead of
+against somebody's memory.
+
+The corpus itself has two routes of its own. `POST /v1/source/{id}/analyze` runs the coverage report over a source (`mode: dry` cuts it in memory and says what the cut would be, `mode: indexed` reads the rows that are actually served) and `GET /v1/source/{id}/report` reads the history back, per variant, newest first.
+`GET /v1/source/compare?variants=baseline&variants=clean_1024` puts the latest verdict of
+each variant beside the other and counts the sources whose verdict moved. Neither needs embeddings or labelled questions: the metrics come from the text, so a source can be judged the moment it is added and long before anyone writes a question about it.
 
 ```bash
 # sweep retrieval width k over the agent pipeline (5 runs, each judged)
