@@ -137,7 +137,10 @@ async def create_experiment(
     request: ExperimentCreate, session: AsyncSession = Depends(get_session)
 ):
     if request.kind == ExperimentKind.generation:
-        validate_param_values(request.param, request.param_values)
+        # the pipeline travels with the check: `max_hops` sits in GENERATION_PARAMS and
+        # is agent-only, so without it the allow-list admitted a value the validator
+        # refused for every request, agent ones included
+        validate_param_values(request.param, request.param_values, request.pipeline)
     ids = await _resolve_sample(
         session,
         request.dataset,

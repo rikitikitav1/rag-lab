@@ -199,6 +199,27 @@ def aggregate(experiment_id: int) -> bool:
         return True
 
 
+# a run that exhausted its attempts leaves its experiment `running` for ever: nothing
+# aggregates (the series never completes) and nothing moves it on, so the row waits for a
+# sibling that is not coming. The transition is declared; this is what traverses it
+def mark_failed_for_run(run_name: str) -> None:
+    with Session() as session:
+        won = session.execute(
+            update(Experiment)
+            .where(
+                Experiment.kind == ExperimentKind.generation,
+                Experiment.status == ExperimentStatus.running,
+                Experiment.run_names.contains([run_name]),
+            )
+            .values(status=ExperimentStatus.failed)
+        ).rowcount
+        if won:
+            session.commit()
+            log.warning("experiment.failed", run_name=run_name)
+        else:
+            session.rollback()
+
+
 def try_aggregate_for_run(run_name: str) -> None:
     with Session() as session:
         ids = list(

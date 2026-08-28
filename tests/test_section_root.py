@@ -50,8 +50,15 @@ NOTE = """# Notes, база знаний
 
 
 # the declared root is a rule of the hygienic cut, so the tests ask for it under the
-# policy that turns it on
-HYGIENIC = {"chunker": "rooted", "header_prefix": True, "max_chunk_size": 1024}
+# policy that turns it on, built through the model production loads: `header_prefix` is
+# derived and cannot be written by hand
+def _policy(**kw) -> dict:
+    from config import PolicyCfg
+
+    return PolicyCfg(**kw).model_dump()
+
+
+HYGIENIC = _policy(chunker="rooted", max_chunk_size=1024)
 
 
 def root_of(source, file):
@@ -119,3 +126,34 @@ def test_a_numeric_frontmatter_title_is_still_text(tmp_path):
     source = CheatsheetsSource(tmp_path)
     file = write(tmp_path, "101.md", "---\ntitle: 101\ncategory: JavaScript libraries\n---\n\n## Usage\n")
     assert root_of(source, file) == "101"
+
+
+def test_the_question_builder_and_the_cut_agree_on_what_a_heading_is():
+    # the cut asks the parser and skips fenced lines; this asked a regexp, so `## 2.`
+    # inside a code block became a question no chunk could carry as its section
+    from evals import build_questions
+
+    text = (
+        "## 1. Real question\n\nanswer one\n\n"
+        "```bash\n## 2. Not a question\n```\n\n"
+        "## 3. Another real\n\nanswer three\n"
+    )
+    assert [q for q, _ in build_questions._qa_pairs(text)] == [
+        "Real question",
+        "Another real",
+    ]
+
+
+def test_the_question_builder_falls_back_when_a_fence_never_closes():
+    # the cut reads such a file fence-blind and says so; a builder that trusts the scan
+    # drops every question after the stray opener, and four files of 1010 open one
+    from evals import build_questions
+
+    text = (
+        "## 1. First question\n\nanswer one\n\n"
+        "```bash\nnever closed\n\n"
+        "## 2. Second question\n\nanswer two\n\n"
+        "## 3. Third question\n\nanswer three\n"
+    )
+    got = [q for q, _ in build_questions._qa_pairs(text, "some/README.md")]
+    assert got == ["First question", "Second question", "Third question"]

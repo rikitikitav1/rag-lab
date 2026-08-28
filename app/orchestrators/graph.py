@@ -122,6 +122,8 @@ def _dispatch(state: State, ctx: dict) -> tuple[list, dict]:
         ctx["result"].took(f"tool:{tc.function.name.split('__')[0]}", started)
         if res.meta.get("error_kind"):
             errors_seen[tc.function.name] = res.meta["error_kind"]
+        if res.meta.get("ef_search") is not None:
+            ctx["result"].ef_search = res.meta["ef_search"]
         calls.append([tc, res, res.content, res.meta.get("sources", [])])
     return calls, errors_seen
 

@@ -109,7 +109,7 @@ def test_search_chunks_attaches_gate_scores_with_rerank_off(monkeypatch):
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, None, 200))
     monkeypatch.setattr(chat, "_gate_scores", lambda query, rows, top: [0.42, None])
 
-    _, sources = chat.search_chunks("q", use_rerank=False, gate_top=1, variant="baseline")
+    _, sources, _ = chat.search_chunks("q", use_rerank=False, gate_top=1, variant="baseline")
 
     assert [s.rerank_score for s in sources] == [0.42, None]
 
@@ -119,7 +119,7 @@ def test_search_chunks_leaves_rerank_scores_alone(monkeypatch):
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, [0.77], 200))
     monkeypatch.setattr(chat, "_gate_scores", lambda *a, **kw: pytest.fail("gate ran anyway"))
 
-    _, sources = chat.search_chunks("q", use_rerank=True, gate_top=5, variant="baseline")
+    _, sources, _ = chat.search_chunks("q", use_rerank=True, gate_top=5, variant="baseline")
 
     assert [s.rerank_score for s in sources] == [0.77]
 

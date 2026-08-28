@@ -16,7 +16,7 @@ from orchestrators import graph as orch_graph
 from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
-from use_cases import chat, search_depth
+from use_cases import chat
 from use_cases.agent_policy import (
     GONE,
     FallbackPolicy,
@@ -55,6 +55,8 @@ class AgentResult:
     dropped_sources: list = field(default_factory=list)
     dropped_hits: list = field(default_factory=list)
     outcome: str = outcomes.Outcome.error
+    # the depth the corpus tool searched at, not the one a resolver would give at log time
+    ef_search: int | None = None
     tool_errors: dict = field(default_factory=dict)
     stages: dict = field(default_factory=dict)
 
@@ -412,8 +414,8 @@ def _log_answer(
                         "norm": config.settings.retrieval.keyword_norm,
                         "query_lang": config.settings.retrieval.query_lang,
                     },
-                    "ef_search": search_depth.resolve(variant),
-                    "variant_policy": config.settings.corpus.policy(variant),
+                    "ef_search": result.ef_search,
+                    "variant_policy": config.settings.corpus.policy_or_none(variant),
                     "code_version": version.CODE_VERSION,
                     "drop_weak_context": bool(gate and gate.drop_weak_context),
                     "topic": (

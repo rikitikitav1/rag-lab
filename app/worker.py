@@ -67,7 +67,22 @@ def run_once(queues: list[str]) -> bool:
                 claimed.id, {"error": str(e), "attempts": attempts}, elapsed=elapsed
             )
             log.error("worker.failed", id=claimed.id, error=str(e))
+            _fail_the_experiment_waiting_on(claimed)
     return True
+
+
+# an eval_run that ran out of attempts leaves its experiment waiting for a sibling that
+# is not coming: the series never completes, so nothing aggregates and nothing moves it
+def _fail_the_experiment_waiting_on(claimed) -> None:
+    run_name = (claimed.options or {}).get("run_name")
+    if claimed.type != "eval_run" or not run_name:
+        return
+    try:
+        from use_cases import experiment
+
+        experiment.mark_failed_for_run(run_name)
+    except Exception as e:
+        log.error("worker.experiment_not_failed", run_name=run_name, error=str(e))
 
 
 def _loop(queues: list[str]) -> None:

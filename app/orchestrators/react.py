@@ -44,6 +44,8 @@ def as_tools(remote: dict, k=None, use_rerank=None, result=None, variant=None) -
                 result.took(f"tool:{name.split('__')[0]}", started)
                 if res.meta.get("error_kind"):
                     result.tool_errors[name] = res.meta["error_kind"]
+                if res.meta.get("ef_search") is not None:
+                    result.ef_search = res.meta["ef_search"]
             return res.content, res.meta.get("sources", [])
 
         return StructuredTool.from_function(

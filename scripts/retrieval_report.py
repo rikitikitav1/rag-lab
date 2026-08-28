@@ -21,6 +21,7 @@ from use_cases.retrieval_compare import (  # noqa: E402
     POOL_SHORTFALL,
     arm_procedure,
     comparable,
+    half_of,
     measure,
     paired_delta,
     questions,
@@ -116,27 +117,6 @@ def _worse_rows(exact, approx, level):
             )
     return rows
 
-
-
-# the half is a pure function of the question id, so it cannot be picked after the
-# numbers are in. A is where the winner is chosen, B is what the winner is reported on
-SPLIT_SEED = "hygiene_v1"
-
-
-# a pure function of the question id and nothing else. Drawing inside a repository
-# balances the topics exactly, but then one inserted question shifts every side after it,
-# and a split that moves when the set grows is not a pre-registration. On this set the
-# balance comes from size instead: with four to six questions a repository the parity
-# leaves 12 of 173 on one side, and each comparison prints the coverage it actually got
-def half_of(question_id) -> str:
-    digest = hashlib.md5(
-        f"{question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False
-    ).hexdigest()
-    return "A" if int(digest, 16) % 2 == 0 else "B"
-
-
-def halves(rows) -> dict:
-    return {row["id"]: half_of(row["id"]) for row in rows}
 
 
 def repo_coverage(rows, ids) -> int:

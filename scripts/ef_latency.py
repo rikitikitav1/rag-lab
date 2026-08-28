@@ -14,8 +14,9 @@ from use_cases import retrieval_compare  # noqa: E402
 import db  # noqa: E402
 
 
-# the same trick lived here and in the measuring module, and the two had drifted: one
-# disposed the pool and did not reset the index switch, the other the reverse
+# the depth travels with the call rather than with the pool. It used to be installed on
+# checkout and then overridden by `hybrid_search`'s own `SET LOCAL`, so every rung of the
+# ladder measured the same resolved depth and the ladder measured nothing
 def apply_ef(ef: int) -> None:
     retrieval_compare.prepare(exact=False, ef=ef)
     db.engine.dispose()
@@ -36,7 +37,7 @@ def timings(rows, variant: str, ef: int) -> dict:
     took = []
     for question, embedding in rows:
         started = time.perf_counter()
-        db.hybrid_search(question, embedding, None, limit=20, variant=variant)
+        db.hybrid_search(question, embedding, None, limit=20, variant=variant, ef_search=ef)
         took.append((time.perf_counter() - started) * 1000)
     took.sort()
     return {
@@ -70,7 +71,16 @@ def main() -> int:
             got = timings(rows, variant, ef)
             report["by_variant"][variant][str(ef)] = got
             print(f"{variant:14} ef={ef:<4} median {got['median_ms']:6.1f} ms  p95 {got['p95_ms']:6.1f} ms")
-    report["serving_ef_search"] = config.settings.retrieval.ef_search
+    from use_cases import search_depth
+
+    # what the server would serve right now, resolved: the config may say `auto`, and an
+    # artifact that records the word cannot be compared against one that records a number
+    report["serving_ef_search"] = search_depth.resolve()
+    report["declared_ef_search"] = config.settings.retrieval.ef_search
+    with db.engine.connect() as conn:
+        pages, rows = search_depth._shape(conn)
+    report["table"] = {"relpages": pages, "reltuples": rows,
+                       "variants": [v["variant"] for v in db.corpus_variants()]}
     if args.out:
         Path(args.out).write_text(json.dumps(report, indent=2))
         print(f"wrote {args.out}")

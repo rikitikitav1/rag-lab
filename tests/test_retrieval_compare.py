@@ -188,9 +188,15 @@ def _stub_session(exp, rows_won: int | None = None):
             return exp
 
         def execute(self, statement):
-            won = rows_won
-            if won is None:
-                won = int(exp.status == ExperimentStatus.running)
+            # the WHERE is read from the statement, not decided here: a stub that computes
+            # the winner itself lets the compare-and-swap be deleted with the suite green,
+            # and that swap is the whole safety property of this state machine
+            if rows_won is not None:
+                won = rows_won
+            else:
+                where = str(statement.compile()).split("WHERE", 1)
+                guarded = len(where) > 1 and "status" in where[1]
+                won = int(guarded and exp.status == ExperimentStatus.running)
             if won:
                 for key, value in statement.compile().params.items():
                     if hasattr(exp, key):
@@ -372,3 +378,19 @@ def test_the_stored_axes_are_validated_where_a_retry_reads_them():
     plan = rc.ComparisonPlan(axes={"ef_search": [0, 100]}, param="ef_search", dataset="s")
     with pytest.raises(ValueError, match="1..1000"):
         rc.run(plan)
+
+
+def test_a_record_says_whether_its_two_arms_were_comparable():
+    # the axis of record is allowed to differ and nothing else is; `ef_search` is the axis
+    # whose name in the procedure is `search`, so without the map it would flag itself
+    base = rc.arm_procedure({"variant": "baseline", "ef_search": 100}, [{"id": 1}], "s")
+    arm = rc.arm_procedure({"variant": "baseline", "ef_search": 200}, [{"id": 1}], "s")
+    field = rc.AXIS_FIELD.get("ef_search", "ef_search")
+    assert rc.comparable({**base, field: None}, {**arm, field: None}) == []
+    # and a pair that also moved the candidate pool is not comparable, axis or no axis
+    wider = rc.arm_procedure(
+        {"variant": "baseline", "ef_search": 200, "limit_vector": 20}, [{"id": 1}], "s"
+    )
+    assert [f for f, _, _ in rc.comparable({**base, field: None}, {**wider, field: None})] == [
+        "limit_vector"
+    ]

@@ -296,6 +296,40 @@ def bootstrap_ci(deltas, seed: int = 0) -> tuple[float, float]:
     return means[int(0.025 * BOOTSTRAP)], means[int(0.975 * BOOTSTRAP)]
 
 
+# the half is a pure function of the question id, so it cannot be picked after the
+# numbers are in. A is where the winner is chosen, B is what the winner is reported on
+SPLIT_SEED = "hygiene_v1"
+
+
+# drawing inside a repository would balance the topics exactly, but then one inserted
+# question shifts every side after it, and a split that moves when the set grows is not
+# a pre-registration. The balance comes from size instead, and each half prints the
+# repository coverage it actually got
+def half_of(question_id) -> str:
+    import hashlib
+
+    digest = hashlib.md5(
+        f"{question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False
+    ).hexdigest()
+    return "A" if int(digest, 16) % 2 == 0 else "B"
+
+
+def paired_delta_half(before: list[dict], after: list[dict], level: str, which: str) -> dict:
+    # over the ids both arms carry, not over everything the newer one measured: the hash
+    # has to name the questions the numbers were taken on
+    shared = {r["id"] for r in before} & {r["id"] for r in after}
+    kept = {qid for qid in shared if half_of(qid) == which}
+    out = paired_delta(
+        [r for r in before if r["id"] in kept],
+        [r for r in after if r["id"] in kept],
+        level,
+    )
+    out["half"] = which
+    out["repos"] = len({r.get("repo") for r in after if r["id"] in kept and r.get("repo")})
+    out["ids_hash"] = _ids_hash([{"id": qid} for qid in kept])
+    return out
+
+
 def paired_delta(before: list[dict], after: list[dict], level: str) -> dict:
     key = f"{level}_rank"
     if level == "section":
@@ -414,6 +448,9 @@ COMPARABLE = (
 )
 # absent is not a difference: it is the value the run had before anyone wrote it down
 ABSENT_MEANS = {"rerank_top": 0}
+# which field of the procedure an axis moves: two arms are allowed to differ in the axis
+# of record and in nothing else, and `ef_search` is the one whose names do not match
+AXIS_FIELD = {"ef_search": "search"}
 
 
 def comparable(before, after) -> list[tuple]:
@@ -545,8 +582,29 @@ def run(experiment) -> dict:
         name, base = arm_name(arm), arm_name(against)
         deltas[name] = {
             "against": base,
+            # what a reader would otherwise have to work out by eye, and what the script
+            # refuses on: a delta between two procedures is a number about nothing. Empty
+            # means the pair differs in the axis of record and in nothing else
+            "not_comparable": [
+                {"field": field, "was": was, "now": now}
+                for field, was, now in comparable(
+                    {**arm_procedure(against, measured[base], experiment.dataset),
+                     AXIS_FIELD.get(param, param): None},
+                    {**arm_procedure(arm, measured[name], experiment.dataset),
+                     AXIS_FIELD.get(param, param): None},
+                )
+            ],
             **{
                 level: paired_delta(measured[base], measured[name], level)
+                for level in ("file", "section")
+            },
+            # the winner is chosen on A and reported on B, so a record that carries only
+            # the whole cannot answer the question the pre-registration asks of it
+            "halves": {
+                level: {
+                    which: paired_delta_half(measured[base], measured[name], level, which)
+                    for which in ("A", "B")
+                }
                 for level in ("file", "section")
             },
         }

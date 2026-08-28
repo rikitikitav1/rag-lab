@@ -202,17 +202,18 @@ def search_chunks(
     gate_top: int | None = None,
     *,
     variant: str,
-) -> tuple[str, list[Source]]:
+) -> tuple[str, list[Source], int]:
     k = k or config.settings.retrieval.results_limit
     use_rerank = resolve_rerank(use_rerank)
-    rows, rerank_scores, _depth = _retrieve_rows(query, category, k, use_rerank, variant)
+    rows, rerank_scores, depth = _retrieve_rows(query, category, k, use_rerank, variant)
     if not rows:
-        return NO_RESULTS, []
+        return NO_RESULTS, [], depth
     if rerank_scores is None and gate_top:
         rerank_scores = _gate_scores(query, rows, gate_top)
     return (
         format_chunks(rows, variant) or NO_RESULTS,
         take_sources(rows, rerank_scores, variant),
+        depth,
     )
 
 
@@ -371,7 +372,10 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
             "query_lang": config.settings.retrieval.query_lang,
         },
         "ef_search": ef_search,
-        "variant_policy": config.settings.corpus.policy(variant),
+        # the same tolerance `_hidden_by_cut` was given: a variant present in the table
+        # and absent from the config is possible, and raising here kills an answer the
+        # generator was already paid for
+        "variant_policy": config.settings.corpus.policy_or_none(variant),
         "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
     }
 

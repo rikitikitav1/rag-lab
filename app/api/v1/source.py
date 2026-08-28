@@ -3,7 +3,7 @@ from typing import Literal
 
 import job_queue
 from crud import get_or_404
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from models.corpus import DataChunk, DataSource
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel
@@ -35,6 +35,21 @@ class SourceActiveRequest(BaseModel):
 class SourceAnalyzeRequest(BaseModel):
     variant: str | None = None
     mode: Literal["indexed", "dry"] = "indexed"
+
+
+class SourceVerdicts(BaseModel):
+    name: str
+    verdicts: dict[str, str | None]
+    scores: dict[str, int | None]
+    breaches: dict[str, list[str]]
+    moved: bool
+
+
+class SourceCompareResponse(BaseModel):
+    variants: list[str]
+    sources: int
+    disagreeing: int
+    rows: list[SourceVerdicts]
 
 
 class SourceReportResponse(BaseModel):
@@ -84,6 +99,42 @@ async def set_source_active(
         select(func.count()).select_from(DataChunk).where(DataChunk.source_id == id)
     )
     return _response(source, count or 0)
+
+
+# no job and no re-measuring: the reports are already written per source and per variant,
+# and what was missing was a reading that puts two cuts of one source side by side.
+# Declared before `/{id}` so a literal path is not read as an id
+@router.get("/compare", response_model=SourceCompareResponse)
+async def compare_sources(
+    variants: list[str] = Query(min_length=2),
+    session: AsyncSession = Depends(get_session),
+):
+    from use_cases.index import check_variant
+
+    for variant in variants:
+        check_variant(variant)
+    sources = list(await session.scalars(select(DataSource).order_by(DataSource.name)))
+    rows, disagreeing = [], 0
+    for source in sources:
+        reports = source.ingest_reports or {}
+        latest = {v: (reports.get(v) or [{}])[-1] for v in variants}
+        if not any(latest[v] for v in variants):
+            continue
+        verdicts = {v: latest[v].get("verdict") for v in variants}
+        moved = len({verdicts[v] for v in variants}) > 1
+        disagreeing += moved
+        rows.append(
+            SourceVerdicts(
+                name=source.name,
+                verdicts=verdicts,
+                scores={v: latest[v].get("score") for v in variants},
+                breaches={v: latest[v].get("breaches") or [] for v in variants},
+                moved=moved,
+            )
+        )
+    return SourceCompareResponse(
+        variants=variants, sources=len(rows), disagreeing=disagreeing, rows=rows
+    )
 
 
 @router.get("/{id}/report", response_model=SourceReportResponse)

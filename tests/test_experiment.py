@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from models.experiment import ExperimentStatus, can_advance
 
 
@@ -185,3 +187,55 @@ def test_compare_detects_consistent_shift():
     assert stats["p"] < 0.05
     assert stats["ci95"] == [2.0, 2.0]
     assert out["relevance"] is None
+
+
+def test_a_run_that_ran_out_of_attempts_moves_its_experiment_to_failed(monkeypatch):
+    # nothing traversed `running -> failed` on the generation side, so an experiment whose
+    # runs all died waited for a sibling that was not coming
+    from models.experiment import ExperimentStatus
+    from use_cases import experiment as uc
+
+    seen = {}
+
+    class _Result:
+        rowcount = 1
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, statement):
+            seen["values"] = statement.compile().params
+            return _Result()
+
+        def commit(self):
+            seen["committed"] = True
+
+        def rollback(self):
+            seen["committed"] = False
+
+    monkeypatch.setattr(uc, "Session", _Session)
+    uc.mark_failed_for_run("some_run")
+    assert seen["committed"] is True
+    assert ExperimentStatus.failed in seen["values"].values()
+
+
+def test_the_worker_only_fails_experiments_for_eval_runs(monkeypatch):
+    import worker
+    from use_cases import experiment as uc
+
+    called = []
+    monkeypatch.setattr(uc, "mark_failed_for_run", lambda run: called.append(run))
+
+    worker._fail_the_experiment_waiting_on(
+        SimpleNamespace(type="index_data", options={"run_name": "r"})
+    )
+    assert called == [], "an index job has no experiment waiting on it"
+
+    worker._fail_the_experiment_waiting_on(
+        SimpleNamespace(type="eval_run", options={"run_name": "r"})
+    )
+    assert called == ["r"]

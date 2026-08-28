@@ -31,14 +31,15 @@ service:
     # of thumb: the crossover is nonlinear in rows and moves with random_page_cost.
     # Ask the plan, never a formula, and never inherit an answer from another day.
     #
-    # Measured 28.08 with three variants in the table. Plan: index at 100 and 200 on all
-    # three, exact sort at 400. Through the index at 200: recall@20 against exact 1.0 on
-    # clean_1024, 0.9912 on baseline, 0.9852 on prefix_1024; paired section MRR against
-    # exact 0.0000 [0, 0] and zero questions lost, against one lost at 100. Cost, in wall
-    # clock rather than planner units: the vector leg reads 1.75 ms at 100 and 2.15 ms at
-    # 200 (medians over 100 questions), which is inside the spread, and 45.31 ms at 400
-    # because that rung is the sort. The whole hybrid query reads 23-25 ms at both 100 and
-    # 200. So the depth is free here and the deeper rung is the one that loses nothing.
+    # Measured 28.08. Plan: index at 100 and 200 on every indexed variant, exact sort at
+    # 400. Through the index at 200: recall@20 against exact 1.0 on clean_1024, 0.9912 on
+    # baseline; paired section MRR against exact 0.0000 [0, 0] and zero questions lost,
+    # against one lost at 100. Cost in wall clock rather than planner units, from
+    # datasets/measurements/latency_ef_search_two_variants.json: the whole hybrid query
+    # reads 15-19 ms at both 100 and 200 and 58-62 ms at 400, because that rung is the
+    # sort. The depth is free here and the deeper rung is the one that loses nothing.
+    # The earlier three-variant file was taken with a script whose `apply_ef` was
+    # overridden by hybrid_search's own SET LOCAL, so its ladder is not reproducible.
     #
     # The fragility is real and measurable: 200 sits about 65 units of ef inside the
     # index zone today, and dropping a variant would put it outside. That is what the

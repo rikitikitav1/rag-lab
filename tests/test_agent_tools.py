@@ -76,3 +76,16 @@ def test_the_corpus_tool_describes_the_corpus_from_config():
 
     description = at._REGISTRY[at.CORPUS_TOOL].description
     assert config.settings.corpus.description in description
+
+
+def test_the_corpus_tool_carries_the_depth_it_searched_at(monkeypatch):
+    # the agent used to resolve the depth again at logging time, which is a second answer
+    # rather than the same one; the tool hands it up the way it hands up the sources
+    import agent_tools
+    from use_cases import chat
+
+    monkeypatch.setattr(
+        chat, "search_chunks", lambda *a, **kw: ("content", [], 137)
+    )
+    res = agent_tools._search_corpus("q", variant="baseline")
+    assert res.meta["ef_search"] == 137

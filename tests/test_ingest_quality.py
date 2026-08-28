@@ -10,15 +10,22 @@ from use_cases.ingest_quality import (
 
 CEILING = 100
 
-HARD = {
-    "section_coverage": {"min": 0.5},
-    "prefix_dominates": {"max": 0.1},
-}
-SOFT = {
-    "dup_in_file": {"max": 0.1},
-    "dup_in_source": {"max": 0.2},
-    "tiny": {"max": 0.3},
-}
+# read from the config the production code reads, not copied: four of five hand-written
+# gates had drifted from `config.yaml`, and a test that asserts against a dict it wrote
+# itself cannot be falsified by changing the thing it is about
+def _gates(kind: str) -> dict:
+    import config
+
+    cfg = getattr(config.settings.ingest_quality, kind)
+    return {
+        name: {k: v for k, v in vars(gate).items() if v is not None}
+        for name, gate in vars(cfg).items()
+        if gate is not None
+    }
+
+
+HARD = _gates("hard_gates")
+SOFT = _gates("soft_gates")
 
 
 BODY = "body text long enough to outweigh its own heading"
@@ -194,8 +201,9 @@ def test_without_weights_there_is_no_score_but_the_verdict_still_works():
 def test_score_is_an_integer_on_a_hundred_point_scale():
     m = measure([chunk()], CEILING)
     s = score(m, {"section_coverage": 1.0})
-    assert isinstance(s, int)
-    assert 0 <= s <= 100
+    # perfect coverage under the only metric where more is better: emptying
+    # HIGHER_IS_BETTER turns this into 0, and `0 <= s <= 100` would not notice
+    assert s == 100
 
 
 def test_a_metric_with_nothing_to_measure_is_none_not_zero():

@@ -3,8 +3,11 @@ import re
 from pathlib import Path
 
 import config
+import logging_setup
 
 QUESTION_RE = re.compile(r"^## \d+\.\s+(.+)$", re.MULTILINE)
+
+log = logging_setup.get_logger(__name__)
 
 
 def _clean(text):
@@ -19,8 +22,32 @@ def _readmes():
             yield f"{repo}/README.md", readme.read_text(encoding="utf-8", errors="ignore")
 
 
-def _qa_pairs(text):
-    headers = list(QUESTION_RE.finditer(text))
+# the cut asks the parser which lines are headings and skips the ones inside a fence;
+# this asked a regexp, so `## 1.` written inside a code block became a question that no
+# chunk could ever carry as its section
+def _qa_pairs(text, file: str | None = None):
+    import ingest
+
+    lines = text.split("\n")
+    inside, opened = ingest._fence_scan(lines)
+    if opened is not None:
+        # the same fallback the cut takes: after a fence that never closes, everything
+        # reads as code, and a question builder that trusts it drops every question after
+        # the stray opener. Four files of 1010 open one; numpy alone loses seven
+        log.warning(
+            "questions.unbalanced_fence",
+            file=file,
+            headings="read without fences",
+            opened_at_line=opened + 1,
+        )
+        inside = set()
+    offsets = []
+    at = 0
+    for line in lines:
+        offsets.append(at)
+        at += len(line) + 1
+    fenced = {offsets[i] for i in inside if i < len(offsets)}
+    headers = [m for m in QUESTION_RE.finditer(text) if m.start() not in fenced]
     for i, match in enumerate(headers):
         end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
         yield _clean(match.group(1)), text[match.end() : end].strip()
@@ -30,7 +57,7 @@ def build_answers(out_path="answers_interview.jsonl"):
     count = 0
     with open(out_path, "w", encoding="utf-8") as out:
         for source, text in _readmes():
-            for question, answer in _qa_pairs(text):
+            for question, answer in _qa_pairs(text, source):
                 record = {
                     "question": question,
                     "reference_answer": answer,

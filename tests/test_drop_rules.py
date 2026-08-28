@@ -8,8 +8,18 @@ from sources.cheatsheets import CheatsheetsSource
 from sources.interview import InterviewSource
 from sources.notes import NotesSource
 
-DROPPING = {"chunker": "rooted", "boilerplate": "dropped", "header_prefix": True, "max_chunk_size": 1024}
-KEEPING = {"chunker": "legacy", "boilerplate": "kept"}
+
+# built through the model production loads, so a fixture the config could never produce
+# (an unknown key, a derived one written by hand, a required one missing) fails here
+# rather than testing a shape that cannot exist
+def _policy(**kw) -> dict:
+    from config import PolicyCfg
+
+    return PolicyCfg(**kw).model_dump()
+
+
+DROPPING = _policy(chunker="rooted", max_chunk_size=1024)
+KEEPING = _policy(chunker="legacy", max_chunk_size=1024)
 
 
 def doc(content, i=0, body=None):

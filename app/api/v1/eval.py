@@ -298,6 +298,7 @@ async def enqueue_eval_run(
             "orchestrator": request.orchestrator and request.orchestrator.value,
             "topic_threshold": request.topic_threshold,
             "allow_cpu": request.allow_cpu,
+            "variant": request.variant,
         },
     )
 

@@ -253,10 +253,13 @@ def hybrid_search(
     # depth can be overridden per request, and a pooled connection outlives the request
     from use_cases import search_depth
 
-    # an exact arm has no depth: the caller turned index scans off, and asking how deep
-    # to walk a graph nobody walks costs a probe and answers nothing
+    # exact search is what this connection does, not what a listener somewhere set on the
+    # pool: an argument that names a switch and does not throw it is how a run labelled
+    # itself exact while walking the graph at pgvector's default of 40
     depth = None if exact else search_depth.resolve(variant, ef_search)
     with engine.connect() as conn:
-        if depth is not None:
+        if exact:
+            conn.execute(text("SET LOCAL enable_indexscan = off"))
+        else:
             conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
         return conn.execute(text(query), params).fetchall()

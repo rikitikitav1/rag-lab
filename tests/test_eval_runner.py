@@ -6,14 +6,19 @@ def _rows(marker, n=3):
 
 
 def _stub_phases(monkeypatch, use_rerank_expected=None):
+    from use_cases import search_depth
+
     calls = []
+    # the phase resolves the depth once and carries it into every snapshot; asking the
+    # planner needs a database, and these tests need none
+    monkeypatch.setattr(search_depth, "resolve", lambda *a, **kw: 200)
     monkeypatch.setattr(
         runner.llm, "request_embeddings_batch", lambda texts: [[0.1]] * len(texts)
     )
     monkeypatch.setattr(
         runner.db, "hybrid_search",
-        lambda text, vector, category, limit, variant: (
-            calls.append(("search", text, limit, variant)) or _rows(text)
+        lambda text, vector, category, limit, variant, ef_search=None: (
+            calls.append(("search", text, limit, variant, ef_search)) or _rows(text)
         ),
     )
     monkeypatch.setattr(
@@ -25,6 +30,9 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
     monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
+    # the card check is a network call; the tests that care about it override these
+    monkeypatch.setattr(runner.llm, "warn_if_models_do_not_fit", lambda: [])
+    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: [])
     monkeypatch.setattr(
         runner.chat, "answer_from_rows",
         lambda text, rows, **kw: calls.append(("generate", text, kw.get("phased"))),
@@ -45,6 +53,7 @@ def test_phases_run_in_order_and_free_vram(monkeypatch):
         "rerank",
         "unload",
         "generate", "generate",
+        "unload",
     ]
 
 
@@ -69,7 +78,10 @@ def test_retrieval_widens_only_when_reranking(monkeypatch):
 
     assert wide == runner.config.settings.rerank.candidates
     assert narrow == 3
-    assert not [c for c in calls if c[0] in ("rerank", "unload")]
+    assert not [c for c in calls if c[0] == "rerank"]
+    # a run without a rerank phase still frees the embedder before generating, and the
+    # generator when it is done, so the next run in the queue starts on an empty card
+    assert [c[1] for c in calls if c[0] == "unload"] == ["embedding", "generation"]
 
 
 def test_generation_marks_logs_as_phased(monkeypatch):
@@ -161,8 +173,9 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
 
     monkeypatch.setattr(runner.llm, "request_embeddings_batch", flaky)
 
-    out = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], k=3, use_rerank=False, variant="baseline")
+    out, depth = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], k=3, use_rerank=False, variant="baseline")
 
+    assert depth == 200
     assert [text for text, _, _ in out] == ["ok1", "ok2"]
     assert len([c for c in calls if c[0] == "search"]) == 2
 
@@ -170,14 +183,14 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
 def test_search_failure_skips_one_question(monkeypatch):
     _stub_phases(monkeypatch)
 
-    def flaky(text, vector, category, limit, variant):
+    def flaky(text, vector, category, limit, variant, ef_search=None):
         if text == "bad":
             raise RuntimeError("pg down")
         return _rows(text)
 
     monkeypatch.setattr(runner.db, "hybrid_search", flaky)
 
-    out = runner._phase_retrieve(["good", "bad"], k=3, use_rerank=False, variant="baseline")
+    out, _depth = runner._phase_retrieve(["good", "bad"], k=3, use_rerank=False, variant="baseline")
     assert [text for text, _, _ in out] == ["good"]
 
 
@@ -234,3 +247,43 @@ def test_agent_runs_get_the_fallback_policy(monkeypatch):
     runner.run("run", set_name="s", pipeline="agent", fallback_policy="agent_choice")
 
     assert seen == ["agent_choice"]
+
+
+def test_a_phased_run_records_the_depth_it_searched_at(monkeypatch):
+    # phased is the default for single-shot, and it used to record `ef_search: null`,
+    # so the depth of every generation run on this branch was missing from its own record
+    _stub_phases(monkeypatch)
+    snap = {}
+    monkeypatch.setattr(
+        runner.chat, "answer_from_rows",
+        lambda *a, **kw: snap.update(ef_search=kw.get("ef_search")),
+    )
+    runner.run_phased("r", ["q1"], use_rerank=False, language=None, k=3,
+                      model=None, job_id=None, variant="baseline")
+    assert snap["ef_search"] == 200
+
+
+def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
+    # the sequential path refused from the start and the phased path, which is the
+    # default for single_shot, did not. ollama kept answering off the card at four
+    # times the cost, and nothing in the run said so
+    import pytest
+
+    _stub_phases(monkeypatch)
+    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["llama3.1:8b"])
+    with pytest.raises(RuntimeError, match="not on the GPU"):
+        runner.run_phased(
+            "run", ["q1", "q2"], use_rerank=False, language=None, k=2, model=None,
+            job_id=None, variant="baseline",
+        )
+
+
+def test_a_phased_run_measuring_the_cpu_says_so_and_proceeds(monkeypatch):
+    calls = _stub_phases(monkeypatch)
+    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["llama3.1:8b"])
+    answered, cancelled = runner.run_phased(
+        "run", ["q1", "q2"], use_rerank=False, language=None, k=2, model=None,
+        job_id=None, variant="baseline", allow_cpu=True,
+    )
+    assert (answered, cancelled) == (2, False)
+    assert [c[0] for c in calls].count("generate") == 2

@@ -1,11 +1,19 @@
 import importlib.util
 from pathlib import Path
 
+# the split lives beside the measuring now, so the job and the script cannot grow two
+# different notions of a half; the artifact rules stayed in the script that writes them
+from use_cases import retrieval_compare as rc
+
 spec = importlib.util.spec_from_file_location(
     "retrieval_report", Path(__file__).resolve().parent.parent / "scripts" / "retrieval_report.py"
 )
 rr = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rr)
+
+
+def halves(rows_):
+    return {row["id"]: rc.half_of(row["id"]) for row in rows_}
 
 
 def rows(spec_):
@@ -15,22 +23,22 @@ def rows(spec_):
 def test_a_question_keeps_its_side_when_the_set_grows():
     # the property the pre-registration rests on: adding questions must not move the ones
     # already there. A rule drawn inside a repository balances better and fails this
-    small = rr.halves(rows({"ruby": [1, 2], "go": [7, 8]}))
-    grown = rr.halves(rows({"ruby": [1, 2, 3, 4, 5], "go": [7, 8, 9]}))
+    small = halves(rows({"ruby": [1, 2], "go": [7, 8]}))
+    grown = halves(rows({"ruby": [1, 2, 3, 4, 5], "go": [7, 8, 9]}))
     assert all(grown[qid] == side for qid, side in small.items())
 
 
 def test_the_side_depends_on_nothing_but_the_id():
-    assert rr.halves(rows({"ruby": [1, 2, 3]})) == rr.halves(rows({"go": [3, 2, 1]}))
+    assert halves(rows({"ruby": [1, 2, 3]})) == halves(rows({"go": [3, 2, 1]}))
 
 
 def test_the_split_is_stable_across_calls():
     spec_ = {"ruby": [1, 2, 3, 4], "go": [9, 8, 7]}
-    assert rr.halves(rows(spec_)) == rr.halves(rows(spec_))
+    assert halves(rows(spec_)) == halves(rows(spec_))
 
 
 def test_every_question_lands_on_one_of_two_sides():
-    assigned = rr.halves(rows({"ruby": list(range(50))}))
+    assigned = halves(rows({"ruby": list(range(50))}))
     assert set(assigned.values()) == {"A", "B"}
     assert len(assigned) == 50
 
