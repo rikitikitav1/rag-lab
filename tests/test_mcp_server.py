@@ -9,7 +9,7 @@ from models.registry import Pipeline
 
 
 def test_search_corpus_returns_content(monkeypatch):
-    monkeypatch.setattr(mcp_server.chat, "search_chunks", lambda q, category=None, **kw: ("chunks", []))
+    monkeypatch.setattr(mcp_server.chat, "search_chunks", lambda q, category=None, **kw: ("chunks", [], 200))
     assert mcp_server.search_corpus("redis") == "chunks"
 
 
@@ -18,7 +18,7 @@ def test_search_corpus_forwards_category(monkeypatch):
 
     def fake(q, category=None, **kw):
         seen["category"] = category
-        return ("c", [])
+        return ("c", [], 200)
 
     monkeypatch.setattr(mcp_server.chat, "search_chunks", fake)
     mcp_server.search_corpus("redis", category="databases.redis")

@@ -5,9 +5,9 @@ embed: "Embed query (bge-m3, 1024d)"
 
 retrieval: Hybrid retrieval (one SQL query) {
   direction: right
-  vector: vector CTE\ntop-N by cosine\ndistance
-  keyword: keyword CTE\nFTS per-language
-  rrf: "RRF merge\n1/(60+rank)"
+  vector: vector CTE\ntop-N by cosine\nhnsw at the resolved depth (auto)
+  keyword: keyword CTE\nFTS per-language\nquery_lang: function_words
+  rrf: "RRF merge\n1/(60+rank)\nties by id"
   vector -> rrf
   keyword -> rrf
 }
@@ -44,8 +44,4 @@ ctx -> gen -> answer
 answer -> log
 refuse -> log
 
-note: |md
-  Single-shot is deliberately dumb: retrieve once, generate once,
-  no tool calls, no external fallback. It is the measurable
-  baseline the agent pipeline is compared against.
-|
+note: "Retrieve once, generate once, no tools:\nthe baseline the agent is measured against"

@@ -20,11 +20,17 @@ class GateSignal(StrEnum):
 
 
 class Orchestrator(StrEnum):
-    # the hand-rolled loop is gone; the value stays so its runs are still queryable
+    # gone, and the values stay so their runs are still queryable: 422 logs carry the
+    # hand-rolled loop and 222 the middleware arm
     handrolled = "agent"
-    langgraph_ported = "langgraph_ported"
     langgraph_middleware = "langgraph_middleware"
+    langgraph_ported = "langgraph_ported"
     langgraph_idiomatic = "langgraph_idiomatic"
+
+
+# retired implementations: readable in old logs, runnable nowhere. Declared here rather
+# than at the transport, so a fourth retirement is one line and not three
+GONE = frozenset({Orchestrator.handrolled, Orchestrator.langgraph_middleware})
 
 
 class FallbackReason(StrEnum):

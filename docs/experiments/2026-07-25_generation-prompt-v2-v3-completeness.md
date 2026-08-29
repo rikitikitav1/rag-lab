@@ -1,12 +1,21 @@
 # 2026-07-25 - Generation prompt v2 → v3 (completeness)
 
-**Hypothesis:** the weak axis is relevance (answers judged "partially" rather than "relevant"): the generator answers loosely. A prompt pushing directness and completeness should convert partially → relevant. Retrieval is unchanged, so any delta is the prompt.
+The weak axis is relevance: answers land in "partially" rather than "relevant", which reads as a
+generator answering loosely. A prompt that pushes directness and completeness should convert
+partially into relevant. Retrieval does not change, so any delta belongs to the prompt.
 
-**Change:** `generate_answer` v2 (terse: answer from context, cite, language) → v3 (role line + explicit rules: answer directly and fully, cite every factual statement, do not repeat the question, state what is missing on partial answers, describe source conflicts, no speculation).
+## Setup
 
-**Setup:** set `paraphrased_ru` (100); generator `llama3.1:8b`, **temp 0** (deterministic); rerank off; retrieval identical (hit@k confirms). Clean isolation of the prompt.
+**Set** `paraphrased_ru` (n=100), cross-checked on `paraphrased` (n=100) · **corpus** pre-variant era, `developer-roadmap` still in · **judge** `qwen2.5:7b`, categorical
 
-**Result (ru, temp 0, clean):**
+`generate_answer` v2 (terse: answer from context, cite, language) against v3 (role line plus
+explicit rules: answer directly and fully, cite every factual statement, do not repeat the
+question, state what is missing on partial answers, describe source conflicts, no speculation).
+
+Generator `llama3.1:8b` at temp 0, rerank off. Retrieval is identical in both arms, confirmed by
+hit@k.
+
+## Result
 
 | metric | v2 | v3 | Δ |
 |--------|----|----|---|
@@ -17,10 +26,20 @@
 | unfaithful | 28 | 24 | −4 |
 | hit@k / MRR | 80% / 0.652 | 80% / 0.652 | = |
 
-**Cross-check (en):** relevant 33 → 44 (+11); faithful 61 → 56 (−5). Caveat: the en baseline was temp 0.1, so not a perfectly clean comparison.
+Cross-check on the English set: relevant 33 → 44, faithful 61 → 56.
 
-**Delta:** relevance up on both languages (ru +22, en +11) - the target shift, and since retrieval and temperature were held, it is attributable to the prompt. Faithfulness up on ru (+12), slight trade-off on en (−5): pushing completeness yields longer answers with more assertions, some of which the judge marks ungrounded.
+Relevance rises on both languages, which is the targeted shift, and retrieval and temperature were
+held, so it is attributable to the prompt. Faithfulness rises on ru and dips on en: pushing
+completeness yields longer answers with more assertions, some of which the judge marks ungrounded.
 
-**Conclusion:** v3 is a clear, reproducible win on relevance across both languages (not a set-specific fluke). **Decision: v3 active.** Follow-up: resolve the en faithfulness dip with a clean temp-0 baseline, and/or add a "no assertions beyond what answers the question" clause to balance completeness against grounding.
+## Decision
 
----
+v3 active. Follow-up: a clean temp-0 en baseline for the faithfulness dip, and possibly a "no
+assertions beyond what answers the question" clause to balance completeness against grounding.
+
+## Caveats
+
+- the en baseline ran at temp 0.1, so the en column is not a clean comparison
+- counts, not scores: this run predates the numeric judge, and the categorical counter was later
+  shown to invert conclusions ([the k-sweep re-judge](2026-07-28_k-sweep-re-judged-with-a.md))
+- single run per arm, no interval

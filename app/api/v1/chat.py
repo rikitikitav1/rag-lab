@@ -2,7 +2,7 @@ from typing import Literal
 
 import config
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from use_cases import chat
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -26,6 +26,10 @@ class QuestionRequest(BaseModel):
     options: QuestionOptions | None = None
     rerank: bool | None = None
     language: Literal["ru", "en"] | None = None
+    # pins the hnsw walk for this request; the configured `auto` decides otherwise.
+    # 1..1000 is what the server accepts, and a value it refuses would die after the
+    # embedding was paid for
+    ef_search: int | None = Field(default=None, ge=1, le=1000)
 
 
 class AnswerMetrics(BaseModel):
@@ -65,6 +69,7 @@ def ask(question: QuestionRequest) -> QuestionResponse:
         category,
         use_rerank=question.rerank,
         language=question.language,
+        ef_search=question.ef_search,
     )
     return QuestionResponse(
         text=res.text,
@@ -94,7 +99,8 @@ def ask(question: QuestionRequest) -> QuestionResponse:
 def quick_ask(question: QuestionRequest) -> RetrievalResponse:
     category = question.filter.category if question.filter else None
     res = chat.retrieve(
-        question.text, category, variant=config.settings.corpus.variant
+        question.text, category, variant=config.settings.corpus.variant,
+        ef_search=question.ef_search,
     )
     return RetrievalResponse(
         sources=[

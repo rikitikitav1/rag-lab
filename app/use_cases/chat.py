@@ -9,6 +9,7 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
+import sources.base
 from models.eval import Question, QuestionLog
 from models.registry import Purpose
 from orm.sync_db import Session
@@ -16,12 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from timing_wrappers import measure_elapsed
+from use_cases import search_depth
 
 import db
 
 log = logging_setup.get_logger(__name__)
 
-IGNORED_SOURCES = config.settings.ignored_sources
 
 NO_RESULTS = outcomes.NO_RESULTS
 
@@ -101,16 +102,21 @@ def _source_from_row(
     )
 
 
-def is_ignored_source(source) -> bool:
-    return Path(source).name in IGNORED_SOURCES
+# one place decides whether reranking happens, and every caller asks it rather than
+# reading the key: the number of decision sites is what makes a default true
+def resolve_rerank(use_rerank: bool | None) -> bool:
+    if use_rerank is None:
+        return config.settings.rerank.enabled
+    return use_rerank
 
 
-def take_sources(rows, rerank_scores=None) -> list[Source]:
+def take_sources(rows, rerank_scores=None, variant: str | None = None) -> list[Source]:
+    variant = variant or config.settings.corpus.variant
     scores = rerank_scores or [None] * len(rows)
     kept: dict[str, Source] = {}
     for row, rerank_score in zip(rows, scores, strict=True):
         _, src, _, _, vector_rank, keyword_rank, vector_distance, score, *_ = row
-        if is_ignored_source(src):
+        if _hidden_by_cut(src, variant):
             continue
         if src in kept:
             # a duplicated path must not hide the best cross-encoder score from the gate
@@ -124,13 +130,37 @@ def take_sources(rows, rerank_scores=None) -> list[Source]:
     return list(kept.values())
 
 
-def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str):
+# a shim for serving baseline, not a design. baseline was cut before index.md was taken
+# out at ingest and it is never re-cut, so the rule is applied where that cut is read.
+# It dies the day the default variant stops being a legacy one; nothing else should grow
+# here. Note it filters after the search took its k rows, so an answer over baseline can
+# come back with fewer than k: true before this branch too, but it was silent
+LEGACY_SKIP_NAMES = frozenset({"index.md"})
+
+
+def _hidden_by_cut(source: str, variant: str) -> bool:
+    # a variant present in data_chunks and absent from the config is possible: the two
+    # sets are independent. Raising here would do it once per retrieved row, in the middle
+    # of an answer, so an unknown cut is treated as the legacy one, which hides more
+    policy = config.settings.corpus.policy_or_none(variant)
+    if policy is not None and sources.base.hygienic(policy):
+        return False
+    return Path(source).name in LEGACY_SKIP_NAMES
+
+
+# returns the depth it searched at along with the rows: the snapshot has to record what
+# the search used, and resolving a second time is a second answer, not the same one
+def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str,
+                   ef_search: int | None = None):
+    depth = search_depth.resolve(variant, ef_search)
     if not rerank_enabled:
         return (
             db.hybrid_search(
-                question, llm.embed(question), category, limit=k, variant=variant
+                question, llm.embed(question), category, limit=k, variant=variant,
+                ef_search=depth,
             ),
             None,
+            depth,
         )
 
     import rerank
@@ -141,14 +171,18 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
         category,
         limit=config.settings.rerank.candidates,
         variant=variant,
+        ef_search=depth,
     )
     ranked = rerank.rerank(question, candidates, top=k)
-    return [row for row, _ in ranked], [score for _, score in ranked]
+    return [row for row, _ in ranked], [score for _, score in ranked], depth
 
 
-def format_chunks(rows) -> str:
+def format_chunks(rows, variant: str | None = None) -> str:
+    variant = variant or config.settings.corpus.variant
     return "\n\n".join(
-        f"[{src}]\n{content}" for content, src, *_ in rows if not is_ignored_source(src)
+        f"[{src}]\n{content}"
+        for content, src, *_ in rows
+        if not _hidden_by_cut(src, variant)
     )
 
 
@@ -168,16 +202,19 @@ def search_chunks(
     gate_top: int | None = None,
     *,
     variant: str,
-) -> tuple[str, list[Source]]:
+) -> tuple[str, list[Source], int]:
     k = k or config.settings.retrieval.results_limit
-    if use_rerank is None:
-        use_rerank = config.settings.rerank.enabled
-    rows, rerank_scores = _retrieve_rows(query, category, k, use_rerank, variant)
+    use_rerank = resolve_rerank(use_rerank)
+    rows, rerank_scores, depth = _retrieve_rows(query, category, k, use_rerank, variant)
     if not rows:
-        return NO_RESULTS, []
+        return NO_RESULTS, [], depth
     if rerank_scores is None and gate_top:
         rerank_scores = _gate_scores(query, rows, gate_top)
-    return format_chunks(rows) or NO_RESULTS, take_sources(rows, rerank_scores)
+    return (
+        format_chunks(rows, variant) or NO_RESULTS,
+        take_sources(rows, rerank_scores, variant),
+        depth,
+    )
 
 
 @measure_elapsed
@@ -187,12 +224,13 @@ def retrieve(
     k: int | None = None,
     *,
     variant: str,
+    ef_search: int | None = None,
 ) -> Retrieval:
     k = k or config.settings.retrieval.results_limit
-    rows, rerank_scores = _retrieve_rows(
-        question, category, k, config.settings.rerank.enabled, variant
+    rows, rerank_scores, _depth = _retrieve_rows(
+        question, category, k, resolve_rerank(None), variant, ef_search
     )
-    return Retrieval(sources=take_sources(rows, rerank_scores))
+    return Retrieval(sources=take_sources(rows, rerank_scores, variant))
 
 
 def answer(
@@ -205,13 +243,15 @@ def answer(
     language: str | None = None,
     model: str | None = None,
     variant: str | None = None,
+    ef_search: int | None = None,
 ) -> Answer:
     start = time.perf_counter()
-    if use_rerank is None:
-        use_rerank = config.settings.rerank.enabled
+    use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
     variant = variant or config.settings.corpus.variant
-    rows, rerank_scores = _retrieve_rows(question, category, k, use_rerank, variant)
+    rows, rerank_scores, depth = _retrieve_rows(
+        question, category, k, use_rerank, variant, ef_search
+    )
     return answer_from_rows(
         question,
         rows,
@@ -224,6 +264,7 @@ def answer(
         k=k,
         started_at=start,
         variant=variant,
+        ef_search=depth,
     )
 
 
@@ -240,16 +281,16 @@ def answer_from_rows(
     started_at: float | None = None,
     phased: bool = False,
     rerank_device: str | None = None,
+    ef_search: int | None = None,
     *,
     variant: str,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
     lang = _resolve_language(question, language)
-    if use_rerank is None:
-        use_rerank = config.settings.rerank.enabled
+    use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
 
-    context = format_chunks(rows) if rows else None
+    context = format_chunks(rows, variant) if rows else None
     if not context:
         ans = Answer(text=NO_RESULTS)
     else:
@@ -270,7 +311,7 @@ def answer_from_rows(
         ans = Answer(
             text=response.text,
             success=True,
-            sources=take_sources(rows, rerank_scores),
+            sources=take_sources(rows, rerank_scores, variant),
             metrics=metrics,
         )
         if add_context:
@@ -281,7 +322,7 @@ def answer_from_rows(
     try:
         _log_answer(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
-            _retrieval_snapshot(rows, ans.sources), variant=variant,
+            _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -315,7 +356,8 @@ def _retrieval_snapshot(rows, sources) -> dict:
     }
 
 
-def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str) -> dict:
+def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
+                     ef_search: int | None = None) -> dict:
     return {
         "rerank": use_rerank,
         "rerank_device": (rerank_device or _rerank_device()) if use_rerank else None,
@@ -329,18 +371,13 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
             "norm": config.settings.retrieval.keyword_norm,
             "query_lang": config.settings.retrieval.query_lang,
         },
-        "ef_search": config.settings.retrieval.ef_search,
-        "variant_policy": config.settings.corpus.policy(variant),
-        "corpus_fingerprint": _corpus_fingerprint(variant),
+        "ef_search": ef_search,
+        # the same tolerance `_hidden_by_cut` was given: a variant present in the table
+        # and absent from the config is possible, and raising here kills an answer the
+        # generator was already paid for
+        "variant_policy": config.settings.corpus.policy_or_none(variant),
+        "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
     }
-
-
-def _corpus_fingerprint(variant) -> dict | None:
-    try:
-        return db.corpus_fingerprint(variant=variant)
-    except Exception as e:
-        log.error("chat.corpus_fingerprint_failed", error=str(e))
-        return None
 
 
 def _rerank_device() -> str | None:
@@ -355,7 +392,7 @@ def _rerank_device() -> str | None:
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
-    *, variant: str,
+    *, variant: str, ef_search: int | None = None,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -376,7 +413,7 @@ def _log_answer(
             metrics={
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
-                    rerank_device, variant,
+                    rerank_device, variant, ef_search,
                 ),
                 "retrieval": retrieval,
             },

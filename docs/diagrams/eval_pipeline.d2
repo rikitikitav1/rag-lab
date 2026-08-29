@@ -1,10 +1,11 @@
-direction: right
+direction: down
 
 exp: POST /v1/experiment {
   shape: hexagon
 }
 
 runs: "eval_run jobs, one per swept value\n(k / max_hops / model / variant / agent policies)" {
+  direction: right
   r1: run k=01
   r2: run k=05
   r3: run k=10
@@ -19,6 +20,7 @@ judge: judge_answers job\nLLM judge, 0-10 per axis {
 }
 
 agg: Experiment aggregator {
+  direction: right
   composite: RRF composite\n(generation axes only)
   pairwise: pairwise stats\nbootstrap CI + Wilcoxon\n+ Bonferroni flags
 }

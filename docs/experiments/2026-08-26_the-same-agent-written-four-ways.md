@@ -6,9 +6,14 @@ author can work the way the industry works. So the loop was ported to LangGraph 
 node and once as the framework would rather have it, and all three were measured against each other
 on the same questions.
 
-The point was never that one is faster. The point is what a policy costs when you express it the
-way a framework wants it expressed, and what quietly stops working when you hand a piece of your
+The point was never that one is faster. The point is what a policy costs when you express it the way
+a framework wants it expressed, and what quietly stops working when you hand a piece of your
 behaviour to somebody else's abstraction.
+
+## Setup
+
+**Set** `paraphrased_ru` (n=100 in-corpus) plus an out-of-corpus pool (n=100), per arm · **corpus**
+pre-variant era, the corpus later frozen as `baseline` · **judge** `qwen2.5:7b`, numeric 0-10
 
 ## Four arms, and why the fourth is not what it looks like
 
@@ -21,8 +26,9 @@ behaviour to somebody else's abstraction.
 
 The second control is the part that makes the rest readable. Two runs of the same code on the same
 questions do not agree with themselves: on this stand they match on 99 of 100 in-corpus outcomes and
-on 86 of 100 outside it (and on hop counts, only 81 of 100). Without that number a port that matches the control on 85 out of 100 looks
-like a regression, when it is in fact quieter than the stand's own noise.
+on 86 of 100 outside it (and on hop counts, only 81 of 100). Without that number a port that matches
+the control on 85 out of 100 looks like a regression, when it is in fact quieter than the stand's
+own noise.
 
 The idiomatic arm is not "the standard without our policies". Tool admission and the topic axis run
 before the branch point, so it inherits both. What it drops is the gate, the context drop, the
@@ -40,7 +46,7 @@ stops meaning anything.
 Guard: the ported median latency on the corpus pool must stay within 1.15x of control_a. Everything
 else, judge axes with bootstrap intervals included, is descriptive.
 
-## What the runs say
+## Result: the port against the loop
 
 The port matches the loop everywhere the criterion looks, and the second control is what makes that
 sentence mean anything:
@@ -63,10 +69,10 @@ graph drifting.
 Latency guard on the corpus pool: 7.90s median against 8.25s, or 0.96x where 1.15x was allowed. The
 second control sits at 1.06x, so the graph is inside the spread of two runs of one code.
 
-Judge axes, paired over the questions every arm judged: 0.00 difference inside the corpus
-([-0.36, +0.37]), +0.40 outside ([-0.49, +1.29]). The noise pair's own interval outside is a point
-and a half wide, so this grid cannot resolve anything smaller than about 0.9 of a point there. That
-belongs next to the numbers, not instead of them.
+Judge axes, paired over the questions every arm judged: 0.00 difference inside the corpus ([-0.36,
++0.37]), +0.40 outside ([-0.49, +1.29]). The noise pair's own interval outside is a point and a half
+wide, so this grid cannot resolve anything smaller than about 0.9 of a point there. That belongs
+next to the numbers, not instead of them.
 
 ## What the arm without our policies actually does
 
@@ -97,19 +103,19 @@ which runs the same policies on the same client and hands off 51 times. And 1.01
 not per hop: at 2.12 hops against 3.10 it does less and still takes the same time, which this grid
 does not explain and did not try to.
 
-One more number to keep honest: inside the corpus the bare arm scores +0.44 on relevance
-([+0.03, +0.90]), the only interval in the whole grid that does not cross zero. Relevance is the axis
-this lab has already shown to be blind to hallucination, but leaving it out because it is
-inconvenient would be the same sin as leaving out the handoff count.
+One more number to keep honest: inside the corpus the bare arm scores +0.44 on relevance ([+0.03,
++0.90]), the only interval in the whole grid that does not cross zero. Relevance is the axis this
+lab has already shown to be blind to hallucination, and leaving it out because it is inconvenient
+would be as wrong as leaving out the handoff count.
 
 ## Reading latency on the external pool
 
 The median of that pool is a trap. A question answered locally takes about 7 seconds, one that goes
 to DeepWiki takes about 25, and the pool median sits exactly on the boundary between the two humps,
 so a single extra handoff moves it by five seconds. Read straight, the ported arm looks 1.51x
-slower. Split by whether the arm went outside, all four arms are within a second of each other
-(25.3 against 25.2 when both went out, 7.0 against 6.6 when neither did). The guard was placed on
-the corpus pool for exactly this reason.
+slower. Split by whether the arm went outside, all four arms are within a second of each other (25.3
+against 25.2 when both went out, 7.0 against 6.6 when neither did). The guard was placed on the
+corpus pool for exactly this reason.
 
 ## Where the time actually goes
 
@@ -150,6 +156,12 @@ Known in advance and confirmed:
 
 ## The arm that expresses our policies as the framework's own hooks
 
+**This arm was removed on 2026-08-27.** Keeping a second implementation of policies that the graph
+already carries cost a branch in every change and bought nothing the numbers below could resolve.
+Its 222 runs stay queryable in the log under `orchestrator=langgraph_middleware`; runs cannot ask
+for it.
+
+
 It ran later, against the same controls, on the same questions: five checks of six pass, latency
 1.04x, handoffs 51 against 50 and 49 for the controls, zero tool errors. Inside the corpus it is
 indistinguishable from the loop.
@@ -157,8 +169,8 @@ indistinguishable from the loop.
 Outside it, two numbers stand out, and both come with the same caveat. Agreement on hop counts is
 0.65 against a noise floor of 0.81, and the bootstrap interval on that difference sits entirely
 below the threshold, so it is not a point estimate wobbling. And its grounding is **higher** than
-the control, 5.77 against 4.74 and 4.63, paired delta +1.02 with an interval of [+0.17, +1.86]:
-the only interval in the whole grid that does not cross zero.
+the control, 5.77 against 4.74 and 4.63, paired delta +1.02 with an interval of [+0.17, +1.86]: the
+only interval in the whole grid that does not cross zero.
 
 The caveat is the same for both: this arm ran nine hours after the controls and twenty three minutes
 after DeepWiki spent half an hour answering 503, and in that hour its answers were on average 294
@@ -167,11 +179,11 @@ and "the hooks are better at grounding" are equally unearned readings of the sam
 effect, and the honest record says so.
 
 So the arms were run again, interleaved: twenty questions where both had gone outside, the loop and
-the hooks alternating in blocks (the loop was still in the tree at that point), one time window, one state of the external service. In that window
-DeepWiki's answers to the same questions differed by 28 characters on average, against 294 on the
-night of the grid, which is the clearest single sign that the night's numbers were about the service
-and not about the harness. That run is
-more sober than the night one:
+the hooks alternating in blocks (the loop was still in the tree at that point), one time window, one
+state of the external service. In that window DeepWiki's answers to the same questions differed by
+28 characters on average, against 294 on the night of the grid, which is the clearest single sign
+that the night's numbers were about the service and not about the harness. That run is more sober
+than the night one:
 
 ```
 hop count difference     0.00   interval [-0.40, +0.40]
@@ -206,11 +218,11 @@ a prompt larger than the window never appears as a number above the window. The 
 parameter (8192), the value the server reports goes into every snapshot, and a hop that needs fewer
 tokens than the one before it is recorded as trimmed.
 
-An early reading of this said 261 rows of the old grids ran over the window, with a maximum of
-13321 tokens. That was the sum of prompt tokens across hops, not the size of any prompt. The real
-per-hop maximum never crossed 4075. What actually happened at the old window: exactly one row per
-run touched the ceiling, and it was the same question in all seven large runs, so the trimming hit
-every arm the same way and moved no paired comparison.
+An early reading of this said 261 rows of the old grids ran over the window, with a maximum of 13321
+tokens. That was the sum of prompt tokens across hops, not the size of any prompt. The real per-hop
+maximum never crossed 4075. What actually happened at the old window: exactly one row per run
+touched the ceiling, and it was the same question in all seven large runs, so the trimming hit every
+arm the same way and moved no paired comparison.
 
 Latency turned out to be comparable after all. The first fifteen rows of control A looked 30% slower
 than the old grids, which read like the price of the larger window, and the auditor flagged it as
@@ -229,9 +241,9 @@ comparing them to each other stays honest; the middleware arm, which runs later,
 The commit itself is a reconstruction from container start times, not a reading from the rows: the
 four grid runs predate the field that records our commit, so their `code_version` is null. The later
 runs do carry it, and the middleware arm carries two, one per pool: its corpus half ran on `5232911`
-and its external half on `cc0dc44`, thirty minutes and a worker restart apart. The difference between
-those commits is ten lines in the MCP error classifier and touches nothing on the routing path, but
-the honest record names it rather than rounding it to one commit. All three are tagged
+and its external half on `cc0dc44`, thirty minutes and a worker restart apart. The difference
+between those commits is ten lines in the MCP error classifier and touches nothing on the routing
+path, but the honest record names it rather than rounding it to one commit. All three are tagged
 (`run/lg-grid`, `run/lg-middleware-corpus`, `run/lg-middleware-external`), because the branch was
 rebuilt afterwards and none of those hashes survive in it.
 
@@ -249,8 +261,8 @@ without that second control it would have been read as evidence about an orchest
 
 ## What the review found that the tests could not
 
-Six review passes read the branch while the grid ran, each with its own lens, and a seventh verified every finding against the code. The findings that mattered were not about the
-graph at all:
+Six review passes read the branch while the grid ran, each with its own lens, and a seventh verified
+every finding against the code. The findings that mattered were not about the graph at all:
 
 - the failure flag lived only inside `agent.run`. The reporting layer recomputed the outcome from
   the hop count, so a recursion guard that fired read as a run that politely spent its hops. The fix
@@ -272,3 +284,23 @@ agent tests scored the topic axis against a live corpus. "How do I cook carbonar
 a threshold of 0.50, was ruled off-domain, its context dropped, and the test failed. In CI, with no
 stand, the same test passed. The suite answered differently depending on whether the machine it ran
 on had a corpus. It now silences the axis by default, and as a side effect runs four times faster.
+
+## Decision
+
+The port becomes the implementation: `langgraph_ported` is the default and the hand-rolled loop is
+retired, its runs still readable in the log as `orchestrator=agent`. The bare `create_agent` arm
+stays as the measurable answer to "what does the idiomatic version cost". Two rules come out of this
+grid and outlive it: an arm compared on the external pool runs in the same window as its control,
+and the second control is not optional, because without it a port that matches on 85 of 100 reads as
+a regression.
+
+## Caveats
+
+- n=100 per pool per arm, and the noise pair itself bounds what this grid can resolve: about 0.9 of
+  a judge point on the external pool
+- the idiomatic arm also swaps the model client, so on its own it cannot separate the policies from
+  the transport
+- the four grid runs predate the field recording our commit, so `33c9a5b` is reconstructed from
+  container start times rather than read from the rows
+- the external service is part of the setup and drifts: the middleware arm's night numbers were
+  never separated from a DeepWiki that answered 294 characters shorter that hour

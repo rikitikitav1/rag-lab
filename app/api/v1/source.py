@@ -1,10 +1,16 @@
+from datetime import datetime
+from typing import Literal
+
+import job_queue
 from crud import get_or_404
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from models.corpus import DataChunk, DataSource
-from orm.async_db import get_session
+from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.v1.eval import JobEnqueuedResponse
 
 router = APIRouter(prefix="/source", tags=["sources"])
 
@@ -14,13 +20,61 @@ class SourceResponse(BaseModel):
     name: str
     kind: str
     active: bool
+    # every variant's rows, which is what it always meant. The verdict beside it is about
+    # one cut, so the cut's own count travels next to it rather than being read into this
     chunks: int
+    chunks_in_variant: int = 0
+    ingest_quality: str | None = None
+    ingest_variant: str | None = None
+    ingest_checked_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
 
 class SourceActiveRequest(BaseModel):
     active: bool
+
+
+class SourceAnalyzeRequest(BaseModel):
+    variant: str | None = None
+    mode: Literal["indexed", "dry"] = "indexed"
+
+
+class SourceVerdicts(BaseModel):
+    name: str
+    verdicts: dict[str, str | None]
+    scores: dict[str, int | None]
+    breaches: dict[str, list[str]]
+    moved: bool
+
+
+class SourceCompareResponse(BaseModel):
+    variants: list[str]
+    sources: int
+    disagreeing: int
+    rows: list[SourceVerdicts]
+
+
+class SourceReportResponse(BaseModel):
+    name: str
+    ingest_quality: str | None
+    ingest_variant: str | None
+    ingest_checked_at: datetime | None
+    reports: dict
+
+
+def _response(source, chunks: int, in_variant: int = 0) -> SourceResponse:
+    return SourceResponse(
+        id=source.id,
+        name=source.name,
+        kind=source.kind,
+        active=source.active,
+        chunks=chunks,
+        chunks_in_variant=in_variant,
+        ingest_quality=source.ingest_quality,
+        ingest_variant=source.ingest_variant,
+        ingest_checked_at=source.ingest_checked_at,
+    )
 
 
 @router.get("", response_model=list[SourceResponse])
@@ -33,14 +87,20 @@ async def list_sources(session: AsyncSession = Depends(get_session)):
         ).all()
     )
     sources = (await session.scalars(select(DataSource).order_by(DataSource.name))).all()
+    # per source and per the cut its own verdict is about, which is `ingest_variant` and
+    # not the configured one: the two numbers beside each other have to describe the same
+    # thing or the pair is worse than either alone
+    per_variant = {
+        (source_id, variant): n
+        for source_id, variant, n in (
+            await session.execute(
+                select(DataChunk.source_id, DataChunk.variant, func.count())
+                .group_by(DataChunk.source_id, DataChunk.variant)
+            )
+        ).all()
+    }
     return [
-        SourceResponse(
-            id=s.id,
-            name=s.name,
-            kind=s.kind,
-            active=s.active,
-            chunks=counts.get(s.id, 0),
-        )
+        _response(s, counts.get(s.id, 0), per_variant.get((s.id, s.ingest_variant), 0))
         for s in sources
     ]
 
@@ -57,10 +117,74 @@ async def set_source_active(
     count = await session.scalar(
         select(func.count()).select_from(DataChunk).where(DataChunk.source_id == id)
     )
-    return SourceResponse(
-        id=source.id,
-        name=source.name,
-        kind=source.kind,
-        active=source.active,
-        chunks=count or 0,
+    in_variant = await session.scalar(
+        select(func.count())
+        .select_from(DataChunk)
+        .where(DataChunk.source_id == id, DataChunk.variant == source.ingest_variant)
+    ) if source.ingest_variant else 0
+    return _response(source, count or 0, in_variant or 0)
+
+
+# no job and no re-measuring: the reports are already written per source and per variant,
+# and what was missing was a reading that puts two cuts of one source side by side.
+# Declared before `/{id}` so a literal path is not read as an id
+@router.get("/compare", response_model=SourceCompareResponse)
+async def compare_sources(
+    variants: list[str] = Query(min_length=2),
+    session: AsyncSession = Depends(get_session),
+):
+    from use_cases.index import check_variant
+
+    for variant in variants:
+        check_variant(variant)
+    sources = list(await session.scalars(select(DataSource).order_by(DataSource.name)))
+    rows, disagreeing = [], 0
+    for source in sources:
+        reports = source.ingest_reports or {}
+        latest = {v: (reports.get(v) or [{}])[-1] for v in variants}
+        if not any(latest[v] for v in variants):
+            continue
+        verdicts = {v: latest[v].get("verdict") for v in variants}
+        moved = len({verdicts[v] for v in variants}) > 1
+        disagreeing += moved
+        rows.append(
+            SourceVerdicts(
+                name=source.name,
+                verdicts=verdicts,
+                scores={v: latest[v].get("score") for v in variants},
+                breaches={v: latest[v].get("breaches") or [] for v in variants},
+                moved=moved,
+            )
+        )
+    return SourceCompareResponse(
+        variants=variants, sources=len(rows), disagreeing=disagreeing, rows=rows
     )
+
+
+@router.get("/{id}/report", response_model=SourceReportResponse)
+async def get_source_report(id: int, session: AsyncSession = Depends(get_session)):
+    source = await get_or_404(DataSource, id, session)
+    return SourceReportResponse(
+        name=source.name,
+        ingest_quality=source.ingest_quality,
+        ingest_variant=source.ingest_variant,
+        ingest_checked_at=source.ingest_checked_at,
+        reports=source.ingest_reports or {},
+    )
+
+
+@router.post("/{id}/analyze", response_model=JobEnqueuedResponse)
+async def analyze_source(
+    id: int,
+    request: SourceAnalyzeRequest,
+    session: AsyncSession = Depends(get_session),
+) -> JobEnqueuedResponse:
+    from use_cases.index import check_variant
+
+    source = await get_or_404(DataSource, id, session)
+    if request.variant is not None:
+        check_variant(request.variant)
+    options = {"source": source.name, "variant": request.variant, "mode": request.mode}
+    job = job_queue.add_job(session, "analyze_source", options)
+    await commit_and_refresh(session, job)
+    return JobEnqueuedResponse(job_id=job.id, type=job.type, options=job.options)

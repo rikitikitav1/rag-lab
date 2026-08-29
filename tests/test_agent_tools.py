@@ -53,9 +53,8 @@ def test_search_corpus_formats_content_and_sources(monkeypatch):
     from use_cases import chat
 
     rows = [("chunk one", "src/a.md"), ("chunk two", "src/b.md")]
-    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: (rows, None))
-    monkeypatch.setattr(chat, "is_ignored_source", lambda s: False)
-    monkeypatch.setattr(chat, "take_sources", lambda r, scores=None: ["S1", "S2"])
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: (rows, None, 200))
+    monkeypatch.setattr(chat, "take_sources", lambda r, scores=None, variant=None: ["S1", "S2"])
 
     result = at._search_corpus("q")
     assert "[src/a.md]\nchunk one" in result.content
@@ -66,7 +65,7 @@ def test_search_corpus_formats_content_and_sources(monkeypatch):
 def test_search_corpus_empty(monkeypatch):
     from use_cases import chat
 
-    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: ([], None))
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: ([], None, 200))
     result = at._search_corpus("q")
     assert result.content == "No relevant documents found."
     assert result.meta["sources"] == []
@@ -77,3 +76,16 @@ def test_the_corpus_tool_describes_the_corpus_from_config():
 
     description = at._REGISTRY[at.CORPUS_TOOL].description
     assert config.settings.corpus.description in description
+
+
+def test_the_corpus_tool_carries_the_depth_it_searched_at(monkeypatch):
+    # the agent used to resolve the depth again at logging time, which is a second answer
+    # rather than the same one; the tool hands it up the way it hands up the sources
+    import agent_tools
+    from use_cases import chat
+
+    monkeypatch.setattr(
+        chat, "search_chunks", lambda *a, **kw: ("content", [], 137)
+    )
+    res = agent_tools._search_corpus("q", variant="baseline")
+    assert res.meta["ef_search"] == 137

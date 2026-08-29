@@ -1,4 +1,5 @@
 import frontmatter
+from sources import base
 from sources.base import Base, Parsed
 
 
@@ -75,16 +76,55 @@ class CheatsheetsSource(Base):
         "saucelabs": "devops",
     }
 
+    # not our domain by the corpus description, one line of why each
+    OFF_DOMAIN_FILES = {
+        "vainglory": "items in a mobile MOBA",
+        "ph-food-delivery": "delivery phone numbers in Metro Manila",
+        "macos-mouse-acceleration": "mouse settings",
+        "sketch": "graphics editor",
+        "nocode": "a joke repository",
+        "flashlight": "spotlight plugins",
+        "frequency-separation-retouching": "photo retouching",
+        "inkscape": "graphics editor",
+    }
+
+    # our domain, but the file is pictures rather than text. Kept apart from the list
+    # above because the reason differs, and because a general rule for "this file is a
+    # picture" is still missing: ascii art drawn with letters and spaces reads as prose
+    # to every ratio we tried
+    NOT_TEXT_FILES = {
+        "figlet": "samples of every ascii font, one line of knowledge per screen of drawing",
+    }
+
     def files(self):
         return self.root.glob("*.md")
 
-    def read(self, file, rel):
-        post = frontmatter.loads(file.read_text(encoding="utf-8", errors="ignore"))
+    # a version in the file name means a dead stack, and the unversioned sheet is
+    # always there next to it
+    def discover(self, policy=None):
+        for file in super().discover(policy):
+            if not base.hygienic(policy):
+                yield file
+                continue
+            dropped = self.OFF_DOMAIN_FILES | self.NOT_TEXT_FILES
+            if "@" in file.stem or file.stem in dropped:
+                continue
+            yield file
+
+    def read(self, file, rel, policy=None):
+        hygienic = base.hygienic(policy)
+        post = frontmatter.loads(
+            self.text_of(file) if hygienic else self.legacy_text_of(file)
+        )
         if post.metadata.get("category") == "Hidden":
             return None
         raw = post.metadata.get("category")
         category = (
             self.CATEGORY_TREE.get(raw) or self.FILE_TREE.get(file.stem) or "misc"
         )
-        title = post.metadata.get("title") or self.title_from(post.content)
+        title = post.metadata.get("title") or (
+            self.title_from(post.content)
+            if hygienic
+            else self.legacy_title_from(post.content)
+        )
         return Parsed(post.content, category, title, [], post.metadata.get("tags", []))

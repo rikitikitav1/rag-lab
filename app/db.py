@@ -95,12 +95,26 @@ def cleanup(*, variant):
         )
 
 
+# the same population retrieval reads: rows under an inactive source answer nothing
 def is_empty(*, variant):
     with engine.connect() as conn:
         return conn.execute(
-            text("SELECT NOT EXISTS (SELECT 1 FROM data_chunks WHERE variant = :variant)"),
+            text("""SELECT NOT EXISTS (
+                      SELECT 1 FROM data_chunks
+                      WHERE variant = :variant
+                        AND source_id IN (SELECT id FROM data_sources WHERE active))"""),
             {"variant": variant},
         ).scalar()
+
+
+# losing the bookkeeping must not cost the work it describes: three call sites wrote the
+# same try/except around it, each with its own log event
+def fingerprint_or_none(*, variant) -> dict | None:
+    try:
+        return corpus_fingerprint(variant=variant)
+    except Exception as e:
+        log.error("corpus.fingerprint_failed", variant=variant, error=str(e))
+        return None
 
 
 # thresholds are calibrated against a corpus, so a run has to record which one it saw
@@ -139,7 +153,13 @@ def nearest_distance(embedding, *, variant) -> float | None:
         ORDER BY distance
         LIMIT 1
     """
+    from use_cases import search_depth
+
     with engine.connect() as conn:
+        # on the connection already held: `resolve` opens its own otherwise, and the pool
+        # is five plus five
+        depth = search_depth.resolve(variant, conn=conn)
+        conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
         row = conn.execute(
             text(query), {"embedding": str(list(embedding)), "variant": variant}
         ).scalar()
@@ -152,8 +172,11 @@ def list_categories(category=None, only_top=None, *, variant):
     params = {"variant": variant}
     if category:
         params["category"] = f"*.{category}.*"
+    # every neighbour filters on active; without it the listing counts chunks retrieval
+    # will never return
     query = f"""SELECT {cat_select} AS cat, COUNT(*) FROM data_chunks
                 WHERE variant = :variant {cat_filter}
+                  AND source_id IN (SELECT id FROM data_sources WHERE active)
                 GROUP BY cat ORDER BY {cat_select}"""
 
     with engine.connect() as conn:
@@ -170,6 +193,8 @@ def hybrid_search(
     *,
     variant,
     distance_threshold=None,
+    ef_search=None,
+    exact=False,
 ):
     retrieval = config.settings.retrieval
     limit = limit or retrieval.results_limit
@@ -185,15 +210,17 @@ def hybrid_search(
     query = f"""WITH vector_search AS (
                     SELECT id,
                            embedding <=> CAST(:embedding AS vector) AS distance,
-                           ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:embedding AS vector) ASC) AS rank
+                           ROW_NUMBER() OVER (
+                               ORDER BY embedding <=> CAST(:embedding AS vector) ASC, id
+                           ) AS rank
                     FROM data_chunks WHERE embedding <=> CAST(:embedding AS vector) <= :distance_threshold {cat_filter} {src_filter}
-                    ORDER BY distance
+                    ORDER BY distance, id
                     LIMIT :limit_vector
                 ),
                 keyword_search AS (
                     SELECT id,
                            ROW_NUMBER() OVER (
-                               ORDER BY {rank_fn}(content_tsv, q, :keyword_norm) DESC
+                               ORDER BY {rank_fn}(content_tsv, q, :keyword_norm) DESC, id
                            ) AS rank
                     FROM data_chunks, {keyword_query} q
                     WHERE content_tsv @@ q {cat_filter} {src_filter}
@@ -208,7 +235,10 @@ def hybrid_search(
                 LEFT JOIN vector_search v ON d.id = v.id
                 LEFT JOIN keyword_search k ON d.id = k.id
                 WHERE v.id IS NOT NULL OR k.id IS NOT NULL
-                ORDER BY score DESC
+                -- RRF ties are structural (best by vector and best by keyword both score
+                -- 1/(k+1)); without a second key the physical row order decides, and any
+                -- migration or vacuum silently reshuffles the answer
+                ORDER BY score DESC, d.id
                 LIMIT :limit
                 """
     params = {
@@ -225,5 +255,17 @@ def hybrid_search(
     }
     if category:
         params["category"] = f"*.{category}.*"
+    # set on the connection this search uses, not on every connection in the pool: the
+    # depth can be overridden per request, and a pooled connection outlives the request
+    from use_cases import search_depth
+
+    # exact search is what this connection does, not what a listener somewhere set on the
+    # pool: an argument that names a switch and does not throw it is how a run labelled
+    # itself exact while walking the graph at pgvector's default of 40
+    depth = None if exact else search_depth.resolve(variant, ef_search)
     with engine.connect() as conn:
+        if exact:
+            conn.execute(text("SET LOCAL enable_indexscan = off"))
+        else:
+            conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
         return conn.execute(text(query), params).fetchall()

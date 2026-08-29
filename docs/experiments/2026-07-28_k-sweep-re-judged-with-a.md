@@ -1,8 +1,19 @@
 # 2026-07-28 - k-sweep re-judged with a numeric 0-10 judge (the categorical verdict reversed)
 
-**Why:** the categorical judge (faithful/partially/unfaithful) buries a good-but-slightly-extrapolated answer ("7") and a mostly-invented one ("3") in the same "partially" bucket. Suspecting the metric hid the truth, replaced it with a numeric 0-10 judge (rubric per axis, `score` via structured output, `judge.py`/`generation_metrics.py` on averages, prompts `judge_*.v2`). Same runs re-judged (no regeneration, only re-scoring). This is a "quality of measurement" fix, not a RAG change: you cannot optimize a system with a lying ruler.
+The categorical judge buries a good-but-lightly-extrapolated answer and a mostly-invented one in
+the same "partially" bucket. If the metric hides the difference, the k-curve it produced cannot be
+trusted, so the same runs are re-scored with a numeric judge. This is a change to the ruler, not to
+the system.
 
-**Numeric curve (0-10, paraphrased_ru 100, agent, temp 0, judge qwen2.5:7b v2):**
+## Setup
+
+**Set** `paraphrased_ru` (n=100) · **corpus** pre-variant era, post-ablation · **judge** `qwen2.5:7b`, numeric 0-10 (`judge_*.v2`)
+
+Numeric 0-10 judge: rubric per axis, `score` through structured output, `judge.py` and
+`generation_metrics.py` on averages, prompts `judge_*.v2`. The same runs are re-judged with no
+regeneration. Agent pipeline, temp 0.
+
+## Result
 
 | k | faithfulness | relevance | completeness |
 |---|-----:|-----:|-----:|
@@ -13,12 +24,44 @@
 | 7 | 6.78 | **9.06** | 6.06 |
 | 10 | 6.99 | 8.94 | 6.09 |
 
-**The numeric judge REVERSED the categorical verdict.** Categorical said faithful peaks at k=3 (41) then collapses to 22 -> "wider retrieval HURTS faithfulness". Numeric shows faithfulness RISES to a peak at k=5 (7.18) then plateaus ~6.8-7.2, it does not collapse. Reason: as k grows, faithful answers drift into "partially" (categorical counter drops), but those are SEVENS (good answers, lightly extrapolated). The average sees it, the counter does not. **The categorical metric lied in the SIGN of the conclusion, not just the magnitude.** Peaks: faithfulness/completeness at k=5, relevance at k=7.
+The numeric judge reversed the categorical verdict. Categorical said faithfulness peaks at k=3 (41)
+and collapses to 22, that is, wider retrieval hurts grounding. Numeric shows faithfulness rising to
+a peak at k=5 (7.18) and then plateauing between 6.8 and 7.2. The mechanism is visible in the two
+scales: as k grows, faithful answers drift into "partially", so the counter drops while the average
+does not, because those answers are sevens. The categorical metric was wrong in the sign of the
+conclusion, not only in its size. Peaks: faithfulness and completeness at k=5, relevance at k=7.
 
-**RRF composite over the 3 axes -> k=5.** Ranking each axis and fusing (RRF, k=60, equal weights): k=5 wins (0.0487), first on faithfulness and completeness, third on relevance. k=10 second (stable #2 on every axis), k=7 third (first on relevance but ranked last on faithfulness, which tanks it). Classic fusion property: stability beats a single peak.
+## What a composite does with this curve
 
-**Weighted RRF / "relevance matters most":** to move the optimum to k=7 relevance needs weight x5 (i.e. drop the other axes); at x3 k=10 wins on stability. If one axis dominates that hard, skip the composite and take argmax(relevance)=k7. Better framing than weighting: constrained optimization. Faithfulness is a FLOOR (grounding is the point of RAG, a fluent but ungrounded answer is the worst case), relevance is the OBJECTIVE. `max relevance s.t. faithfulness >= threshold`. Faithfulness plateaus above k=1, so the threshold passes k=3..10, and among them max relevance is k=7. So the relevance-first view gives k=7 the honest way, not via weight x5. Product-dependent: fintech (grounding critical) keeps the floor high; a general assistant relaxes it.
+RRF over the three axes (k=60, equal weights) puts k=5 first (0.0487): first on faithfulness and
+completeness, third on relevance. k=10 is second and stable on every axis; k=7 is third, first on
+relevance and last on faithfulness, which sinks it. Fusion rewards stability over a single peak.
 
-**Decision: default k=5** (`results_limit` 3 -> 5). Balanced composite optimum, best faithfulness+completeness, relevance only 0.16 below its own peak. Not truncation-driven (agent ~2 hops, context well under the window); the earlier categorical "collapse" was pure metric artifact.
+Moving the optimum to k=7 by weighting takes a 5x weight on relevance, which is the same as
+dropping the other two axes; at 3x, k=10 wins on stability. If one axis dominates that hard, the
+composite is the wrong tool and argmax on that axis is the honest answer.
 
-**Meta-lesson (headline):** quality of measurement is a prerequisite to optimization. A metric with too few levels can invert the conclusion, not just blur it. Fixed the ruler (numeric judge) before trusting any k-conclusion.
+The better framing is constrained rather than weighted. Faithfulness is a floor, since a fluent
+ungrounded answer is the worst case a RAG system can produce, and relevance is the objective:
+maximise relevance subject to faithfulness above a threshold. Faithfulness plateaus above k=1, so
+the threshold admits k=3 through k=10 and the best relevance among them is k=7. Where the floor
+sits is a product decision rather than a measurement.
+
+## Decision
+
+Default k=5 (`results_limit` 3 → 5): the composite optimum, best faithfulness and completeness,
+relevance 0.16 below its own peak.
+
+## Correction, measured the same day
+
+The paired statistics in
+[the significance entry](2026-07-28_paired-significance-testing-lands-in-the.md) show k=5 against
+k=10 to be indistinguishable on every axis (faithfulness p=0.37). The k=5 default stands on cost
+rather than on proven quality: at equal quality, feed the generator half the chunks.
+
+## Caveats
+
+- one run per k at n=100, and this entry reports point estimates only; the intervals arrived a day
+  later and changed what the numbers support
+- the re-judge shares its answers with the categorical run, so the two eras differ in the ruler
+  alone, which is the only reason the comparison above is legitimate

@@ -1,7 +1,8 @@
 import os
+from typing import Literal
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
 
@@ -21,14 +22,22 @@ class RetrievalCfg(BaseModel):
     keyword_rank: str = "ts_rank"
     keyword_norm: int = 0
     query_lang: str = "function_words"
-    ef_search: int = 100
+    # a number pins the depth; "auto" asks the planner for the deepest rung of the ladder
+    # that still walks the index, because where it stops walking moves with the table
+    ef_search: int | Literal["auto"] = "auto"
+    ef_ladder: list[int] = [100, 200, 400]
+    recall_gate: float = 0.98
+    max_mrr_loss: float = 0.01
+    max_questions_lost: int = 0
+    index_alive_recall: float = 0.9
+    index_alive_questions: int = 40
+    criterion_sets: list[str] = ["paraphrased_v2_ru", "paraphrased_v2"]
 
 
 class RerankCfg(BaseModel):
     enabled: bool = False
     model: str = "BAAI/bge-reranker-v2-m3"
     candidates: int = 20
-    top: int = 3
 
 
 class AgentCfg(BaseModel):
@@ -46,19 +55,86 @@ class FtsCfg(BaseModel):
     fallback: str = "english"
 
 
+# typed like the gates that judge it: a key nobody reads and a mix nobody meant are both
+# refused at start, not discovered by a cut that came out wrong
+class PolicyCfg(BaseModel):
+    model_config = {"extra": "forbid"}
+    chunker: Literal["legacy", "rooted", "structured"]
+    max_chunk_size: int = Field(gt=0)
+    ceiling_on: Literal["body", "content"] = "body"
+
+    # derived, not declared: two keys deciding one thing is how they came to disagree
+    @property
+    def header_prefix(self) -> bool:
+        return self.chunker != "legacy"
+
+    def model_dump(self, **kw) -> dict:
+        return {**super().model_dump(**kw), "header_prefix": self.header_prefix}
+
+
 class CorpusCfg(BaseModel):
     description: str = (
         "the technical knowledge corpus (interview banks, "
         "system-design-primer, redis docs)"
     )
     variant: str = "baseline"
-    variants: dict[str, dict] = {}
+    variants: dict[str, PolicyCfg] = {}
 
     def policy(self, variant: str | None = None) -> dict:
         name = variant or self.variant
         if name not in self.variants:
             raise ValueError(f"corpus variant '{name}' has no declared policy in config")
-        return self.variants[name]
+        return self.variants[name].model_dump()
+
+    # for the paths that must not raise on an unknown cut
+    def policy_or_none(self, variant: str) -> dict | None:
+        declared = self.variants.get(variant)
+        return declared.model_dump() if declared else None
+
+
+class GateCfg(BaseModel):
+    model_config = {"extra": "forbid"}
+    min: float | None = None
+    max: float | None = None
+
+
+# named fields rather than a free dict: a typo in the config of the instrument that
+# judges the corpus must fail the start, not quietly gate nothing
+class MetricGatesCfg(BaseModel):
+    model_config = {"extra": "forbid"}
+    section_coverage: GateCfg | None = None
+    prefix_dominates: GateCfg | None = None
+    dup_in_file: GateCfg | None = None
+    dup_in_source: GateCfg | None = None
+    boilerplate: GateCfg | None = None
+    tiny: GateCfg | None = None
+    orphans: GateCfg | None = None
+    size_cut: GateCfg | None = None
+    soup: GateCfg | None = None
+    code_only: GateCfg | None = None
+
+
+class MetricWeightsCfg(BaseModel):
+    model_config = {"extra": "forbid"}
+    section_coverage: float = 0
+    prefix_dominates: float = 0
+    dup_in_file: float = 0
+    dup_in_source: float = 0
+    boilerplate: float = 0
+    tiny: float = 0
+    orphans: float = 0
+    size_cut: float = 0
+    soup: float = 0
+    code_only: float = 0
+
+
+class IngestQualityCfg(BaseModel):
+    # thresholds live here, not in code: they are turned by hand and land in every report
+    hard_gates: MetricGatesCfg = MetricGatesCfg()
+    soft_gates: MetricGatesCfg = MetricGatesCfg()
+    history_per_variant: int = 20
+    score_formula: str = "v1"
+    weights: MetricWeightsCfg = MetricWeightsCfg()
 
 
 class IngestionCfg(BaseModel):
@@ -109,9 +185,9 @@ class AppConfig(BaseModel):
     rerank: RerankCfg
     agent: AgentCfg
     ingestion: IngestionCfg
+    ingest_quality: IngestQualityCfg = IngestQualityCfg()
     fts: FtsCfg
     corpus: CorpusCfg
-    ignored_sources: set[str]
     repos_dir: str
     prompts_dir: str
     sources: SourcesCfg
@@ -129,9 +205,9 @@ def _load(path: str) -> AppConfig:
         rerank=service.get("rerank", {}),
         agent=service.get("agent", {}),
         ingestion=service["ingestion"],
+        ingest_quality=service.get("ingest_quality", {}),
         fts=service.get("fts", {}),
         corpus=service.get("corpus", {}),
-        ignored_sources=service["ignored_sources"],
         repos_dir=service["repos_dir"],
         prompts_dir=service["prompts_dir"],
         sources=service["sources"],

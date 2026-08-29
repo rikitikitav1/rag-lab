@@ -30,20 +30,22 @@ def chat_model(role: str = "generation", model: str | None = None):
 
 
 # two-layer contract: content to the model, artifact to the pipeline. No room for error kinds
-def as_tools(remote: dict, k=None, use_rerank=None, run=None, result=None, variant=None) -> list:
+def as_tools(remote: dict, k=None, use_rerank=None, result=None, variant=None) -> list:
     def make(name: str, tool):
         def call(**kwargs) -> tuple[str, list]:
             # the tool node is built once from every tool, so the gate has to refuse here
-            extra = (run.remote if run.external else None) if run else remote
+            extra = remote
             started = time.perf_counter()
             res = agent_tools.dispatch(
                 name, json.dumps(kwargs), extra=extra, k=k, use_rerank=use_rerank,
-                gate_top=run.gate.top if run else None, variant=variant,
+                gate_top=None, variant=variant,
             )
             if result is not None:
                 result.took(f"tool:{name.split('__')[0]}", started)
-            if run is not None and res.meta.get("error_kind"):
-                run.tool_errors[name] = res.meta["error_kind"]
+                if res.meta.get("error_kind"):
+                    result.tool_errors[name] = res.meta["error_kind"]
+                if res.meta.get("ef_search") is not None:
+                    result.ef_search = res.meta["ef_search"]
             return res.content, res.meta.get("sources", [])
 
         return StructuredTool.from_function(
@@ -54,40 +56,34 @@ def as_tools(remote: dict, k=None, use_rerank=None, run=None, result=None, varia
             response_format="content_and_artifact",
         )
 
-    offered = run.remote if run is not None else remote
+    offered = remote
     tools = [make(t.name, t) for t in agent_tools.registry()]
     return tools + [make(name, tool) for name, tool in offered.items()]
 
 
-# bare: two steps per hop plus the answer, no final turn, so this limit IS the hop budget.
-# hooked: the budget lives in ToolboxMiddleware and every hook is a step, so this only guards
+# two steps per hop plus the answer, no final turn, so this limit IS the hop budget
 BARE_STEPS_PER_HOP = 2
 BARE_ANSWER_STEP = 1
-HOOKED_STEPS_PER_HOP = 12
-HOOKED_GUARD_SLACK = 24
 
 
-def recursion_limit(max_hops: int, hooked: bool) -> int:
-    if hooked:
-        return HOOKED_STEPS_PER_HOP * max_hops + HOOKED_GUARD_SLACK
+def recursion_limit(max_hops: int) -> int:
     return BARE_STEPS_PER_HOP * max_hops + BARE_ANSWER_STEP
 
 
-def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=None) -> None:
+def invoke(question: str, system: str, ctx: dict, result) -> None:
     from langchain.agents import create_agent
     from langgraph.errors import GraphRecursionError
 
-    limit = recursion_limit(ctx["max_hops"], bool(middleware))
+    limit = recursion_limit(ctx["max_hops"])
     try:
         tools = as_tools(
-            ctx["remote"], k=ctx["k"], use_rerank=ctx["use_rerank"], run=run, result=result,
+            ctx["remote"], k=ctx["k"], use_rerank=ctx["use_rerank"], result=result,
             variant=ctx["variant"],
         )
         agent = create_agent(
             model=ctx.get("model_client") or chat_model(ctx["role"], ctx["model"]),
             tools=tools,
             system_prompt=system,
-            **({"middleware": middleware} if middleware else {}),
         )
         state = agent.invoke(
             {"messages": [{"role": "user", "content": question}]},
@@ -98,8 +94,9 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
         result.hops = ctx["max_hops"] + 1
         result.text = ""
         result.success = False
-        # for the bare arm the limit is the budget itself, so reaching it is exhaustion
-        result.failed = middleware is not None
+        # for this arm the limit is the budget itself, so reaching it is exhaustion,
+        # not a failure
+        result.failed = False
         return
     except Exception as e:
         log.error("react.client_failed", error=str(e))
@@ -119,15 +116,7 @@ def invoke(question: str, system: str, ctx: dict, result, middleware=None, run=N
     result.messages.extend(
         {"role": getattr(m, "type", "unknown"), "content": str(m.content)} for m in messages
     )
-    result.sources = list(run.sources if run is not None else collected)
-    if run is not None:
-        result.dropped_sources = list(run.dropped)
-        result.dropped_hits = list(run.dropped_hits)
-        result.fallback_reason = run.fallback_reason
-        result.fallback_opened = run.fallback_opened
-        result.fallback_announced = run.announced
-        result.no_evidence_prompted = run.no_evidence_prompted
-        result.tool_errors.update(run.tool_errors)
+    result.sources = list(collected)
     result.hops = len(replies)
     result.text = str(replies[-1].content) if replies else ""
     result.success = bool(result.text)

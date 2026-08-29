@@ -1,7 +1,6 @@
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
 
-import bootstrap
 import logging_setup
 from api import health
 from api.v1 import (
@@ -35,7 +34,6 @@ mcp_ops_app = mcp_ops.http_app(path="/", stateless_http=True)
 @asynccontextmanager
 async def lifespan(app):
     async with AsyncExitStack() as stack:
-        bootstrap.bootstrap_models()
         await stack.enter_async_context(mcp_app.lifespan(app))
         await stack.enter_async_context(mcp_ops_app.lifespan(app))
         yield

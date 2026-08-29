@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+import logging_setup
 from models import Job, JobStatus
 from orm.sync_db import Session
 from sqlalchemy import func, select
+
+log = logging_setup.get_logger(__name__)
 
 
 @dataclass
@@ -22,16 +25,22 @@ def enqueue(type: str, options: dict | None = None, queue: str = "default") -> i
 
 
 # a second identical job is not idempotence, it is a queue nobody reads
-def pending_of_type(type: str) -> bool:
+# the options matter as well as the type: two variants may each be honestly waiting for
+# their own index, and a job for one is not a job for the other
+def pending_of_type(type: str, **options) -> bool:
     with Session() as session:
-        return bool(
-            session.scalar(
-                select(Job.id).where(
-                    Job.type == type,
-                    Job.status.in_([JobStatus.new, JobStatus.running]),
-                ).limit(1)
-            )
+        query = select(Job.id).where(
+            Job.type == type,
+            Job.status.in_([JobStatus.new, JobStatus.running]),
         )
+        for key, value in options.items():
+            # a json null renders as the string "None" through astext and matches nothing,
+            # so the caller's null and the row's null would look like different jobs
+            if value is None:
+                query = query.where(Job.options[key].astext.is_(None))
+            else:
+                query = query.where(Job.options[key].astext == str(value))
+        return bool(session.scalar(query.limit(1)))
 
 
 def add_job(
@@ -114,10 +123,24 @@ def cancel(ids: list[int]) -> list[int]:
             )
         ).all()
         cancelled = [j.id for j in jobs]
+        stranded = [
+            (j.options or {}).get("run_name")
+            for j in jobs
+            if j.type in ("eval_run", "judge_answers") and (j.options or {}).get("run_name")
+        ]
         for job in jobs:
             job.status = JobStatus.cancelled
         session.commit()
-        return cancelled
+    # after the commit, and outside this session: an experiment waiting on a cancelled
+    # arm waits for ever, because aggregation is reachable only through judging
+    for run_name in stranded:
+        try:
+            from use_cases import experiment
+
+            experiment.mark_failed_for_run(run_name)
+        except Exception as e:
+            log.warning("job.experiment_not_failed", run_name=run_name, error=str(e))
+    return cancelled
 
 
 def is_cancelled(id: int) -> bool:

@@ -90,3 +90,11 @@ def provision(specs, workers=8) -> dict:
     ok = sum(v is not None for v in roots.values())
     log.info("provision.done", ok=ok, failed=len(roots) - ok)
     return roots
+
+
+def one(name):
+    # provision skips a checkout that already exists, so filtering the full build is cheap
+    for source in all_sources():
+        if source.name == name:
+            return source
+    raise LookupError(f"no such source: {name}")

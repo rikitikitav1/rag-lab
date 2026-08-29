@@ -1,0 +1,1 @@
+{"required_ef": null, "recall_by_ef": {"100": 0.9769, "200": null, "400": null}, "plan_by_ef": {"100": "index", "200": "sort", "400": "sort"}, "recall_gate": 0.98, "set": "paraphrased_v2_ru", "variant": "baseline", "questions": 823}

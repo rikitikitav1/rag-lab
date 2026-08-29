@@ -75,6 +75,21 @@ def _answer_one(
         raise ValueError(f"unknown pipeline: {pipeline}")
 
 
+def _refuse_a_cpu_run(allow_cpu: bool) -> None:
+    # ollama drops the card and keeps answering: same numbers, four times the hours, and
+    # nothing in the run says so. Both paths ask after the first answer, when the
+    # generator is loaded and a spill is finally visible
+    llm.warn_if_models_do_not_fit()
+    off_card = llm.models_off_the_card()
+    if off_card and not allow_cpu:
+        raise RuntimeError(
+            f"models are not on the GPU: {', '.join(off_card)}."
+            " Pass allow_cpu if this run is meant to measure the CPU"
+        )
+    if off_card:
+        log.warning("eval_run.cpu_allowed", models=off_card)
+
+
 def _run_sequential(
     texts: list[str],
     run_name: str,
@@ -94,31 +109,27 @@ def _run_sequential(
     variant: str,
 ) -> tuple[int, bool]:
     answered = 0
-    for text in texts:
-        if job_id is not None and job_queue.is_cancelled(job_id):
-            return answered, True
-        # after the first answer the generator is loaded, so a spill is finally visible
-        if answered == 1:
-            llm.warn_if_models_do_not_fit()
-            # nothing in vram means the card is gone, and a CPU run compares to nothing
-            off_card = llm.models_off_the_card()
-            if off_card and not allow_cpu:
-                raise RuntimeError(
-                    f"models are not on the GPU: {', '.join(off_card)}."
-                    " Pass allow_cpu if this run is meant to measure the CPU"
+    # the agent path is this one, and a sweep over `model` runs several of them back to
+    # back: without giving the card back, arm two loads its generator beside arm one's
+    try:
+        for text in texts:
+            if job_id is not None and job_queue.is_cancelled(job_id):
+                return answered, True
+            # after the first answer the generator is loaded, so a spill is finally visible
+            if answered == 1:
+                _refuse_a_cpu_run(allow_cpu)
+            try:
+                _answer_one(
+                    text, run_name, use_rerank, pipeline, language, k, max_hops, model,
+                    fallback_policy, gate_signal, weak_distance, topic_threshold,
+                    orchestrator, variant,
                 )
-            if off_card:
-                log.warning("eval_run.cpu_allowed", models=off_card)
-        try:
-            _answer_one(
-                text, run_name, use_rerank, pipeline, language, k, max_hops, model,
-                fallback_policy, gate_signal, weak_distance, topic_threshold, orchestrator,
-                variant,
-            )
-            answered += 1
-        except Exception as e:
-            log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
-    return answered, False
+                answered += 1
+            except Exception as e:
+                log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
+        return answered, False
+    finally:
+        _free_the_card(model)
 
 
 def _embed_in_batches(texts: list[str]) -> list:
@@ -134,8 +145,14 @@ def _embed_in_batches(texts: list[str]) -> list:
     return vectors
 
 
-def _phase_retrieve(texts: list[str], k: int, use_rerank: bool, variant: str) -> list:
+def _phase_retrieve(texts: list[str], k: int, use_rerank: bool, variant: str) -> tuple[list, int]:
+    from use_cases import search_depth
+
     limit = config.settings.rerank.candidates if use_rerank else k
+    # resolved once for the phase and carried into every snapshot: a phased run used to
+    # record `ef_search: null`, and phased is the default for single-shot, so the depth of
+    # the runs this branch produced was not in their own records
+    depth = search_depth.resolve(variant)
     retrieved = []
     for text, vector in zip(texts, _embed_in_batches(texts), strict=True):
         if vector is None:
@@ -144,13 +161,14 @@ def _phase_retrieve(texts: list[str], k: int, use_rerank: bool, variant: str) ->
             retrieved.append(
                 (
                     text,
-                    db.hybrid_search(text, vector, None, limit=limit, variant=variant),
+                    db.hybrid_search(text, vector, None, limit=limit, variant=variant,
+                                     ef_search=depth),
                     None,
                 )
             )
         except Exception as e:
             log.error("eval_run.search_failed", run_text=text[:80], error=str(e))
-    return retrieved
+    return retrieved, depth
 
 
 def _phase_rerank(retrieved: list, k: int) -> list:
@@ -178,6 +196,8 @@ def _phase_generate(
     job_id: int | None,
     variant: str,
     rerank_device: str | None = None,
+    ef_search: int | None = None,
+    allow_cpu: bool = False,
 ) -> tuple[int, bool]:
     answered = 0
     for text, rows, rerank_scores in retrieved:
@@ -197,10 +217,14 @@ def _phase_generate(
                 phased=True,
                 rerank_device=rerank_device,
                 variant=variant,
+                ef_search=ef_search,
             )
             answered += 1
         except Exception as e:
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
+        # outside the try: a guard whose refusal the loop swallows is not a guard
+        if answered == 1:
+            _refuse_a_cpu_run(allow_cpu)
     return answered, False
 
 
@@ -213,20 +237,56 @@ def run_phased(
     model: str | None,
     job_id: int | None,
     variant: str,
+    allow_cpu: bool = False,
 ) -> tuple[int, bool]:
     k = k or config.settings.retrieval.results_limit
-    rerank_device = None
+    try:
+        return _phased(
+            run_name, texts, use_rerank, language, k, model, job_id, variant, allow_cpu
+        )
+    finally:
+        # every exit, not only the last line: the refusal below raises, a cancel returns
+        # early, and a rerank that throws skips both unloads. A run that leaves its own
+        # generator on the card makes the retry refuse too, and the loop never breaks
+        _free_the_card(model)
 
+
+def _free_the_card(model: str | None) -> None:
+    rerank.unload()
+    llm.unload("embedding")
+    llm.unload("generation", model=model)
+
+
+def _phased(
+    run_name: str,
+    texts: list[str],
+    use_rerank: bool,
+    language: str | None,
+    k: int,
+    model: str | None,
+    job_id: int | None,
+    variant: str,
+    allow_cpu: bool,
+) -> tuple[int, bool]:
+    rerank_device = None
     started = time.perf_counter()
-    retrieved = _phase_retrieve(texts, k, use_rerank, variant)
+    retrieved, ef_search = _phase_retrieve(texts, k, use_rerank, variant)
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
              elapsed=round(time.perf_counter() - started, 1))
+
+    # asked here and not only after the first answer: the embedder is loaded and a lost
+    # card is already visible, so a run that would answer off the card stops two minutes
+    # in rather than after the generator has been loaded onto the processor
+    _refuse_a_cpu_run(allow_cpu)
+
+    # retrieval is over, and its model is 1.2 GiB the generator is about to want on a
+    # card that holds 8
+    llm.unload("embedding")
 
     if job_id is not None and job_queue.is_cancelled(job_id):
         return 0, True
 
     if use_rerank:
-        llm.unload("embedding")
         llm.unload("generation", model=model)
         started = time.perf_counter()
         retrieved = _phase_rerank(retrieved, k)
@@ -241,11 +301,16 @@ def run_phased(
     started = time.perf_counter()
     answered, cancelled = _phase_generate(
         retrieved, run_name, use_rerank, language, k, model, job_id, variant,
-        rerank_device,
+        rerank_device, ef_search, allow_cpu,
     )
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))
     return answered, cancelled
+
+
+# the runner asks the same resolver every other caller does: a default is only one
+# default if one place decides it
+from use_cases.chat import resolve_rerank  # noqa: E402
 
 
 def run(
@@ -280,14 +345,13 @@ def run(
         )
     log.info("eval_run.corpus", variant=variant, known=known)
     texts = _target_texts(set_name, question_ids)
-    if use_rerank is None:
-        use_rerank = config.settings.rerank.enabled
+    use_rerank = resolve_rerank(use_rerank)
     if phased is None:
         phased = pipeline == Pipeline.single_shot
 
     if phased and pipeline == Pipeline.single_shot:
         answered, cancelled = run_phased(
-            run_name, texts, use_rerank, language, k, model, job_id, variant
+            run_name, texts, use_rerank, language, k, model, job_id, variant, allow_cpu
         )
     else:
         answered, cancelled = _run_sequential(

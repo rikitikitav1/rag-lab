@@ -9,13 +9,9 @@ def _row(src, vector_rank=1, keyword_rank=None, vector_distance=0.1, score=0.5):
     return ("content", src, "cat", 0, vector_rank, keyword_rank, vector_distance, score)
 
 
-def test_is_ignored_source():
-    assert chat.is_ignored_source("notes/index.md") is True
-    assert chat.is_ignored_source("notes/real.md") is False
 
-
-def test_take_sources_dedups_and_drops_ignored():
-    rows = [_row("a.md"), _row("a.md"), _row("notes/index.md"), _row("b.md")]
+def test_take_sources_dedups():
+    rows = [_row("a.md"), _row("a.md"), _row("b.md")]
     assert [s.source for s in chat.take_sources(rows)] == ["a.md", "b.md"]
 
 
@@ -81,6 +77,15 @@ def test_config_snapshot_records_device_only_when_reranking(monkeypatch):
     assert chat._config_snapshot(False, 5, False, 0.55, None, "baseline")["rerank_device"] is None
 
 
+def test_the_snapshot_records_the_depth_the_search_used(monkeypatch):
+    # it used to resolve the depth itself, which asked the planner a second time and
+    # made a pure function reach for a database. What a record says it searched at is
+    # what the search was handed
+    monkeypatch.setattr(chat, "_rerank_device", lambda: None)
+    snap = chat._config_snapshot(False, 5, False, 0.55, None, "baseline", 200)
+    assert snap["ef_search"] == 200
+
+
 def test_config_snapshot_carries_procedure_fields():
     snap = chat._config_snapshot(False, 7, True, 0.42, None, "baseline")
     assert (snap["k"], snap["phased"], snap["distance_threshold"]) == (7, True, 0.42)
@@ -101,20 +106,20 @@ def test_gate_scores_only_the_head_and_pads_the_rest(monkeypatch):
 
 def test_search_chunks_attaches_gate_scores_with_rerank_off(monkeypatch):
     rows = [_row("a.md"), _row("b.md")]
-    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, None))
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, None, 200))
     monkeypatch.setattr(chat, "_gate_scores", lambda query, rows, top: [0.42, None])
 
-    _, sources = chat.search_chunks("q", use_rerank=False, gate_top=1, variant="baseline")
+    _, sources, _ = chat.search_chunks("q", use_rerank=False, gate_top=1, variant="baseline")
 
     assert [s.rerank_score for s in sources] == [0.42, None]
 
 
 def test_search_chunks_leaves_rerank_scores_alone(monkeypatch):
     rows = [_row("a.md")]
-    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, [0.77]))
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, [0.77], 200))
     monkeypatch.setattr(chat, "_gate_scores", lambda *a, **kw: pytest.fail("gate ran anyway"))
 
-    _, sources = chat.search_chunks("q", use_rerank=True, gate_top=5, variant="baseline")
+    _, sources, _ = chat.search_chunks("q", use_rerank=True, gate_top=5, variant="baseline")
 
     assert [s.rerank_score for s in sources] == [0.77]
 
@@ -136,3 +141,30 @@ def test_fts_language_comes_from_config(monkeypatch):
     )
     assert db._ts_config("что такое хеш-таблица") == "russian"
     assert db._ts_config("...") == "simple"
+
+
+def test_one_place_decides_whether_a_run_reranks(monkeypatch):
+    # the handler passes the switch through untouched and the runner resolves it, so what
+    # a run records is what it used
+    import config
+    from evals import runner
+    from job_handlers import evaluation
+
+    # True over a config that is already False: a resolver that ignores config passes
+    # the old version of this test and fails this one
+    monkeypatch.setattr(config.settings.rerank, "enabled", True)
+    seen = {}
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 0)
+
+    evaluation.eval_run({"run_name": "r", "set_name": "s"})
+    assert seen["use_rerank"] is None
+
+    assert runner.resolve_rerank(None) is True, "unasked means whatever config says"
+    assert runner.resolve_rerank(False) is False, "and a run may say otherwise"
+
+    # and the interactive path reads the same key, so there is one default, not two
+    asked = []
+    monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: asked.append(a[3]) or ([], None, 200))
+    chat.search_chunks("q", variant="baseline")
+    assert asked == [True]

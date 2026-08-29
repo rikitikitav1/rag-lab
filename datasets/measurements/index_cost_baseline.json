@@ -1,0 +1,1 @@
+{"index_cost": {"100": {"section": {"level": "section", "questions": 823, "delta_MRR": 0.0005, "ci95": [0.0002, 0.0008], "better": 18, "worse": 0, "unchanged": 805}, "file": {"level": "file", "questions": 823, "delta_MRR": 0.0004, "ci95": [0.0001, 0.0006], "better": 16, "worse": 0, "unchanged": 807}}}, "cheapest_ef": 100, "mrr_loss_gate": 0.005}

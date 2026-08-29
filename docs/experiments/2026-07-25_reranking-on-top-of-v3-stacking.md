@@ -1,10 +1,16 @@
 # 2026-07-25 - Reranking on top of v3 (stacking, clean)
 
-**Hypothesis:** does the cross-encoder reranker stack on the v3 prompt? The earlier rerank A/B was temp 0.1 (noisy); redo cleanly on v3.
+The earlier rerank A/B ran at temp 0.1 and was noisy. Does the reranker still pay once the v3
+prompt is in place and the temperature is pinned to 0?
 
-**Setup:** set `paraphrased_ru` (100); v3 prompt, **temp 0**; `v3_ru` (rerank off) vs `v3_rerank_ru` (rerank on, top-20 → top-3). Only the reranker toggled.
+## Setup
 
-**Result:**
+**Set** `paraphrased_ru` (n=100) · **corpus** pre-variant era, `developer-roadmap` still in · **judge** `qwen2.5:7b`, categorical
+
+v3 prompt, temp 0. `v3_ru` (rerank off) against `v3_rerank_ru` (rerank on, top 20 → top 3). The
+reranker is the only toggle.
+
+## Result
 
 | metric | v3 | v3 + rerank | Δ |
 |--------|----|-------------|---|
@@ -15,8 +21,16 @@
 | faithful | 50 | 53 | +3 |
 | unfaithful | 24 | 17 | −7 |
 
-**Delta:** everything moves the right way - better ranking (MRR), better grounding (unfaithful −7), better relevance (+4). Modest but consistent, unlike the noisy temp-0.1 run.
+Everything moves the same way: ranking, grounding, relevance. Modest and consistent, unlike the
+temp-0.1 run.
 
-**Conclusion:** rerank **stacks positively on v3** on the cross-lingual set, at ~10s/query CPU cost. Confirms the **opt-in default OFF** decision: the quality gain is real and worth enabling for cross-lingual / high-stakes queries, not for latency-sensitive general use.
+## Decision
 
----
+Confirms opt-in, default off. The gain is real on the cross-lingual set and does not justify 10s
+per query for general use.
+
+## Caveats
+
+- counts, not scores, on a single run per arm and no interval
+- [the numeric re-measurement](2026-07-28_reranking-re-measured-with-the-numeric.md) found the
+  faithfulness part of this verdict to be a counter artifact: the durable gain is on completeness

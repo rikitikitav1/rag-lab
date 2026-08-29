@@ -1,0 +1,590 @@
+{
+  "taken": "2026-08-28",
+  "why": "the cohort a prompt change will be read on; fixed before the change so the questions are not chosen by the outcome",
+  "definition": "share of cyrillic among letters of the answer, code fences and inline code removed, below 0.5",
+  "note": "the pre-registered metric of the model grid does NOT strip code; this file uses the stricter reading and records both numbers per row",
+  "runs": {
+    "grid_gemma3_4b_ru_plain": {
+      "answers": 823,
+      "slipped": [
+        {
+          "question_id": 78821,
+          "share_raw": 0.4613,
+          "share_prose": 0.4859
+        },
+        {
+          "question_id": 78823,
+          "share_raw": 0.3538,
+          "share_prose": 0.3538
+        },
+        {
+          "question_id": 78875,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 78947,
+          "share_raw": 0.2669,
+          "share_prose": 0.2724
+        },
+        {
+          "question_id": 79065,
+          "share_raw": 0.3925,
+          "share_prose": 0.3925
+        },
+        {
+          "question_id": 79143,
+          "share_raw": 0.1128,
+          "share_prose": 0.1128
+        },
+        {
+          "question_id": 79177,
+          "share_raw": 0.4671,
+          "share_prose": 0.4671
+        },
+        {
+          "question_id": 79207,
+          "share_raw": 0.3984,
+          "share_prose": 0.3984
+        },
+        {
+          "question_id": 79211,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79245,
+          "share_raw": 0.4393,
+          "share_prose": 0.4393
+        },
+        {
+          "question_id": 79325,
+          "share_raw": 0.4367,
+          "share_prose": 0.4444
+        },
+        {
+          "question_id": 79331,
+          "share_raw": 0.2622,
+          "share_prose": 0.3653
+        },
+        {
+          "question_id": 79483,
+          "share_raw": 0.3016,
+          "share_prose": 0.3933
+        },
+        {
+          "question_id": 116941,
+          "share_raw": 0.4781,
+          "share_prose": 0.4781
+        },
+        {
+          "question_id": 116959,
+          "share_raw": 0.0253,
+          "share_prose": 0.0254
+        },
+        {
+          "question_id": 116969,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 116975,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 117063,
+          "share_raw": 0.4312,
+          "share_prose": 0.4685
+        },
+        {
+          "question_id": 117079,
+          "share_raw": 0.4658,
+          "share_prose": 0.4934
+        },
+        {
+          "question_id": 117089,
+          "share_raw": 0.3305,
+          "share_prose": 0.3305
+        },
+        {
+          "question_id": 117149,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 117207,
+          "share_raw": 0.121,
+          "share_prose": 0.121
+        },
+        {
+          "question_id": 121066,
+          "share_raw": 0.4377,
+          "share_prose": 0.4377
+        },
+        {
+          "question_id": 121080,
+          "share_raw": 0.4491,
+          "share_prose": 0.4491
+        },
+        {
+          "question_id": 121084,
+          "share_raw": 0.4391,
+          "share_prose": 0.4688
+        },
+        {
+          "question_id": 121086,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121128,
+          "share_raw": 0.3576,
+          "share_prose": 0.3576
+        },
+        {
+          "question_id": 121170,
+          "share_raw": 0.4893,
+          "share_prose": 0.4893
+        },
+        {
+          "question_id": 121196,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121310,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121360,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121374,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121388,
+          "share_raw": 0.4785,
+          "share_prose": 0.4785
+        },
+        {
+          "question_id": 121428,
+          "share_raw": 0.3174,
+          "share_prose": 0.3174
+        },
+        {
+          "question_id": 121454,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121478,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121492,
+          "share_raw": 0.203,
+          "share_prose": 0.203
+        },
+        {
+          "question_id": 121530,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121532,
+          "share_raw": 0.2223,
+          "share_prose": 0.2223
+        },
+        {
+          "question_id": 121568,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121576,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121606,
+          "share_raw": 0.3574,
+          "share_prose": 0.3574
+        },
+        {
+          "question_id": 121614,
+          "share_raw": 0.3619,
+          "share_prose": 0.3619
+        },
+        {
+          "question_id": 121622,
+          "share_raw": 0.4623,
+          "share_prose": 0.4623
+        }
+      ],
+      "code_heavy_but_russian": [
+        {
+          "question_id": 78871,
+          "share_raw": 0.4604,
+          "share_prose": 0.6
+        },
+        {
+          "question_id": 78939,
+          "share_raw": 0.4624,
+          "share_prose": 0.617
+        },
+        {
+          "question_id": 79173,
+          "share_raw": 0.2879,
+          "share_prose": 0.8103
+        },
+        {
+          "question_id": 79465,
+          "share_raw": 0.4584,
+          "share_prose": 0.826
+        },
+        {
+          "question_id": 117163,
+          "share_raw": 0.4625,
+          "share_prose": 0.8504
+        },
+        {
+          "question_id": 120978,
+          "share_raw": 0.4247,
+          "share_prose": 0.8189
+        },
+        {
+          "question_id": 121060,
+          "share_raw": 0.4898,
+          "share_prose": 0.5714
+        },
+        {
+          "question_id": 121320,
+          "share_raw": 0.322,
+          "share_prose": 0.6889
+        },
+        {
+          "question_id": 121332,
+          "share_raw": 0.4545,
+          "share_prose": 0.6395
+        },
+        {
+          "question_id": 121352,
+          "share_raw": 0.4047,
+          "share_prose": 0.956
+        },
+        {
+          "question_id": 121540,
+          "share_raw": 0.3957,
+          "share_prose": 0.5164
+        }
+      ],
+      "n_slipped": 44,
+      "n_code_heavy": 11
+    },
+    "grid_gemma3_4b_ru_rerank": {
+      "answers": 823,
+      "slipped": [
+        {
+          "question_id": 78823,
+          "share_raw": 0.4,
+          "share_prose": 0.4
+        },
+        {
+          "question_id": 78853,
+          "share_raw": 0.4412,
+          "share_prose": 0.4412
+        },
+        {
+          "question_id": 78985,
+          "share_raw": 0.2909,
+          "share_prose": 0.2909
+        },
+        {
+          "question_id": 79051,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79055,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79081,
+          "share_raw": 0.2698,
+          "share_prose": 0.2765
+        },
+        {
+          "question_id": 79091,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79163,
+          "share_raw": 0.3269,
+          "share_prose": 0.4901
+        },
+        {
+          "question_id": 79173,
+          "share_raw": 0.4165,
+          "share_prose": 0.4479
+        },
+        {
+          "question_id": 79185,
+          "share_raw": 0.1575,
+          "share_prose": 0.1706
+        },
+        {
+          "question_id": 79217,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79251,
+          "share_raw": 0.427,
+          "share_prose": 0.427
+        },
+        {
+          "question_id": 79271,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79287,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79311,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 79385,
+          "share_raw": 0.031,
+          "share_prose": 0.0318
+        },
+        {
+          "question_id": 79451,
+          "share_raw": 0.3098,
+          "share_prose": 0.3264
+        },
+        {
+          "question_id": 79471,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 116985,
+          "share_raw": 0.2541,
+          "share_prose": 0.2545
+        },
+        {
+          "question_id": 117025,
+          "share_raw": 0.3159,
+          "share_prose": 0.4011
+        },
+        {
+          "question_id": 117133,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 117135,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 117161,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121024,
+          "share_raw": 0.3244,
+          "share_prose": 0.3244
+        },
+        {
+          "question_id": 121066,
+          "share_raw": 0.3532,
+          "share_prose": 0.3532
+        },
+        {
+          "question_id": 121076,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121096,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121296,
+          "share_raw": 0.4433,
+          "share_prose": 0.4433
+        },
+        {
+          "question_id": 121302,
+          "share_raw": 0.4671,
+          "share_prose": 0.4671
+        },
+        {
+          "question_id": 121312,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121320,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121380,
+          "share_raw": 0.409,
+          "share_prose": 0.4743
+        },
+        {
+          "question_id": 121386,
+          "share_raw": 0.4274,
+          "share_prose": 0.4274
+        },
+        {
+          "question_id": 121478,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121512,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121532,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121544,
+          "share_raw": 0.0,
+          "share_prose": 0.0
+        },
+        {
+          "question_id": 121552,
+          "share_raw": 0.0542,
+          "share_prose": 0.0554
+        },
+        {
+          "question_id": 121566,
+          "share_raw": 0.1637,
+          "share_prose": 0.1637
+        },
+        {
+          "question_id": 121612,
+          "share_raw": 0.3585,
+          "share_prose": 0.3585
+        }
+      ],
+      "code_heavy_but_russian": [
+        {
+          "question_id": 78891,
+          "share_raw": 0.3454,
+          "share_prose": 0.592
+        },
+        {
+          "question_id": 78939,
+          "share_raw": 0.4353,
+          "share_prose": 0.6256
+        },
+        {
+          "question_id": 79111,
+          "share_raw": 0.4303,
+          "share_prose": 0.5543
+        },
+        {
+          "question_id": 79389,
+          "share_raw": 0.3194,
+          "share_prose": 0.5231
+        },
+        {
+          "question_id": 116947,
+          "share_raw": 0.4734,
+          "share_prose": 0.5185
+        },
+        {
+          "question_id": 117163,
+          "share_raw": 0.2952,
+          "share_prose": 0.7836
+        },
+        {
+          "question_id": 121050,
+          "share_raw": 0.4717,
+          "share_prose": 0.5429
+        },
+        {
+          "question_id": 121332,
+          "share_raw": 0.4545,
+          "share_prose": 0.6395
+        },
+        {
+          "question_id": 121412,
+          "share_raw": 0.3333,
+          "share_prose": 0.6062
+        }
+      ],
+      "n_slipped": 40,
+      "n_code_heavy": 9
+    },
+    "grid_llama31_8b_ru_plain": {
+      "answers": 823,
+      "slipped": [
+        {
+          "question_id": 78965,
+          "share_raw": 0.4228,
+          "share_prose": 0.4228
+        },
+        {
+          "question_id": 79133,
+          "share_raw": 0.4914,
+          "share_prose": 0.4914
+        },
+        {
+          "question_id": 117015,
+          "share_raw": 0.4919,
+          "share_prose": 0.4919
+        }
+      ],
+      "code_heavy_but_russian": [
+        {
+          "question_id": 78891,
+          "share_raw": 0.3322,
+          "share_prose": 0.8681
+        },
+        {
+          "question_id": 79173,
+          "share_raw": 0.3685,
+          "share_prose": 0.9286
+        },
+        {
+          "question_id": 79389,
+          "share_raw": 0.4733,
+          "share_prose": 0.8786
+        },
+        {
+          "question_id": 117163,
+          "share_raw": 0.4181,
+          "share_prose": 0.8752
+        }
+      ],
+      "n_slipped": 3,
+      "n_code_heavy": 4
+    }
+  }
+}

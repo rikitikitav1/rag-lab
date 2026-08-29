@@ -1,0 +1,44 @@
+{
+  "model": "BAAI/bge-reranker-v2-m3",
+  "script": "temp_files/rerank_latency.py",
+  "candidates": 20,
+  "chunk_chars": 840,
+  "chunk_text": "one repeated russian word, of the mean chunk length of clean_1024",
+  "question": "one russian question, repeated as all twenty pairs",
+  "repeats": 7,
+  "statistic": "median of the repeats, after one warm-up call",
+  "dtype": {
+    "cuda": "float16, what rerank._model loads",
+    "cpu": "float32"
+  },
+  "measured_through": "rerank.score_pairs, twenty pairs per call: one question's rerank",
+  "not_measured": "retrieval, model load, and the 5-pair coverage gate, which calls the same function",
+  "devices": {
+    "cuda": {
+      "resolved": "cuda",
+      "ms_per_question": 85.8,
+      "ms_min": 84.5,
+      "ms_max": 92.9
+    },
+    "cpu": {
+      "resolved": "cpu",
+      "ms_per_question": 2761.3,
+      "ms_min": 2628.5,
+      "ms_max": 2961.3
+    },
+    "cuda_contended": {
+      "resolved": "cuda",
+      "ms_per_question": 156.0,
+      "ms_min": 105.4,
+      "ms_max": 208.8,
+      "competing_work": "a comparison arm reranking on the same card, gpu utilisation about 18%",
+      "runs": [
+        144.3,
+        167.8
+      ]
+    }
+  },
+  "ratio_cpu_over_cuda": 32.2,
+  "note_contention": "the idle number is what the reranker costs; the contended one is what it costs when an interactive answer asks for it on a card a run already owns. An earlier note here said four times, which came from the fp32 model this repo does not run: through the shipped path the same twenty pairs read about twice as slow, and how much depends on what is competing",
+  "ratio_contended_over_idle": 1.8
+}

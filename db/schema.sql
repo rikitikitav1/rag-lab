@@ -84,7 +84,8 @@ CREATE TABLE public.data_chunks (
     content_tsv tsvector,
     variant text NOT NULL,
     section text,
-    content_hash text
+    content_hash text,
+    prefix_len integer
 );
 
 
@@ -118,7 +119,11 @@ CREATE TABLE public.data_sources (
     kind character varying(32) NOT NULL,
     git_url text,
     path text,
-    active boolean DEFAULT true NOT NULL
+    active boolean DEFAULT true NOT NULL,
+    ingest_quality text,
+    ingest_variant text,
+    ingest_checked_at timestamp with time zone,
+    ingest_reports jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -156,7 +161,7 @@ CREATE TABLE public.experiments (
     question_ids jsonb,
     data_prep jsonb DEFAULT '{}'::jsonb NOT NULL,
     procedure jsonb DEFAULT '{}'::jsonb NOT NULL,
-    param text NOT NULL,
+    param text DEFAULT ''::text NOT NULL,
     param_values jsonb DEFAULT '[]'::jsonb NOT NULL,
     run_names jsonb DEFAULT '[]'::jsonb NOT NULL,
     results jsonb,
@@ -165,7 +170,9 @@ CREATE TABLE public.experiments (
     finished_at timestamp with time zone,
     elapsed double precision,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    kind text DEFAULT 'generation'::text NOT NULL,
+    axes jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -274,8 +281,7 @@ ALTER SEQUENCE public.mcp_integrations_id_seq OWNED BY public.mcp_integrations.i
 
 CREATE TABLE public.model_roles (
     role text NOT NULL,
-    model_id integer NOT NULL,
-    CONSTRAINT model_roles_role_check CHECK ((role = ANY (ARRAY['generation'::text, 'embedding'::text, 'judging'::text, 'paraphrasing'::text])))
+    model_id integer NOT NULL
 );
 
 
@@ -286,8 +292,7 @@ CREATE TABLE public.model_roles (
 CREATE TABLE public.models (
     id integer NOT NULL,
     name text NOT NULL,
-    status text DEFAULT 'available'::text NOT NULL,
-    CONSTRAINT models_status_check CHECK ((status = ANY (ARRAY['available'::text, 'loading'::text, 'ready'::text])))
+    status text DEFAULT 'available'::text NOT NULL
 );
 
 
@@ -321,8 +326,7 @@ CREATE TABLE public.prompts (
     version integer NOT NULL,
     template text NOT NULL,
     active boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT prompts_purpose_check CHECK ((purpose = ANY (ARRAY['generate.answer'::text, 'judge.faithfulness'::text, 'judge.relevance'::text, 'judge.completeness'::text, 'paraphrase.question'::text, 'translate.question'::text, 'agent.system'::text, 'agent.fallback'::text, 'agent.tool_match'::text, 'agent.no_evidence'::text])))
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -654,13 +658,6 @@ CREATE INDEX data_chunks_content_tsv_idx ON public.data_chunks USING gin (conten
 
 
 --
--- Name: data_chunks_embedding_baseline_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX data_chunks_embedding_baseline_idx ON public.data_chunks USING hnsw (embedding public.vector_cosine_ops) WHERE (variant = 'baseline'::text);
-
-
---
 -- Name: data_chunks_source_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -776,4 +773,12 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260826000001'),
     ('20260826000002'),
     ('20260826000003'),
-    ('20260826000004');
+    ('20260826000004'),
+    ('20260827000001'),
+    ('20260827000002'),
+    ('20260827000003'),
+    ('20260827000004'),
+    ('20260827000005'),
+    ('20260827000006'),
+    ('20260827000007'),
+    ('20260827000008');

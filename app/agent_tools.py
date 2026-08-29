@@ -111,11 +111,13 @@ def _search_corpus(
     variant: str | None = None,
 ) -> ToolResult:
     # dispatch drops runtime values that are None, so the orchestrator always supplies this one
-    content, sources = chat.search_chunks(
+    content, sources, ef_search = chat.search_chunks(
         query, category, k=k, use_rerank=use_rerank, gate_top=gate_top,
         variant=variant or config.settings.corpus.variant,
     )
-    return ToolResult(content=content, meta={"sources": sources})
+    # the depth travels with the answer, so the snapshot records what the search used
+    # rather than what the resolver says an hour later
+    return ToolResult(content=content, meta={"sources": sources, "ef_search": ef_search})
 
 
 def _remote_run(integration, tool_name):

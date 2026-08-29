@@ -1,7 +1,7 @@
 services:
   rag-lab:
     depends_on:
-      dbmate:
+      bootstrap:
         condition: service_completed_successfully
     build:
       dockerfile: Dockerfile
@@ -10,6 +10,7 @@ services:
        "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       RERANK_DEVICE: cpu
+      HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
     ports:
@@ -29,6 +30,9 @@ services:
 
   postgresql:
     image: pgvector/pgvector:pg17
+    # an hnsw build asks for maintenance_work_mem of shared memory, and the docker
+    # default of 64m is smaller than the 512m we ask pgvector to use
+    shm_size: 1gb
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -50,8 +54,28 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: "postgres://postgres@postgresql:5432/postgres?sslmode=disable"
+      # the dump is regenerated on purpose, not on every stack start: up runs on a live
+      # database, and a live database carries the vector index of every variant indexed
+      # on this machine. Refresh it with `docker compose run --rm dbmate dump`
+      DBMATE_NO_DUMP_SCHEMA: "true"
     volumes:
       - ./db:/db
+
+  bootstrap:
+    build:
+      dockerfile: Dockerfile
+    command: ["python", "app/bootstrap.py"]
+    restart: "no"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - hf_cache:/root/.cache/huggingface
 
   seed:
     build:
@@ -69,12 +93,15 @@ services:
     command: ["python", "app/worker.py"]
     environment:
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
-      WORKER_QUEUES: default,io
+      WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
       RERANK_DEVICE: ${WORKER_RERANK_DEVICE:-cpu}
+      # the reranker's weights are in hf_cache; without this sentence_transformers still
+      # asks huggingface whether they moved, and a router blinking took a run down with it
+      HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
     depends_on:
-      dbmate:
+      bootstrap:
         condition: service_completed_successfully
     volumes:
       - .:/app
@@ -98,6 +125,13 @@ services:
       OLLAMA_KEEP_ALIVE: "-1"
       # the server defaults to 4096 and drops whole messages to fit, reporting the trimmed count
       OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-8192}"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      # the first start on this machine takes longer than the whole retry budget
+      start_period: 120s
+      interval: 3s
+      timeout: 5s
+      retries: 20
     volumes:
       - ollama_data:/root/.ollama
     deploy:

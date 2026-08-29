@@ -7,6 +7,8 @@ says the same thing for free.
 
 ## Setup
 
+**Set** `paraphrased_ru` (n=100 in-corpus) plus an out-of-corpus pool (n=100), per arm · **corpus** pre-variant era, post-ablation · **judge** `qwen2.5:7b`, numeric 0-10
+
 One variable, `gate_signal`, three arms of 200 questions each:
 
 | arm | what calls retrieval weak |
@@ -16,9 +18,9 @@ One variable, `gate_signal`, three arms of 200 questions each:
 | `either` | weak when one of the two says so |
 
 Everything else pinned: `corpus_first_weak`, `max_hops` 4, `k` 5, reranking off, one external
-integration (DeepWiki), llama3.1:8b generating, qwen2.5:7b judging, `agent.system` v5,
-`agent.tool_match` v3. Pools scored separately: 100 in-corpus (`paraphrased_ru`) and 100
-out-of-corpus (repository internals the corpus does not hold).
+integration (DeepWiki), llama3.1:8b generating, `agent.system` v5, `agent.tool_match` v3. The two
+pools are scored separately; the out-of-corpus one is repository internals the corpus does not
+hold.
 
 The off-domain pool sat this one out, and the reason is structural rather than budgetary: no tool
 is admitted for a question about carbonara (there is no `owner/repo` in it), so nothing is there
@@ -39,7 +41,7 @@ against the same flag budget the cross-encoder spends, and the run confirms the 
 the hundred in-corpus questions the distance flags 24 and the cross-encoder flags 24. The arms are
 compared at equal willingness to open, not at equal thresholds.
 
-## What the run says
+## Result
 
 In-corpus, nothing moves:
 
@@ -82,7 +84,7 @@ The empty rule fired once in 200 questions in every arm, which is the same lesso
 smaller print: hybrid retrieval almost always returns something, so a fallback that waits for
 nothing at all waits forever.
 
-## What it means
+## Decision
 
 **The cross-encoder leaves the agent runtime.** No axis separates it from `distance`, and the
 intervals say how strong that statement is allowed to be: inside the corpus the difference is
@@ -134,6 +136,10 @@ is exactly what `either` sells and what its latency bill charges for.
   readability signal, not a correctness one.
 - Latency numbers include the judge-free answer path only; the judge runs afterwards as its own
   job.
+
+- these two runs are also the stand's noise ruler: `crag2_sig_distance` and the later
+  `crag3_topic_off` are the same configuration twice on the same questions, which is where the
+  equivalence bounds used by later entries come from
 
 Numbers pulled with `GET /v1/eval/compare?runs=crag2_sig_cross_encoder&runs=crag2_sig_distance&runs=crag2_sig_either`,
 which reports the pools separately and the paired tests per pair of arms.

@@ -212,12 +212,15 @@ def pull_model(model):
 
 
 def unload(role="embedding", model=None):
-    # frees VRAM between eval phases: keep_alive 0 overrides the server default
-    name = model or resolve_name(role)
+    # frees VRAM between eval phases: keep_alive 0 overrides the server default.
+    # The name lookup is inside the guard too: this runs in teardown, and a teardown that
+    # raises because it could not read a role from the database hides whatever sent it there
+    name = model
     try:
+        name = name or resolve_name(role)
         _post_request("/api/generate", {"model": name, "keep_alive": 0})
     except Exception as e:
-        log.warning("llm.unload_failed", model=name, error=str(e))
+        log.warning("llm.unload_failed", model=name or role, error=str(e))
 
 
 # an empty generate loads the weights and answers nothing

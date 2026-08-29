@@ -6,7 +6,7 @@ from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
 from evals.stats import delta_stats as _delta_stats
 from models.eval import QuestionLog
-from models.experiment import Experiment, ExperimentStatus
+from models.experiment import Experiment, ExperimentKind, ExperimentStatus
 from orm.sync_db import Session
 from sqlalchemy import func, select, update
 
@@ -86,10 +86,6 @@ def _compare_question_sets(set_a: list, set_b: list) -> dict:
         deltas = _axis_deltas(pairs, axis)
         out[axis] = _delta_stats(deltas, rng) if deltas else None
     return out
-
-
-def pairwise_stats(run_a: str, run_b: str) -> dict:
-    return _compare_question_sets(load_logs(run_a), load_logs(run_b))
 
 
 def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
@@ -199,11 +195,33 @@ def aggregate(experiment_id: int) -> bool:
         return True
 
 
+# a run that exhausted its attempts leaves its experiment `running` for ever: nothing
+# aggregates (the series never completes) and nothing moves it on, so the row waits for a
+# sibling that is not coming. The transition is declared; this is what traverses it
+def mark_failed_for_run(run_name: str) -> None:
+    with Session() as session:
+        won = session.execute(
+            update(Experiment)
+            .where(
+                Experiment.kind == ExperimentKind.generation,
+                Experiment.status == ExperimentStatus.running,
+                Experiment.run_names.contains([run_name]),
+            )
+            .values(status=ExperimentStatus.failed)
+        ).rowcount
+        if won:
+            session.commit()
+            log.warning("experiment.failed", run_name=run_name)
+        else:
+            session.rollback()
+
+
 def try_aggregate_for_run(run_name: str) -> None:
     with Session() as session:
         ids = list(
             session.scalars(
                 select(Experiment.id).where(
+                    Experiment.kind == ExperimentKind.generation,
                     Experiment.status == ExperimentStatus.running,
                     Experiment.run_names.contains([run_name]),
                 )

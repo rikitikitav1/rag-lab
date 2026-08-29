@@ -13,12 +13,12 @@ import version
 from models.eval import QuestionLog
 from models.registry import Pipeline, Purpose
 from orchestrators import graph as orch_graph
-from orchestrators import middleware as orch_middleware
 from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import chat
 from use_cases.agent_policy import (
+    GONE,
     FallbackPolicy,
     FallbackReason,
     Gate,
@@ -55,6 +55,8 @@ class AgentResult:
     dropped_sources: list = field(default_factory=list)
     dropped_hits: list = field(default_factory=list)
     outcome: str = outcomes.Outcome.error
+    # the depth the corpus tool searched at, not the one a resolver would give at log time
+    ef_search: int | None = None
     tool_errors: dict = field(default_factory=dict)
     stages: dict = field(default_factory=dict)
 
@@ -108,8 +110,7 @@ def run(
     variant = variant or config.settings.corpus.variant
     if max_hops is None:
         max_hops = config.settings.agent.max_hops
-    if use_rerank is None:
-        use_rerank = config.settings.rerank.enabled
+    use_rerank = chat.resolve_rerank(use_rerank)
     policy = FallbackPolicy(fallback_policy or config.settings.agent.fallback_policy)
     system = prompt_repo.active_template(Purpose.agent_system)
     if language:
@@ -162,23 +163,19 @@ def run(
             )
         gate.drop_weak_context = gate.off_topic or bool(remote)
     orchestrator = Orchestrator(orchestrator or Orchestrator.langgraph_ported)
-    # the loop is gone: the value is readable in old logs, runnable nowhere
-    if orchestrator == Orchestrator.handrolled:
+    if orchestrator in GONE:
         raise ValueError(f"orchestrator '{orchestrator}' was removed, runs cannot ask for it")
     gate.announce = not external and bool(remote)
-    if orchestrator in (Orchestrator.langgraph_idiomatic, Orchestrator.langgraph_middleware):
-        ctx = orch_graph.context(
-            remote=remote, k=k, use_rerank=use_rerank, role=role, model=model,
-            max_hops=max_hops, variant=variant,
+    if orchestrator == Orchestrator.langgraph_idiomatic:
+        orch_react.invoke(
+            question,
+            system,
+            orch_graph.context(
+                remote=remote, k=k, use_rerank=use_rerank, role=role, model=model,
+                max_hops=max_hops, variant=variant,
+            ),
+            result,
         )
-        if orchestrator == Orchestrator.langgraph_middleware:
-            mw_run = orch_middleware.Run(remote, gate, external, max_hops)
-            orch_react.invoke(
-                question, system, ctx, result,
-                middleware=orch_middleware.build(mw_run), run=mw_run,
-            )
-        else:
-            orch_react.invoke(question, system, ctx, result)
     else:
         orch_graph.invoke(
             question,
@@ -220,10 +217,11 @@ def run(
             max_hops, topic, admission_ran,
             {
                 "name": str(orchestrator),
+                # the middleware arm raises before this line; naming it here as well
+                # would say a client was used by an orchestrator nothing can run
                 "client": (
                     "ChatOllama"
-                    if orchestrator
-                    in (Orchestrator.langgraph_idiomatic, Orchestrator.langgraph_middleware)
+                    if orchestrator == Orchestrator.langgraph_idiomatic
                     else "openai-compat"
                 ),
                 **orch_graph.versions(),
@@ -276,14 +274,6 @@ def _topic_score(question: str, variant: str) -> float | None:
         return db.nearest_distance(llm.embed(question), variant=variant)
     except Exception as e:
         log.error("agent.topic_score_failed", error=str(e))
-        return None
-
-
-def _corpus_fingerprint(variant: str) -> dict | None:
-    try:
-        return db.corpus_fingerprint(variant=variant)
-    except Exception as e:
-        log.error("agent.corpus_fingerprint_failed", error=str(e))
         return None
 
 
@@ -344,8 +334,7 @@ def _log_answer(
     orchestrator: dict | None = None,
     *, variant: str,
 ) -> None:
-    if use_rerank is None:
-        use_rerank = config.settings.rerank.enabled
+    use_rerank = chat.resolve_rerank(use_rerank)
     lang = chat._resolve_language(question_text, language)
     with Session() as session:
         question = chat._find_or_create_question(session, question_text, lang)
@@ -417,7 +406,7 @@ def _log_answer(
                     "k": k or config.settings.retrieval.results_limit,
                     "max_hops": max_hops or config.settings.agent.max_hops,
                     "corpus": config.settings.corpus.description,
-                    "corpus_fingerprint": _corpus_fingerprint(variant),
+                    "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
                     "variant": variant,
                     "keyword": {
                         "query": config.settings.retrieval.keyword_query,
@@ -425,8 +414,8 @@ def _log_answer(
                         "norm": config.settings.retrieval.keyword_norm,
                         "query_lang": config.settings.retrieval.query_lang,
                     },
-                    "ef_search": config.settings.retrieval.ef_search,
-                    "variant_policy": config.settings.corpus.policy(variant),
+                    "ef_search": result.ef_search,
+                    "variant_policy": config.settings.corpus.policy_or_none(variant),
                     "code_version": version.CODE_VERSION,
                     "drop_weak_context": bool(gate and gate.drop_weak_context),
                     "topic": (
