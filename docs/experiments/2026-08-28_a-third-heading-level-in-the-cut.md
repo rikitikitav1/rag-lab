@@ -16,6 +16,13 @@ What varies: `chunker` (`rooted` → `structured`). What is pinned by constructi
 exact search with a pool of 100. The pair was declared as a one-variable pair when `clean_1024` was
 named point zero of the grid.
 
+`prefix_1024` was dropped from the table and from the config once it lost. Its policy, so this
+entry can be rebuilt from itself:
+
+```yaml
+prefix_1024: { chunker: structured, max_chunk_size: 1024, ceiling_on: body }
+```
+
 Code: `app/ingest.py` (`cut_structured`), `scripts/retrieval_report.py` for the measurement and the
 paired comparison. Corpus fingerprints: `clean_1024` 12 102 chunks, `prefix_1024` 17 498, both
 reproducing from their own code (`scripts/cut_digest.py`, zero differences over 177 sources).

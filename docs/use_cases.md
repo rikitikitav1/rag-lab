@@ -1,6 +1,6 @@
-# Use cases and commands
+# Use cases
 
-Hands-on scenarios for rag-lab. Each is copy-paste ready. Everything is also clickable in Swagger at `http://localhost:8000/docs`.
+Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthrough, not a route index: it shows the order to pull the handles in to get from nothing to numbers. The complete reference is Swagger at `http://localhost:8000/docs`, which is generated from the code, so a route missing here is not a gap.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ Hands-on scenarios for rag-lab. Each is copy-paste ready. Everything is also cli
 curl -sX POST localhost:8000/v1/chat/question -H 'Content-Type: application/json' \
   -d '{"text":"What is a hash table?"}' | python3 -m json.tool
 ```
-Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Add `"rerank": true` to apply the cross-encoder for this single request (slower, ~10s on CPU).
+Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Add `"rerank": true` to apply the cross-encoder for this single request. It is off by default since 30.08 (the generator the agent needs takes its room on the card), and it costs 86 ms a question on the card against 2.76 s on CPU.
 
 ## Scenario 2: mini-eval from scratch to numbers
 
@@ -40,7 +40,10 @@ docker compose exec rag-lab python -m evals.generation_metrics demo_run   # fait
 
 ## Scenario 3: reranking A/B
 
-Run the same set with the cross-encoder on, then compare against the baseline.
+Run the same set with the cross-encoder on, then compare against the baseline. Reranking is off by
+default, so `demo_run` from scenario 2 is the arm without it and the run below is the arm with it.
+If the default is ever flipped back, one of the two arms has to say `"rerank": false` explicitly, or
+both arms rerank and the comparison is of a thing against itself.
 
 ```bash
 curl -sX POST localhost:8000/v1/eval/run -H 'Content-Type: application/json' \
@@ -66,10 +69,12 @@ curl -sX POST localhost:8000/v1/questions/import \
 ## Scenario 5: inspect answers and jobs
 
 ```bash
-# bad answers with the judge's reasons
-curl -s "localhost:8000/v1/question-log?run_name=demo_run&faithfulness=unfaithful" | python3 -m json.tool
-# filters: question_id, text (substring), set_name, run_name, answered, faithfulness, relevance,
-#          created_from, created_to, limit, offset, sort_by, sort_order
+# bad answers with the judge's reasons. The judge writes a whole number 0..10 as a string,
+# and every score filter repeats to make a set: this asks for the three worst grades
+curl -s "localhost:8000/v1/question-log?run_name=demo_run&faithfulness=0&faithfulness=1&faithfulness=2" | python3 -m json.tool
+# filters: question_id, text (substring), set_name, run_name, pipeline, answered,
+#          faithfulness, relevance, completeness, created_from, created_to,
+#          limit, offset, sort_by, sort_order
 
 # retrieval misses for a run: in-corpus questions where the expected source was not retrieved
 curl -s "localhost:8000/v1/eval/misses?run_name=demo_run&limit=20" | python3 -m json.tool
@@ -130,7 +135,8 @@ experiment route names the cut every arm reads, and when `variant` is itself the
 parameter the swept value wins. Without it a run reads the corpus named in the config, and
 the snapshot then records that one rather than the one somebody meant.
 
-Comparing cuts rather than answers is the same route with another kind:
+Comparing cuts rather than answers is a different route, `POST /v1/experiment`, which takes a grid
+of axes instead of one swept parameter and carries a `kind`:
 
 ```bash
 curl -X POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
@@ -168,14 +174,14 @@ curl -sX POST localhost:8000/v1/eval/experiment -H 'Content-Type: application/js
 curl -s "localhost:8000/v1/job?type=eval_run&sort_by=id&sort_order=desc&limit=6" | python3 -m json.tool
 
 # per-run numbers once a run is judged
-docker compose exec rag-lab python -m evals.generation_metrics paraphrased_ru_agent_<ts>_k05
+docker compose exec rag-lab python -m evals.generation_metrics paraphrased_ru_agent_<ts>_k_05
 ```
 Set temperature to 0 (config `llm.roles.generation`) so the swept parameter is the only variable. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
 
 ## Command reference
 
 ```bash
-# Full reindex (reset docs + rebuild); on an empty DB the index_data job does this at startup
+# Reindex the served variant only (drops its rows and rebuilds them); other variants are untouched
 docker compose exec rag-lab python app/main.py --index
 
 # Interactive console (REPL with chat/db/llm/session and all ORM entities auto-loaded, like rails console)
@@ -191,7 +197,7 @@ uv sync                 # install from uv.lock
 uv add <pkg>            # add a dependency
 
 # Rebuild images (after editing Dockerfile / pyproject / uv add)
-docker compose build    # rebuilds ALL app services (rag-lab, worker, seed)
+docker compose build    # rebuilds ALL app services (rag-lab, worker, seed, bootstrap)
 # GOTCHA: compose keeps a separate image per build service. After `uv add` rebuild with no args,
 #         otherwise worker/seed stay on the old image and crash on ModuleNotFoundError.
 
