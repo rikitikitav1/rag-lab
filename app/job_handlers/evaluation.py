@@ -1,33 +1,19 @@
-import job_queue
 import logging_setup
 from evals import runner
-from models.registry import Model, Role, Status
+from models.registry import Role
 from orm.sync_db import Session
-from sqlalchemy import select, update
+from sqlalchemy import update
 
-from .base import Deferred, register, require_role_ready
+from .base import register, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
-
-
-def _require_model_ready(name: str) -> None:
-    with Session() as session:
-        model = session.scalar(select(Model).where(Model.name == name))
-        if model is None:
-            session.add(Model(name=name))
-            session.commit()
-            job_queue.enqueue("pull_llm_model", {"name": name}, queue="io")
-            log.info("eval_run.model_pull_enqueued", model=name)
-            raise Deferred(30)
-    if model.status != Status.ready:
-        raise Deferred(30)
 
 
 @register("eval_run")
 def eval_run(options: dict) -> None:
     model = options.get("model")
     if model:
-        _require_model_ready(model)
+        require_model_ready(model)
     else:
         require_role_ready(Role.generation)
     require_role_ready(Role.embedding)

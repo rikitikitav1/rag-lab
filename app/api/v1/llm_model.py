@@ -1,10 +1,16 @@
-import re
 
 import job_queue
 import llm
 from crud import get_or_404
 from fastapi import APIRouter, Depends, HTTPException, Query
-from models.registry import Model, ModelRole, Status
+from models.registry import (
+    MAX_MODEL_NAME,
+    MODEL_NAME_RE,
+    Model,
+    ModelRole,
+    Status,
+    refuse_unknown_registry,
+)
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field, field_validator
 from query_utils import Page, apply_sort_limit_offset
@@ -55,23 +61,17 @@ async def show_model(id: int, session: AsyncSession = Depends(get_session)):
     return await get_or_404(Model, id, session)
 
 
-_ALLOWED_REGISTRIES = {"hf.co", "registry.ollama.ai"}
-_MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?$")
 
 
 class ModelCreateRequest(BaseModel):
-    name: str = Field(max_length=128, pattern=_MODEL_NAME_RE.pattern)
+    name: str = Field(max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
 
     @field_validator("name")
     @classmethod
     def _check_registry_host(cls, v: str) -> str:
-        parts = v.split("/")
-        if any(p in ("", ".", "..") for p in parts):
-            raise ValueError("invalid model name")
-        if len(parts) > 3:
-            raise ValueError("invalid model name")
-        if len(parts) == 3 and parts[0].lower() not in _ALLOWED_REGISTRIES:
-            raise ValueError("model registry host not allowed")
+        # the rule itself lives beside the name pattern: a job that registers a model is a
+        # second door onto the same pull, and it has to refuse the same names
+        refuse_unknown_registry(v)
         return v
 
 

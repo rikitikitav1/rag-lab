@@ -104,13 +104,18 @@ def test_the_probe_asks_for_the_index_back_before_it_looks(monkeypatch):
 
 @pytest.mark.skipif(not _stack_is_up(), reason="needs the database this probe asks")
 def test_the_probe_is_not_poisoned_by_the_exact_search_mode(monkeypatch):
+    # the depth this resolves to is a property of the table on the day, and the arc has
+    # moved it twice; what must hold is that the exact-search mode does not drag the
+    # answer to the floor of the ladder, which is what a poisoned probe reads
     from use_cases import retrieval_compare as rc
 
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
     monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
+    clean = search_depth.resolve("baseline")
+    search_depth.forget()
     rc.prepare(exact=True)
     try:
-        assert search_depth.resolve("baseline") == 200
+        assert search_depth.resolve("baseline") == clean
     finally:
         rc.release()
 
