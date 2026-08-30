@@ -1,0 +1,84 @@
+{
+  "variant": "clean_1024",
+  "sources": 177,
+  "gates": {
+    "section_coverage": {
+      "min": 0.4,
+      "max": null
+    },
+    "prefix_dominates": {
+      "min": null,
+      "max": 0.05
+    },
+    "dup_in_file": {
+      "min": null,
+      "max": 0.1
+    },
+    "dup_in_source": {
+      "min": null,
+      "max": 0.15
+    },
+    "boilerplate": {
+      "min": null,
+      "max": 0.1
+    },
+    "tiny": {
+      "min": null,
+      "max": 0.15
+    }
+  },
+  "metrics": {
+    "section_coverage": {
+      "measured_on": 177,
+      "min": 0.5768,
+      "max": 1.0,
+      "mean": 0.9943,
+      "over_the_gate": 0
+    },
+    "prefix_dominates": {
+      "measured_on": 177,
+      "min": 0.0,
+      "max": 0.0571,
+      "mean": 0.0087,
+      "over_the_gate": 3
+    },
+    "dup_in_file": {
+      "measured_on": 177,
+      "min": 0.0,
+      "max": 0.0011,
+      "mean": 0.0,
+      "over_the_gate": 0
+    },
+    "dup_in_source": {
+      "measured_on": 177,
+      "min": 0.0,
+      "max": 0.1454,
+      "mean": 0.0008,
+      "over_the_gate": 0
+    },
+    "boilerplate": {
+      "measured_on": 4,
+      "min": 0.0,
+      "max": 0.1276,
+      "mean": 0.0319,
+      "over_the_gate": 1
+    },
+    "tiny": {
+      "measured_on": 177,
+      "min": 0.0,
+      "max": 0.0599,
+      "mean": 0.0046,
+      "over_the_gate": 0
+    }
+  },
+  "verdicts": {
+    "ok": 176,
+    "dirty": 1
+  },
+  "fingerprint": {
+    "variant": "clean_1024",
+    "chunks": 12102,
+    "sources": 177,
+    "last_chunk_id": 100599
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "baseline": {
+    "ru": {
+      "in_corpus": {
+        "n": 823,
+        "p05": 0.2614,
+        "median": 0.3581,
+        "p78": 0.3922,
+        "p95": 0.4257,
+        "mean": 0.3525
+      },
+      "off_domain": {
+        "n": 120,
+        "p05": 0.4167,
+        "median": 0.5109,
+        "p78": 0.5507,
+        "p95": 0.6045,
+        "mean": 0.5076
+      },
+      "separation": 0.1528,
+      "weak_distance_at_22pct": 0.3922,
+      "topic_at_zero_false": {
+        "threshold": 0.4962,
+        "false_refusals": 0,
+        "false_share": 0.0,
+        "off_domain_caught": 69,
+        "off_domain_share": 0.575
+      },
+      "topic_at_2pct_false": {
+        "threshold": 0.4452,
+        "false_refusals": 16,
+        "false_share": 0.0194,
+        "off_domain_caught": 103,
+        "off_domain_share": 0.8583
+      },
+      "topic_at_3pct_false": {
+        "threshold": 0.4356,
+        "false_refusals": 21,
+        "false_share": 0.0255,
+        "off_domain_caught": 107,
+        "off_domain_share": 0.8917
+      },
+      "topic_at_1pct_false": {
+        "threshold": 0.4545,
+        "false_refusals": 7,
+        "false_share": 0.0085,
+        "off_domain_caught": 98,
+        "off_domain_share": 0.8167
+      },
+      "all_candidates_over_055": 0.0
+    },
+    "en": {
+      "in_corpus": {
+        "n": 820,
+        "p05": 0.2275,
+        "median": 0.3266,
+        "p78": 0.3648,
+        "p95": 0.4027,
+        "mean": 0.3219
+      },
+      "off_domain": {
+        "n": 111,
+        "p05": 0.37,
+        "median": 0.453,
+        "p78": 0.4905,
+        "p95": 0.5628,
+        "mean": 0.4547
+      },
+      "separation": 0.1264,
+      "weak_distance_at_22pct": 0.3648,
+      "topic_at_zero_false": {
+        "threshold": 0.4766,
+        "false_refusals": 0,
+        "false_share": 0.0,
+        "off_domain_caught": 32,
+        "off_domain_share": 0.2883
+      },
+      "topic_at_2pct_false": {
+        "threshold": 0.4193,
+        "false_refusals": 13,
+        "false_share": 0.0159,
+        "off_domain_caught": 85,
+        "off_domain_share": 0.7658
+      },
+      "topic_at_3pct_false": {
+        "threshold": 0.4131,
+        "false_refusals": 20,
+        "false_share": 0.0244,
+        "off_domain_caught": 89,
+        "off_domain_share": 0.8018
+      },
+      "topic_at_1pct_false": {
+        "threshold": 0.4284,
+        "false_refusals": 8,
+        "false_share": 0.0098,
+        "off_domain_caught": 79,
+        "off_domain_share": 0.7117
+      },
+      "all_candidates_over_055": 0.0
+    },
+    "fingerprint": {
+      "variant": "baseline",
+      "chunks": 13068,
+      "sources": 177,
+      "last_chunk_id": 46782
+    },
+    "variant": "baseline"
+  },
+  "clean_1024": {
+    "ru": {
+      "in_corpus": {
+        "n": 823,
+        "p05": 0.2587,
+        "median": 0.3562,
+        "p78": 0.3957,
+        "p95": 0.4299,
+        "mean": 0.3519
+      },
+      "off_domain": {
+        "n": 120,
+        "p05": 0.4226,
+        "median": 0.5116,
+        "p78": 0.5601,
+        "p95": 0.6104,
+        "mean": 0.5124
+      },
+      "separation": 0.1554,
+      "weak_distance_at_22pct": 0.3957,
+      "topic_at_zero_false": {
+        "threshold": 0.4962,
+        "false_refusals": 0,
+        "false_share": 0.0,
+        "off_domain_caught": 71,
+        "off_domain_share": 0.5917
+      },
+      "topic_at_2pct_false": {
+        "threshold": 0.456,
+        "false_refusals": 6,
+        "false_share": 0.0073,
+        "off_domain_caught": 104,
+        "off_domain_share": 0.8667
+      },
+      "topic_at_3pct_false": {
+        "threshold": 0.4448,
+        "false_refusals": 22,
+        "false_share": 0.0267,
+        "off_domain_caught": 108,
+        "off_domain_share": 0.9
+      },
+      "topic_at_1pct_false": {
+        "threshold": 0.456,
+        "false_refusals": 6,
+        "false_share": 0.0073,
+        "off_domain_caught": 104,
+        "off_domain_share": 0.8667
+      },
+      "all_candidates_over_055": 0.0
+    },
+    "en": {
+      "in_corpus": {
+        "n": 820,
+        "p05": 0.226,
+        "median": 0.3244,
+        "p78": 0.3653,
+        "p95": 0.4062,
+        "mean": 0.3207
+      },
+      "off_domain": {
+        "n": 111,
+        "p05": 0.3536,
+        "median": 0.4547,
+        "p78": 0.4945,
+        "p95": 0.5736,
+        "mean": 0.4572
+      },
+      "separation": 0.1303,
+      "weak_distance_at_22pct": 0.3653,
+      "topic_at_zero_false": {
+        "threshold": 0.4712,
+        "false_refusals": 0,
+        "false_share": 0.0,
+        "off_domain_caught": 37,
+        "off_domain_share": 0.3333
+      },
+      "topic_at_2pct_false": {
+        "threshold": 0.4215,
+        "false_refusals": 16,
+        "false_share": 0.0195,
+        "off_domain_caught": 84,
+        "off_domain_share": 0.7568
+      },
+      "topic_at_3pct_false": {
+        "threshold": 0.4158,
+        "false_refusals": 24,
+        "false_share": 0.0293,
+        "off_domain_caught": 88,
+        "off_domain_share": 0.7928
+      },
+      "topic_at_1pct_false": {
+        "threshold": 0.4374,
+        "false_refusals": 7,
+        "false_share": 0.0085,
+        "off_domain_caught": 76,
+        "off_domain_share": 0.6847
+      },
+      "all_candidates_over_055": 0.0
+    },
+    "fingerprint": {
+      "variant": "clean_1024",
+      "chunks": 12102,
+      "sources": 177,
+      "last_chunk_id": 100599
+    },
+    "variant": "clean_1024"
+  },
+  "variant": "clean_1024",
+  "fingerprint": {
+    "variant": "clean_1024",
+    "chunks": 12102,
+    "sources": 177,
+    "last_chunk_id": 100599
+  }
+}
