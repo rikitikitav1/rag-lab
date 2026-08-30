@@ -13,6 +13,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 class ExperimentKind(StrEnum):
     generation = "generation"
     retrieval = "retrieval"
+    # the answers are held still and the judge moves: the only kind whose arms provably
+    # share their input, because they are copies of one run rather than runs of their own
+    rejudge = "rejudge"
 
 
 class ExperimentStatus(StrEnum):
@@ -26,7 +29,9 @@ class ExperimentStatus(StrEnum):
 _TRANSITIONS: dict[ExperimentStatus, set[ExperimentStatus]] = {
     ExperimentStatus.draft: {ExperimentStatus.running},
     ExperimentStatus.running: {ExperimentStatus.aggregated, ExperimentStatus.failed},
-    ExperimentStatus.aggregated: {ExperimentStatus.concluded},
+    # back to running because a rejudge may gain an arm after its report is read: the
+    # answers are still there, so the extra arm is a copy and a judge job, not a rerun
+    ExperimentStatus.aggregated: {ExperimentStatus.concluded, ExperimentStatus.running},
     ExperimentStatus.failed: {ExperimentStatus.running},
     ExperimentStatus.concluded: set(),
 }

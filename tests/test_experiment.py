@@ -15,7 +15,10 @@ def test_can_advance_invalid():
     assert not can_advance(ExperimentStatus.draft, ExperimentStatus.aggregated)
     assert not can_advance(ExperimentStatus.running, ExperimentStatus.concluded)
     assert not can_advance(ExperimentStatus.concluded, ExperimentStatus.running)
-    assert not can_advance(ExperimentStatus.aggregated, ExperimentStatus.running)
+
+
+def test_a_read_experiment_can_take_another_arm():
+    assert can_advance(ExperimentStatus.aggregated, ExperimentStatus.running)
 
 
 def _gen(faith, rel, compl):
@@ -407,3 +410,12 @@ def test_cancelling_an_arm_does_not_leave_its_experiment_running(monkeypatch):
     assert job_queue.cancel([1, 2, 3]) == [1, 2, 3]
     assert [j.status for j in jobs] == [JobStatus.cancelled] * 3
     assert failed == ["a", "b"], "an index job carries no experiment"
+
+
+def test_every_kind_of_report_declares_its_schema():
+    # the shape of a rejudge report changed three times in one week, and a record written
+    # before a field existed is indistinguishable from one where the field is absent for a
+    # reason. A reader compares this number, never the date the row was created
+    from use_cases import experiment, rejudge, retrieval_compare
+
+    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (2, 3, 2)
