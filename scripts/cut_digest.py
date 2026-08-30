@@ -40,9 +40,10 @@ def freshly_cut(variant: str) -> dict[tuple[str, str, int], str]:
     policy = config.settings.corpus.policy(variant)
     out = {}
     for source in sources.factory.all_sources():
-        for file in source.discover(policy):
-            for doc in source.to_documents(file, policy):
-                out[(source.name, doc.source, doc.chunk_index)] = digest(doc.content)
+        # the same method the indexer walks: a rule applied by one and not the other
+        # would read as a changed cut for the life of the variant
+        for doc in source.documents(policy):
+            out[(source.name, doc.source, doc.chunk_index)] = digest(doc.content)
     return out
 
 
