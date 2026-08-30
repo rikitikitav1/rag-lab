@@ -13,7 +13,7 @@ from models.eval import Question
 from models.mcp_integration import McpIntegration
 from models.registry import Prompt, Purpose
 from orm.sync_db import Session
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 log = logging_setup.get_logger(__name__)
@@ -176,8 +176,11 @@ def _exported_rows() -> list[dict]:
     return rows
 
 
+# after the insert, never before: a set's originals can live in the same exported batch,
+# and a lookup that runs first finds nothing while `on_conflict_do_nothing` makes the
+# missing link permanent. Unlinked, a question takes its own text as the gold heading
 def _link_originals(session, rows: list[dict]) -> None:
-    wanted = {r["_source_text"] for r in rows if r["_source_text"]}
+    wanted = {r.get("_source_text") for r in rows if r.get("_source_text")}
     if not wanted:
         return
     ids = dict(
@@ -187,10 +190,22 @@ def _link_originals(session, rows: list[dict]) -> None:
             )
         ).all()
     )
+    linked = 0
     for row in rows:
         origin = row.pop("_source_text", None)
-        if origin:
-            row["source_question_id"] = ids.get(_text_hash(origin))
+        target = ids.get(_text_hash(origin)) if origin else None
+        if target is None:
+            continue
+        linked += session.execute(
+            update(Question)
+            .where(
+                Question.text_hash == row["text_hash"],
+                Question.source_question_id.is_(None),
+            )
+            .values(source_question_id=target)
+        ).rowcount
+    session.commit()
+    log.info("seed.linked_originals", linked=linked, wanted=len(wanted))
 
 
 def _insert_questions(session, rows: list[dict]) -> None:
@@ -210,8 +225,13 @@ def seed_questions() -> None:
             _insert_questions(session, rows)
         exported = _exported_rows()
         if exported:
+            # the link is resolved after the insert, so the batch goes in without it and
+            # `_source_text` stays out of the statement: it is a lookup key, not a column
+            _insert_questions(
+                session,
+                [{k: v for k, v in row.items() if k != "_source_text"} for row in exported],
+            )
             _link_originals(session, exported)
-            _insert_questions(session, exported)
     log.info("seed.questions", total=len(rows), exported=len(exported))
 
 
