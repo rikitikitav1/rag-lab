@@ -10,6 +10,12 @@ log = logging_setup.get_logger(__name__)
 
 MAX_CHUNK_SIZE = config.settings.ingestion.chunk_max_size
 
+# what counts as a block repeated across a source: read by the cut that drops such blocks
+# and by the metric that counts them, and it lives here because a source may not import a
+# use case. One owner, or the rule and the metric describe different things
+BOILERPLATE_FILE_SHARE = 0.5
+BOILERPLATE_MIN_FILES = 3
+
 # what counts as a heading is the standard parser's answer, not ours: it tracks fenced
 # code, tilde fences and indented headings, and our regex did none of the three
 HEADERS = [("##", "h2"), ("###", "h3")]
@@ -46,7 +52,10 @@ def _budget(ceiling: int, prefix: str, ceiling_on: str) -> int:
     return ceiling if ceiling_on == BODY else max(1, ceiling - len(prefix))
 
 
-def chunk_markdown(content, separator="\n## "):
+# the ceiling comes from the variant's policy like every other cut does. It used to fall
+# through to the module constant, so `baseline` declared a ceiling that nothing read and
+# `ingestion.chunk_max_size` silently decided the frozen variant's cut instead
+def chunk_markdown(content, separator="\n## ", ceiling=None):
     if not content.strip():
         return []
 
@@ -56,13 +65,13 @@ def chunk_markdown(content, separator="\n## "):
     h1 = content.splitlines()[0]
     chunks = [intro] + [h1 + separator + part for part in parts[1:]]
 
-    return split_all_by_size(chunks)
+    return split_all_by_size(chunks, ceiling)
 
 
-def split_all_by_size(chunks):
+def split_all_by_size(chunks, ceiling=None):
     result = []
     for chunk in chunks:
-        result.extend(split_by_size(chunk))
+        result.extend(split_by_size(chunk, max_size=ceiling))
     return result
 
 

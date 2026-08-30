@@ -123,13 +123,14 @@ def collect_data(
     with Session() as session:
         for source in sources:
             data_source = _provision_source(session, source, variant)
-            for file in source.discover(policy):
-                for doc in source.to_documents(file, policy):
-                    buffer.append(_chunk(data_source.id, doc, variant))
-                    if len(buffer) >= commit_size:
-                        total += _flush(session, buffer, embed_size)
-                        log.info("index.committed", committed=total)
-                        buffer = []
+            # the whole source at once: a rule that has to see every file of it cannot be
+            # applied per file, and the cut digest reads the same method
+            for doc in source.documents(policy):
+                buffer.append(_chunk(data_source.id, doc, variant))
+                if len(buffer) >= commit_size:
+                    total += _flush(session, buffer, embed_size)
+                    log.info("index.committed", committed=total)
+                    buffer = []
         if buffer:
             total += _flush(session, buffer, embed_size)
 
