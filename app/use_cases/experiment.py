@@ -289,16 +289,35 @@ def revive_for_run(run_name: str) -> None:
         session.commit()
 
 
+# a row left `failed` by another arm is taken back only when every arm it still names is
+# judged, so an experiment that really is missing rows keeps the status a human can see
+def revive_if_complete(session, exp) -> bool:
+    return (
+        exp is not None
+        and exp.status == ExperimentStatus.failed
+        and can_advance(exp.status, ExperimentStatus.running)
+        and _series_complete(session, exp.run_names)
+    )
+
+
 def try_aggregate_for_run(run_name: str) -> None:
     with Session() as session:
         ids = list(
             session.scalars(
                 select(Experiment.id).where(
                     Experiment.kind.in_(_JUDGED_KINDS),
-                    Experiment.status == ExperimentStatus.running,
+                    # `failed` too: cancelling one arm fails the whole row, and a sibling
+                    # still judging would otherwise finish into a status that never aggregates
+                    Experiment.status.in_((ExperimentStatus.running, ExperimentStatus.failed)),
                     Experiment.run_names.contains([run_name]),
                 )
             )
         )
     for experiment_id in ids:
+        with Session() as session:
+            exp = session.get(Experiment, experiment_id)
+            if revive_if_complete(session, exp):
+                exp.status = ExperimentStatus.running
+                session.commit()
+                log.info("experiment.revived_by_sibling", id=experiment_id, run_name=run_name)
         aggregate(experiment_id)

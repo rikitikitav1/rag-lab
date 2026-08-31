@@ -421,17 +421,49 @@ def test_every_kind_of_report_declares_its_schema():
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (2, 3, 2)
 
 
-def test_pending_asks_the_judge_which_rows_are_left(monkeypatch):
+def test_pending_counts_the_rows_the_judge_would_pick_up():
     # it used to count only faithfulness on rows carrying context, so a run whose rows have no
     # context read as fully judged while relevance was still missing on every one of them
-    import inspect
-
-    from job_handlers.judging import still_to_judge
     from use_cases import experiment
 
-    assert "still_to_judge" in inspect.getsource(experiment._run_pending), (
-        "the count must use the judge's own predicate, not a second spelling of it"
-    )
-    compiled = str(still_to_judge())
+    seen = []
+
+    class _Session:
+        def scalar(self, statement):
+            seen.append(statement)
+            return 0
+
+    experiment._run_pending(_Session(), "some_run")
+    sql = str(seen[0])
+
+    # completeness reads a column of `questions`, so without the join the same statement
+    # compiles into a cross product and the count stops meaning anything
+    assert "JOIN questions" in sql
     for axis in ("relevance", "faithfulness", "completeness"):
-        assert axis in compiled, f"{axis} can be left unjudged and must be counted"
+        assert f"question_logs.{axis} IS NULL" in sql
+
+
+def _failed(run_names=("a", "b")):
+    from models.experiment import ExperimentStatus
+
+    return SimpleNamespace(status=ExperimentStatus.failed, run_names=list(run_names))
+
+
+def test_a_sibling_arm_revives_a_row_only_when_every_arm_is_judged(monkeypatch):
+    # cancelling one arm marks the whole row failed, and the arm still judging used to finish
+    # into a status that never aggregates: an hour and a half of card judged and thrown away
+    from models.experiment import ExperimentStatus
+    from use_cases import experiment
+
+    monkeypatch.setattr(experiment, "_series_complete", lambda session, runs: True)
+    assert experiment.revive_if_complete(None, _failed())
+
+    monkeypatch.setattr(experiment, "_series_complete", lambda session, runs: False)
+    assert not experiment.revive_if_complete(None, _failed()), (
+        "a row whose arms are genuinely unjudged keeps the status a human can see"
+    )
+
+    monkeypatch.setattr(experiment, "_series_complete", lambda session, runs: True)
+    running = SimpleNamespace(status=ExperimentStatus.running, run_names=["a"])
+    assert not experiment.revive_if_complete(None, running)
+    assert not experiment.revive_if_complete(None, None)
