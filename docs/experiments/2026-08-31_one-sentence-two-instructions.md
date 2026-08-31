@@ -81,6 +81,13 @@ prompt; the next round starts at v4.
 The next round splits the sentence: one arm carrying only "across languages", one carrying only
 "by meaning, not wording", both as rejudges of the same source, so neither costs generation.
 
+**Correction, same day.** The paragraph above says number 3 is not to be reused, and that held only
+until the round it served was over. The owner asked for a registry without gaps, so the rows that
+referenced 3 and 4 were deleted and the numbers freed: version 3 now carries the surviving half,
+"Judge by meaning, not wording." The verdicts of both retired versions, and their prompt text, live
+in `datasets/measurements/retired_judge_prompts_v3_v4.json`, and every number on this page
+reproduces from that file. Read this entry through the file, not through the registry.
+
 Sizing is decided from the effect rather than by habit: the observed differences are 0.25 to 0.33,
 and the paired half-width at n=400 is about 0.126, so the next round reads on 400 rows instead of
 823. The full set buys precision this question does not use.
