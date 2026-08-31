@@ -1,6 +1,7 @@
 import sys
 
 from evals.loaders import load_logs
+from evals.pools import ALL_OUTCOMES
 from evals.pools import has_remote_evidence as _has_remote_evidence
 from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
@@ -56,9 +57,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
         "answer_rate": round(sum(1 for ql in logs if ql.answered) / len(logs), 3) if logs else None,
         "outcomes": {
             o: sum(1 for ql in logs if _outcome(ql) == o)
-            for o in (
-                "answered", "refused", "unsupported_answer", "narrated_call", "exhausted", "error"
-            )
+            for o in ALL_OUTCOMES
         },
         "faithfulness": faith,
         "relevance": relevance,

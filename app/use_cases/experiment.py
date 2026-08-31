@@ -5,7 +5,7 @@ import numpy as np
 from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
 from evals.stats import delta_stats as _delta_stats
-from models.eval import QuestionLog
+from models.eval import Question, QuestionLog
 from models.experiment import Experiment, ExperimentKind, ExperimentStatus, can_advance
 from orm.sync_db import Session
 from sqlalchemy import func, select, update
@@ -18,17 +18,20 @@ _AXES = ("faithfulness", "relevance", "completeness")
 _COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")
 
 
+# asks the judge's own predicate rather than a second spelling of it: counting only
+# faithfulness-with-context let a run whose rows carry no context read as fully judged
 def _run_pending(session, run_name: str) -> int:
+    from job_handlers.judging import still_to_judge
+
     return (
         session.scalar(
             select(func.count())
             .select_from(QuestionLog)
+            .join(Question, QuestionLog.question_id == Question.id)
             .where(
                 QuestionLog.run_name == run_name,
                 QuestionLog.answered.is_(True),
-                QuestionLog.context.isnot(None),
-                QuestionLog.context != "",
-                QuestionLog.faithfulness.is_(None),
+                still_to_judge(),
             )
         )
         or 0

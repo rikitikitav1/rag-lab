@@ -1,5 +1,9 @@
 import outcomes
 
+# the report reads the taxonomy from the enum: a fourth bucket appeared in the data
+# while the pre-registration listed three, because both were written from memory
+ALL_OUTCOMES = tuple(o.value for o in outcomes.Outcome)
+
 POOLS = ("in_corpus", "out_of_corpus", "off_domain", "rejected")
 
 

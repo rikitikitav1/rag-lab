@@ -139,6 +139,29 @@ def models_are_on_the_card() -> tuple[bool, str]:
     )
 
 
+# the file declares a role's model, the database serves it, and bootstrap leaves an assigned role
+# alone on purpose, so the two drift in silence. Through that gap gemma3:4b served as the generator
+# for a day without tool calling while the config named something else
+def roles_match_the_config() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, config; print(json.dumps("
+        "{r: c.model for r, c in config.settings.llm.roles.items()}))"
+    )
+    if not out.startswith("{"):
+        return False, f"roles: cannot read the config ({out[:60] or 'no answer'})"
+    declared = json.loads(out)
+    models = {m["id"]: m["name"] for m in get("/v1/model?limit=200")}
+    served = {r["role"]: models.get(r["model_id"], f"model {r['model_id']}") for r in get("/v1/role")}
+    drift = [
+        f"{role}: config says {name}, the stand serves {served.get(role, 'nothing')}"
+        for role, name in sorted(declared.items())
+        if served.get(role) != name
+    ]
+    if drift:
+        return False, "; ".join(drift) + ". PUT /v1/role to change it, or edit the file to match"
+    return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(served.items()))
+
+
 # only what the driver says: a probe through `docker compose exec` runs in a new process
 # where the reranker was never loaded. Where it sits is asked by the run itself
 def _card() -> str:
@@ -504,14 +527,14 @@ def _alive_thresholds() -> tuple[float, int] | None:
 
 CHECKS = (
     tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config,
-    models_are_on_the_card, queue_is_idle, corpus_variant_is_usable,
+    models_are_on_the_card, roles_match_the_config, queue_is_idle, corpus_variant_is_usable,
     every_variant_walks_its_index, tuned_numbers_still_describe_the_corpus,
     table_is_vacuumed, schema_holds_no_variant_indexes, one_question_per_original,
     every_variant_cuts_into_its_own_rows,
     keyword_switches_match_the_worker, marks_are_reachable, index_is_alive,
 )
 
-# these read something out and never refuse: standing among the sixteen checks above made
+# these read something out and never refuse: standing among the seventeen checks above made
 # them look like gates with a permanently green light
 NOTES = (halves_of_pairs_are_counted,)
 

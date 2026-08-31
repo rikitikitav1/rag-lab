@@ -19,28 +19,33 @@ def _not_capped(axis: str):
     return or_(attempts.is_(None), attempts < _MAX_JUDGE_ATTEMPTS)
 
 
+# the one predicate for "this row still has a verdict coming", so the series cannot call itself
+# complete while a row the judge would still pick up is unjudged. It used to be spelled here and
+# again in `experiment._run_pending`, and the second spelling looked at faithfulness alone
+def still_to_judge():
+    return or_(
+        and_(QuestionLog.relevance.is_(None), _not_capped("relevance")),
+        and_(
+            QuestionLog.faithfulness.is_(None),
+            QuestionLog.context.isnot(None),
+            QuestionLog.context != "",
+            _not_capped("faithfulness"),
+        ),
+        and_(
+            QuestionLog.completeness.is_(None),
+            Question.reference_answer.isnot(None),
+            Question.reference_answer != "",
+            _not_capped("completeness"),
+        ),
+    )
+
+
 def _target_log_ids(session, options) -> list[int]:
     stmt = select(QuestionLog.id).where(QuestionLog.answered.is_(True))
     if options.get("log_ids"):
         return list(session.scalars(stmt.where(QuestionLog.id.in_(options["log_ids"]))))
 
-    stmt = stmt.join(Question, QuestionLog.question_id == Question.id).where(
-        or_(
-            and_(QuestionLog.relevance.is_(None), _not_capped("relevance")),
-            and_(
-                QuestionLog.faithfulness.is_(None),
-                QuestionLog.context.isnot(None),
-                QuestionLog.context != "",
-                _not_capped("faithfulness"),
-            ),
-            and_(
-                QuestionLog.completeness.is_(None),
-                Question.reference_answer.isnot(None),
-                Question.reference_answer != "",
-                _not_capped("completeness"),
-            ),
-        )
-    )
+    stmt = stmt.join(Question, QuestionLog.question_id == Question.id).where(still_to_judge())
     if options.get("run_name"):
         stmt = stmt.where(QuestionLog.run_name == options["run_name"])
     return list(session.scalars(stmt))

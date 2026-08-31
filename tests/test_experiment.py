@@ -419,3 +419,19 @@ def test_every_kind_of_report_declares_its_schema():
     from use_cases import experiment, rejudge, retrieval_compare
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (2, 3, 2)
+
+
+def test_pending_asks_the_judge_which_rows_are_left(monkeypatch):
+    # it used to count only faithfulness on rows carrying context, so a run whose rows have no
+    # context read as fully judged while relevance was still missing on every one of them
+    import inspect
+
+    from job_handlers.judging import still_to_judge
+    from use_cases import experiment
+
+    assert "still_to_judge" in inspect.getsource(experiment._run_pending), (
+        "the count must use the judge's own predicate, not a second spelling of it"
+    )
+    compiled = str(still_to_judge())
+    for axis in ("relevance", "faithfulness", "completeness"):
+        assert axis in compiled, f"{axis} can be left unjudged and must be counted"
