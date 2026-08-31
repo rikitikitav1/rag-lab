@@ -21,6 +21,7 @@ from use_cases.retrieval_compare import (  # noqa: E402
     POOL_SHORTFALL,
     arm_procedure,
     comparable,
+    file_drift,
     half_of,
     measure,
     paired_delta,
@@ -130,6 +131,27 @@ def set_grew(before, after, differ) -> bool:
     return bool(was) and was < now
 
 
+# the delta is over questions, and a question can only move if both sides hold its file.
+# What each side holds alone belongs next to the delta, not in a separate investigation
+def print_file_drift(before: str, after: str) -> None:
+    try:
+        from orm.sync_db import engine
+
+        with engine.connect() as conn:
+            rows = file_drift(conn, before, after)
+    except Exception as e:  # an archived pair may name variants this database no longer has
+        print(f"corpus drift: not readable ({type(e).__name__})")
+        return
+    if not rows:
+        print("corpus drift: none, both variants hold the same files")
+        return
+    for row in rows:
+        print(
+            f"corpus drift: {row['family']} only in {before}: {row['only_before']},"
+            f" only in {after}: {row['only_after']}, in both: {row['shared']}"
+        )
+
+
 def compare_half(before, after, level, which):
     # over the ids both sides carry, not over everything the newer run measured: the hash
     # has to name the questions the numbers were taken on
@@ -208,6 +230,7 @@ def main() -> int:
             return 1
         print(f"{before['variant']} -> {after['variant']}  set={after['set']} "
               f"search={after.get('search')} pool={after.get('limit_vector')}")
+        print_file_drift(before["variant"], after["variant"])
         # a report taken before rows carried a repository still splits by id parity, the
         # same rule as now; the repository is printed as coverage, never used to split
         for level in ("file", "section"):
@@ -288,6 +311,9 @@ def main() -> int:
                 report["index_cost"] = {str(k): v for k, v in costs.items()}
                 report["set"] = args.set_name
                 report["variant"] = variant
+                # the corpus this depth was priced against: without it a file cannot say
+                # whether it still describes the table, and two of them already did not
+                report["fingerprint"] = db.fingerprint_or_none(variant=variant)
                 report["cheapest_ef"] = cheapest
                 report["mrr_loss_gate"] = mrr_loss_gate()
                 report["max_questions_lost"] = lost_questions_gate()
@@ -329,6 +355,7 @@ def main() -> int:
                 report["plan_by_ef"] = plans
                 report["set"] = args.set_name
                 report["variant"] = variant
+                report["fingerprint"] = db.fingerprint_or_none(variant=variant)
                 report["questions"] = len(questions(conn, args.set_name, args.limit))
                 report["recall_gate"] = recall_gate()
                 path.write_text(json.dumps(report))

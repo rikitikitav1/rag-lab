@@ -27,6 +27,9 @@ INDEX_SCAN = "Index Scan"
 # a variant of 17 498 rows moved neither the page count nor the crossover
 _ESTIMATE = ("SELECT relpages, reltuples::bigint FROM pg_class"
              " WHERE relname = 'data_chunks'")
+# this has to keep the shape `db.hybrid_search` gives the planner, or the gate guards a
+# query nobody runs: same table, same variant filter, same operator, same LIMIT. Changing
+# the vector leg without changing this leaves the depth audit green on the wrong plan
 _PROBE = """
 SELECT id FROM data_chunks
 WHERE variant = :variant AND embedding IS NOT NULL

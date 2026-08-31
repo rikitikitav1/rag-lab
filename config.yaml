@@ -1,179 +1,112 @@
-# The thresholds below were measured on THIS corpus and do not survive a re-index:
-# the embeddings change and the distance distributions with them. See docs/experiments/.
+# A number that came out of a measurement carries a `# tuned: file=` line; the reasoning
+# and the corpus it was measured on live in that file, and the preflight compares them.
 service:
   retrieval:
-    # hybrid search cutoff; on our sets it almost always returns something,
-    # which is why an "empty retrieval" rule never fires on its own (measured 24.08)
+    # last of three distances on one scale: 0.39 flags weak context, ~0.44 refuses off-topic
+    # (both under `agent`), 0.55 cuts the hybrid pool and never empties it (1643 questions)
+    # tuned: file=datasets/measurements/threshold_calibration_20260830.json
     distance_threshold: 0.55
+    # this is `k`: how many chunks the generator sees, and what the context guard multiplies
     results_limit: 5
     limit_vector: 20
     limit_keywords: 20
     rrf_k: 60
-    # AND over every lexeme is a precision filter: OR costs 0.15-0.23 MRR on paraphrases,
-    # and loses on every set once the search is really exact (measured 26.08)
+    # AND over every lexeme: OR costs 0.15-0.23 MRR on paraphrases (measured 26.08)
+    # tuned: file=datasets/measurements/2026-08-26_keyword_switch_grid.txt
     keyword_query: and
     keyword_rank: ts_rank
     keyword_norm: 0
-    # ask each text-search config whether it recognises the question's own function words, fall
-    # back to the alphabet share when none show up. No library, no LLM, scales to any config
-    # Postgres ships. Chosen for correctness, not ranking: identical to the fourth decimal on all
-    # three sets (datasets/measurements/query_lang/), and it decides the one question the alphabet
-    # rule gets wrong. Also picks the language the answer comes back in (26.08)
+    # ask each text-search config about the question's own function words, else the alphabet
     query_lang: function_words
-    # 200, and the number is the smaller half of what is written here.
-    #
-    # Where the planner abandons the index is a property of the WHOLE table, not of the
-    # variant being searched: the alternative to the hnsw walk is a sequential read of
-    # data_chunks filtered by variant, so rows of every other variant pay into its cost.
-    # Indexing prefix_1024 moved the crossover from ~197 (25177 rows, two variants) to
-    # ~265 (42668 rows, three), which is why the previous note here, and the rule of
-    # thumb it rested on, said the opposite of what EXPLAIN says today. There is no rule
-    # of thumb: the crossover is nonlinear in rows and moves with random_page_cost.
-    # Ask the plan, never a formula, and never inherit an answer from another day.
-    #
-    # Measured 28.08. Plan: index at 100 and 200 on every indexed variant, exact sort at
-    # 400. Through the index at 200: recall@20 against exact 1.0 on clean_1024, 0.9912 on
-    # baseline; paired section MRR against exact 0.0000 [0, 0] and zero questions lost,
-    # against one lost at 100. Cost in wall clock rather than planner units, from
-    # datasets/measurements/latency_ef_search_two_variants.json: the whole hybrid query
-    # reads 15-19 ms at both 100 and 200 and 58-62 ms at 400, because that rung is the
-    # sort. The depth is free here and the deeper rung is the one that loses nothing.
-    # The earlier three-variant file was taken with a script whose `apply_ef` was
-    # overridden by hybrid_search's own SET LOCAL, so its ladder is not reproducible.
-    #
-    # The fragility is in the other direction, and the branch measured it: dropping
-    # `prefix_1024` moved neither the page count nor the crossover, because a DELETE
-    # leaves the pages where they were. What moves it is indexing another variant, or a
-    # rewrite of the table. That is what the depth audit guards; the number alone cannot.
-    # auto: the deepest rung of the ladder whose plan still walks the index, asked of the
-    # planner and re-asked when the table's page count or row estimate moves. Pages are
-    # the load-bearing half: the alternative to the walk is a sequential read priced per
-    # page, so a DELETE moves the crossover not at all and a table rewrite moves it a lot. A number here pins it
-    # instead, and so does `ef_search` on a request, a run or a comparison axis. What a
-    # run actually used is in its snapshot, never inferred from this file
-    ef_search: auto
-    # left as it was taken: rungs above the crossover are exact search, and a denser
-    # ladder under it is a measurement to run deliberately, not a default to drift into
+    # pinned, not auto: auto is a property of the variant, and preflight refuses a stale pin
+    # tuned: file=datasets/measurements/index_cost_clean_1024.json
+    # tuned: file=datasets/measurements/recall_ladder_clean_1024.json
+    ef_search: 100
+    # a red preflight at 100 is an order to measure the lower rungs, not to invent a number
     ef_ladder: [100, 200, 400]
-    # recall@20 stays as a diagnostic, not as the gate: it counts neighbours the graph
-    # failed to find, and a neighbour lost at rank 18 costs the answer nothing. What the
-    # depth is judged by is what it costs the metric we are paid for, measured on the same
-    # questions, paired, with an interval. The gate is the worst end of that interval
-    # what it still does, so nobody reads it as a gate: it picks `required_ef` in
-    # `--required-ef`, which reports a rung and refuses nothing
+    # recall is a diagnostic; the gate on the depth is max_mrr_loss, on the same questions
     recall_gate: 0.98
-    # порог не ставится рукой ниже того, что набор умеет различать: полуширина интервала на
-    # 823 вопросах около 0.0036, поэтому 0.005 сработал бы как монетка у порога
+    # not set below what the set can resolve: half-width 0.0088 by section on 823
     max_mrr_loss: 0.01
-    # средняя прячет катастрофу на одном вопросе: на clean_1024 два вопроса, где точный
-    # поиск давал правильный раздел ПЕРВЫМ, при индексе выпали из топ-20 целиком, а дельта
-    # осталась -0.0014 с интервалом через ноль. Это отдельные ворота, и они жёсткие
+    # a mean hides a catastrophe on one question, so the gate counts questions lost
     max_questions_lost: 0
-    # the preflight smoke test, not a gate: enough questions to catch an empty or
-    # half-built index, and the floor is low so nobody mistakes it for the gate above
+    # a smoke test, not the gate: enough to catch an empty or half-built index
     index_alive_recall: 0.9
     index_alive_questions: 40
-    # the sets a verdict is read on. Named once: the preflight and the report each carried
-    # their own answer, and both still said `paraphrased_ru` after the arc moved to v2
+    # the sets a verdict is read on, named once for the preflight and the report
     criterion_sets: [paraphrased_v2_ru, paraphrased_v2]
+    # the winner on the criterion must not lose here; it vetoes, it never chooses
+    veto_sets: [veto_v1]
   rerank:
-    # off by default, and the reason has to be a quality reason. Cost is not one: the
-    # owner's rule is that the default pipeline is the whole standard pipeline, and
-    # "the reranker is slow" is an argument about where it runs, not about whether the
-    # answer needs it. On the card the same work takes 86 ms against 2.76 s on the
-    # processor, so the cost half of this decision is a placement problem, and for the
-    # eval path it is solved: reranking happens in a phase that owns the card.
-    #
-    # What is left is a quality reason, and it is real. On 27.08 the flag went on for
-    # runs on the strength of the control hundred, and then the big sets arrived and
-    # disagreed with each other:
-    #
-    #   paraphrased_v2_ru, 823   rerank on baseline  +0.0369 [+0.0155, +0.0596]
-    #   paraphrased_v2,    820   rerank on baseline  -0.0245 [-0.0460, -0.0021]
-    #
-    # It helps the cross-lingual set and hurts the same-language one, both with intervals
-    # clear of zero, so a default set on either half would be set on the half that agrees.
-    # It also may not be about language at all: an english question lights the keyword leg
-    # and a russian one does not, so reranking may be replacing a fusion of two signals
-    # with one. Until that is measured at the level of the answer rather than the
-    # ranking, a run asks for it (`rerank: true`) rather than getting it, and the burden
-    # is on the measurement to show harm rather than on the reranker to earn its place.
-    #
-    # The interactive path is a separate problem and not a cost excuse either. One
-    # question needs the embedder, then the reranker, then the generator, so phases
-    # cannot help it and ollama swaps a model per question. Giving it the whole pipeline
-    # means a resident reranker sharing the card, which is a question about how much of
-    # the card the generator may have. Latency, through the path production calls, is in
-    # datasets/measurements/rerank_latency.json: 2.76 s per question on cpu, 86 ms on an
-    # idle card, about twice that on a card a run already owns, twenty candidates of
-    # average length
+    # off by owner's decision 30.08: the 8b the agent needs takes the card room this held.
+    # Worth +0.0454 [+0.0250, +0.0670] of section MRR, so this is a price, not a verdict
+    # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md
     enabled: false
     model: BAAI/bge-reranker-v2-m3
     candidates: 20
   agent:
     max_hops: 4
     fallback_policy: corpus_first
-    # how many top hits the coverage gate scores with the cross-encoder
+    # both read only at `gate_signal: cross_encoder`; under `distance` they sit unused
     gate_candidates: 5
     # cross-encoder coverage gate: median 0.916 in-corpus against 0.022 outside (measured 24.08)
+    # tuned: file=docs/experiments/2026-08-24_corpus-first-and-the-fallback-that-never.md
     weak_threshold: 0.5
+
     # which signal decides that retrieval is weak; picked by A/B, not by taste (measured 25.08)
+    # tuned: file=docs/experiments/2026-08-25_a-cheaper-gate-signal-and-a.md
     gate_signal: distance
-    # threshold for the distance signal, tuned to the same flag budget as the cross-encoder (22 of 100)
+    # one value for both languages, so the 22-of-100 budget it was cut for holds on neither
+    # exactly: the file reads 0.3957 ru and 0.3653 en, and this sits between them
+    # tuned: file=datasets/measurements/threshold_calibration_20260830.json
     weak_distance: 0.39
-    # topic axis, not coverage: null disables it. Distance to the nearest chunk, same scale as
-    # weak_distance. At 0.50 (measured 25.08) it turns 11 refusals per 100 off-domain questions
-    # into 50, with 0 false refusals per 100 in-corpus paraphrases and 2 per 30 hand-written ones
-    topic_threshold: 0.50
+    # per language: an off-domain english question sits closer to an english corpus
+    # 1% budget for false refusals, where one more catch starts costing more than one question
+    # tuned: file=datasets/measurements/threshold_calibration_20260830.json
+    topic_threshold:
+      ru: 0.4560
+      en: 0.4374
   ingestion:
     batch_size: 100
     commit_size: 1000
+    # a shadow ceiling: the cut reads the variant's `max_chunk_size`, this is the fallback
+    # for a source with no variant policy, and it used to decide `baseline` silently
     chunk_max_size: 1024
   corpus:
     description: >-
       the technical knowledge corpus (interview banks, system-design-primer, redis docs)
-    variant: baseline
+    # the ceiling grid's winner; the three distance thresholds did not move with it
+    # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md
+    variant: clean_1024
     variants:
-      # every key here is read by the code, and `header_prefix` is derived from `chunker`
-      # rather than declared: two keys deciding one thing is how they came to disagree
+    # every key here is read by the code; `header_prefix` is derived from `chunker`
       baseline:
         chunker: legacy
         max_chunk_size: 1024
-      # point zero of the ceiling grid: same size cut, but the prefix comes from the
-      # declared root, frontmatter is parsed and the junk is gone. Isolates hygiene of
-      # the sources from the change of splitter that comes after it
+    # point zero of the ceiling grid: hygiene isolated from the change of splitter
       clean_1024:
         chunker: rooted
         max_chunk_size: 1024
-        # what the ceiling counts. This point was cut and measured with it spent on the
-        # body alone, so it says so out loud instead of inheriting a default that moves
+        # what the ceiling counts, said out loud rather than inherited from a default
         ceiling_on: body
-      # the same rules as clean_1024 and one more level of cutting: a section is split by
-      # its subheadings before it is split by size. Isolates the splitter from the hygiene
-      prefix_1024:
-        chunker: structured
-        max_chunk_size: 1024
-        # same as clean_1024 on purpose: the pair differs by splitter, and a different
-        # budget for the body would make it differ by two things at once
-        ceiling_on: body
+      # variants that lost are gone from here and from the table; their policy rides in the
+      # journal entry that measured them, so one job rebuilds any of them
   ingest_quality:
-    # what makes a source broken, in shares of its chunks. Turned by hand, printed in
-    # every report, so a verdict from last month says which gates it stood on
-    # strawman, argue with the numbers: they decide what "a clean source" means.
-    # prefix_broken used to sit here and was removed rather than repaired: it compared the
-    # rendered prefix against the same root string the prefix was rendered from, so it
-    # read 0.0 on every source of every variant and carried 25 of the weight for free
     # hard means the cut is broken, soft means it is dirty and a human should look
-    # пороги поставлены от измеренного по 177 источникам, а не от круглых чисел. В скобках
-    # то, что читается сегодня, чтобы было видно, где запас, а где ворота реально близко
+    # a ceiling abstains below MIN_BREACHING_CHUNKS: a share over few chunks reads as size
+    # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
     hard_gates:
-      section_coverage: { min: 0.4 }   # сегодня минимум по источникам 0.58, среднее 0.99
-      prefix_dominates: { max: 0.05 }  # сегодня 0.008
+      # a floor, so the abstention above does not apply: missing chunks cannot be counted
+      section_coverage: { min: 0.4 }
+      # three sources read over it, all three holding two short code answers
+      prefix_dominates: { max: 0.05 }
+    # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
     soft_gates:
-      dup_in_file: { max: 0.1 }
-      dup_in_source: { max: 0.15 }     # сегодня от 0.001 до 0.246, primer выходит грязным
+      dup_in_file: { max: 0.1 }        # max 0.0011, nothing near it
+      dup_in_source: { max: 0.15 }     # max 0.1454 (primer), mean 0.0008, nothing breaches
+      # the primer breaches and stays breaching: its nine large files do repeat navigation
       boilerplate: { max: 0.1 }
-      tiny: { max: 0.15 }              # сегодня от 0.03 до 0.07
+      tiny: { max: 0.15 }              # max 0.0599, mean 0.0046
     # the score sorts variants of one source; it never decides the verdict
     weights:
       section_coverage: 40
@@ -181,13 +114,18 @@ service:
       dup_in_source: 10
       tiny: 10
     history_per_variant: 20
+    # written into every report so a score from another formula is not read as this one.
+    # There is one formula; the field exists for the day there are two
     score_formula: v1
 
   fts:
+    # index-time: changing this re-indexes the corpus, it does not re-rank a query
     languages: { en: english, ru: russian }
     fallback: english
   repos_dir: /repos
   prompts_dir: prompts
+  # data, not settings: 173 repository names, and the only reason they are in this file is
+  # that nothing else reads them. Nothing below decides anything
   sources:
     interview:
       base_url: https://github.com/Devinterview-io
@@ -367,14 +305,20 @@ service:
         - xgboost-interview-questions
         - xml-interview-questions
 llm:
-  # what we expect OLLAMA_CONTEXT_LENGTH to be. Nothing here reaches the server: it is the
-  # number preflight compares against the live window, so the two drifting apart is visible
+  # what we expect OLLAMA_CONTEXT_LENGTH to be; the server is the authority, preflight compares
+  # the rest of the OLLAMA_* knobs (residency, loaded models) live in docker-compose.yml
   context_length: 8192
   base_url: http://ollama:11434
+  # in the order the pipeline uses them
   roles:
-    generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
+    # index time
     embedding:    { model: bge-m3 }
+    # answering. 8b again by owner's decision 30.08: gemma3 has no tool calling in ollama at all
+    # (`ollama show`: completion, vision), so the agent path refused every question on it
+    generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
+    # evaluation
     judging:      { model: qwen2.5:7b,  options: { max_tokens: 1024, temperature: 0 } }
+    # building the question sets
     paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 } }
   candidates: []
 

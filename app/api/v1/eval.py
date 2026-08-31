@@ -9,13 +9,13 @@ from evals import compare as compare_uc
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.eval import QuestionLog
-from models.registry import Pipeline
+from models.registry import MODEL_NAME_RE, Pipeline
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from use_cases import retrieval_compare
+from use_cases import rejudge, retrieval_compare
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.chat import resolve_rerank
 from use_cases.index import VARIANT_RE
@@ -29,13 +29,24 @@ RunnableOrchestrator = StrEnum(
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
-MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?$")
+
 
 
 class JobEnqueuedResponse(BaseModel):
     job_id: int
     type: str
     options: dict
+
+
+class RejudgeRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=200)
+    run_name: str = Field(min_length=1, max_length=200)
+
+
+class RejudgeResponse(BaseModel):
+    job_id: int
+    run_name: str
+    copied: int
 
 
 class ParaphraseRequest(BaseModel):
@@ -226,7 +237,7 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
             status_code=400, detail=f"{param} only applies to the agent pipeline"
         )
     if param == "model":
-        bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.match(v)]
+        bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.fullmatch(v)]
         if bad:
             raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
     elif param in ("topic_threshold", "weak_distance"):
@@ -303,6 +314,26 @@ async def enqueue_eval_run(
             "variant": request.variant,
         },
     )
+
+
+# sync on purpose: the copy is one statement against the sync session the use case owns,
+# and FastAPI runs a sync handler in its threadpool. Copying here rather than inside the
+# judge job is what makes a taken name or a missing source a 400 instead of a dead job
+@router.post("/rejudge", response_model=RejudgeResponse)
+def enqueue_rejudge(request: RejudgeRequest):
+    try:
+        copied = rejudge.copy_run(request.source, request.run_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    try:
+        job_id = job_queue.enqueue("judge_answers", {"run_name": request.run_name})
+    except BaseException:
+        # the copy is committed and the job is not: rows owned by nobody that a judge sweep
+        # would spend the card on, under a name no retry can reuse. BaseException because a
+        # cancelled request leaves exactly that
+        rejudge.delete_runs([request.run_name])
+        raise
+    return RejudgeResponse(job_id=job_id, run_name=request.run_name, copied=copied)
 
 
 @router.post("/experiment", response_model=list[JobEnqueuedResponse])

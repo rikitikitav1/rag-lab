@@ -120,10 +120,15 @@ def run(
         {"role": "user", "content": question},
     ]
     result = AgentResult(messages=messages)
+    # the axis is a distance to the corpus, so it is resolved per question rather than per
+    # run: an off-topic question in the corpus's own language lands closer than one in
+    # another language, and a single number is in effect the calibration of one of them
     threshold = (
         topic_threshold
         if topic_threshold is not None
-        else config.settings.agent.topic_threshold
+        else config.settings.agent.topic_threshold_for(
+            chat._resolve_language(question, language)
+        )
     )
     # zero is how a run switches the axis off now that the config carries a default
     topic = Topic(threshold=threshold if threshold else None)
@@ -423,6 +428,10 @@ def _log_answer(
                             "threshold": topic.threshold,
                             "score": round(topic.score, 3) if topic.score is not None else None,
                             "input": "question",
+                            # what was configured, beside what was applied: the applied
+                            # number varies with the question's language, so it is not
+                            # what two arms have to share
+                            "policy": config.settings.agent.topic_threshold,
                         }
                         if topic and topic.threshold is not None
                         else None

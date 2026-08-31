@@ -1,0 +1,8264 @@
+{
+ "what": "verdicts of two judge prompt versions retired on 2026-08-31, kept so their published deltas stay recomputable after the rows were deleted from the stand",
+ "why": "the owner asked for a registry without gaps; the numbers 3 and 4 could only be freed by removing every row that referenced them",
+ "source_run": "grid_llama31_8b_ru_plain",
+ "baseline_still_in_the_stand": "judge_language_clause_ru_judge_faithfulness=2_judge_relevance=2_repeat=2",
+ "judge": "qwen2.5:7b, temperature 0",
+ "exported_at": "2026-08-31",
+ "prompts": {
+  "v3.faithfulness": "You are a strict evaluator. Score how well the RESPONSE is grounded in the given CONTEXT:\nwhether every claim in the RESPONSE is supported by the CONTEXT.\n\nDo NOT judge whether the RESPONSE is factually true in the real world. Judge ONLY whether it follows from the CONTEXT.\nA claim that is true but absent from the CONTEXT is NOT grounded. Judge by meaning, not wording, and across languages\n(the RESPONSE and the CONTEXT may be in different languages); answering in another language is not itself ungrounded.\n\nScore from 0 to 10 (integer):\n- 10: every claim is supported by the CONTEXT (or the CONTEXT lacks the answer and the RESPONSE honestly says so).\n- 7-9: mostly grounded, one or two minor claims go beyond the CONTEXT.\n- 4-6: roughly half grounded, half unsupported or added from outside the CONTEXT.\n- 1-3: most claims are not supported by the CONTEXT.\n- 0: entirely invented, contradicts the CONTEXT, or makes up an answer when the CONTEXT is empty or irrelevant.\n\nGive the reason first, then the integer score.\n",
+  "v3.relevance": "You are a strict evaluator. Score whether the ANSWER actually addresses the QUESTION on the merits:\nwhether it gives a substantive answer, not just names the topic or echoes keywords.\n\nDo NOT judge whether the answer is factually correct or grounded in any source. Judge ONLY whether it responds to what\nwas asked. Judge by meaning, not wording, and across languages (the ANSWER and the QUESTION may be in different\nlanguages); answering in another language is not itself off-point.\n\nScore from 0 to 10 (integer):\n- 10: directly and substantively answers the QUESTION.\n- 7-9: answers well, with minor vagueness or digression.\n- 4-6: touches the topic but is partly off-point, vague, or thin.\n- 1-3: barely related to the QUESTION.\n- 0: does not answer, only names the topic, echoes keywords, lists links, or is off-topic.\n\nGive the reason first, then the integer score.\n",
+  "v4.faithfulness": "You are a strict evaluator. Score how well the RESPONSE is grounded in the given CONTEXT:\nwhether every claim in the RESPONSE is supported by the CONTEXT.\n\nDo NOT judge whether the RESPONSE is factually true in the real world. Judge ONLY whether it follows from the CONTEXT.\nA claim that is true but absent from the CONTEXT is NOT grounded. The RESPONSE and the CONTEXT may be in different languages;\nanswering in another language is not itself ungrounded.\n\nScore from 0 to 10 (integer):\n- 10: every claim is supported by the CONTEXT (or the CONTEXT lacks the answer and the RESPONSE honestly says so).\n- 7-9: mostly grounded, one or two minor claims go beyond the CONTEXT.\n- 4-6: roughly half grounded, half unsupported or added from outside the CONTEXT.\n- 1-3: most claims are not supported by the CONTEXT.\n- 0: entirely invented, contradicts the CONTEXT, or makes up an answer when the CONTEXT is empty or irrelevant.\n\nGive the reason first, then the integer score.\n",
+  "v4.relevance": "You are a strict evaluator. Score whether the ANSWER actually addresses the QUESTION on the merits:\nwhether it gives a substantive answer, not just names the topic or echoes keywords.\n\nDo NOT judge whether the answer is factually correct or grounded in any source. Judge ONLY whether it responds to what\nwas asked. The ANSWER and the QUESTION may be in different languages;\nanswering in another language is not itself off-point.\n\nScore from 0 to 10 (integer):\n- 10: directly and substantively answers the QUESTION.\n- 7-9: answers well, with minor vagueness or digression.\n- 4-6: touches the topic but is partly off-point, vague, or thin.\n- 1-3: barely related to the QUESTION.\n- 0: does not answer, only names the topic, echoes keywords, lists links, or is off-topic.\n\nGive the reason first, then the integer score.\n"
+ },
+ "runs": {
+  "judge_language_clause_ru_judge_faithfulness=3_judge_relevance=3": {
+   "round": "first, one sentence carrying two instructions",
+   "prompt_version": 3,
+   "commit": "19565fc",
+   "entry": "docs/experiments/2026-08-31_one-sentence-two-instructions.md",
+   "n": 823,
+   "scores": {
+    "78815": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78817": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78819": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78821": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "78823": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78825": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78827": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78829": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 2
+    },
+    "78831": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "78833": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78835": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78837": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78839": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78841": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78843": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78845": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78847": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78849": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78851": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78853": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78855": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78857": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78859": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78861": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78863": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78865": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78867": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "78869": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78871": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78873": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78875": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78877": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78879": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78881": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "78883": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78885": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78887": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "78889": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78891": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78893": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "78895": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 0
+    },
+    "78897": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "78899": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78901": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78903": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "78905": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "78907": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78909": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "78911": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78913": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "78915": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "78917": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78919": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78921": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78923": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78925": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78927": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78929": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78931": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78933": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78935": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78937": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "78939": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78941": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78943": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78945": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78947": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78949": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "78951": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "78953": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78955": {
+     "faithfulness": 1,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "78957": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78959": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78961": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78963": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78965": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78967": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78969": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78971": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "78973": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78975": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78977": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78979": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78981": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "78983": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "78985": {
+     "faithfulness": 4,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78987": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78989": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "78991": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78993": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "78995": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78997": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "78999": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 0
+    },
+    "79001": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79003": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79005": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79007": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79009": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79011": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79013": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79015": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79017": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79019": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79021": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79023": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79025": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79027": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "79029": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79031": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79033": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "79035": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79037": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79039": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79041": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79043": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79045": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 0
+    },
+    "79047": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79049": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "79051": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79053": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79055": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79057": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79059": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79061": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79063": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79065": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79067": {
+     "faithfulness": 1,
+     "relevance": 2,
+     "completeness": 0
+    },
+    "79069": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79071": {
+     "faithfulness": 4,
+     "relevance": 4,
+     "completeness": 4
+    },
+    "79073": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79075": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79077": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79079": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79081": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79083": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79085": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79087": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79089": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79091": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79093": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79095": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79097": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79099": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79101": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79103": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79105": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79107": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "79109": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79111": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79113": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79115": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "79117": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79119": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79121": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79123": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79125": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79127": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79129": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79131": {
+     "faithfulness": 0,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79133": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79135": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79137": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79139": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79141": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79143": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79145": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79147": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79149": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79151": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79153": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79155": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79157": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79161": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79163": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79165": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "79167": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79169": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79171": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79173": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79175": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79177": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79179": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79181": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79183": {
+     "faithfulness": 4,
+     "relevance": 9,
+     "completeness": 1
+    },
+    "79185": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "79187": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79189": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79191": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "79193": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79195": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79197": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79199": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79201": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79203": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79205": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79207": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 7
+    },
+    "79209": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79211": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79213": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79215": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79217": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79219": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79221": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79223": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79225": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79227": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79229": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79231": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79233": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79235": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79237": {
+     "faithfulness": 10,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79239": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79241": {
+     "faithfulness": 1,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "79243": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79245": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79247": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79249": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79251": {
+     "faithfulness": 1,
+     "relevance": 1,
+     "completeness": 1
+    },
+    "79253": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79255": {
+     "faithfulness": 4,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "79257": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "79259": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79261": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79263": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79265": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79267": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79269": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79271": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "79273": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79275": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79277": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79279": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79281": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79283": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79285": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79287": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79289": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79291": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79293": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79295": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79297": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79299": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79301": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79303": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79305": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79307": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "79309": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79311": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79313": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79315": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79317": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79319": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79321": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79323": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79325": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79327": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79329": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79331": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79333": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79335": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79337": {
+     "faithfulness": 4,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79339": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "79341": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79343": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79345": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79347": {
+     "faithfulness": 2,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79349": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79351": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79353": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79355": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79357": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79359": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79361": {
+     "faithfulness": 10,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "79363": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79365": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79367": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79369": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 1
+    },
+    "79371": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79373": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79375": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79377": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79379": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79381": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79383": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79385": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79387": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79389": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79391": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79393": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79395": {
+     "faithfulness": 3,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79397": {
+     "faithfulness": 4,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "79399": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 7
+    },
+    "79401": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79403": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79405": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79407": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79409": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79411": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79413": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79415": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "79417": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79419": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79421": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 4
+    },
+    "79423": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79425": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79427": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79429": {
+     "faithfulness": 1,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79431": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79433": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79435": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79437": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79439": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "79443": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79445": {
+     "faithfulness": 10,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "79447": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79449": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79451": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79453": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79455": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79457": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79459": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79461": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79463": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79465": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79467": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79469": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79471": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79473": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79475": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79477": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79479": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "79481": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79483": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79485": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79487": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79489": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79491": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79493": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79495": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "79497": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "79499": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79501": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79503": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79505": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116937": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116939": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116941": {
+     "faithfulness": 10,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "116943": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116945": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116947": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116949": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116951": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116953": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116955": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116957": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "116959": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116961": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116963": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116965": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116967": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "116969": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116971": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "116973": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "116975": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "116977": {
+     "faithfulness": 4,
+     "relevance": 2,
+     "completeness": 0
+    },
+    "116979": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "116981": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116983": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116985": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116987": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116989": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116991": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "116993": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116995": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116997": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116999": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117001": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "117003": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117005": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117007": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117009": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117011": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117013": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117015": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117017": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117019": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117021": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117023": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117025": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117027": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117029": {
+     "faithfulness": 4,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117031": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117033": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117035": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117037": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117039": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117041": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117043": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117045": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117047": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117049": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117051": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117053": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117055": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117057": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117059": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117061": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117063": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117065": {
+     "faithfulness": 9,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "117067": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 9
+    },
+    "117069": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117071": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117073": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117075": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117079": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117081": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117083": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117085": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117087": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117089": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "117091": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117093": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117095": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117097": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117099": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117101": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117103": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117105": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "117107": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117109": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117111": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 2
+    },
+    "117113": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117115": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117117": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117119": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "117121": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117123": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117125": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117127": {
+     "faithfulness": 1,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "117129": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117131": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117133": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117135": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117137": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117139": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117141": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117143": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117145": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117147": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "117149": {
+     "faithfulness": 7,
+     "relevance": 2,
+     "completeness": 1
+    },
+    "117151": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "117153": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117155": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117157": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117159": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117161": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117163": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117165": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "117167": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "117169": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "117171": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117173": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117175": {
+     "faithfulness": 4,
+     "relevance": 0,
+     "completeness": 7
+    },
+    "117177": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117179": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "117181": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117183": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117185": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117187": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117189": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117191": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117193": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117195": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117197": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117199": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117201": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117203": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117205": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117207": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "117209": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117211": {
+     "faithfulness": 0,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117213": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "117215": {
+     "faithfulness": 10,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "120972": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120974": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120976": {
+     "faithfulness": 1,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120978": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120980": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120982": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120986": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120988": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "120990": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120992": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120994": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120996": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "120998": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "121000": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121002": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121004": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "121006": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "121008": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121010": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121012": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121014": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121016": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121018": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121020": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121022": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121024": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121026": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121028": {
+     "faithfulness": 2,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121030": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121032": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121034": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121036": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121038": {
+     "faithfulness": 1,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121040": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121042": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121044": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121046": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121048": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121050": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121052": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121054": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121056": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121058": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121060": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121062": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121064": {
+     "faithfulness": 3,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121066": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121068": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121070": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121072": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121074": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121076": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121078": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121080": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121082": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 7
+    },
+    "121084": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121086": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121088": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121090": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "121092": {
+     "faithfulness": 7,
+     "relevance": 2,
+     "completeness": 7
+    },
+    "121096": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121098": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121100": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121102": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121104": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121106": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "121108": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121110": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121112": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121114": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121116": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121118": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121120": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121122": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121124": {
+     "faithfulness": 4,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "121126": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "121128": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121130": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121132": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121134": {
+     "faithfulness": 4,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121136": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121138": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121140": {
+     "faithfulness": 0,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "121142": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121144": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121146": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121148": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121150": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121152": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121154": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121156": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121158": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121160": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121162": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121164": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121166": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121168": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121170": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121172": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121174": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121176": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121178": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121180": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121182": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121184": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121186": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121188": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121190": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121192": {
+     "faithfulness": 0,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121194": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121196": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121198": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121200": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121202": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121204": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121206": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121208": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121210": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121212": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121214": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121216": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121218": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121220": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121222": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121224": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121226": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121228": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121230": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121232": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121234": {
+     "faithfulness": 2,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121236": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "121238": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121240": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121242": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121244": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "121246": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121248": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 4
+    },
+    "121250": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121252": {
+     "faithfulness": 4,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121254": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "121256": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121258": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121260": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121262": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121264": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121266": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121268": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121270": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121272": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121274": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121276": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121278": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121280": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121282": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "121284": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121286": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121288": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121290": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121292": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121294": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121296": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121298": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121300": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "121302": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121304": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121306": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121308": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121310": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "121312": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121314": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121316": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121320": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121322": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121324": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121326": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121328": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121330": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121332": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121334": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121336": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121338": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121340": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121342": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121344": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121346": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121348": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121350": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121352": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121354": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121356": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121358": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121360": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121362": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121364": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121366": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121368": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121370": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121372": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121374": {
+     "faithfulness": 0,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "121376": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121378": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121380": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121382": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121384": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121386": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121388": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121390": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121394": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121396": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121398": {
+     "faithfulness": 10,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "121400": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121402": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121404": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121406": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "121410": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121412": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121414": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121416": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121418": {
+     "faithfulness": 10,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "121420": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121422": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121424": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121426": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121428": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121430": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121432": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121434": {
+     "faithfulness": 10,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121436": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121438": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121440": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121442": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121444": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121446": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121448": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121450": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121452": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121454": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121456": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121458": {
+     "faithfulness": 10,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121460": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121462": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121464": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121466": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121468": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121470": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121472": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121474": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121476": {
+     "faithfulness": 1,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121478": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "121480": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121482": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121484": {
+     "faithfulness": 8,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121486": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121488": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121490": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121492": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121494": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121496": {
+     "faithfulness": 10,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "121498": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121500": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121502": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121504": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121506": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121508": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121510": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121512": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121514": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121516": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121518": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121520": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121522": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121524": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121526": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121528": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121530": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121532": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121534": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121536": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121538": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "121540": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121542": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121544": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121548": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121550": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121552": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121554": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 4
+    },
+    "121556": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121558": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121560": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "121562": {
+     "faithfulness": 0,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121564": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121566": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121568": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121570": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121572": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121574": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121576": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121578": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121580": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121582": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121584": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121586": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121588": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121590": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121592": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121594": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121596": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121598": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121600": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121602": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121604": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121606": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121608": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121610": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121612": {
+     "faithfulness": 0,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121614": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121616": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121618": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121620": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121622": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121624": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121626": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121628": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121630": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121632": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121634": {
+     "faithfulness": 9,
+     "relevance": 9,
+     "completeness": 9
+    },
+    "121636": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121638": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121640": {
+     "faithfulness": 4,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "121642": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121644": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121646": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121648": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121650": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121652": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121654": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121656": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121658": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121660": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121662": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    }
+   }
+  },
+  "judge_clause_language_judge_faithfulness=4_judge_relevance=4": {
+   "round": "second, arm A: across languages only",
+   "prompt_version": 4,
+   "commit": "ad6ae21",
+   "entry": "notes/arc/hygiene_arc_log.md, section on the second round",
+   "n": 823,
+   "scores": {
+    "78815": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78817": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "78819": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78821": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78823": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78825": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78827": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78829": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 2
+    },
+    "78831": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78833": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78835": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78837": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78839": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78841": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78843": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "78845": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78847": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "78849": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78851": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78853": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78855": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78857": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78859": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78861": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78863": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78865": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "78867": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "78869": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78871": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78873": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78875": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78877": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78879": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78881": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78883": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78885": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78887": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "78889": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78891": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78893": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "78895": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "78897": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "78899": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78901": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78903": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "78905": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "78907": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78909": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "78911": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78913": {
+     "faithfulness": 4,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "78915": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "78917": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78919": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78921": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78923": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78925": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78927": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78929": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78931": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78933": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78935": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78937": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "78939": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78941": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78943": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78945": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78947": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78949": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "78951": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78953": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78955": {
+     "faithfulness": 1,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "78957": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78959": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78961": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78963": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78965": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78967": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78969": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78971": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "78973": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78975": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78977": {
+     "faithfulness": 2,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "78979": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78981": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78983": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "78985": {
+     "faithfulness": 4,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78987": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78989": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "78991": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "78993": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "78995": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "78997": {
+     "faithfulness": 10,
+     "relevance": 8,
+     "completeness": 10
+    },
+    "78999": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 0
+    },
+    "79001": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79003": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79005": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79007": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79009": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79011": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79013": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79015": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79017": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79019": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79021": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79023": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79025": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79027": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "79029": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79031": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79033": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "79035": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79037": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79039": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79041": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79043": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79045": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "79047": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79049": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "79051": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79053": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79055": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79057": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79059": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79061": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79063": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79065": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79067": {
+     "faithfulness": 0,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "79069": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79071": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 4
+    },
+    "79073": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79075": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79077": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79079": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79081": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79083": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79085": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79087": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79089": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79091": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79093": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79095": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79097": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79099": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79101": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79103": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79105": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79107": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "79109": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79111": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79113": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79115": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79117": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79119": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79121": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79123": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79125": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79127": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79129": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79131": {
+     "faithfulness": 1,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79133": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79135": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79137": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79139": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79141": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79143": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79145": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79147": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79149": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79151": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79153": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79155": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79157": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79161": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79163": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79165": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "79167": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79169": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79171": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79173": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79175": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79177": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79179": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79181": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79183": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "79185": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "79187": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79189": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79191": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "79193": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79195": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79197": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79199": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79201": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "79203": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79205": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79207": {
+     "faithfulness": 7,
+     "relevance": 2,
+     "completeness": 7
+    },
+    "79209": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79211": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79213": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79215": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "79217": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79219": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79221": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79223": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79225": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79227": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79229": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79231": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79233": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79235": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79237": {
+     "faithfulness": 10,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79239": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79241": {
+     "faithfulness": 0,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "79243": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79245": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79247": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79249": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79251": {
+     "faithfulness": 2,
+     "relevance": 1,
+     "completeness": 1
+    },
+    "79253": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79255": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79257": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "79259": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79261": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79263": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79265": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79267": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79269": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79271": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "79273": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79275": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79277": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79279": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79281": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79283": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79285": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79287": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79289": {
+     "faithfulness": 1,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79291": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79293": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79295": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79297": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79299": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79301": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79303": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79305": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79307": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "79309": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79311": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79313": {
+     "faithfulness": 9,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79315": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79317": {
+     "faithfulness": 10,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79319": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79321": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79323": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79325": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79327": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79329": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79331": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "79333": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79335": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79337": {
+     "faithfulness": 4,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79339": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "79341": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79343": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79345": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "79347": {
+     "faithfulness": 0,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79349": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79351": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79353": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79355": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79357": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79359": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79361": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "79363": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79365": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79367": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79369": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 1
+    },
+    "79371": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79373": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79375": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79377": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79379": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79381": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79383": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79385": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79387": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79389": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79391": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79393": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "79395": {
+     "faithfulness": 1,
+     "relevance": 0,
+     "completeness": 4
+    },
+    "79397": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 1
+    },
+    "79399": {
+     "faithfulness": 7,
+     "relevance": 2,
+     "completeness": 7
+    },
+    "79401": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79403": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79405": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79407": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79409": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79411": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79413": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79415": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "79417": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79419": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "79421": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 4
+    },
+    "79423": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79425": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79427": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79429": {
+     "faithfulness": 1,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79431": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79433": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79435": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79437": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "79439": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "79443": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79445": {
+     "faithfulness": 10,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "79447": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79449": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79451": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79453": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79455": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79457": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79459": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79461": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79463": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79465": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79467": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79469": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79471": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79473": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "79475": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79477": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79479": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "79481": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79483": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "79485": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79487": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79489": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79491": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "79493": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79495": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "79497": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "79499": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79501": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79503": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "79505": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "116937": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116939": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116941": {
+     "faithfulness": 10,
+     "relevance": 0,
+     "completeness": 7
+    },
+    "116943": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116945": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116947": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116949": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116951": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116953": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116955": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116957": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "116959": {
+     "faithfulness": 2,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116961": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116963": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116965": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116967": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "116969": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116971": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116973": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 1
+    },
+    "116975": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "116977": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "116979": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "116981": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116983": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116985": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116987": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116989": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116991": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "116993": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116995": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116997": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "116999": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117001": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "117003": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117005": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117007": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117009": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117011": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117013": {
+     "faithfulness": 10,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "117015": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117017": {
+     "faithfulness": 8,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117019": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117021": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117023": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117025": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117027": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117029": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117031": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117033": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117035": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117037": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117039": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117041": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117043": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117045": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117047": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117049": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117051": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117053": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117055": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117057": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117059": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117061": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117063": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117065": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117067": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 9
+    },
+    "117069": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117071": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117073": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117075": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117079": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117081": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117083": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117085": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117087": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117089": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "117091": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117093": {
+     "faithfulness": 10,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "117095": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117097": {
+     "faithfulness": 2,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117099": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117101": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117103": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117105": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "117107": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117109": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117111": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 2
+    },
+    "117113": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117115": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117117": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117119": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "117121": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117123": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117125": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117127": {
+     "faithfulness": 0,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "117129": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117131": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117133": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117135": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117137": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117139": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117141": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117143": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117145": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117147": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 0
+    },
+    "117149": {
+     "faithfulness": 7,
+     "relevance": 2,
+     "completeness": 1
+    },
+    "117151": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "117153": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117155": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117157": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117159": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117161": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117163": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117165": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "117167": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "117169": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "117171": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "117173": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117175": {
+     "faithfulness": 1,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "117177": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117179": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "117181": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117183": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "117185": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "117187": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117189": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117191": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117193": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117195": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117197": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117199": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "117201": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117203": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117205": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117207": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "117209": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117211": {
+     "faithfulness": 0,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "117213": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "117215": {
+     "faithfulness": 10,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "120972": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120974": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120976": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120978": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120980": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120982": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120986": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120988": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "120990": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120992": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120994": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120996": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "120998": {
+     "faithfulness": 0,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "121000": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121002": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121004": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "121006": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121008": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121010": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121012": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121014": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121016": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121018": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121020": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121022": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121024": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121026": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121028": {
+     "faithfulness": 2,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121030": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121032": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121034": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121036": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121038": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121040": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121042": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121044": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121046": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121048": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121050": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121052": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121054": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121056": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121058": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121060": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121062": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 4
+    },
+    "121064": {
+     "faithfulness": 1,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121066": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121068": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121070": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121072": {
+     "faithfulness": 4,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121074": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121076": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121078": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121080": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121082": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121084": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121086": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121088": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121090": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121092": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121096": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121098": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121100": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121102": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121104": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121106": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 4
+    },
+    "121108": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121110": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121112": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121114": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121116": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121118": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121120": {
+     "faithfulness": 0,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121122": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121124": {
+     "faithfulness": 2,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "121126": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121128": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "121130": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121132": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121134": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121136": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121138": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121140": {
+     "faithfulness": 0,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "121142": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121144": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121146": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121148": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121150": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121152": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121154": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121156": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121158": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121160": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121162": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121164": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121166": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121168": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121170": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121172": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121174": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121176": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121178": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121180": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "121182": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121184": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121186": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "121188": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121190": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121192": {
+     "faithfulness": 0,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121194": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121196": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121198": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121200": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121202": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121204": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "121206": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121208": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121210": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121212": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121214": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121216": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121218": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121220": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121222": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121224": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121226": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121228": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121230": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121232": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121234": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 1
+    },
+    "121236": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121238": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121240": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121242": {
+     "faithfulness": 9,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121244": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 1
+    },
+    "121246": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121248": {
+     "faithfulness": 7,
+     "relevance": 0,
+     "completeness": 4
+    },
+    "121250": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121252": {
+     "faithfulness": 4,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121254": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121256": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121258": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121260": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121262": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121264": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121266": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121268": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121270": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121272": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121274": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121276": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121278": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121280": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121282": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "121284": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121286": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121288": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121290": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121292": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121294": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121296": {
+     "faithfulness": 8,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121298": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121300": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121302": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121304": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121306": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121308": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121310": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 1
+    },
+    "121312": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121314": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121316": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121320": {
+     "faithfulness": 2,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121322": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121324": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "121326": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121328": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121330": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121332": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121334": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121336": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121338": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121340": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121342": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121344": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121346": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121348": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121350": {
+     "faithfulness": 10,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "121352": {
+     "faithfulness": 4,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "121354": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121356": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121358": {
+     "faithfulness": 1,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "121360": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121362": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121364": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121366": {
+     "faithfulness": 10,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121368": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121370": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121372": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121374": {
+     "faithfulness": 0,
+     "relevance": 0,
+     "completeness": 0
+    },
+    "121376": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121378": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121380": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121382": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121384": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121386": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121388": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121390": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121394": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121396": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121398": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121400": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121402": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121404": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121406": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "121410": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121412": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121414": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121416": {
+     "faithfulness": 1,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121418": {
+     "faithfulness": 10,
+     "relevance": 9,
+     "completeness": 4
+    },
+    "121420": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121422": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121424": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121426": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121428": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121430": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121432": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121434": {
+     "faithfulness": 10,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121436": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121438": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121440": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121442": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121444": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121446": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121448": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121450": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121452": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121454": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121456": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121458": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121460": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121462": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121464": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121466": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121468": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121470": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121472": {
+     "faithfulness": 1,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121474": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121476": {
+     "faithfulness": 1,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121478": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121480": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121482": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121484": {
+     "faithfulness": 8,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121486": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121488": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121490": {
+     "faithfulness": 2,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121492": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121494": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121496": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 4
+    },
+    "121498": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121500": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121502": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121504": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121506": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121508": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121510": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121512": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121514": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121516": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121518": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121520": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 7
+    },
+    "121522": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121524": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121526": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121528": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121530": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121532": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121534": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121536": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121538": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121540": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "121542": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121544": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121548": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121550": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121552": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 4
+    },
+    "121554": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 4
+    },
+    "121556": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121558": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121560": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 7
+    },
+    "121562": {
+     "faithfulness": 2,
+     "relevance": 0,
+     "completeness": 4
+    },
+    "121564": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121566": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121568": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 1
+    },
+    "121570": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121572": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121574": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121576": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121578": {
+     "faithfulness": 9,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121580": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121582": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121584": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121586": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121588": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 0
+    },
+    "121590": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121592": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121594": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121596": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121598": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121600": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121602": {
+     "faithfulness": 7,
+     "relevance": 1,
+     "completeness": 0
+    },
+    "121604": {
+     "faithfulness": 7,
+     "relevance": 4,
+     "completeness": 0
+    },
+    "121606": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121608": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121610": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121612": {
+     "faithfulness": 0,
+     "relevance": 10,
+     "completeness": 0
+    },
+    "121614": {
+     "faithfulness": 0,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121616": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121618": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121620": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121622": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121624": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121626": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121628": {
+     "faithfulness": 10,
+     "relevance": 8,
+     "completeness": 7
+    },
+    "121630": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121632": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121634": {
+     "faithfulness": 9,
+     "relevance": 8,
+     "completeness": 9
+    },
+    "121636": {
+     "faithfulness": 10,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121638": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121640": {
+     "faithfulness": 7,
+     "relevance": 2,
+     "completeness": 1
+    },
+    "121642": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121644": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121646": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121648": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121650": {
+     "faithfulness": 7,
+     "relevance": 9,
+     "completeness": 7
+    },
+    "121652": {
+     "faithfulness": 9,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121654": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 4
+    },
+    "121656": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 10
+    },
+    "121658": {
+     "faithfulness": 7,
+     "relevance": 10,
+     "completeness": 7
+    },
+    "121660": {
+     "faithfulness": 7,
+     "relevance": 7,
+     "completeness": 7
+    },
+    "121662": {
+     "faithfulness": 7,
+     "relevance": 8,
+     "completeness": 7
+    }
+   }
+  }
+ }
+}

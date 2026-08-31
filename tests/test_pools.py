@@ -66,3 +66,21 @@ def test_only_an_mcp_prefix_counts_as_remote_evidence():
     assert pools.has_remote_evidence(_log(sources=["mcp:deepwiki__ask_question"]))
     assert not pools.has_remote_evidence(_log(sources=["mcp_notes/readme.md"]))
     assert not pools.has_remote_evidence(_log())
+
+
+def test_the_report_carries_a_bucket_for_every_outcome_the_enum_knows(monkeypatch):
+    # the pre-registration of the controls listed three buckets while the data held four:
+    # both the plan and the report were written from memory instead of from Outcome, so the
+    # test is on the report the reader sees, not on the tuple restating its own definition
+    import outcomes
+    from evals import generation_metrics
+
+    log = SimpleNamespace(
+        question=SimpleNamespace(original_text="q", marked_sources=["a.md"], kind=None),
+        metrics={}, answered=True, answer="the corpus says hello",
+        faithfulness=8, relevance=9, completeness=7, sources=[{"source": "a.md"}],
+    )
+    monkeypatch.setattr(generation_metrics, "load_logs", lambda run_name: [log])
+    reported = generation_metrics.evaluate("run")["outcomes"]
+
+    assert set(reported) == {o.value for o in outcomes.Outcome}

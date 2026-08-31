@@ -1,0 +1,271 @@
+set_name	language	kind	marked_sources	original_text	source_question_text
+veto_v1	eng	veto	cheatsheets/ledger-examples.md	What are some examples of how to use Ledger?	Ledger examples
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate realistic company names using FFaker?	Faker::Company
+veto_v1	eng	veto	cheatsheets/nodejs-stream.md	What are Node.js streams used for?	Node.js streams
+veto_v1	eng	veto	cheatsheets/vim-easyalign.md	How do I use command mode in Vim for easier alignment?	Command mode
+veto_v1	eng	veto	cheatsheets/vim-digraphs.md	What are vim digraphs?	Vim digraphs
+veto_v1	eng	veto	cheatsheets/datetime.md	What are some frequently used ways to represent time?	Common time formats
+veto_v1	eng	veto	cheatsheets/goby.md	What testing tools are available for GoBy?	Testing framework
+veto_v1	eng	veto	cheatsheets/tig.md	What keyboard shortcuts are available in Tig?	Shortcut keys
+veto_v1	eng	veto	cheatsheets/html-microformats.md	What are microformats used for in HTML?	Microformats
+veto_v1	eng	veto	cheatsheets/phoenix-migrations.md	How can I manage database schema changes in a Phoenix application?	Phoenix: Ecto migrations
+veto_v1	eng	veto	cheatsheets/stimulus-reflex.md	What are some useful strategies for working with stimulus-reflex?	Helpful tips
+veto_v1	eng	veto	cheatsheets/react-router.md	How does React Router work?	React-router
+veto_v1	eng	veto	cheatsheets/phoenix-routing.md	How does routing work in Phoenix?	Phoenix: Routing
+veto_v1	eng	veto	cheatsheets/rails-i18n.md	How can I use internationalization with Rails models?	ActiveRecord
+veto_v1	eng	veto	cheatsheets/typescript.md	How can I determine the data type of a value in TypeScript?	Type extraction
+veto_v1	eng	veto	cheatsheets/ractive.md	How are attributes modified in Ractive?	Transformed attributes
+veto_v1	eng	veto	cheatsheets/ronn.md	What are the different formatting options available in Ronn?	Formatting tags
+veto_v1	eng	veto	cheatsheets/ie_bugs.md	What are some known issues with older versions of Internet Explorer?	Legacy IE bugs
+veto_v1	eng	veto	cheatsheets/ledger-csv.md	What is the structure of a file saved in Ledger's CSV format?	Ledger CSV format
+veto_v1	eng	veto	cheatsheets/bash.md	What miscellaneous commands are available in Bash?	Miscellaneous
+veto_v1	eng	veto	cheatsheets/rails-helpers.md	What are Rails helpers used for?	Rails helpers
+veto_v1	eng	veto	cheatsheets/mocha-blanket.md	What is a mocha blanket?	Mocha blanket
+veto_v1	eng	veto	cheatsheets/python.md	How can I work with files in Python?	File manipulation
+veto_v1	eng	veto	cheatsheets/sass.md	How can I use color values in Sass?	Color functions
+veto_v1	eng	veto	cheatsheets/rbenv.md	How can I manage different Ruby versions with rbenv?	Using versions
+veto_v1	eng	veto	cheatsheets/lua.md	What are some fundamental Lua code snippets?	Basic examples
+veto_v1	eng	veto	cheatsheets/package-json.md	What information does a package.json file contain?	package.json
+veto_v1	eng	veto	cheatsheets/mocha-tdd.md	How can I use Mocha.js for Test Driven Development?	Mocha.js TDD interface
+veto_v1	eng	veto	cheatsheets/underscore-string.md	What can I do with the underscore-string library?	Underscore-string
+veto_v1	eng	veto	cheatsheets/commander.js.md	What is Commander.js?	Commander.js
+veto_v1	eng	veto	cheatsheets/umdjs.md	How can I load JavaScript modules using a universal loader?	Universal JS module loader
+veto_v1	eng	veto	cheatsheets/ansible-modules.md	What are Ansible modules used for?	Ansible modules
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate German names using FFaker?	Faker::NameDE
+veto_v1	eng	veto	cheatsheets/editorconfig.md	How can I configure my code editor for consistent formatting?	editorconfig
+veto_v1	eng	veto	cheatsheets/rspec.md	How can I write effective tests using RSpec?	Writing tests
+veto_v1	eng	veto	cheatsheets/goby.md	What are native classes like in Go?	Native class (Golang-oriented)
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate realistic product data using Faker?	Faker::Product
+veto_v1	eng	veto	cheatsheets/typescript.md	What does the `Keyof` type operator do in TypeScript?	Keyof Type Operator
+veto_v1	eng	veto	cheatsheets/spacemacs.md	What are the core features of the traditional Emacs editor within Spacemacs?	Emacs standard
+veto_v1	eng	veto	cheatsheets/rst.md	What is ReStructuredText used for?	ReStructuredText
+veto_v1	eng	veto	cheatsheets/layout-thrashing.md	What causes layout thrashing and how can I prevent it?	Layout thrashing
+veto_v1	eng	veto	cheatsheets/vimscript-functions.md	How can I work with dictionaries and lists in Vimscript?	Dictionaries and lists
+veto_v1	eng	veto	cheatsheets/ronn.md	How can I use Ronn with npm?	Using with npm
+veto_v1	eng	veto	cheatsheets/goby.md	How do you define methods in Go?	Method definition
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate fake geographic data using FFaker?	Faker::Geolocation
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate realistic Australian phone numbers using Faker?	Faker::PhoneNumberAU
+veto_v1	eng	veto	cheatsheets/fish-shell.md	What are some helpful pre-installed commands in the Fish shell?	Useful built-in functions
+veto_v1	eng	veto	cheatsheets/awesome-redux.md	What are some great tools and resources for working with Redux?	Awesome Redux
+veto_v1	eng	veto	cheatsheets/claude-code.md	How can I connect Claude to my preferred code editor?	IDE Integrations
+veto_v1	eng	veto	cheatsheets/git-revisions.md	How do I work with different versions of my code using Git?	Git revisions
+veto_v1	eng	veto	cheatsheets/rails-migrations.md	How can I manage database changes in a Rails application?	Rails migrations
+veto_v1	eng	veto	cheatsheets/rails-controllers.md	What are Rails controllers used for?	Rails controllers
+veto_v1	eng	veto	cheatsheets/pry.md	How can I use Pry with my shell?	Shell integration
+veto_v1	eng	veto	cheatsheets/ronn.md	What are some common parts used in RONN code?	Frequently-used sections
+veto_v1	eng	veto	cheatsheets/clip.md	How can I use the command line to interact with CLIP?	Command Line Interface Pages
+veto_v1	eng	veto	cheatsheets/docker-compose.md	How do I use Docker Compose?	docker-compose
+veto_v1	eng	veto	cheatsheets/vimscript-snippets.md	What are some useful Vimscript code examples I can use?	Vimscript snippets
+veto_v1	eng	veto	cheatsheets/ansible-examples.md	What are some examples of using Ansible?	Ansible examples
+veto_v1	eng	veto	cheatsheets/goby.md	How can I use enumerators and lazy evaluation in Go?	Enumerator & lazy
+veto_v1	eng	veto	cheatsheets/css-system-font-stack.md	What are some examples of system fonts I can use in my CSS?	CSS system fonts
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate placeholder HTML text using FFaker?	Faker::HTMLIpsum
+veto_v1	eng	veto	cheatsheets/lua.md	What are the different operators in Lua and how are they represented in their metatables?	Operators (and their metatable names)
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate realistic phone numbers using FFaker?	Faker::PhoneNumber
+veto_v1	eng	veto	cheatsheets/sass.md	What additional functions are available in Sass?	Other functions
+veto_v1	eng	veto	cheatsheets/go.md	How can I handle errors in Go code?	Error control
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate realistic internet data using Faker?	Faker::Internet
+veto_v1	eng	veto	cheatsheets/packs.md	How can I control which software packages are installed and used?	Manage packs
+veto_v1	eng	veto	cheatsheets/ledger-format.md	What is the correct way to structure data in a ledger?	Ledger format
+veto_v1	eng	veto	cheatsheets/typescript.md	How can I tell TypeScript about a variable's type even if it's unclear?	Type assertions
+veto_v1	eng	veto	cheatsheets/jest.md	How can I simulate function behavior during testing with Jest?	Mock functions
+veto_v1	eng	veto	cheatsheets/analytics.js.md	How can I use Google Analytics's JavaScript library?	Google Analytics's analytics.js
+veto_v1	eng	veto	cheatsheets/command_line.md	How can I count words in a file using the command line?	wc (Word count)
+veto_v1	eng	veto	cheatsheets/postgresql-json.md	Can you see more examples of how to work with JSON in PostgreSQL?	More examples
+veto_v1	eng	veto	cheatsheets/css-antialias.md	How can I make text in my website look smoother using CSS?	CSS antialiasing
+veto_v1	eng	veto	cheatsheets/html-meta.md	What are meta tags used for in HTML documents?	HTML meta tags
+veto_v1	eng	veto	cheatsheets/rails-routes.md	How do I define routes for individual resources in Rails?	Single resource (`resource`)
+veto_v1	eng	veto	cheatsheets/nodejs-path.md	How does the Node.js platform handle file paths?	Node.js path API
+veto_v1	eng	veto	cheatsheets/cordova.md	What is Apache Cordova?	Apache Cordova
+veto_v1	eng	veto	cheatsheets/ffaker.md	How can I generate fake names with specific initials using FFaker?	Faker::NameSN
+veto_v1	eng	veto	cheatsheets/http-status.md	What are the HTTP status codes used for WebDAV?	WebDAV Status Codes
+veto_v1	rus	veto	notes/databases/redis/use-cases.md	Как можно использовать Redis для ограничения частоты запросов?	Rate limiting
+veto_v1	rus	veto	notes/llm/eval-metrics.md	Как рассчитать точность попадания в k результатов?	hit@k (он же recall@k на одном релевантном)
+veto_v1	rus	veto	notes/protocols/protobuf.md	Как эволюционировала структура протобуфов?	Эволюция схемы
+veto_v1	rus	veto	notes/databases/redis/basics.md	Как работает модель выполнения Redis?	Модель выполнения
+veto_v1	rus	veto	notes/tools/git-fork-workflow.md	Как работать с конфликтами при объединении в форк?	Git на форке (upstream-конфликты)
+veto_v1	rus	veto	notes/languages/ruby/blocks-procs-lambdas.md	В чем основные различия между процами и лямбдами?	proc vs lambda — 2 отличия (главное на собес)
+veto_v1	rus	veto	notes/messaging/nats.md	Где можно настроить параметры сообщений?	Где выбирать
+veto_v1	rus	veto	notes/protocols/graphql.md	Какие недостатки и подводные камни есть у GraphQL?	Минусы и грабли
+veto_v1	rus	veto	notes/messaging/comparison.md	Какие брокерские платформы доступны?	Среди брокеров
+veto_v1	rus	veto	notes/protocols/protobuf.md	Как работают номера полей в Protobuf?	Номера полей (ключевое)
+veto_v1	rus	veto	notes/databases/postgresql/window-functions.md	Что такое оконные функции и как их использовать в PostgreSQL?	Оконные функции (window functions)
+veto_v1	rus	veto	notes/databases/redis/use-cases.md	Как использовать Redis для распределенных блокировок?	Распределённые локи
+veto_v1	rus	veto	notes/databases/postgresql/locks.md	Как работают блокировки в PostgreSQL?	Блокировки (PostgreSQL)
+veto_v1	rus	veto	notes/databases/redis/basics.md	Как масштабировать и сделать Redis отказоустойчивым?	Масштабирование и отказоустойчивость
+veto_v1	rus	veto	notes/messaging/rabbitmq.md	В чем основные отличия между Kafka и RabbitMQ?	Kafka vs RabbitMQ (коротко)
+veto_v1	rus	veto	notes/languages/ruby/concurrency-gvl.md	Что такое глобальный виртуальный лок и как он влияет на одновременную работу в Ruby?	GVL / concurrency
+veto_v1	rus	veto	notes/protocols/grpc.md	В чем разница между gRPC и REST/JSON?	gRPC vs REST/JSON
+veto_v1	rus	veto	notes/messaging/comparison.md	В чем разница между двумя типами сообщений?	Две разные вещи
+veto_v1	rus	veto	notes/protocols/protobuf.md	Что такое протоколы Protobuf?	Protocol Buffers (protobuf)
+veto_v1	rus	veto	notes/llm/eval-metrics.md	Как оценивается эффективность поиска с помощью метрик hit@k и MRR?	Retrieval-метрики: hit@k и MRR
+veto_v1	rus	veto	notes/messaging/kafka.md	В чем отличие Kafka от обычной очереди?	Чем отличается от обычной очереди
+veto_v1	rus	veto	notes/llm/models.md	Какие модели LLM работают на моей видеокарте RTX 4070 мобильной?	Под моё железо (RTX 4070 mobile, 8 ГБ VRAM)
+veto_v1	rus	veto	notes/llm/hybrid-retrieval.md	Зачем использовать как ключевые слова, так и семантические запросы в гибридной системе поиска?	Keyword vs semantic (зачем оба)
+veto_v1	rus	veto	notes/databases/postgresql/pg-indexes.md	Как организованы индексы в PostgreSQL?	По структуре (алгоритму)
+veto_v1	rus	veto	notes/databases/postgresql/postgis.md	Как использовать алгоритм k-nearest neighbors в PostGIS?	KNN (ближайшие)
+veto_v1	rus	veto	notes/databases/postgresql/pg-tips.md	Какие полезные особенности есть в PostgreSQL?	PostgreSQL: фишки
+veto_v1	rus	veto	notes/protocols/websockets.md	Как функционируют WebSocket?	Как работает
+veto_v1	rus	veto	notes/databases/postgresql/full-text-search.md	Как работает сортировка результатов поиска в PostgreSQL?	Ранжирование
+veto_v1	rus	veto	notes/messaging/kafka.md	"Что означает понятие ""семантики доставки"" в контексте Kafka?"	Семантика доставки
+veto_v1	rus	veto	notes/databases/postgresql/isolation-levels.md	Какие уровни изоляции доступны в PostgreSQL?	Уровни изоляции транзакций (PostgreSQL)
+veto_v1	rus	veto	notes/databases/postgresql/cte.md	Как работает гибридный поиск с использованием CTE в PostgreSQL?	Гибридный поиск (RAG-кейс)
+veto_v1	rus	veto	notes/databases/postgresql/full-text-search.md	Как выполнить поиск по ключевым словам в PostgreSQL?	Пример keyword-поиска
+veto_v1	rus	veto	notes/databases/postgresql/postgis.md	Какие основные возможности предоставляет PostGIS?	Ключевые функции
+veto_v1	rus	veto	notes/databases/redis/basics.md	Как работает ограничение срока действия и удаление данных в Redis?	TTL и вытеснение
+veto_v1	rus	veto	notes/llm/models.md	Какие модели генераторов были протестированы вручную и какие результаты показали?	Генераторы (прогнал eval руками 17.07, вопрос про MVCC, temp 0)
+veto_v1	rus	veto	notes/databases/redis/basics.md	Как сохранить данные в Redis?	Персистентность
+veto_v1	rus	veto	notes/databases/postgresql/postgis.md	Как использовать геопространственные данные в PostgreSQL?	PostGIS (гео в Postgres)
+veto_v1	rus	veto	notes/databases/postgresql/ltree.md	Как работать с иерархическими путями в PostgreSQL?	ltree — иерархические пути (PostgreSQL)
+veto_v1	rus	veto	notes/llm/rag-concepts.md	Как работает технология RAG?	Пайплайн RAG
+veto_v1	rus	veto	notes/llm/rag-concepts.md	Что такое RAG и как это работает в рамках проекта rag-lab?	RAG — концепции (по проекту rag-lab)
+veto_v1	rus	veto	notes/llm/rag-concepts.md	Как работает векторное хранилище pgvector?	Векторное хранилище (pgvector)
+veto_v1	rus	veto	notes/protocols/websockets.md	Когда нужно использовать WebSockets, а когда нет?	Когда WebSocket, когда нет
+veto_v1	rus	veto	notes/llm/rag-concepts.md	Как можно улучшить работу языковой модели?	Augmentation
+veto_v1	rus	veto	notes/databases/redis/use-cases.md	Какие задачи можно решать с помощью Redis?	Redis (сценарии)
+veto_v1	rus	veto	notes/databases/redis/use-cases.md	Как использовать Redis в качестве кэша?	Кэш (главный сценарий)
+veto_v1	rus	veto	notes/databases/redis/use-cases.md	Как можно использовать Redis для создания лидеровбордов и рейтингов?	Лидерборды и рейтинги
+veto_v1	rus	veto	notes/messaging/comparison.md	Когда лучше использовать брокеров, а когда очереди задач?	Брокеры и очереди задач: когда что
+veto_v1	rus	veto	notes/messaging/comparison.md	Как выбрать подходящий мессенджер?	Как выбирать (одной фразой)
+veto_v1	rus	veto	notes/llm/eval-metrics.md	Какие метрики используются для оценки наших моделей?	Наши числа (M4, 30 in-corpus вопросов)
+veto_v1	rus	veto	notes/llm/eval-metrics.md	Какие подводные камни и ограничения следует учитывать при оценке языковых моделей?	Грабли и оговорки
+veto_v1	rus	veto	notes/databases/postgresql/pg-indexes.md	В чем разница между кластеризованными и некластеризованными индексами в PostgreSQL?	Кластерный vs нет
+veto_v1	rus	veto	notes/databases/postgresql/cte.md	Как избежать проблем с оптимизацией запросов при использовании Common Table Expressions (CTEs)?	Грабли: барьер оптимизации
+veto_v1	rus	veto	notes/llm/models.md	Какие типы моделей, такие как эмбеддеры и генераторы, доступны для локального использования с помощью Ollama?	Модели — эмбеддеры и генераторы (локальные, Ollama)
+veto_v1	rus	veto	notes/databases/postgresql/postgis.md	Как найти объекты в PostgreSQL PostGIS, расположенные рядом друг с другом?	Рецепт «найти рядом»
+veto_v1	rus	veto	notes/databases/postgresql/cte.md	Можно ли использовать CTE для изменения данных в PostgreSQL?	Data-modifying CTE
+veto_v1	rus	veto	notes/databases/postgresql/ltree.md	Какой тип данных лучше использовать для представления иерархии в PostgreSQL: ltree, text[], или jsonb?	ltree vs text[] vs jsonb (для иерархии)
+veto_v1	rus	veto	notes/databases/postgresql/postgis.md	Что такое SRID и как она используется в PostgreSQL PostGIS?	SRID (система координат)
+veto_v1	rus	veto	notes/databases/postgresql/postgis.md	В чем разница между геометрией и географией в PostgreSQL?	geometry vs geography
+veto_v1	rus	veto	notes/llm/eval-metrics.md	"В чем практическая разница между метриками ""hit@k"" и MRR?"	hit@k vs MRR (в чём разница на практике)
+veto_v1	rus	veto	notes/languages/ruby/metaprogramming.md	Что происходит, когда метод не найден в Ruby?	method_missing
+veto_v1	rus	veto	notes/protocols/grpc.md	Какие типы вызовов существуют в gRPC?	Типы вызовов
+veto_v1	rus	veto	notes/llm/models.md	Как оценивается производительность модели M5?	Задача на M5 (eval)
+veto_v1	rus	veto	notes/databases/postgresql/cte.md	Как использовать рекурсивные запросы в PostgreSQL?	Recursive CTE
+veto_v1	rus	veto	notes/databases/postgresql/full-text-search.md	Когда лучше использовать полнотекстовый поиск, а когда — векторизацию?	Когда FTS, когда вектор
+veto_v1	rus	veto	notes/databases/postgresql/mvcc-vacuum.md	Как работает механизм MVCC в PostgreSQL и как с ним взаимодействует команда VACUUM?	MVCC / VACUUM
+veto_v1	rus	veto	notes/databases/postgresql/postgis.md	Как создать пространственный индекс в PostgreSQL?	Пространственный индекс (обязателен)
+veto_v1	rus	veto	notes/databases/postgresql/pg-indexes.md	Как работают индексы в PostgreSQL?	Индексы (PostgreSQL)
+veto_v1	rus	veto	notes/llm/hybrid-retrieval.md	Как работает гибридная система поиска, которая объединяет BM25, векторы и RRF?	Гибридный поиск: BM25 + вектор + RRF
+veto_v1	rus	veto	notes/databases/postgresql/full-text-search.md	Как настроить язык для полнотекстового поиска в PostgreSQL?	Конфигурация языка (критично для русского)
+veto_v1	rus	veto	notes/databases/postgresql/window-functions.md	Когда могут быть полезны функции окна в задачах по поиску информации?	Где пригодится в RAG
+veto_v1	rus	veto	notes/llm/hybrid-retrieval.md	Как реализована полнотекстовая поисковая система в гибридном подходе?	PG-реализация (full-text search)
+veto_v1	rus	veto	notes/messaging/sidekiq.md	Что нужно знать перед собеседованием о Sidekiq?	Что важно на собес
+veto_v1	rus	veto	notes/databases/postgresql/explain-analyze.md	Как работает команда EXPLAIN ANALYZE в PostgreSQL?	EXPLAIN / EXPLAIN ANALYZE
+veto_v1	rus	veto	notes/databases/postgresql/full-text-search.md	Как работает полнотекстовый поиск в PostgreSQL?	Full-text search (PostgreSQL)
+veto_v1	rus	veto	notes/databases/postgresql/ltree.md	Какие операторы доступны для работы с LTree в PostgreSQL?	Операторы (ради них всё)
+veto_v1	rus	veto	notes/databases/redis/basics.md	Какие типы данных поддерживает Redis?	Структуры данных
+veto_v1	rus	veto	notes/languages/ruby/blocks-procs-lambdas.md	В чем разница между блоками, процами и лямбдами в Ruby?	block / proc / lambda
+veto_v1	rus	veto	notes/protocols/protobuf.md	В чем основные различия между протоколами Proto3 и Proto2?	proto3 vs proto2
+veto_v1	rus	veto	notes/databases/postgresql/migrations-without-locks.md	Как выполнять миграции больших таблиц в PostgreSQL без блокировки?	👑 Миграции больших таблиц без локов
+veto_v1	rus	veto	notes/messaging/kafka.md	Какие основные концепции используются в Kafka?	Ключевые понятия
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How are call reply objects released in Redis?	Releasing call reply objects
+veto_v1	eng	veto	redis-doc/docs/manual/patterns/distributed-locks.md	Why are failover-based implementations insufficient for distributed locks?	Why Failover-based Implementations Are Not Enough
+veto_v1	eng	veto	redis-doc/docs/reference/eviction/index.md	What different strategies can Redis use to remove data when memory is full?	Eviction policies
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/functions-intro.md	What are Redis functions and how can I use them?	Redis functions
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How can I directly interact with Redis keys?	Low level access to keys
+veto_v1	eng	veto	redis-doc/docs/interact/pubsub.md	How can I receive Redis messages that fit a specific pattern and are sent to a subscribed channel?	Messages matching both a pattern and a channel subscription
+veto_v1	eng	veto	redis-doc/docs/reference/cluster-spec.md	What are the different roles that clients and servers play within a Redis cluster?	Client and Server roles in the Redis cluster protocol
+veto_v1	eng	veto	redis-doc/docs/data-types/streams.md	How does Redis automatically manage claims for streams?	Automatic claiming
+veto_v1	eng	veto	redis-doc/docs/manual/client-side-caching.md	What should I do if my Redis client loses its connection to the server?	What to do when losing connection with the server
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	What kinds of data can Redis modules use?	Modules data types
+veto_v1	eng	veto	redis-doc/docs/about/users.md	What companies or organizations use Redis?	Who's using Redis?
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	What are the commands available for working with strings in Redis?	Key API for String type
+veto_v1	eng	veto	redis-doc/docs/reference/clients.md	What can I use the CLIENT command for in Redis?	The CLIENT Command
+veto_v1	eng	veto	redis-doc/docs/get-started/faq.md	"What is the origin of the name ""Redis""?"	"Where does the name ""Redis"" come from?"
+veto_v1	eng	veto	redis-doc/docs/interact/transactions.md	How does the WATCH command work in Redis?	WATCH explained
+veto_v1	eng	veto	redis-doc/docs/management/security/_index.md	How can I prevent NoSQL injection vulnerabilities in my Redis database?	String escaping and NoSQL injection
+veto_v1	eng	veto	redis-doc/docs/reference/eviction/index.md	How does the new Least Frequently Used (LFU) eviction mode work in Redis?	The new LFU mode
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	How can I search through keys and hash values in Redis?	Scanning keyspace and hashes
+veto_v1	eng	veto	redis-doc/docs/management/optimization/benchmarks/index.md	What are some benchmarks for measuring Redis performance?	Redis benchmark
+veto_v1	eng	veto	redis-doc/docs/reference/command-arguments.md	What are the different types of arguments used in Redis commands?	Redis command arguments
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/_index.md	How can I write programs that interact with Redis?	Redis programmability
+veto_v1	eng	veto	redis-doc/docs/management/optimization/memory-optimization.md	When should I use hashes in Redis to improve memory usage?	Use hashes when possible
+veto_v1	eng	veto	redis-doc/docs/manual/client-side-caching.md	How does Redis implement client-side caching?	The Redis implementation of client-side caching
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How can I manage the cleanup of modules in Redis?	Module cleanup
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	What are the functions available for working with strings in Redis?	String objects APIs
+veto_v1	eng	veto	redis-doc/docs/management/optimization/memory-optimization.md	How can I optimize Redis's memory usage?	Memory allocation
+veto_v1	eng	veto	redis-doc/docs/management/replication.md	What is a Replication ID in Redis?	Replication ID explained
+veto_v1	eng	veto	redis-doc/docs/connect/_index.md	How can I interact with Redis using the command line?	Redis command line interface
+veto_v1	eng	veto	redis-doc/docs/management/security/acl.md	In what situations would using Access Control Lists be beneficial?	When ACLs are useful
+veto_v1	eng	veto	redis-doc/docs/install/install-redisinsight/install-on-aws.md	How do I install RedisInsight on an Amazon EC2 instance?	Install on AWS EC2
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	What's the easiest type of Redis module to create?	The simplest module you can write
+veto_v1	eng	veto	redis-doc/docs/manual/client-side-caching.md	What does the NOLOOP option do?	The NOLOOP option
+veto_v1	eng	veto	redis-doc/docs/reference/protocol-spec.md	How does Redis communication work between clients and servers?	Request-Response model
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/lua-debugging.md	How can I shorten debugging commands in Redis using Lua?	Abbreviating debugging commands
+veto_v1	eng	veto	redis-doc/docs/management/debugging.md	How can I get Redis's core file?	Obtaining the core file
+veto_v1	eng	veto	redis-doc/docs/reference/sentinel-clients.md	How does Sentinel help discover available Redis services?	Redis service discovery via Sentinel
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/_index.md	How can I execute read-only commands in Redis using scripts?	Read-only scripts
+veto_v1	eng	veto	redis-doc/docs/management/replication.md	How safe is data replication if the master Redis server doesn't have persistence enabled?	Safety of replication when master has persistence turned off
+veto_v1	eng	veto	redis-doc/docs/install/install-redis/install-redis-on-mac-os.md	How can I install Redis on macOS?	Installation
+veto_v1	eng	veto	redis-doc/docs/_index.md	What information is provided in this documentation?	Documentation
+veto_v1	eng	veto	redis-doc/docs/management/optimization/memory-optimization.md	What are some ways to perform efficient memory management at the lowest levels in Redis?	Bit and byte level operations
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	How can I filter Redis module commands using an API?	Module Command Filter API
+veto_v1	eng	veto	redis-doc/docs/management/troubleshooting.md	What can I do if I'm experiencing problems with Redis?	Troubleshooting Redis
+veto_v1	eng	veto	redis-doc/docs/reference/protocol-spec.md	What are the rules for how data is serialized in Redis?	Redis serialization protocol specification
+veto_v1	eng	veto	redis-doc/docs/reference/key-specs.md	What are the specific requirements for Redis keys?	Command key specifications
+veto_v1	eng	veto	redis-doc/docs/management/sentinel.md	What is a basic introduction to Redis Sentinel?	A quick tutorial
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How can I write commands that work with Redis Cluster?	Writing commands compatible with Redis Cluster
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How can I retrieve data stored in Redis using modules?	Accessing Redis keys from modules
+veto_v1	eng	veto	redis-doc/docs/connect/cli.md	How can I execute Lua code within Redis?	Running Lua scripts
+veto_v1	eng	veto	redis-doc/docs/data-types/bitfields.md	What are Redis bitfields?	Redis bitfields
+veto_v1	eng	veto	redis-doc/docs/manual/patterns/bulk-loading.md	How can I efficiently import a large dataset into Redis?	Bulk loading using the Redis protocol
+veto_v1	eng	veto	redis-doc/docs/get-started/data-store.md	How can I store and access information using Redis?	Store and retrieve data
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How can I generate new keys in Redis?	Creating new keys
+veto_v1	eng	veto	redis-doc/docs/data-types/streams.md	What are the key distinctions between Redis streams and Kafka partitions?	Differences with Kafka (TM) partitions
+veto_v1	eng	veto	redis-doc/docs/connect/cli.md	How can I track the performance speed of my Redis servers?	Monitoring the latency of Redis instances
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/eval-intro.md	How can I use Lua to write scripts for Redis?	Scripting with Lua
+veto_v1	eng	veto	redis-doc/docs/management/replication.md	What happens to key expiration settings during Redis replication?	How Redis replication deals with expires on keys
+veto_v1	eng	veto	redis-doc/docs/management/scaling.md	How can I expand my Redis instance's capabilities using a cluster?	Scale with Redis Cluster
+veto_v1	eng	veto	redis-doc/docs/install/install-redisinsight/install-on-docker.md	How can I install RedisInsight using Docker?	Install on Docker
+veto_v1	eng	veto	redis-doc/docs/reference/arm.md	What are the CPU alignment requirements for Redis?	Redis /proc/cpu/alignment requirements
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How can I process collected data from Redis?	Iterating aggregated values
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/functions-intro.md	What options can I use with Redis functions?	Function flags
+veto_v1	eng	veto	redis-doc/docs/management/security/_index.md	What security measures are in place for Redis?	Security model
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/lua-debugging.md	How can I debug Lua code running within Redis?	Debugging Lua scripts in Redis
+veto_v1	eng	veto	redis-doc/docs/reference/internals/rdd.md	What are the changes that have been made to RDD over time?	History of revisions
+veto_v1	eng	veto	redis-doc/docs/management/replication.md	How does replication work in Redis?	Redis replication
+veto_v1	eng	veto	redis-doc/docs/management/replication.md	How does Redis replication function?	How Redis replication works
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	What tools are available for working with Redis modules?	Modules utility APIs
+veto_v1	eng	veto	redis-doc/docs/management/persistence.md	What are some drawbacks to using Append Only Files (AOF) for Redis persistence?	AOF disadvantages
+veto_v1	eng	veto	redis-doc/docs/interact/pubsub.md	How are messages delivered in Redis Pub/Sub?	Delivery semantics
+veto_v1	eng	veto	redis-doc/docs/reference/gopher.md	What security risks should I be aware of when using gophers?	SECURITY WARNING
+veto_v1	eng	veto	redis-doc/docs/reference/modules/_index.md	How does Redis automatically manage its memory usage?	Automatic memory management
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	How can I use Redis to receive notifications about changes in a module's keyspace?	Module Keyspace Notifications API
+veto_v1	eng	veto	redis-doc/docs/get-started/faq.md	What motivated Salvatore Sanfilippo to create Redis?	Why did Salvatore Sanfilippo start the Redis project?
+veto_v1	eng	veto	redis-doc/docs/reference/clients.md	How can I configure Redis to accept connections from clients?	Accepting Client Connections
+veto_v1	eng	veto	redis-doc/docs/management/debugging.md	How can I get a stack trace in Redis?	Obtaining the stack trace
+veto_v1	eng	veto	redis-doc/docs/get-started/faq.md	Can Redis leverage multiple processors effectively?	How can Redis use multiple CPUs or cores?
+veto_v1	eng	veto	redis-doc/docs/manual/patterns/_index.md	What are some common design patterns for using Redis?	Redis programming patterns
+veto_v1	eng	veto	redis-doc/docs/reference/modules/modules-api-ref.md	How can I remove keys from a Redis database?	Key eviction API
+veto_v1	eng	veto	redis-doc/docs/interact/programmability/lua-api.md	What is a Redis object?	"<a name=""redis_object""></a>_redis_ object"
+veto_v1	eng	veto	system-design-primer/README.md	What are the key components and functionalities of an application layer in a software system?	Application layer
+veto_v1	eng	veto	system-design-primer/README.md	What different ways can I ensure my system is always accessible?	Availability patterns
+veto_v1	eng	veto	system-design-primer/solutions/system_design/web_crawler/README.md	How would I design a web crawler?	Design a web crawler
+veto_v1	eng	veto	system-design-primer/README.md	How does the domain name system work?	Domain name system
+veto_v1	eng	veto	system-design-primer/README.md	How can I balance the performance and scalability of my system?	Performance vs scalability
+veto_v1	eng	veto	system-design-primer/README.md	How can I use Anki for learning and memorization?	Anki flashcards
+veto_v1	eng	veto	system-design-primer/solutions/system_design/twitter/README.md	How can I design a system for displaying user timelines and searching tweets on Twitter?	Design the Twitter timeline and search
+veto_v1	eng	veto	system-design-primer/README.md	What are some common system design interview questions and how can I solve them?	System design interview questions with solutions
+veto_v1	eng	veto	system-design-primer/solutions/system_design/query_cache/README.md	How can I design a key-value cache for storing recent web server query results?	Design a key-value cache to save the results of the most recent web server queries
+veto_v1	eng	veto	system-design-primer/README.md	What's the difference between availability and consistency in a system?	Availability vs consistency
+veto_v1	eng	veto	system-design-primer/README.md	What is a content delivery network and how does it work?	Content delivery network
+veto_v1	eng	veto	system-design-primer/README.md	How does communication work in a well-designed system?	Communication
+veto_v1	eng	veto	system-design-primer/README.md	How does a load balancer distribute network traffic?	Load balancer
+veto_v1	eng	veto	system-design-primer/README.md	How does a reverse proxy function as a web server?	Reverse proxy (web server)
+veto_v1	eng	veto	system-design-primer/README.md	What are some common topics covered in system design discussions?	Index of system design topics
+veto_v1	eng	veto	system-design-primer/README.md	What are some fundamental concepts to learn about designing systems?	System design topics: start here
+veto_v1	eng	veto	system-design-primer/README.md	What are different approaches to ensuring data consistency in a system?	Consistency patterns
+veto_v1	eng	veto	system-design-primer/solutions/system_design/mint/README.md	How would you design the website for Mint.com?	Design Mint.com
+veto_v1	eng	veto	system-design-primer/solutions/system_design/pastebin/README.md	How would you design a service like Pastebin?	Design Pastebin.com (or Bit.ly)
+veto_v1	eng	veto	system-design-primer/solutions/system_design/scaling_aws/README.md	How can I build a system on AWS capable of handling millions of users?	Design a system that scales to millions of users on AWS
+veto_v1	eng	veto	system-design-primer/README.md	What is a good strategy for answering a system design interview question?	How to approach a system design interview question
+veto_v1	eng	veto	system-design-primer/README.md	What is the relationship between latency and throughput in system design?	Latency vs throughput
+veto_v1	eng	veto	system-design-primer/README.md	What are some common object-oriented design interview questions and their solutions?	Object-oriented design interview questions with solutions
+veto_v1	eng	veto	system-design-primer/README.md	Is this document still being actively worked on?	Under development
+veto_v1	eng	veto	system-design-primer/README.md	What are the key concepts involved in designing scalable systems?	The System Design Primer
+veto_v1	eng	veto	system-design-primer/README.md	How can I help improve this system design primer?	Contributing
+veto_v1	eng	veto	system-design-primer/solutions/system_design/sales_rank/README.md	How can I design a system to calculate product sales ranks within specific categories?	Design Amazon's sales rank by category feature
+veto_v1	eng	veto	system-design-primer/solutions/system_design/social_graph/README.md	What data structures would be best suited for building a social network?	Design the data structures for a social network
+veto_v1	eng	veto	system-design-primer/README.md	How can asynchronous programming improve system design?	Asynchronism
+veto_v1	eng	veto	system-design-primer/README.md	How can I get in touch with the project maintainers?	Contact info

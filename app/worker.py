@@ -11,6 +11,10 @@ log = logging_setup.get_logger(__name__)
 
 POLL_INTERVAL = 3
 MAX_ATTEMPTS = 3
+# a deferral waits for something outside the job (a model pull, a role becoming ready) and
+# is not a failure, so it has a ceiling of its own. Counted in seconds waited, because the
+# delay is the handler's to choose and counting deferrals made the budget depend on it
+MAX_DEFERRED_SECONDS = 3600
 
 Deferred = job_handlers.Deferred
 HANDLERS = job_handlers.HANDLERS
@@ -42,14 +46,35 @@ def run_once(queues: list[str]) -> bool:
         job_queue.complete(claimed.id, elapsed=elapsed)
         log.info("worker.done", id=claimed.id, type=claimed.type, elapsed=elapsed)
     except Deferred as d:
+        # a deferral is not a failure and does not touch `attempts`, so without a ceiling
+        # of its own a job waiting for something that never arrives (a model tag that does
+        # not pull, a role nobody registers) holds its lane for the life of the process
+        waited = claimed.options.get("deferred_seconds", 0) + d.delay_seconds
+        if waited > MAX_DEFERRED_SECONDS:
+            job_queue.fail(
+                claimed.id,
+                {"error": f"waited {waited}s for what it needs and gave up: {d}",
+                 "deferred_seconds": waited},
+            )
+            log.error(
+                "worker.deferred_out",
+                id=claimed.id,
+                type=claimed.type,
+                deferred_seconds=waited,
+            )
+            _fail_the_experiment_waiting_on(claimed)
+            return True
         job_queue.reschedule(
-            claimed.id, claimed.options, timedelta(seconds=d.delay_seconds)
+            claimed.id,
+            {**claimed.options, "deferred_seconds": waited},
+            timedelta(seconds=d.delay_seconds),
         )
         log.info(
             "worker.deferred",
             id=claimed.id,
             type=claimed.type,
             retry_in=d.delay_seconds,
+            deferred_seconds=waited,
         )
     except Exception as e:
         elapsed = round(time.perf_counter() - start, 3)

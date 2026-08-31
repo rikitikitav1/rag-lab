@@ -1,3 +1,4 @@
+import math
 import time
 from datetime import datetime, timezone
 from typing import Literal
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
-from use_cases import retrieval_compare
+from use_cases import rejudge, retrieval_compare
 from use_cases.chat import resolve_rerank
 
 from api.v1.eval import validate_axis_values, validate_param_values, value_suffix
@@ -26,16 +27,30 @@ router = APIRouter(prefix="/experiment", tags=["experiments"])
 # experiment that cannot sweep the corpus is the one sweep this branch exists to run
 GENERATION_PARAMS = frozenset({"k", "max_hops", "model", "variant"})
 
+# one arm is one pass over the dataset, so the grid is a bill of hours the door can read
+# before anything is enqueued. Grids run so far hold two to six arms
+MAX_ARMS = 64
+
+
+def refuse_oversized_grid(axes: dict[str, list]) -> None:
+    arms = math.prod(len(values) for values in axes.values())
+    if arms > MAX_ARMS:
+        raise ValueError(
+            f"{sorted((n, len(v)) for n, v in axes.items())} is {arms} arms,"
+            f" over the cap of {MAX_ARMS}: sweep fewer axes or fewer values"
+        )
+
 
 class ExperimentCreate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=120)
     kind: ExperimentKind = ExperimentKind.generation
-    dataset: str
+    # a rejudge names `source_run` instead: its answers already exist
+    dataset: str | None = None
     # an upper bound, not a count: the arms drop questions with no embedding and no
     # marked source, and how many were actually measured is in results.procedure.questions
-    sample_size: int | None = None
+    sample_size: int | None = Field(default=None, ge=1, le=10000)
     sample_seed: int = 0
-    question_ids: list[int] | None = None
+    question_ids: list[int] | None = Field(default=None, max_length=10000)
     # the corpus every arm reads unless `variant` is the swept parameter. Without it the
     # fan-out ran the configured default while the record said nothing about it
     variant: str | None = None
@@ -46,13 +61,38 @@ class ExperimentCreate(BaseModel):
     # the generation kind keeps its closed set; a comparison names one of its own axes,
     # and the validator below decides which rule applies
     param: str = "k"
-    param_values: list[int | str] = Field(default_factory=list)
+    param_values: list[int | str] = Field(default_factory=list, max_length=MAX_ARMS)
     # a retrieval comparison moves several variables at once; param names the one it is
     # reported along, and param_values is filled from it so older readers keep working
     axes: dict[str, list] = Field(default_factory=dict)
+    # a rejudge holds the answers still: this names the run whose rows every arm copies
+    source_run: str | None = None
 
     @model_validator(mode="after")
     def _check(self):
+        if self.kind == ExperimentKind.rejudge:
+            if not self.source_run:
+                raise ValueError("a rejudge needs source_run: the answers it re-reads")
+            # a rejudge copies the whole run it names, so a sample is refused rather than
+            # accepted and dropped: a discarded field reads as a plan nobody carried out
+            if self.sample_size is not None or self.question_ids:
+                raise ValueError("a rejudge copies a whole run; it takes no sample")
+            rejudge.validate_axes(self.axes)
+            refuse_oversized_grid(self.axes)
+            if self.param not in self.axes:
+                raise ValueError(
+                    f"param must name one of the axes, got {self.param!r}"
+                    f" against {sorted(self.axes)}"
+                )
+            names = [
+                retrieval_compare.arm_name(a) for a in retrieval_compare.arms(self.axes)
+            ]
+            if len(set(names)) != len(names):
+                raise ValueError(f"arms do not have distinct names: {sorted(names)}")
+            self.param_values = list(self.axes[self.param])
+            return self
+        if not self.dataset:
+            raise ValueError("dataset is required for this kind of experiment")
         if self.kind == ExperimentKind.generation:
             if self.param not in GENERATION_PARAMS:
                 raise ValueError(
@@ -82,6 +122,7 @@ class ExperimentCreate(BaseModel):
         # door is where they belong
         if self.param == "source":
             raise ValueError("source stratifies a comparison, it cannot be the axis of record")
+        refuse_oversized_grid(self.axes)
         grid = retrieval_compare.arms(self.axes)
         names = [retrieval_compare.arm_name(arm) for arm in grid]
         if len(set(names)) != len(names):
@@ -95,7 +136,7 @@ class ExperimentResponse(BaseModel):
     name: str | None
     kind: ExperimentKind
     status: ExperimentStatus
-    dataset: str
+    dataset: str | None
     sample_size: int | None
     sample_seed: int | None
     question_ids: list[int] | None
@@ -173,7 +214,9 @@ async def create_experiment(
         name=request.name,
         kind=request.kind,
         status=ExperimentStatus.draft,
-        dataset=request.dataset,
+        # a rejudge names its source run here: the column is not null, and the row is
+        # flushed below, before the branch that used to assign it
+        dataset=request.dataset or request.source_run,
         sample_size=request.sample_size,
         sample_seed=request.sample_seed,
         question_ids=ids,
@@ -189,6 +232,65 @@ async def create_experiment(
     )
     session.add(exp)
     await session.flush()
+
+    if request.kind == ExperimentKind.rejudge:
+        arms = retrieval_compare.arms(request.axes)
+        base = request.name or f"rejudge_{int(time.time())}"
+        names = [f"{base}_{retrieval_compare.arm_name(a)}" for a in arms]
+        # a pinned version the seed never loaded dies inside the judge, one log at a time,
+        # while the job still reports done. Knowable here with one query
+        missing = await run_in_threadpool(rejudge.unseeded_prompt_versions, request.axes)
+        if missing:
+            raise HTTPException(
+                status_code=400, detail=f"no such judge prompt versions: {missing}"
+            )
+        # an unregistered judge would be pulled and deferred every thirty seconds for ever,
+        # stranding the experiment: the arm names a judge, it does not order one
+        unready = await run_in_threadpool(rejudge.judges_not_ready, request.axes)
+        if unready:
+            raise HTTPException(
+                status_code=400, detail=f"these judges are not pulled and ready: {unready}"
+            )
+        try:
+            await run_in_threadpool(
+                rejudge.refuse_oversized_fanout, request.source_run, len(arms)
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        # the whole fan-out is one transaction: half-made copies commit while the
+        # experiment rolls back, and the names are then burned for the identical retry
+        try:
+            await run_in_threadpool(rejudge.copy_runs, request.source_run, names)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        # a rejudge obeys none of these: its answers were produced by the source run, and
+        # a record naming a pipeline it did not run is the defect the digests exist against
+        exp.sample_size = None
+        exp.question_ids = None
+        exp.procedure = {
+            "source_run": request.source_run,
+            "base": base,
+            # which arm each run name holds, written down rather than left to the order
+            # the grid happens to produce: an arm added later moves that order
+            "arms": rejudge.stored_arms(list(zip(arms, names, strict=True))),
+        }
+        exp.run_names = names
+        exp.status = ExperimentStatus.running
+        exp.started_at = datetime.now(timezone.utc)
+        for arm_name, arm in zip(names, arms, strict=True):
+            job_queue.add_job(
+                session, "judge_answers", rejudge.arm_options(arm, arm_name)
+            )
+        try:
+            await session.commit()
+        except BaseException:
+            # BaseException, not Exception: a client disconnect raises CancelledError,
+            # which walks past `except Exception` and leaves the copies behind under names
+            # `_refuse_bad_pair` then refuses for ever
+            await run_in_threadpool(rejudge.delete_runs, names)
+            raise
+        await session.refresh(exp)
+        return exp
 
     if request.kind == ExperimentKind.retrieval:
         # declared is not measurable: a policy in the config with no rows in the table
@@ -234,6 +336,112 @@ async def create_experiment(
     exp.status = ExperimentStatus.running
     exp.started_at = datetime.now(timezone.utc)
     return await commit_and_refresh(session, exp)
+
+
+class ArmsAdd(BaseModel):
+    # arms one by one rather than a grid: the caller knows which arm it wants, and the
+    # product of the widened axes would also name every arm the experiment already ran
+    arms: list[dict] = Field(min_length=1)
+
+
+@router.post("/{id}/arms", response_model=ExperimentResponse)
+async def add_arms(
+    id: int, request: ArmsAdd, session: AsyncSession = Depends(get_session)
+):
+    # locked because the status is read and then written, and the worker that aggregates
+    # this experiment writes the same column from its own session
+    exp = (
+        await session.scalars(
+            select(Experiment).where(Experiment.id == id).with_for_update()
+        )
+    ).first()
+    if exp is None:
+        raise HTTPException(status_code=404, detail=f"no experiment {id}")
+    if exp.kind != ExperimentKind.rejudge:
+        raise HTTPException(
+            status_code=409,
+            detail=f"only a rejudge gains arms without a rerun, this one is '{exp.kind}'",
+        )
+    # from `aggregated` only, and said as such rather than through `can_advance`, which
+    # also admits `draft` and `failed`. A failed experiment has unjudged rows, so it would
+    # take the arms, go back to `running` and never complete its series again
+    if exp.status != ExperimentStatus.aggregated:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cannot add arms to an experiment in status '{exp.status}'"
+            " (needs 'aggregated')",
+        )
+    try:
+        rejudge.validate_arms(request.arms)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    base = (exp.procedure or {}).get("base") or exp.name or f"rejudge_{exp.id}"
+    names = [f"{base}_{retrieval_compare.arm_name(a)}" for a in request.arms]
+    taken = sorted(set(names) & set(exp.run_names))
+    if taken:
+        raise HTTPException(
+            status_code=400, detail=f"the experiment already has these arms: {taken}"
+        )
+    if len(exp.run_names) + len(names) > retrieval_compare.GRID_CAP:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{len(exp.run_names)} arms plus {len(names)} is over the cap of"
+            f" {retrieval_compare.GRID_CAP}",
+        )
+    added = rejudge.folded_axes(request.arms)
+    missing = await run_in_threadpool(rejudge.unseeded_prompt_versions, added)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"no such judge prompt versions: {missing}")
+    unready = await run_in_threadpool(rejudge.judges_not_ready, added)
+    if unready:
+        raise HTTPException(
+            status_code=400, detail=f"these judges are not pulled and ready: {unready}"
+        )
+    source_run = (exp.procedure or {}).get("source_run")
+    if not source_run:
+        raise HTTPException(
+            status_code=409,
+            detail=f"experiment {id} does not record the run its arms copy",
+        )
+    try:
+        await run_in_threadpool(
+            rejudge.refuse_oversized_fanout, source_run, len(names), len(exp.run_names)
+        )
+        await run_in_threadpool(rejudge.copy_runs, source_run, names)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    pairs = rejudge.paired_arms(exp) + list(zip(request.arms, names, strict=True))
+    # reassigned rather than mutated: these are JSONB columns, and an in-place append
+    # leaves the session with nothing to flush
+    exp.procedure = (exp.procedure or {}) | {"arms": rejudge.stored_arms(pairs)}
+    exp.axes = {
+        name: values + [v for v in added.get(name, []) if v not in values]
+        for name, values in ({**added, **exp.axes}).items()
+    }
+    exp.param_values = list(exp.axes.get(exp.param, exp.param_values))
+    exp.run_names = exp.run_names + names
+    # the old report stays: the new one overwrites it when the arms are judged, and an arm
+    # that never finishes would otherwise leave no report at all. `finished_at` going to
+    # null is what says it is not current
+    exp.status = ExperimentStatus.running
+    exp.finished_at = None
+    exp.elapsed = None
+    # elapsed is counted from here, or an experiment that gains an arm the next day
+    # reports a day of work it did not do
+    exp.started_at = datetime.now(timezone.utc)
+    for arm, run_name in zip(request.arms, names, strict=True):
+        job_queue.add_job(session, "judge_answers", rejudge.arm_options(arm, run_name))
+    try:
+        await session.commit()
+    except BaseException:
+        # BaseException: a disconnected client cancels the task, and CancelledError walks
+        # past `except Exception` leaving copies under names nothing can reuse
+        await run_in_threadpool(rejudge.delete_runs, names)
+        raise
+    await session.refresh(exp)
+    return exp
 
 
 # the list gives the shape of each experiment, never its contents: a retrieval record

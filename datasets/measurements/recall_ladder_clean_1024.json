@@ -1,1 +1,1 @@
-{"required_ef": null, "recall_by_ef": {"100": 0.971, "200": null, "400": null}, "plan_by_ef": {"100": "index", "200": "sort", "400": "sort"}, "recall_gate": 0.98, "set": "paraphrased_v2_ru", "variant": "clean_1024", "questions": 823}
+{"required_ef": 100, "recall_by_ef": {"100": 1.0}, "plan_by_ef": {"100": "index"}, "recall_gate": 0.98, "set": "paraphrased_v2_ru", "variant": "clean_1024", "questions": 823, "fingerprint": {"variant": "clean_1024", "chunks": 12102, "sources": 177, "last_chunk_id": 100599}}

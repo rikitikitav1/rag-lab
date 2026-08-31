@@ -20,3 +20,31 @@ def test_nothing_stale_stays_quiet(monkeypatch):
     monkeypatch.setattr(worker.log, "warning", lambda *a, **kw: (_ for _ in ()).throw(AssertionError))
 
     worker.reclaim(["default"])
+
+
+def test_a_deferral_has_a_ceiling_of_its_own(monkeypatch):
+    # a deferral never touched `attempts`, so a job waiting for a model that does not pull
+    # held its lane for ever. Counted in seconds, because the delay is the handler's
+    import worker
+
+    failed, rescheduled = [], []
+    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, **kw: failed.append(error))
+    monkeypatch.setattr(
+        worker.job_queue, "reschedule",
+        lambda id, options, delay, **kw: rescheduled.append(options.get("deferred_seconds")),
+    )
+    monkeypatch.setattr(worker, "_fail_the_experiment_waiting_on", lambda claimed: None)
+
+    def _defer(options):
+        raise worker.Deferred(30)
+
+    monkeypatch.setitem(worker.HANDLERS, "judge_answers", _defer)
+    claimed = SimpleNamespace(id=1, type="judge_answers", options={"deferred_seconds": 0})
+    monkeypatch.setattr(worker.job_queue, "claim_next", lambda queues: claimed)
+
+    worker.run_once(["cpu"])
+    assert rescheduled == [30], "an early deferral is rescheduled with the time it waited"
+
+    claimed.options = {"deferred_seconds": worker.MAX_DEFERRED_SECONDS}
+    worker.run_once(["cpu"])
+    assert failed and "gave up" in failed[0]["error"]

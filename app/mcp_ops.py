@@ -41,8 +41,9 @@ def run_metrics(
     name="compare_runs",
     description=(
         "Compare several runs side by side. Returns per_value metrics keyed by "
-        "run_name and an RRF composite (k=60) ranking over the three generation "
-        "axes (retrieval hit_at_k/mrr are reported but excluded from the fusion "
+        "run_name and an RRF composite (k=60) ranking over five axes: the three "
+        "judged ones, the off-domain refusal rate and the supported rate "
+        "(retrieval hit_at_k/mrr are reported but excluded from the fusion "
         "since hit_at_k is monotonic in k). winner is the top-ranked run."
     ),
     annotations={"readOnlyHint": True},
@@ -58,8 +59,8 @@ def compare_runs(
 @mcp_ops.tool(
     name="compare_pools",
     description=(
-        "Compare runs pool by pool: in_corpus, out_of_corpus, off_domain. Per arm "
-        "returns judged counts, the three generation axes, how often the answer "
+        "Compare runs pool by pool: in_corpus, out_of_corpus, off_domain, rejected. Per arm "
+        "returns judged counts, the three judged axes, how often the answer "
         "came from a remote tool against the corpus, how often the coverage gate "
         "fired, latency (avg and p50) and the outcome histogram. Per pair of runs "
         "returns a paired Wilcoxon test over the same questions. Use instead of "

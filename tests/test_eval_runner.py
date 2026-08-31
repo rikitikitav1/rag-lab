@@ -219,8 +219,11 @@ def test_phased_snapshot_keeps_the_device_used_during_rerank(monkeypatch):
     )
     monkeypatch.setattr(runner.rerank, "device", lambda: "cpu")
 
+    # a run measuring the processor says so: the card guard now sees the cross-encoder
+    # itself, and a reranker on the cpu is exactly what it refuses
     runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None, variant="baseline"
+        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None,
+        variant="baseline", allow_cpu=True,
     )
 
     assert logged == ["cpu", "cpu"]
@@ -245,6 +248,8 @@ def test_agent_runs_get_the_fallback_policy(monkeypatch):
     monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1"])
     monkeypatch.setattr(runner.db, "corpus_variants", lambda: [{"variant": "baseline"}])
     monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: False)
+    monkeypatch.setattr(runner.search_depth, "resolve", lambda *a, **kw: 100)
+    monkeypatch.setattr(runner, "_walks_the_index", lambda variant, depth: True)
     monkeypatch.setattr(runner.job_queue, "enqueue", lambda *a, **kw: None)
     monkeypatch.setattr(runner.agent, "run", lambda text, **kw: seen.append(kw["fallback_policy"]))
 
@@ -341,7 +346,7 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
     )
     monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
     monkeypatch.setattr(runner, "_answer_one", lambda *a, **kw: calls.append(("answer",)))
-    monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda allow_cpu: None)
+    monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda allow_cpu, use_rerank=False: None)
     answered, cancelled = runner._run_sequential(
         ["q1", "q2"], "run", None, runner.Pipeline.agent, None, None, None, "llama3.1:8b",
         None, None, None, None, None, None, False, "baseline",
@@ -350,3 +355,36 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
     assert [c[1] for c in calls if c[0] == "unload"] == [
         "reranker", "embedding", "generation"
     ]
+
+
+def test_a_run_refuses_when_its_depth_stopped_walking_the_index(monkeypatch):
+    # the preflight is a snapshot taken before the queue moved: the crossover shifts when a
+    # neighbouring variant is indexed, and the planner then sorts while the record says hnsw
+    import pytest
+
+    monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1"])
+    monkeypatch.setattr(runner.db, "corpus_variants", lambda: [{"variant": "baseline"}])
+    monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: False)
+    monkeypatch.setattr(runner.search_depth, "resolve", lambda *a, **kw: 100)
+    monkeypatch.setattr(runner, "_walks_the_index", lambda variant, depth: False)
+
+    with pytest.raises(RuntimeError, match="no longer walks its index"):
+        runner.run("run", set_name="s", pipeline="agent")
+
+
+def test_the_card_guard_sees_the_cross_encoder_before_the_set_is_reranked(monkeypatch):
+    # it used to be asked between retrieval and reranking, where the model is still None,
+    # so it first fired after the whole set had been reranked on the processor
+    import pytest
+
+    warmed = []
+    _stub_phases(monkeypatch)
+    monkeypatch.setattr(runner.rerank, "warm", lambda: warmed.append(True))
+    monkeypatch.setattr(runner.rerank, "off_the_card", lambda: "reranker on cpu")
+
+    with pytest.raises(RuntimeError, match="not on the GPU"):
+        runner.run_phased(
+            "run", ["q1"], use_rerank=True, language=None, k=2, model=None, job_id=None,
+            variant="baseline",
+        )
+    assert warmed, "the model is loaded before it is asked where it sits"

@@ -1,0 +1,271 @@
+set_name	language	kind	marked_sources	original_text	source_question_text
+veto_headings	eng	heading	cheatsheets/ledger-examples.md	Ledger examples	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::Company	
+veto_headings	eng	heading	cheatsheets/nodejs-stream.md	Node.js streams	
+veto_headings	eng	heading	cheatsheets/vim-easyalign.md	Command mode	
+veto_headings	eng	heading	cheatsheets/vim-digraphs.md	Vim digraphs	
+veto_headings	eng	heading	cheatsheets/datetime.md	Common time formats	
+veto_headings	eng	heading	cheatsheets/goby.md	Testing framework	
+veto_headings	eng	heading	cheatsheets/tig.md	Shortcut keys	
+veto_headings	eng	heading	cheatsheets/html-microformats.md	Microformats	
+veto_headings	eng	heading	cheatsheets/phoenix-migrations.md	Phoenix: Ecto migrations	
+veto_headings	eng	heading	cheatsheets/stimulus-reflex.md	Helpful tips	
+veto_headings	eng	heading	cheatsheets/react-router.md	React-router	
+veto_headings	eng	heading	cheatsheets/phoenix-routing.md	Phoenix: Routing	
+veto_headings	eng	heading	cheatsheets/rails-i18n.md	ActiveRecord	
+veto_headings	eng	heading	cheatsheets/typescript.md	Type extraction	
+veto_headings	eng	heading	cheatsheets/ractive.md	Transformed attributes	
+veto_headings	eng	heading	cheatsheets/ronn.md	Formatting tags	
+veto_headings	eng	heading	cheatsheets/ie_bugs.md	Legacy IE bugs	
+veto_headings	eng	heading	cheatsheets/ledger-csv.md	Ledger CSV format	
+veto_headings	eng	heading	cheatsheets/bash.md	Miscellaneous	
+veto_headings	eng	heading	cheatsheets/rails-helpers.md	Rails helpers	
+veto_headings	eng	heading	cheatsheets/mocha-blanket.md	Mocha blanket	
+veto_headings	eng	heading	cheatsheets/python.md	File manipulation	
+veto_headings	eng	heading	cheatsheets/sass.md	Color functions	
+veto_headings	eng	heading	cheatsheets/rbenv.md	Using versions	
+veto_headings	eng	heading	cheatsheets/lua.md	Basic examples	
+veto_headings	eng	heading	cheatsheets/package-json.md	package.json	
+veto_headings	eng	heading	cheatsheets/mocha-tdd.md	Mocha.js TDD interface	
+veto_headings	eng	heading	cheatsheets/underscore-string.md	Underscore-string	
+veto_headings	eng	heading	cheatsheets/commander.js.md	Commander.js	
+veto_headings	eng	heading	cheatsheets/umdjs.md	Universal JS module loader	
+veto_headings	eng	heading	cheatsheets/ansible-modules.md	Ansible modules	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::NameDE	
+veto_headings	eng	heading	cheatsheets/editorconfig.md	editorconfig	
+veto_headings	eng	heading	cheatsheets/rspec.md	Writing tests	
+veto_headings	eng	heading	cheatsheets/goby.md	Native class (Golang-oriented)	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::Product	
+veto_headings	eng	heading	cheatsheets/typescript.md	Keyof Type Operator	
+veto_headings	eng	heading	cheatsheets/spacemacs.md	Emacs standard	
+veto_headings	eng	heading	cheatsheets/rst.md	ReStructuredText	
+veto_headings	eng	heading	cheatsheets/layout-thrashing.md	Layout thrashing	
+veto_headings	eng	heading	cheatsheets/vimscript-functions.md	Dictionaries and lists	
+veto_headings	eng	heading	cheatsheets/ronn.md	Using with npm	
+veto_headings	eng	heading	cheatsheets/goby.md	Method definition	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::Geolocation	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::PhoneNumberAU	
+veto_headings	eng	heading	cheatsheets/fish-shell.md	Useful built-in functions	
+veto_headings	eng	heading	cheatsheets/awesome-redux.md	Awesome Redux	
+veto_headings	eng	heading	cheatsheets/claude-code.md	IDE Integrations	
+veto_headings	eng	heading	cheatsheets/git-revisions.md	Git revisions	
+veto_headings	eng	heading	cheatsheets/rails-migrations.md	Rails migrations	
+veto_headings	eng	heading	cheatsheets/rails-controllers.md	Rails controllers	
+veto_headings	eng	heading	cheatsheets/pry.md	Shell integration	
+veto_headings	eng	heading	cheatsheets/ronn.md	Frequently-used sections	
+veto_headings	eng	heading	cheatsheets/clip.md	Command Line Interface Pages	
+veto_headings	eng	heading	cheatsheets/docker-compose.md	docker-compose	
+veto_headings	eng	heading	cheatsheets/vimscript-snippets.md	Vimscript snippets	
+veto_headings	eng	heading	cheatsheets/ansible-examples.md	Ansible examples	
+veto_headings	eng	heading	cheatsheets/goby.md	Enumerator & lazy	
+veto_headings	eng	heading	cheatsheets/css-system-font-stack.md	CSS system fonts	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::HTMLIpsum	
+veto_headings	eng	heading	cheatsheets/lua.md	Operators (and their metatable names)	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::PhoneNumber	
+veto_headings	eng	heading	cheatsheets/sass.md	Other functions	
+veto_headings	eng	heading	cheatsheets/go.md	Error control	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::Internet	
+veto_headings	eng	heading	cheatsheets/packs.md	Manage packs	
+veto_headings	eng	heading	cheatsheets/ledger-format.md	Ledger format	
+veto_headings	eng	heading	cheatsheets/typescript.md	Type assertions	
+veto_headings	eng	heading	cheatsheets/jest.md	Mock functions	
+veto_headings	eng	heading	cheatsheets/analytics.js.md	Google Analytics's analytics.js	
+veto_headings	eng	heading	cheatsheets/command_line.md	wc (Word count)	
+veto_headings	eng	heading	cheatsheets/postgresql-json.md	More examples	
+veto_headings	eng	heading	cheatsheets/css-antialias.md	CSS antialiasing	
+veto_headings	eng	heading	cheatsheets/html-meta.md	HTML meta tags	
+veto_headings	eng	heading	cheatsheets/rails-routes.md	Single resource (`resource`)	
+veto_headings	eng	heading	cheatsheets/nodejs-path.md	Node.js path API	
+veto_headings	eng	heading	cheatsheets/cordova.md	Apache Cordova	
+veto_headings	eng	heading	cheatsheets/ffaker.md	Faker::NameSN	
+veto_headings	eng	heading	cheatsheets/http-status.md	WebDAV Status Codes	
+veto_headings	rus	heading	notes/databases/redis/use-cases.md	Rate limiting	
+veto_headings	rus	heading	notes/llm/eval-metrics.md	hit@k (он же recall@k на одном релевантном)	
+veto_headings	rus	heading	notes/protocols/protobuf.md	Эволюция схемы	
+veto_headings	rus	heading	notes/databases/redis/basics.md	Модель выполнения	
+veto_headings	rus	heading	notes/tools/git-fork-workflow.md	Git на форке (upstream-конфликты)	
+veto_headings	rus	heading	notes/languages/ruby/blocks-procs-lambdas.md	proc vs lambda — 2 отличия (главное на собес)	
+veto_headings	rus	heading	notes/messaging/nats.md	Где выбирать	
+veto_headings	rus	heading	notes/protocols/graphql.md	Минусы и грабли	
+veto_headings	rus	heading	notes/messaging/comparison.md	Среди брокеров	
+veto_headings	rus	heading	notes/protocols/protobuf.md	Номера полей (ключевое)	
+veto_headings	rus	heading	notes/databases/postgresql/window-functions.md	Оконные функции (window functions)	
+veto_headings	rus	heading	notes/databases/redis/use-cases.md	Распределённые локи	
+veto_headings	rus	heading	notes/databases/postgresql/locks.md	Блокировки (PostgreSQL)	
+veto_headings	rus	heading	notes/databases/redis/basics.md	Масштабирование и отказоустойчивость	
+veto_headings	rus	heading	notes/messaging/rabbitmq.md	Kafka vs RabbitMQ (коротко)	
+veto_headings	rus	heading	notes/languages/ruby/concurrency-gvl.md	GVL / concurrency	
+veto_headings	rus	heading	notes/protocols/grpc.md	gRPC vs REST/JSON	
+veto_headings	rus	heading	notes/messaging/comparison.md	Две разные вещи	
+veto_headings	rus	heading	notes/protocols/protobuf.md	Protocol Buffers (protobuf)	
+veto_headings	rus	heading	notes/llm/eval-metrics.md	Retrieval-метрики: hit@k и MRR	
+veto_headings	rus	heading	notes/messaging/kafka.md	Чем отличается от обычной очереди	
+veto_headings	rus	heading	notes/llm/models.md	Под моё железо (RTX 4070 mobile, 8 ГБ VRAM)	
+veto_headings	rus	heading	notes/llm/hybrid-retrieval.md	Keyword vs semantic (зачем оба)	
+veto_headings	rus	heading	notes/databases/postgresql/pg-indexes.md	По структуре (алгоритму)	
+veto_headings	rus	heading	notes/databases/postgresql/postgis.md	KNN (ближайшие)	
+veto_headings	rus	heading	notes/databases/postgresql/pg-tips.md	PostgreSQL: фишки	
+veto_headings	rus	heading	notes/protocols/websockets.md	Как работает	
+veto_headings	rus	heading	notes/databases/postgresql/full-text-search.md	Ранжирование	
+veto_headings	rus	heading	notes/messaging/kafka.md	Семантика доставки	
+veto_headings	rus	heading	notes/databases/postgresql/isolation-levels.md	Уровни изоляции транзакций (PostgreSQL)	
+veto_headings	rus	heading	notes/databases/postgresql/cte.md	Гибридный поиск (RAG-кейс)	
+veto_headings	rus	heading	notes/databases/postgresql/full-text-search.md	Пример keyword-поиска	
+veto_headings	rus	heading	notes/databases/postgresql/postgis.md	Ключевые функции	
+veto_headings	rus	heading	notes/databases/redis/basics.md	TTL и вытеснение	
+veto_headings	rus	heading	notes/llm/models.md	Генераторы (прогнал eval руками 17.07, вопрос про MVCC, temp 0)	
+veto_headings	rus	heading	notes/databases/redis/basics.md	Персистентность	
+veto_headings	rus	heading	notes/databases/postgresql/postgis.md	PostGIS (гео в Postgres)	
+veto_headings	rus	heading	notes/databases/postgresql/ltree.md	ltree — иерархические пути (PostgreSQL)	
+veto_headings	rus	heading	notes/llm/rag-concepts.md	Пайплайн RAG	
+veto_headings	rus	heading	notes/llm/rag-concepts.md	RAG — концепции (по проекту rag-lab)	
+veto_headings	rus	heading	notes/llm/rag-concepts.md	Векторное хранилище (pgvector)	
+veto_headings	rus	heading	notes/protocols/websockets.md	Когда WebSocket, когда нет	
+veto_headings	rus	heading	notes/llm/rag-concepts.md	Augmentation	
+veto_headings	rus	heading	notes/databases/redis/use-cases.md	Redis (сценарии)	
+veto_headings	rus	heading	notes/databases/redis/use-cases.md	Кэш (главный сценарий)	
+veto_headings	rus	heading	notes/databases/redis/use-cases.md	Лидерборды и рейтинги	
+veto_headings	rus	heading	notes/messaging/comparison.md	Брокеры и очереди задач: когда что	
+veto_headings	rus	heading	notes/messaging/comparison.md	Как выбирать (одной фразой)	
+veto_headings	rus	heading	notes/llm/eval-metrics.md	Наши числа (M4, 30 in-corpus вопросов)	
+veto_headings	rus	heading	notes/llm/eval-metrics.md	Грабли и оговорки	
+veto_headings	rus	heading	notes/databases/postgresql/pg-indexes.md	Кластерный vs нет	
+veto_headings	rus	heading	notes/databases/postgresql/cte.md	Грабли: барьер оптимизации	
+veto_headings	rus	heading	notes/llm/models.md	Модели — эмбеддеры и генераторы (локальные, Ollama)	
+veto_headings	rus	heading	notes/databases/postgresql/postgis.md	Рецепт «найти рядом»	
+veto_headings	rus	heading	notes/databases/postgresql/cte.md	Data-modifying CTE	
+veto_headings	rus	heading	notes/databases/postgresql/ltree.md	ltree vs text[] vs jsonb (для иерархии)	
+veto_headings	rus	heading	notes/databases/postgresql/postgis.md	SRID (система координат)	
+veto_headings	rus	heading	notes/databases/postgresql/postgis.md	geometry vs geography	
+veto_headings	rus	heading	notes/llm/eval-metrics.md	hit@k vs MRR (в чём разница на практике)	
+veto_headings	rus	heading	notes/languages/ruby/metaprogramming.md	method_missing	
+veto_headings	rus	heading	notes/protocols/grpc.md	Типы вызовов	
+veto_headings	rus	heading	notes/llm/models.md	Задача на M5 (eval)	
+veto_headings	rus	heading	notes/databases/postgresql/cte.md	Recursive CTE	
+veto_headings	rus	heading	notes/databases/postgresql/full-text-search.md	Когда FTS, когда вектор	
+veto_headings	rus	heading	notes/databases/postgresql/mvcc-vacuum.md	MVCC / VACUUM	
+veto_headings	rus	heading	notes/databases/postgresql/postgis.md	Пространственный индекс (обязателен)	
+veto_headings	rus	heading	notes/databases/postgresql/pg-indexes.md	Индексы (PostgreSQL)	
+veto_headings	rus	heading	notes/llm/hybrid-retrieval.md	Гибридный поиск: BM25 + вектор + RRF	
+veto_headings	rus	heading	notes/databases/postgresql/full-text-search.md	Конфигурация языка (критично для русского)	
+veto_headings	rus	heading	notes/databases/postgresql/window-functions.md	Где пригодится в RAG	
+veto_headings	rus	heading	notes/llm/hybrid-retrieval.md	PG-реализация (full-text search)	
+veto_headings	rus	heading	notes/messaging/sidekiq.md	Что важно на собес	
+veto_headings	rus	heading	notes/databases/postgresql/explain-analyze.md	EXPLAIN / EXPLAIN ANALYZE	
+veto_headings	rus	heading	notes/databases/postgresql/full-text-search.md	Full-text search (PostgreSQL)	
+veto_headings	rus	heading	notes/databases/postgresql/ltree.md	Операторы (ради них всё)	
+veto_headings	rus	heading	notes/databases/redis/basics.md	Структуры данных	
+veto_headings	rus	heading	notes/languages/ruby/blocks-procs-lambdas.md	block / proc / lambda	
+veto_headings	rus	heading	notes/protocols/protobuf.md	proto3 vs proto2	
+veto_headings	rus	heading	notes/databases/postgresql/migrations-without-locks.md	👑 Миграции больших таблиц без локов	
+veto_headings	rus	heading	notes/messaging/kafka.md	Ключевые понятия	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Releasing call reply objects	
+veto_headings	eng	heading	redis-doc/docs/manual/patterns/distributed-locks.md	Why Failover-based Implementations Are Not Enough	
+veto_headings	eng	heading	redis-doc/docs/reference/eviction/index.md	Eviction policies	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/functions-intro.md	Redis functions	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Low level access to keys	
+veto_headings	eng	heading	redis-doc/docs/interact/pubsub.md	Messages matching both a pattern and a channel subscription	
+veto_headings	eng	heading	redis-doc/docs/reference/cluster-spec.md	Client and Server roles in the Redis cluster protocol	
+veto_headings	eng	heading	redis-doc/docs/data-types/streams.md	Automatic claiming	
+veto_headings	eng	heading	redis-doc/docs/manual/client-side-caching.md	What to do when losing connection with the server	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	Modules data types	
+veto_headings	eng	heading	redis-doc/docs/about/users.md	Who's using Redis?	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	Key API for String type	
+veto_headings	eng	heading	redis-doc/docs/reference/clients.md	The CLIENT Command	
+veto_headings	eng	heading	redis-doc/docs/get-started/faq.md	"Where does the name ""Redis"" come from?"	
+veto_headings	eng	heading	redis-doc/docs/interact/transactions.md	WATCH explained	
+veto_headings	eng	heading	redis-doc/docs/management/security/_index.md	String escaping and NoSQL injection	
+veto_headings	eng	heading	redis-doc/docs/reference/eviction/index.md	The new LFU mode	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	Scanning keyspace and hashes	
+veto_headings	eng	heading	redis-doc/docs/management/optimization/benchmarks/index.md	Redis benchmark	
+veto_headings	eng	heading	redis-doc/docs/reference/command-arguments.md	Redis command arguments	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/_index.md	Redis programmability	
+veto_headings	eng	heading	redis-doc/docs/management/optimization/memory-optimization.md	Use hashes when possible	
+veto_headings	eng	heading	redis-doc/docs/manual/client-side-caching.md	The Redis implementation of client-side caching	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Module cleanup	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	String objects APIs	
+veto_headings	eng	heading	redis-doc/docs/management/optimization/memory-optimization.md	Memory allocation	
+veto_headings	eng	heading	redis-doc/docs/management/replication.md	Replication ID explained	
+veto_headings	eng	heading	redis-doc/docs/connect/_index.md	Redis command line interface	
+veto_headings	eng	heading	redis-doc/docs/management/security/acl.md	When ACLs are useful	
+veto_headings	eng	heading	redis-doc/docs/install/install-redisinsight/install-on-aws.md	Install on AWS EC2	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	The simplest module you can write	
+veto_headings	eng	heading	redis-doc/docs/manual/client-side-caching.md	The NOLOOP option	
+veto_headings	eng	heading	redis-doc/docs/reference/protocol-spec.md	Request-Response model	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/lua-debugging.md	Abbreviating debugging commands	
+veto_headings	eng	heading	redis-doc/docs/management/debugging.md	Obtaining the core file	
+veto_headings	eng	heading	redis-doc/docs/reference/sentinel-clients.md	Redis service discovery via Sentinel	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/_index.md	Read-only scripts	
+veto_headings	eng	heading	redis-doc/docs/management/replication.md	Safety of replication when master has persistence turned off	
+veto_headings	eng	heading	redis-doc/docs/install/install-redis/install-redis-on-mac-os.md	Installation	
+veto_headings	eng	heading	redis-doc/docs/_index.md	Documentation	
+veto_headings	eng	heading	redis-doc/docs/management/optimization/memory-optimization.md	Bit and byte level operations	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	Module Command Filter API	
+veto_headings	eng	heading	redis-doc/docs/management/troubleshooting.md	Troubleshooting Redis	
+veto_headings	eng	heading	redis-doc/docs/reference/protocol-spec.md	Redis serialization protocol specification	
+veto_headings	eng	heading	redis-doc/docs/reference/key-specs.md	Command key specifications	
+veto_headings	eng	heading	redis-doc/docs/management/sentinel.md	A quick tutorial	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Writing commands compatible with Redis Cluster	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Accessing Redis keys from modules	
+veto_headings	eng	heading	redis-doc/docs/connect/cli.md	Running Lua scripts	
+veto_headings	eng	heading	redis-doc/docs/data-types/bitfields.md	Redis bitfields	
+veto_headings	eng	heading	redis-doc/docs/manual/patterns/bulk-loading.md	Bulk loading using the Redis protocol	
+veto_headings	eng	heading	redis-doc/docs/get-started/data-store.md	Store and retrieve data	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Creating new keys	
+veto_headings	eng	heading	redis-doc/docs/data-types/streams.md	Differences with Kafka (TM) partitions	
+veto_headings	eng	heading	redis-doc/docs/connect/cli.md	Monitoring the latency of Redis instances	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/eval-intro.md	Scripting with Lua	
+veto_headings	eng	heading	redis-doc/docs/management/replication.md	How Redis replication deals with expires on keys	
+veto_headings	eng	heading	redis-doc/docs/management/scaling.md	Scale with Redis Cluster	
+veto_headings	eng	heading	redis-doc/docs/install/install-redisinsight/install-on-docker.md	Install on Docker	
+veto_headings	eng	heading	redis-doc/docs/reference/arm.md	Redis /proc/cpu/alignment requirements	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Iterating aggregated values	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/functions-intro.md	Function flags	
+veto_headings	eng	heading	redis-doc/docs/management/security/_index.md	Security model	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/lua-debugging.md	Debugging Lua scripts in Redis	
+veto_headings	eng	heading	redis-doc/docs/reference/internals/rdd.md	History of revisions	
+veto_headings	eng	heading	redis-doc/docs/management/replication.md	Redis replication	
+veto_headings	eng	heading	redis-doc/docs/management/replication.md	How Redis replication works	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	Modules utility APIs	
+veto_headings	eng	heading	redis-doc/docs/management/persistence.md	AOF disadvantages	
+veto_headings	eng	heading	redis-doc/docs/interact/pubsub.md	Delivery semantics	
+veto_headings	eng	heading	redis-doc/docs/reference/gopher.md	SECURITY WARNING	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/_index.md	Automatic memory management	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	Module Keyspace Notifications API	
+veto_headings	eng	heading	redis-doc/docs/get-started/faq.md	Why did Salvatore Sanfilippo start the Redis project?	
+veto_headings	eng	heading	redis-doc/docs/reference/clients.md	Accepting Client Connections	
+veto_headings	eng	heading	redis-doc/docs/management/debugging.md	Obtaining the stack trace	
+veto_headings	eng	heading	redis-doc/docs/get-started/faq.md	How can Redis use multiple CPUs or cores?	
+veto_headings	eng	heading	redis-doc/docs/manual/patterns/_index.md	Redis programming patterns	
+veto_headings	eng	heading	redis-doc/docs/reference/modules/modules-api-ref.md	Key eviction API	
+veto_headings	eng	heading	redis-doc/docs/interact/programmability/lua-api.md	"<a name=""redis_object""></a>_redis_ object"	
+veto_headings	eng	heading	system-design-primer/README.md	Application layer	
+veto_headings	eng	heading	system-design-primer/README.md	Availability patterns	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/web_crawler/README.md	Design a web crawler	
+veto_headings	eng	heading	system-design-primer/README.md	Domain name system	
+veto_headings	eng	heading	system-design-primer/README.md	Performance vs scalability	
+veto_headings	eng	heading	system-design-primer/README.md	Anki flashcards	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/twitter/README.md	Design the Twitter timeline and search	
+veto_headings	eng	heading	system-design-primer/README.md	System design interview questions with solutions	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/query_cache/README.md	Design a key-value cache to save the results of the most recent web server queries	
+veto_headings	eng	heading	system-design-primer/README.md	Availability vs consistency	
+veto_headings	eng	heading	system-design-primer/README.md	Content delivery network	
+veto_headings	eng	heading	system-design-primer/README.md	Communication	
+veto_headings	eng	heading	system-design-primer/README.md	Load balancer	
+veto_headings	eng	heading	system-design-primer/README.md	Reverse proxy (web server)	
+veto_headings	eng	heading	system-design-primer/README.md	Index of system design topics	
+veto_headings	eng	heading	system-design-primer/README.md	System design topics: start here	
+veto_headings	eng	heading	system-design-primer/README.md	Consistency patterns	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/mint/README.md	Design Mint.com	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/pastebin/README.md	Design Pastebin.com (or Bit.ly)	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/scaling_aws/README.md	Design a system that scales to millions of users on AWS	
+veto_headings	eng	heading	system-design-primer/README.md	How to approach a system design interview question	
+veto_headings	eng	heading	system-design-primer/README.md	Latency vs throughput	
+veto_headings	eng	heading	system-design-primer/README.md	Object-oriented design interview questions with solutions	
+veto_headings	eng	heading	system-design-primer/README.md	Under development	
+veto_headings	eng	heading	system-design-primer/README.md	The System Design Primer	
+veto_headings	eng	heading	system-design-primer/README.md	Contributing	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/sales_rank/README.md	Design Amazon's sales rank by category feature	
+veto_headings	eng	heading	system-design-primer/solutions/system_design/social_graph/README.md	Design the data structures for a social network	
+veto_headings	eng	heading	system-design-primer/README.md	Asynchronism	
+veto_headings	eng	heading	system-design-primer/README.md	Contact info	

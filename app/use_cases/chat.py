@@ -416,6 +416,10 @@ def _log_answer(
                     rerank_device, variant, ef_search,
                 ),
                 "retrieval": retrieval,
+                # what the ceiling grid is actually gated on, as a number in the row
+                # rather than an arithmetic done by hand afterwards: the context is what
+                # `k` chunks came to, and the window it has to fit in is fixed
+                "context_chars": len(context) if context else 0,
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

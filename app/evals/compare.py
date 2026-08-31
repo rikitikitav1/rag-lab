@@ -2,10 +2,10 @@ import statistics
 import sys
 
 from evals.loaders import load_logs
-from evals.pools import POOLS, has_remote_evidence, outcome, split
+from evals.pools import ALL_OUTCOMES, POOLS, has_remote_evidence, outcome, split
 from evals.stats import delta_stats
 
-OUTCOMES = ("answered", "refused", "unsupported_answer", "narrated_call", "exhausted", "error")
+OUTCOMES = ALL_OUTCOMES
 AXES = ("faithfulness", "relevance", "completeness")
 GATE_REASONS = ("empty", "weak", "off_topic")
 

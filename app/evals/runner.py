@@ -11,7 +11,7 @@ from models.eval import Question
 from models.registry import Pipeline
 from orm.sync_db import Session
 from sqlalchemy import select
-from use_cases import agent, chat
+from use_cases import agent, chat, search_depth
 
 import db
 
@@ -75,12 +75,19 @@ def _answer_one(
         raise ValueError(f"unknown pipeline: {pipeline}")
 
 
-def _refuse_a_cpu_run(allow_cpu: bool) -> None:
+def _refuse_a_cpu_run(allow_cpu: bool, use_rerank: bool = False) -> None:
     # ollama drops the card and keeps answering: same numbers, four times the hours, and
     # nothing in the run says so. Both paths ask after the first answer, when the
     # generator is loaded and a spill is finally visible
     llm.warn_if_models_do_not_fit()
     off_card = llm.models_off_the_card()
+    # ollama cannot see the cross-encoder: it is torch in this process, and it is loaded
+    # here or the question is asked of a model that is not anywhere yet
+    if use_rerank:
+        rerank.warm()
+    spilled = rerank.off_the_card()
+    if spilled:
+        off_card = [*off_card, spilled]
     if off_card and not allow_cpu:
         raise RuntimeError(
             f"models are not on the GPU: {', '.join(off_card)}."
@@ -117,7 +124,7 @@ def _run_sequential(
                 return answered, True
             # after the first answer the generator is loaded, so a spill is finally visible
             if answered == 1:
-                _refuse_a_cpu_run(allow_cpu)
+                _refuse_a_cpu_run(allow_cpu, use_rerank)
             try:
                 _answer_one(
                     text, run_name, use_rerank, pipeline, language, k, max_hops, model,
@@ -224,7 +231,7 @@ def _phase_generate(
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
         # outside the try: a guard whose refusal the loop swallows is not a guard
         if answered == 1:
-            _refuse_a_cpu_run(allow_cpu)
+            _refuse_a_cpu_run(allow_cpu, use_rerank)
     return answered, False
 
 
@@ -277,7 +284,7 @@ def _phased(
     # asked here and not only after the first answer: the embedder is loaded and a lost
     # card is already visible, so a run that would answer off the card stops two minutes
     # in rather than after the generator has been loaded onto the processor
-    _refuse_a_cpu_run(allow_cpu)
+    _refuse_a_cpu_run(allow_cpu, use_rerank)
 
     # retrieval is over, and its model is 1.2 GiB the generator is about to want on a
     # card that holds 8
@@ -313,6 +320,11 @@ def _phased(
 from use_cases.chat import resolve_rerank  # noqa: E402
 
 
+def _walks_the_index(variant: str, depth: int) -> bool:
+    with db.engine.connect() as conn:
+        return search_depth.uses_index(conn, variant, depth)
+
+
 def run(
     run_name: str,
     set_name: str | None = None,
@@ -343,7 +355,16 @@ def run(
             f"corpus variant '{variant}' is empty; known variants: "
             f"{[v['variant'] for v in known]}"
         )
-    log.info("eval_run.corpus", variant=variant, known=known)
+    # the preflight is a snapshot taken before the queue moved; the crossover can shift
+    # under a long run when a neighbouring variant is indexed or autovacuum lands, and the
+    # planner then answers by sorting the table while the record still says hnsw
+    depth = search_depth.resolve(variant)
+    if not _walks_the_index(variant, depth):
+        raise RuntimeError(
+            f"variant '{variant}' at ef_search {depth} no longer walks its index: the plan"
+            " sorts, so this run would measure exact search and record hnsw"
+        )
+    log.info("eval_run.corpus", variant=variant, known=known, ef_search=depth)
     texts = _target_texts(set_name, question_ids)
     use_rerank = resolve_rerank(use_rerank)
     if phased is None:

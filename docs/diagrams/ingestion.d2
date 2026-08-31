@@ -10,7 +10,7 @@ sources: Source registry (reader pattern) {
   hooks: "each source class: discover / read\ncategory_for / section_root_for / postprocess"
 }
 
-policy: "Variant policy from config.yaml\nchunker, max_chunk_size, ceiling_on\n(extra: forbid; header_prefix derived)" {
+policy: "Variant policy from config.yaml\nchunker, max_chunk_size, ceiling_on, drop_boilerplate\n(extra: forbid; header_prefix derived)" {
   shape: document
 }
 
@@ -28,6 +28,10 @@ cut: The cut {
   marks -> fallback: when unbalanced
   marks -> rooted
   marks -> structured
+}
+
+boiler: "drop_boilerplate: a block repeated across half\nthe files goes, unless it is the only carrier\nof its section (one door: source.documents)" {
+  style.stroke-dash: 3
 }
 
 record: "Each chunk carries what decided it:\nsection, prefix_len, cut_by"
@@ -57,7 +61,8 @@ questions: embed_questions job\nquestion bank vectors {
 
 trigger -> sources
 policy -> cut: decides every rule
-sources -> idem -> cut -> record -> cat -> embed -> insert
+policy -> boiler: off unless asked
+sources -> idem -> cut -> boiler -> record -> cat -> embed -> insert
 insert -> tsv: on write
 insert -> idx: queued, then built
 insert -> quality: queued per source

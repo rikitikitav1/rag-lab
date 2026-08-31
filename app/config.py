@@ -32,6 +32,7 @@ class RetrievalCfg(BaseModel):
     index_alive_recall: float = 0.9
     index_alive_questions: int = 40
     criterion_sets: list[str] = ["paraphrased_v2_ru", "paraphrased_v2"]
+    veto_sets: list[str] = ["veto_v1"]
 
 
 class RerankCfg(BaseModel):
@@ -46,8 +47,23 @@ class AgentCfg(BaseModel):
     gate_candidates: int = 5
     weak_threshold: float = 0.5
     gate_signal: str = "distance"
-    topic_threshold: float | None = None
+    # one number, or one per language: the axis is a distance to this corpus, and an
+    # off-domain english question sits closer to an english corpus than a russian one
+    topic_threshold: float | dict[str, float] | None = None
     weak_distance: float = 0.39
+
+    def topic_threshold_for(self, language: str | None) -> float | None:
+        if not isinstance(self.topic_threshold, dict):
+            return self.topic_threshold
+        if not self.topic_threshold:
+            return None
+        # membership, not truthiness: zero is how a language switches the axis off, and
+        # `or` turned that into the most permissive threshold instead of into no gate
+        if language in self.topic_threshold:
+            return self.topic_threshold[language]
+        # a language nobody measured gets the most permissive of the measured thresholds:
+        # we refuse only where refusing was shown not to cost a real question
+        return max(self.topic_threshold.values())
 
 
 class FtsCfg(BaseModel):
@@ -62,6 +78,10 @@ class PolicyCfg(BaseModel):
     chunker: Literal["legacy", "rooted", "structured"]
     max_chunk_size: int = Field(gt=0)
     ceiling_on: Literal["body", "content"] = "body"
+    # a block repeated verbatim across half of a source's files is dropped, unless it is
+    # the only carrier of its section. Off by default: it changes the cut, so it is a
+    # corpus variant of its own and never a switch under an existing one
+    drop_boilerplate: bool = False
 
     # derived, not declared: two keys deciding one thing is how they came to disagree
     @property

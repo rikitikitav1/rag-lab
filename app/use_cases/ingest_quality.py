@@ -6,7 +6,7 @@ import config
 import ingest
 import logging_setup
 import sources.base
-from ingest import MAX_CHUNK_SIZE
+from ingest import BOILERPLATE_FILE_SHARE, BOILERPLATE_MIN_FILES, MAX_CHUNK_SIZE
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -53,6 +53,9 @@ class Metrics:
     soup: float | None
     code_only: float | None
     score: int | None = None
+    # how many rows each share was taken over, by metric name: a ceiling that abstains
+    # below a count needs the count, and the shares do not share one denominator
+    denominators: dict[str, int] | None = None
 
 
 @dataclass
@@ -65,8 +68,6 @@ class Report:
 TINY_SHARE_OF_CEILING = 0.1
 SOUP_ALNUM_RATIO = 0.55
 PROSE_WORD_LETTERS = 4
-BOILERPLATE_FILE_SHARE = 0.5
-BOILERPLATE_MIN_FILES = 3
 
 # every other metric is a defect: more is worse
 HIGHER_IS_BETTER = frozenset({"section_coverage"})
@@ -174,7 +175,32 @@ def measure(
         ),
         soup=_share(sum(1 for b in bodies if _is_soup(b)), n),
         code_only=_share(sum(1 for b in bodies if _is_code_only(b)), n),
+        denominators={
+            "section_coverage": total,
+            "orphans": total,
+            "prefix_dominates": len(bodied),
+            "dup_in_file": n,
+            "dup_in_source": n,
+            "tiny": n,
+            "boilerplate": n,
+            "soup": n,
+            "code_only": n,
+            "size_cut": len(decided),
+        },
     )
+
+
+# a share over a small denominator measures the size of the source, not its cut: three
+# sources read broken for the same two chunks six larger ones hold and pass with. Below
+# this many breaching chunks a ceiling abstains, as the metrics do with nothing to measure
+MIN_BREACHING_CHUNKS = 5
+
+
+def _too_few_to_judge(metrics: Metrics, name: str, value: float) -> bool:
+    # the share's own denominator, never the chunk count: `size_cut` over three decided
+    # chunks in a hundred read as a hundred breaching ones, the failure this exists to stop
+    denominator = (metrics.denominators or {}).get(name, metrics.chunks)
+    return round(value * denominator) < MIN_BREACHING_CHUNKS
 
 
 def gate_breaches(metrics: Metrics, gates) -> list[str]:
@@ -187,7 +213,9 @@ def gate_breaches(metrics: Metrics, gates) -> list[str]:
         low, high = bounds.get("min"), bounds.get("max")
         if low is not None and value < low:
             breached.append(f"{name}.min")
-        if high is not None and value > high:
+        # only the ceiling: a floor like `section_coverage.min` is breached by chunks that
+        # are missing, and counting the ones that are there says nothing about those
+        if high is not None and value > high and not _too_few_to_judge(metrics, name, value):
             breached.append(f"{name}.max")
     return breached
 
@@ -240,21 +268,21 @@ def collect_dry(source_name: str, *, variant: str) -> list[Sample]:
 
     source = sources.factory.one(source_name)
     policy = config.settings.corpus.policy(variant)
-    samples = []
-    for file in source.discover(policy):
-        for doc in source.to_documents(file, policy):
-            samples.append(
-                Sample(
-                    file=doc.source,
-                    content=doc.content,
-                    chunk_index=doc.chunk_index,
-                    body=doc.body,
-                    section=doc.section,
-                    root=doc.root,
-                    cut_by=doc.cut_by,
-                )
-            )
-    return samples
+    # the same door the indexer and the digest walk: a rule that has to see every file of
+    # a source is applied there, and reading the cut any other way measures a corpus the
+    # index does not hold
+    return [
+        Sample(
+            file=doc.source,
+            content=doc.content,
+            chunk_index=doc.chunk_index,
+            body=doc.body,
+            section=doc.section,
+            root=doc.root,
+            cut_by=doc.cut_by,
+        )
+        for doc in source.documents(policy)
+    ]
 
 
 def collect_indexed(source_name: str, *, variant: str) -> list[Sample]:

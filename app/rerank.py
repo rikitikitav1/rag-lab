@@ -31,6 +31,45 @@ def requested_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+# ollama does not know this model exists, so `llm.residency` cannot see it and the card
+# arithmetic was held on trust until a paraphrasing model took the card on 30.08
+def residency() -> dict:
+    import torch
+
+    loaded = _reranker is not None
+    out = {
+        "model": config.settings.rerank.model,
+        "enabled": config.settings.rerank.enabled,
+        "loaded": loaded,
+        "requested": requested_device(),
+        "device": device() if loaded else None,
+    }
+    if torch.cuda.is_available():
+        out["vram_mb"] = round(torch.cuda.memory_allocated() / 2**20)
+        free, total = torch.cuda.mem_get_info()
+        out["card_free_mb"] = round(free / 2**20)
+        out["card_total_mb"] = round(total / 2**20)
+    return out
+
+
+# the reranker is asked for, is on the card, and the card is where it was asked to be
+def off_the_card() -> str | None:
+    state = residency()
+    if not state["enabled"] or not state["loaded"]:
+        return None
+    if state["device"] != state["requested"]:
+        return f"{state['model']} asked for {state['requested']} and runs on {state['device']}"
+    return None
+
+
+# loaded before the phase asks where it sits: the guard used to run between retrieval and
+# reranking, where the model is still None, so it first fired after the whole set had been
+# reranked on the processor
+def warm() -> None:
+    if config.settings.rerank.enabled:
+        _model()
+
+
 def _model() -> CrossEncoder:
     global _reranker
 

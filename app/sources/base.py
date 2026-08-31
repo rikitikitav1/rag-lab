@@ -29,6 +29,35 @@ def hygienic(policy) -> bool:
 # from collections.abc import Iterable
 
 
+# a block repeated across half a source's files carries rank and no answer. The exception
+# is what the rule is worth: the only carrier of its section stays, because hygiene that
+# removes the answer is not hygiene. On this corpus it saved six gold sections
+def drop_wide_boilerplate(docs: list["Doc"], policy: dict | None = None) -> list["Doc"]:
+    if not (policy or {}).get("drop_boilerplate"):
+        return docs
+    share, min_files = ingest.BOILERPLATE_FILE_SHARE, ingest.BOILERPLATE_MIN_FILES
+    bodied = [d for d in docs if d.body is not None]
+    files = {d.source for d in bodied}
+    if len(files) < min_files:
+        return docs
+    spread: dict[str, set[str]] = {}
+    for doc in bodied:
+        spread.setdefault(doc.body, set()).add(doc.source)
+    wide = {body for body, seen in spread.items() if len(seen) / len(files) >= share}
+    if not wide:
+        return docs
+    carried = {
+        (d.source, d.section) for d in docs if d.body is None or d.body not in wide
+    }
+    return [
+        doc
+        for doc in docs
+        if doc.body is None
+        or doc.body not in wide
+        or (doc.source, doc.section) not in carried
+    ]
+
+
 @dataclass
 class Doc:
     content: str
@@ -146,6 +175,18 @@ class Base(ABC):
         title = parsed.title
         return None if title is None else str(title).strip() or None
 
+    # the whole source at once: a rule that has to see every file cannot be applied one
+    # file at a time. Every reader comes through here, or the ingest and the dry run end
+    # up cutting the corpus two different ways
+    def documents(self, policy=None):
+        policy = policy or {}
+        docs = [
+            doc
+            for file in self.discover(policy)
+            for doc in self.to_documents(file, policy)
+        ]
+        return drop_wide_boilerplate(docs, policy)
+
     def to_documents(self, file, policy=None):
         policy = policy or {}
         rel = str(file.relative_to(self.root))
@@ -181,7 +222,8 @@ class Base(ABC):
             head = parsed.content.lstrip().split("\n", 1)[0]
             h1 = f"{head}\n" if head.startswith("# ") else ""
             section = None
-            for i, chunk in enumerate(ingest.chunk_markdown(parsed.content)):
+            ceiling = policy.get("max_chunk_size")
+            for i, chunk in enumerate(ingest.chunk_markdown(parsed.content, ceiling=ceiling)):
                 section = ingest.heading_path(chunk) or section
                 body = chunk[len(h1) :] if h1 and i and chunk.startswith(h1) else chunk
                 yield chunk, body, section, None, None

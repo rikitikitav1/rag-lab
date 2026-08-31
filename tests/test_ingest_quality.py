@@ -1,5 +1,6 @@
 import pytest
 from use_cases.ingest_quality import (
+    Metrics,
     Sample,
     gate_breaches,
     judged_by,
@@ -164,8 +165,10 @@ def test_a_source_without_any_section_breaches_a_hard_gate_and_is_broken():
 
 
 def test_a_soft_breach_alone_is_dirty_not_broken():
+    # six repeats rather than two: a ceiling abstains below MIN_BREACHING_CHUNKS, so a
+    # source small enough that one chunk decides the share cannot express this at all
     same = "# T\n## S\n" + BODY
-    m = measure([chunk(content=same, i=0), chunk(content=same, i=1)], CEILING)
+    m = measure([chunk(content=same, i=i) for i in range(6)], CEILING)
     assert gate_breaches(m, HARD) == []
     assert "dup_in_file.max" in gate_breaches(m, SOFT)
     assert verdict([], gate_breaches(m, SOFT)) == "dirty"
@@ -281,3 +284,39 @@ def test_boilerplate_reads_the_same_population_above_the_floor():
     ]
     m = measure(with_body + bodyless, CEILING)
     assert m.boilerplate == 1.0, "counted over the files a body can be drawn from"
+
+
+def _sized(chunks: int, **metrics):
+    fields = dict(
+        chunks=chunks, files=1, section_coverage=1.0, prefix_dominates=None,
+        dup_in_file=None, dup_in_source=None, tiny=None, boilerplate=None,
+        orphans=None, size_cut=None, soup=None, code_only=None,
+    )
+    return Metrics(**{**fields, **metrics})
+
+
+def test_a_ceiling_abstains_when_too_few_chunks_breach_it():
+    # three sources were called broken for holding two chunks whose heading path is
+    # longer than their body, while six larger sources held the same two and passed:
+    # the gate was reading the size of the source, not the quality of its cut
+    gates = {"prefix_dominates": {"max": 0.05}}
+    assert gate_breaches(_sized(35, prefix_dominates=2 / 35), gates) == []
+    assert gate_breaches(_sized(337, prefix_dominates=2 / 337), gates) == []
+
+
+def test_a_ceiling_still_fires_once_enough_chunks_breach_it():
+    gates = {"prefix_dominates": {"max": 0.05}}
+    assert gate_breaches(
+        _sized(60, prefix_dominates=5 / 60), gates
+    ) == ["prefix_dominates.max"]
+    assert gate_breaches(
+        _sized(337, prefix_dominates=43 / 337), gates
+    ) == ["prefix_dominates.max"]
+
+
+def test_a_floor_is_not_softened_by_the_count():
+    # chunks that are missing cannot be counted, so the abstention is for ceilings only
+    gates = {"section_coverage": {"min": 0.4}}
+    assert gate_breaches(
+        _sized(30, section_coverage=0.1), gates
+    ) == ["section_coverage.min"]
