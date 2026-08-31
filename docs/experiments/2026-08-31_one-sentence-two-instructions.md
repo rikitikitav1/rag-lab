@@ -72,7 +72,12 @@ measured is the first half.
 
 ## Decision
 
-**Not adopted, and the hypothesis is not refuted either: it was not tested.** v3 stays unactivated.
+**Not adopted, and the hypothesis is not refuted either: it was not tested.** v3 was deleted with
+the round it served, prompts and rows both, so the version number does not sit in the registry
+looking like an option. The 823 judged rows still carry `judge_faithfulness: 3` in their snapshot,
+and the sentence they were judged by is quoted above and lives in commit `19565fc`. **Number 3 is
+not to be reused for these two purposes**, or those rows would silently start pointing at another
+prompt; the next round starts at v4.
 The next round splits the sentence: one arm carrying only "across languages", one carrying only
 "by meaning, not wording", both as rejudges of the same source, so neither costs generation.
 
