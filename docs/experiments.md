@@ -88,3 +88,4 @@ Rules that decide whether an entry is worth keeping:
 - [2026-08-30 - The questions the criterion cannot see](experiments/2026-08-30_the-questions-the-criterion-cannot-see.md)
 - [2026-08-30 - Dropping what repeats across a source, and the six sections it nearly took](experiments/2026-08-30_dropping-what-repeats-across-a-source.md)
 - [2026-08-30 - The ceiling that changed nothing, and the rule that decided anyway](experiments/2026-08-30_the-ceiling-that-changed-nothing.md)
+- [2026-08-31 - One sentence, two instructions, and the arm that told them apart](experiments/2026-08-31_one-sentence-two-instructions.md)
