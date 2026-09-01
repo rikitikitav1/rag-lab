@@ -21,8 +21,7 @@ def test_a_copy_carries_every_column_but_the_key():
     carried = rejudge.carried_columns()
     every = {c.name for c in QuestionLog.__table__.columns}
     assert set(carried) == every - {"id"}
-    # the guard this test exists for: a column added by a migration must appear in the
-    # copy without anyone editing a list
+    # a column added by a migration must appear in the copy without anyone editing this
     assert "created_at" in carried and "context" in carried and "sources" in carried
 
 
@@ -47,8 +46,7 @@ def test_the_copy_keeps_what_produced_the_answer_and_drops_what_scored_it():
 
 
 def test_a_copy_names_its_target_run():
-    # the bug this guards: a value landing in the wrong column, because insert-from-select
-    # pairs the two lists by position and nothing checks the names agree
+    # insert-from-select pairs the two lists by position, so a value lands in the wrong column
     assert _picked(target="b")["run_name"] == "'b'"
 
 
@@ -62,9 +60,7 @@ def test_a_copy_refuses_before_touching_the_database(source, target, why):
 
 
 def test_the_strip_list_matches_what_the_judge_writes():
-    # the two halves of one contract, and they lived in different files: the judge writes
-    # `prompts[purpose.name]`, the copy removes `judge_<axis>`. A rename on either side
-    # would leave a copy claiming a judge it does not have
+    # the judge writes `prompts[purpose.name]` and the reader looked for another key
     from models.registry import Purpose
 
     written = {Purpose[f"judge_{axis}"].name for axis in rejudge.AXES}
@@ -92,8 +88,7 @@ def test_a_judge_model_takes_the_shape_its_sibling_door_demands():
         rejudge.validate_axes({"judge_model": [7]})
     with pytest.raises(ValueError, match="model names"):
         rejudge.validate_axes({"judge_model": ["qwen\n2.5:7b"]})
-    # the case a `match` on a `$`-anchored pattern lets through, which is why the call site
-    # uses `fullmatch`: the control character would ride into run_names and every copied row
+    # the case a `match` on a `$`-anchored pattern lets through, hence `fullmatch`
     with pytest.raises(ValueError, match="model names"):
         rejudge.validate_axes({"judge_model": ["qwen2.5:7b\n"]})
     with pytest.raises(ValueError, match="model names"):
@@ -139,8 +134,7 @@ def test_a_delta_over_nothing_is_nothing_rather_than_zero():
 
 
 def test_the_control_arm_is_expressible():
-    # the first arm anyone wants is the same run judged twice by the same judge; without
-    # a label the two arms collide on their name and the door refuses the experiment
+    # the first arm anyone wants is one run judged twice; without a label the two collapse
     rejudge.validate_axes({"repeat": [1, 2]})
     arm = {"repeat": 2}
     assert rejudge.arm_bench(arm) == rejudge.judge.Bench(model=None, versions=None)
@@ -164,9 +158,7 @@ def test_repeat_rides_along_with_a_real_axis_without_reaching_the_bench():
 
 
 def test_a_copy_may_not_claim_a_judge_the_row_has_not_had():
-    # the two halves of one contract, and they lived in different files: the judge writes
-    # `models["judging"]`, the copy removes it. A rename on either side would leave a copy
-    # naming a judge that never scored it
+    # the judge writes `models["judging"]` and the reader looked for another key
     from job_handlers import judging
 
     snapshot = judging._Snapshot({}, {}, {})
@@ -188,9 +180,8 @@ def _verdict_for_contract():
 
 
 def test_a_fanout_is_capped_by_the_work_it_makes_not_the_arms_it_names(monkeypatch):
-    # the count is stubbed on purpose: reading a real run would make the test pass or fail
-    # on which machine it runs, and the guarantee here is the arithmetic
-    monkeypatch.setattr(rejudge, "_source_rows", lambda source: 800)
+    # the count is stubbed: a real run would make this pass or fail on the machine
+    monkeypatch.setattr(rejudge, "_source_rows", lambda source, ids=None: 800)
     rejudge.refuse_oversized_fanout("any", 5)
     with pytest.raises(ValueError, match="over the cap"):
         rejudge.refuse_oversized_fanout("any", 6)
@@ -217,9 +208,7 @@ def test_every_other_kind_still_has_to_name_its_dataset():
 
 
 def test_arms_are_paired_with_their_runs_by_the_record_not_by_order():
-    # the mine: adding a value to one axis of a two-axis grid moves the product, and the
-    # old derivation zipped the new product against the old names. The lengths agree, so
-    # every arm would have been relabelled with a neighbour's name and nothing would say so
+    # adding a value to one axis moves the product, and the old derivation zipped positions
     exp = SimpleNamespace(
         axes={"judge_faithfulness": [2, 3], "repeat": [1]},
         run_names=["r_a", "r_b", "r_c"],
@@ -263,13 +252,12 @@ def test_folded_axes_keep_the_order_they_were_named_in():
 
 def _fake_reads(monkeypatch, scored: dict[str, dict]):
     monkeypatch.setattr(rejudge, "_scored", lambda name: scored.get(name, {}))
-    monkeypatch.setattr(rejudge, "answers_digest", lambda name: "sha256:same:2")
+    monkeypatch.setattr(rejudge, "answers_digest", lambda name, ids=None: "sha256:same:2")
     monkeypatch.setattr(rejudge, "_judged_by", lambda name: {"model": ["stub"], "prompts": None})
 
 
 def test_one_arm_is_compared_against_the_run_it_copied(monkeypatch):
-    # the type takes two arms or more, so a single reading used to be paid for with a
-    # second arm nobody wanted. The source carries verdicts already
+    # the type takes two arms, so a single reading was paid for with an arm nobody wanted
     _fake_reads(
         monkeypatch,
         {
@@ -315,8 +303,7 @@ def test_a_wide_grid_falls_back_to_one_base_and_says_so(monkeypatch):
 
 
 def test_the_source_arm_names_the_judge_that_scored_it(monkeypatch):
-    # the source is read as an arm, so a pair that does not name its judge compares an
-    # instrument against an unnamed one. The grid's own rows carry no judge at all
+    # the source is read as an arm, so a pair not naming its judge compares an unnamed one
     rows = [
         ({"judging": "qwen2.5:7b"}, {"judge_relevance": 2}),
         ({"judging": "qwen2.5:7b"}, {"judge_relevance": 2}),
@@ -342,7 +329,7 @@ def test_the_source_arm_names_the_judge_that_scored_it(monkeypatch):
 
 def test_the_cap_counts_the_arms_the_experiment_already_holds(monkeypatch):
     # counting only the new arms let a caller post them one at a time and walk past the cap
-    monkeypatch.setattr(rejudge, "_source_rows", lambda source: 800)
+    monkeypatch.setattr(rejudge, "_source_rows", lambda source, ids=None: 800)
     rejudge.refuse_oversized_fanout("run", 2, existing=0)
     with pytest.raises(ValueError, match="over the cap"):
         rejudge.refuse_oversized_fanout("run", 2, existing=4)
@@ -353,3 +340,144 @@ def test_an_arm_label_that_would_not_fit_a_run_name_is_refused():
     assert not rejudge.LABEL_RE.fullmatch("v" * 65)
     assert not rejudge.LABEL_RE.fullmatch("_leading")
     assert not rejudge.LABEL_RE.fullmatch("has space")
+
+
+def test_the_family_of_a_rejudge_report_is_corrected_and_named():
+    # four hypotheses and one control read at 0.05 each is how a family becomes significant
+    from use_cases.rejudge import _annotate_family
+
+    deltas = {
+        "repeat_vs_a": {
+            "faithfulness": {"p": 0.004},
+            "relevance": {"p": 0.0006},
+            "completeness": None,
+            "halves": {},
+            "same_answers": True,
+        },
+        "repeat_vs_b": {
+            "faithfulness": {"p": 0.0000007},
+            "relevance": {"p": 0.28},
+            "completeness": None,
+            "halves": {},
+            "same_answers": True,
+        },
+    }
+    out = _annotate_family(deltas)
+
+    assert (out["tests"], out["method"]) == (4, "holm")
+    assert out["family"], "the family is stated, so a narrower pre-registered one can be seen"
+    kept = {
+        f"{pair}/{axis}": stats["significant_holm"]
+        for pair, axes in deltas.items()
+        for axis, stats in axes.items()
+        if axis in ("faithfulness", "relevance") and stats
+    }
+    assert kept == {
+        "repeat_vs_a/faithfulness": True,
+        "repeat_vs_a/relevance": True,
+        "repeat_vs_b/faithfulness": True,
+        "repeat_vs_b/relevance": False,
+    }
+    # neither `halves` nor `same_answers` is a hypothesis, and a None axis is not a test
+    assert deltas["repeat_vs_a"]["completeness"] is None
+
+
+def _judged(model=("qwen2.5:7b",), faith=(2,), rel=(2,)):
+    return {"model": list(model), "prompts": {"faithfulness": list(faith), "relevance": list(rel)}}
+
+
+def test_a_rejudge_without_an_arm_reproducing_the_source_judge_is_refused(monkeypatch):
+    # a source judged days earlier carries that pass's drift into the delta
+    from use_cases import rejudge
+
+    monkeypatch.setattr(rejudge, "_judged_by", lambda run: _judged())
+    monkeypatch.setattr(
+        rejudge, "_effective_judge",
+        lambda arm: {
+            "model": arm.get("judge_model") or "qwen2.5:7b",
+            "prompts": {
+                axis: arm.get(f"judge_{axis}") or 3 for axis in ("faithfulness", "relevance")
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="no arm reproduces the judge"):
+        rejudge.refuse_unpaired_rejudge("src", [{"judge_faithfulness": 4, "judge_relevance": 4}])
+
+    # the control is an arm judging the same rows with the source's own versions
+    rejudge.refuse_unpaired_rejudge(
+        "src",
+        [{"judge_faithfulness": 4, "judge_relevance": 4},
+         {"repeat": "2", "judge_faithfulness": 2, "judge_relevance": 2}],
+    )
+
+
+def test_a_source_carrying_no_judge_at_all_says_so_rather_than_guessing(monkeypatch):
+    # rows written before the judge was stamped: the record cannot name what scored them
+    from use_cases import rejudge
+
+    monkeypatch.setattr(rejudge, "_judged_by", lambda run: {"model": None, "prompts": None})
+
+    with pytest.raises(ValueError, match="carry no judge at all"):
+        rejudge.refuse_unpaired_rejudge("src", [{"judge_faithfulness": 4}])
+    rejudge.refuse_unpaired_rejudge("src", [{"judge_faithfulness": 4}], unpaired=True)
+
+    # a `repeat` arm is the human saying which judge they believe produced the source
+    rejudge.refuse_unpaired_rejudge(
+        "src", [{"judge_faithfulness": 4}, {"repeat": "2", "judge_faithfulness": 2}]
+    )
+
+
+def test_a_source_judged_by_two_versions_cannot_be_paired_at_all(monkeypatch):
+    from use_cases import rejudge
+
+    monkeypatch.setattr(rejudge, "_judged_by", lambda run: _judged(faith=(2, 3)))
+
+    with pytest.raises(ValueError, match="more than one judge prompt version"):
+        rejudge.refuse_unpaired_rejudge("src", [{"judge_faithfulness": 2, "judge_relevance": 2}])
+
+
+def test_same_answers_asks_about_the_rows_a_pair_shares(monkeypatch):
+    # an arm judged on a sample differs in size alone, and whole-run digests then disagree
+    asked = []
+
+    def digest(name, ids=None):
+        asked.append((name, tuple(ids or ())))
+        return "sha256:same:10"
+
+    monkeypatch.setattr(rejudge, "answers_digest", digest)
+    loaded = {"arm": {1: {}, 2: {}, 3: {}}, "ctl": {2: {}, 3: {}}, "src": {}}
+
+    assert rejudge._same_answers("arm", "ctl", "src", loaded)
+    assert all(ids == (2, 3) for _, ids in asked), "the shared rows, not either whole run"
+    assert {name for name, _ in asked} == {"arm", "ctl", "src"}
+
+
+def test_a_pair_with_nothing_in_common_is_not_the_same_answers(monkeypatch):
+    monkeypatch.setattr(rejudge, "answers_digest", lambda name, ids=None: "sha256:same:0")
+    assert not rejudge._same_answers("a", "b", "src", {"a": {1: {}}, "b": {2: {}}, "src": {}})
+
+
+def test_the_axes_an_arm_does_not_move_are_its_controls():
+    # a round changing the faithfulness prompt is checked by completeness not moving
+    assert rejudge.control_axes({"judge_faithfulness": 4, "judge_relevance": 4}) == [
+        "completeness"
+    ]
+    assert rejudge.control_axes({"repeat": "2"}) == list(rejudge.AXES)
+
+    plain = rejudge.arm_options({"judge_faithfulness": 4}, "arm")
+    assert "control_axes" not in plain, "nothing changes unless a sample is asked for"
+
+    sampled = rejudge.arm_options({"judge_faithfulness": 4}, "arm", control_sample=200)
+    assert sampled["control_axes"] == ["relevance", "completeness"]
+    assert sampled["control_sample"] == 200
+
+
+def test_an_arm_reproduces_nothing_when_the_source_never_said_what_judged_it():
+    from use_cases import rejudge
+
+    unstamped = {"model": ["qwen2.5:7b"], "prompts": None}
+    assert rejudge._reproduces({"judge_model": "qwen2.5:7b"}, unstamped) is False
+
+    no_model = {"model": None, "prompts": {"faithfulness": [2]}}
+    assert rejudge._reproduces({"judge_faithfulness": 2}, no_model) is False

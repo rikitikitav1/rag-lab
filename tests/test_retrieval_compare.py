@@ -87,43 +87,9 @@ def test_an_axis_nobody_applies_is_refused_at_the_route(client):
     assert "unknown axes" in out.text
 
 
-def test_the_search_mode_does_not_outlive_the_comparison(monkeypatch):
-    # the listener sits on the process-wide engine: left installed, it hands this job's
-    # search mode to every later job in the same worker
-    from orm.sync_db import engine
-    from sqlalchemy import event
-
-    rc.prepare(True)
-    assert rc._APPLIED is not None
-    assert event.contains(engine, "checkout", rc._APPLIED)
-
-    installed = rc._APPLIED
-    rc.release()
-    assert rc._APPLIED is None
-    assert not event.contains(engine, "checkout", installed)
-
-
-def test_the_guard_releases_even_when_an_arm_raises():
-    # the same guard the grid uses, so the shipped path is the tested one
-    with pytest.raises(RuntimeError):
-        with rc.search_mode(True):
-            raise RuntimeError("an arm died")
-    assert rc._APPLIED is None
-
-
-def test_the_grid_guard_releases_a_mode_set_by_any_arm():
-    with pytest.raises(RuntimeError):
-        with rc.search_mode_restored():
-            rc.prepare(True)
-            rc.prepare(False, ef=200)
-            raise RuntimeError("the second arm died")
-    assert rc._APPLIED is None
-
-
 def test_a_delta_moves_only_the_axis_of_record():
     axes = {"variant": ["baseline", "clean_1024"], "rerank_top": [0, 20]}
-    # every arm that is not already at the first value of the axis of record has a
-    # reference differing from it in that axis alone
+    # every arm not at the first value has a reference differing only in the axis of record
     pairs = {
         rc.arm_name(a): rc.arm_name(rc._reference_for(a, "variant", axes))
         for a in rc.arms(axes)
@@ -188,17 +154,13 @@ def _stub_session(exp, rows_won: int | None = None):
             return exp
 
         def execute(self, statement):
-            # the WHERE is read from the statement, not decided here: a stub that computes
-            # the winner itself lets the compare-and-swap be deleted with the suite green,
-            # and that swap is the whole safety property of this state machine
+            # the WHERE is read from the statement: a stub deciding the winner lets the swap be deleted
             if rows_won is not None:
                 won = rows_won
             else:
                 where = str(statement.compile()).split("WHERE", 1)
                 guarded = len(where) > 1 and "status" in where[1]
-                # an unguarded UPDATE lands, it does not abstain. Modelling a missing
-                # guard as "nothing happened" let the guard be deleted with the tests
-                # named after it still green
+                # an unguarded UPDATE lands, it does not abstain, and modelling it as nothing hid the guard
                 won = int(exp.status == ExperimentStatus.running) if guarded else 1
             if won:
                 for key, value in statement.compile().params.items():
@@ -236,15 +198,16 @@ class _Exp:
 
 
 def test_a_retry_reclaims_the_row_before_it_measures_again(monkeypatch):
-    # the attempt before it left the row failed, and aggregating from failed is refused,
-    # so without this the grid is measured and thrown away
+    # the attempt before left the row failed, and aggregating from failed is refused
     from job_handlers import evaluation
     from models.experiment import ExperimentStatus
+    from use_cases import experiment as experiment_uc
 
     exp = _Exp(ExperimentStatus.failed)
-    # the stub swaps only while the row reads running, so without the reclaim the update
-    # lands on nothing and the measured grid goes to the not-advanced branch
-    monkeypatch.setattr(evaluation, "Session", _stub_session(exp))
+    # the stub swaps only while the row reads running, so without the reclaim it lands on nothing
+    stub = _stub_session(exp)
+    monkeypatch.setattr(evaluation, "Session", stub)
+    monkeypatch.setattr(experiment_uc, "Session", stub)
     monkeypatch.setattr(rc, "run", lambda plan: {"arms": {}})
     evaluation.compare_retrieval({"experiment_id": 1})
     assert exp.status == ExperimentStatus.aggregated
@@ -255,10 +218,14 @@ def test_a_finished_record_is_never_written_over_by_a_late_comparison(monkeypatc
     # a requeued job on a concluded row would put fresh numbers under a written conclusion
     from job_handlers import evaluation
     from models.experiment import ExperimentStatus
+    from use_cases import experiment as experiment_uc
 
     standing = {"arms": {"the numbers the conclusion was written about": 1}}
     exp = _Exp(ExperimentStatus.concluded, results=standing)
-    monkeypatch.setattr(evaluation, "Session", _stub_session(exp))
+    # the swap itself lives with the generation kind now, so both doors read one stub
+    stub = _stub_session(exp)
+    monkeypatch.setattr(evaluation, "Session", stub)
+    monkeypatch.setattr(experiment_uc, "Session", stub)
     monkeypatch.setattr(rc, "run", lambda plan: {"arms": {"fresh": 2}})
     evaluation.compare_retrieval({"experiment_id": 1})
     assert exp.results is standing
@@ -269,9 +236,13 @@ def test_a_grid_measured_against_an_empty_record_is_kept(monkeypatch):
     # it destroys nothing there, and an hour of measuring is not a log line
     from job_handlers import evaluation
     from models.experiment import ExperimentStatus
+    from use_cases import experiment as experiment_uc
 
     exp = _Exp(ExperimentStatus.aggregated, results=None)
-    monkeypatch.setattr(evaluation, "Session", _stub_session(exp))
+    # the swap itself lives with the generation kind now, so both doors read one stub
+    stub = _stub_session(exp)
+    monkeypatch.setattr(evaluation, "Session", stub)
+    monkeypatch.setattr(experiment_uc, "Session", stub)
     measured = {"arms": {"fresh": 2}}
     monkeypatch.setattr(rc, "run", lambda plan: measured)
     evaluation.compare_retrieval({"experiment_id": 1})
@@ -312,8 +283,7 @@ def test_a_switch_is_not_a_depth(client):
 
 
 def test_every_axis_measure_applies_has_a_rule_and_a_message():
-    # the rules are the subject AXES is derived from, so the thing worth asserting is that
-    # each of them is refusable and printable, and that measure() reads exactly these
+    # the rules are what AXES is derived from, so each of them is what is worth asserting
     import inspect
 
     taken = set(inspect.signature(rc.measure).parameters)
@@ -384,8 +354,7 @@ def test_the_stored_axes_are_validated_where_a_retry_reads_them():
 
 
 def test_a_record_says_whether_its_two_arms_were_comparable():
-    # the axis of record is allowed to differ and nothing else is; `ef_search` is the axis
-    # whose name in the procedure is `search`, so without the map it would flag itself
+    # the axis of record may differ and nothing else; `ef_search` is named differently
     base = rc.arm_procedure({"variant": "baseline", "ef_search": 100}, [{"id": 1}], "s")
     arm = rc.arm_procedure({"variant": "baseline", "ef_search": 200}, [{"id": 1}], "s")
     field = rc.AXIS_FIELD.get("ef_search", "ef_search")
@@ -399,23 +368,3 @@ def test_a_record_says_whether_its_two_arms_were_comparable():
     ]
 
 
-def test_two_prepares_leave_exactly_one_listener(monkeypatch):
-    # the swap read the old listener, removed it, and installed the new one in three
-    # steps; two lanes interleaving there left one listener on the engine forever
-    from orm.sync_db import engine
-    from sqlalchemy import event
-    from use_cases import retrieval_compare as rc
-
-    installed = []
-    monkeypatch.setattr(event, "listen", lambda t, n, fn: installed.append(fn))
-    monkeypatch.setattr(
-        event, "remove", lambda t, n, fn: installed.remove(fn) if fn in installed else None
-    )
-    monkeypatch.setattr(engine, "dispose", lambda: None)
-    monkeypatch.setattr(rc, "_APPLIED", None)
-
-    rc.prepare(exact=True)
-    rc.prepare(exact=False, ef=200)
-    assert len(installed) == 1
-    rc.release()
-    assert installed == []

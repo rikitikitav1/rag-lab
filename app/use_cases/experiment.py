@@ -4,6 +4,7 @@ import logging_setup
 import numpy as np
 from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
+from evals.stats import annotate_holm, deltas_over, score_of
 from evals.stats import delta_stats as _delta_stats
 from models.eval import Question, QuestionLog
 from models.experiment import Experiment, ExperimentKind, ExperimentStatus, can_advance
@@ -14,12 +15,11 @@ from use_cases import rejudge
 log = logging_setup.get_logger(__name__)
 
 _RRF_K = 60
-_AXES = ("faithfulness", "relevance", "completeness")
+_AXES = rejudge.AXES
 _COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")
 
 
-# asks the judge's own predicate rather than a second spelling of it: counting only
-# faithfulness-with-context let a run whose rows carry no context read as fully judged
+# the judge's own predicate: counting faithfulness-with-context read a run as fully judged
 def _run_pending(session, run_name: str) -> int:
     from job_handlers.judging import still_to_judge
 
@@ -64,22 +64,15 @@ def _rrf(per_value: dict) -> dict[str, float]:
     return scores
 
 
-def _score(value):
-    return None if value is None else int(value)
-
-
 def _paired_logs(set_a: list, set_b: list) -> list:
     by_id_b = {ql.question_id: ql for ql in set_b}
     return [(a, by_id_b[a.question_id]) for a in set_a if a.question_id in by_id_b]
 
 
 def _axis_deltas(pairs: list, axis: str) -> list:
-    deltas = []
-    for a, b in pairs:
-        va, vb = _score(getattr(a, axis)), _score(getattr(b, axis))
-        if va is not None and vb is not None:
-            deltas.append(vb - va)
-    return deltas
+    before = {a.question_id: score_of(getattr(a, axis)) for a, _ in pairs}
+    after = {b.question_id: score_of(getattr(b, axis)) for _, b in pairs}
+    return deltas_over(before, after, [a.question_id for a, _ in pairs])
 
 
 def _compare_question_sets(set_a: list, set_b: list) -> dict:
@@ -94,22 +87,13 @@ def _compare_question_sets(set_a: list, set_b: list) -> dict:
 
 def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
     tests = [s for axes in comparisons.values() for s in axes.values() if s is not None]
-    threshold = alpha / len(tests) if tests else None
-    for s in tests:
-        s["significant_raw"] = s["p"] < alpha
-        s["significant_bonferroni"] = s["p"] < threshold
-    return {
-        "comparisons": comparisons,
-        "method": "bonferroni",
-        "alpha": alpha,
-        "tests": len(tests),
-        "threshold": round(threshold, 5) if threshold else None,
-    }
+    # a reader who declared a narrower family before the run corrects over that one, and says so
+    family = annotate_holm(tests, "every pair of the grid on every axis", alpha)
+    return {"comparisons": comparisons, **family}
 
 
-# 1 is every generation report written before the field existed; readers tell them apart
-# by this rather than by the date the row was created
-SCHEMA = 2
+# 1 before the field; 2 Bonferroni; 3 Holm, the family named, `answered_ungrounded` read
+SCHEMA = 3
 
 
 def compute_results(param: str, param_values: list, run_names: list[str]) -> dict:
@@ -172,13 +156,28 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
     }
 
 
-# the report is computed with nothing held open. It is minutes of bootstrap over the rows
-# plus a session per arm, and doing that inside the transaction that has just claimed the
-# experiment holds a write lock on the row for as long as the arithmetic takes
+def for_reading(results: dict) -> dict:
+    pairwise = (results.get("composite") or {}).get("pairwise") or {}
+    return {
+        "source_run": None,
+        # the arms answer the same questions, and every axis is compared over that pairing
+        "pairing": "by question",
+        "multiplicity": {k: v for k, v in pairwise.items() if k != "comparisons"},
+        "ranking": {k: v for k, v in (results.get("composite") or {}).items()
+                    if k in ("method", "winner", "ranking", "axes")},
+        "arms": {
+            value: {k: v for k, v in body.items()
+                    if k in ("run_name", "n_scored", "mrr", "hit_at_k", *_COMPOSITE_AXES)}
+            for value, body in (results.get("per_value") or {}).items()
+        },
+        "deltas": pairwise.get("comparisons") or {},
+    }
+
+
+# nothing held open: minutes of bootstrap would hold a write lock for that long
 def _report(exp: Experiment) -> dict:
     if exp.kind == ExperimentKind.rejudge:
-        # not the generation report: arms of a rejudge share their answers, so retrieval
-        # metrics are identical by construction and an rrf over them ranks noise
+        # arms of a rejudge share their answers, so an rrf over their retrieval ranks noise
         return rejudge.compute_results(
             exp.procedure.get("source_run"), exp.param, rejudge.paired_arms(exp)
         )
@@ -191,8 +190,7 @@ def _report_of(experiment_id: int) -> dict:
 
 
 def aggregate(experiment_id: int) -> bool:
-    # the report is computed with nothing held: it is minutes of bootstrap over the rows,
-    # and holding the row's lock for that long blocks every reader of the experiment
+    # computed with nothing held: holding the row's lock blocks every reader of the experiment
     with Session() as session:
         exp = session.get(Experiment, experiment_id)
         if exp is None or exp.status != ExperimentStatus.running:
@@ -202,9 +200,22 @@ def aggregate(experiment_id: int) -> bool:
         started_at, kind = exp.started_at, exp.kind
     results = _report_of(experiment_id)
 
-    # then the status and the report land together, guarded on the status the report was
-    # computed for, the way the retrieval kind does it. Two writes would let an arm added
-    # meanwhile take the row back to `running` and receive a report about fewer arms
+    if not record_report(experiment_id, results, started_at):
+        # the row moved while the report was computed; whoever moved it aggregates in its own turn
+        log.info("experiment.moved_while_aggregating", id=experiment_id)
+        return False
+    # a rejudge has no winner: its arms are one set of answers read twice
+    log.info(
+        "experiment.aggregated",
+        id=experiment_id,
+        kind=str(kind),
+        winner=(results.get("composite") or {}).get("winner"),
+    )
+    return True
+
+
+# guarded on the status the report was computed for, or an arm added meanwhile takes it back
+def record_report(experiment_id: int, results: dict, started_at) -> bool:
     with Session() as session:
         finished = datetime.now(timezone.utc)
         won = session.execute(
@@ -225,31 +236,17 @@ def aggregate(experiment_id: int) -> bool:
             )
         ).rowcount
         if not won:
-            # the row moved while the report was being computed, so the report describes a
-            # state that is gone. Whoever moved it will be aggregated in its own turn
             session.rollback()
-            log.info("experiment.moved_while_aggregating", id=experiment_id)
             return False
         session.commit()
-    # a rejudge has no winner: its arms are one set of answers read twice, and the report
-    # is the paired delta rather than a ranking
-    log.info(
-        "experiment.aggregated",
-        id=experiment_id,
-        kind=str(kind),
-        winner=(results.get("composite") or {}).get("winner"),
-    )
-    return True
+        return True
 
 
-# both kinds whose arms are finished by the judge: a rejudge arm is a judge job like a
-# generation arm's, so it advances and fails its experiment the same way
+# a rejudge arm is a judge job like a generation arm's, and advances the same way
 _JUDGED_KINDS = (ExperimentKind.generation, ExperimentKind.rejudge)
 
 
-# a run that exhausted its attempts leaves its experiment `running` for ever: nothing
-# aggregates (the series never completes) and nothing moves it on, so the row waits for a
-# sibling that is not coming. The transition is declared; this is what traverses it
+# a run out of attempts leaves the experiment `running` for ever; this traverses it
 def mark_failed_for_run(run_name: str) -> None:
     with Session() as session:
         won = session.execute(
@@ -269,14 +266,11 @@ def mark_failed_for_run(run_name: str) -> None:
 
 
 def revive_for_run(run_name: str) -> None:
-    # a retry arrives with the row left `failed` by the attempt before it, and aggregating
-    # from there is refused, so the arms would be judged and thrown away. The retrieval
-    # kind already does this in its own handler; the judged kinds had no equivalent
+    # a retry arrives with the row `failed`, and aggregating from there is refused
     with Session() as session:
         for exp in session.scalars(
             select(Experiment).where(
-                # a rejudge only: its arms are copies, so re-enqueueing the judge is the
-                # whole recovery. A generation arm that died has no answers to come back to
+                # a rejudge only: a generation arm that died has no answers to come back to
                 Experiment.kind == ExperimentKind.rejudge,
                 Experiment.status == ExperimentStatus.failed,
                 Experiment.run_names.contains([run_name]),
@@ -289,8 +283,7 @@ def revive_for_run(run_name: str) -> None:
         session.commit()
 
 
-# a row left `failed` by another arm is taken back only when every arm it still names is
-# judged, so an experiment that really is missing rows keeps the status a human can see
+# taken back only when every arm it still names is judged, so a real gap stays visible
 def revive_if_complete(session, exp) -> bool:
     return (
         exp is not None
@@ -306,8 +299,7 @@ def try_aggregate_for_run(run_name: str) -> None:
             session.scalars(
                 select(Experiment.id).where(
                     Experiment.kind.in_(_JUDGED_KINDS),
-                    # `failed` too: cancelling one arm fails the whole row, and a sibling
-                    # still judging would otherwise finish into a status that never aggregates
+                    # `failed` too: cancelling one arm fails the row, and a sibling would finish into it
                     Experiment.status.in_((ExperimentStatus.running, ExperimentStatus.failed)),
                     Experiment.run_names.contains([run_name]),
                 )

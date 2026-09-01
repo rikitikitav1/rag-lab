@@ -2,21 +2,31 @@ import hashlib
 import itertools
 import re
 
+import prompt_repo
+from evals import sampling
+from evals.stats import annotate_holm, deltas_over, mean_of, tally
 from models.eval import QuestionLog
-from models.registry import MODEL_NAME_RE, Model, Prompt, Purpose, Status
+from models.registry import (
+    MAX_MODEL_NAME,
+    MODEL_NAME_RE,
+    Model,
+    ModelRole,
+    Prompt,
+    Purpose,
+    Role,
+    Status,
+)
 from orm.sync_db import Session
+from scipy.stats import wilcoxon
 from sqlalchemy import delete, func, insert, literal, select, text
 from use_cases import judge, retrieval_compare
 from use_cases.retrieval_compare import bootstrap_ci, half_of
 
-# 1 had per-arm means and deltas against the first arm only
-# 2 added `pairing`, every pair up to a cap, and the source read as an arm (`source_scored`)
-# 3 added the judge that scored the source, because the source is compared like an arm
-SCHEMA = 3
+# 1 means and deltas; 2 pairing and `source_scored`; 3 the source's judge; 4 p and Holm
+SCHEMA = 4
 
 AXES = ("faithfulness", "relevance", "completeness")
-# a copy is unjudged, so it must not carry the judge the original named: `models.judging`
-# and `prompts.judge_*` are claims about a verdict this row does not have yet
+# a copy is unjudged, so it must not carry the judge the original named
 JUDGE_MODEL_KEY = "judging"
 
 
@@ -27,41 +37,39 @@ def _stripped(column, keys):
 
 
 # one run's answers under a new name, verdicts cleared, ready to be judged again
-def copy_run(source: str, target: str) -> int:
+def copy_run(source: str, target: str, question_ids=None) -> int:
     if not source or not target:
         raise ValueError("both the source run and the name of the copy are required")
     if source == target:
         raise ValueError("a copy under the same name would be judged as the original")
 
-    refuse_oversized_fanout(source, 1)
+    refuse_oversized_fanout(source, 1, question_ids=question_ids)
     with Session() as session:
         _refuse_bad_pair(session, source, target)
 
-        # RETURNING rather than rowcount: an INSERT ... SELECT reports -1 through this
-        # driver, and a copy that cannot say how many rows it made is not a measurement
-        copied = session.execute(copy_statement(source, target)).scalars().all()
+        # RETURNING, not rowcount: an INSERT ... SELECT reports -1 through this driver
+        copied = session.execute(copy_statement(source, target, question_ids)).scalars().all()
         session.commit()
         return len(copied)
 
 
-# all of them or none: a half-made fan-out commits its copies while the experiment row
-# rolls back, and the names are then burned for the identical retry
-def copy_runs(source: str, targets: list[str]) -> dict[str, int]:
-    # the same refusal `copy_run` makes: a null source compiles to `run_name IS NULL` and
-    # the copy then fans out over every orphan row in the table
+# all of them or none: half a fan-out burns the names for the identical retry
+def copy_runs(source: str, targets: list[str], question_ids=None) -> dict[str, int]:
+    # a null source compiles to `run_name IS NULL` and fans out over every orphan row
     if not source or not targets or not all(targets):
         raise ValueError(f"a copy needs a source run and names, got {source!r} {targets}")
     if len(set(targets)) != len(targets):
         raise ValueError(f"the copies must have distinct names, got {targets}")
-    refuse_oversized_fanout(source, len(targets))
-    # a fixed order, not the caller's: two fan-outs sharing a name would otherwise take
-    # their advisory locks in opposite orders and deadlock
+    refuse_oversized_fanout(source, len(targets), question_ids=question_ids)
+    # a fixed order: two fan-outs sharing a name would take their locks in opposite orders
     targets = sorted(targets)
     with Session() as session:
         for target in targets:
             _refuse_bad_pair(session, source, target)
         made = {
-            target: len(session.execute(copy_statement(source, target)).scalars().all())
+            target: len(
+                session.execute(copy_statement(source, target, question_ids)).scalars().all()
+            )
             for target in targets
         }
         session.commit()
@@ -80,9 +88,7 @@ def delete_runs(names: list[str]) -> int:
         return done
 
 
-# the check below is a count then an insert, and the door is a sync handler FastAPI serves
-# from a threadpool, so two identical requests can both find the name free. The lock is
-# released by the commit or the rollback; a unique index would cost the whole schema a rule
+# a count then an insert from a threadpool: two requests both find the name free
 def _claim(session, target: str) -> None:
     session.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:name))"), {"name": target}
@@ -91,9 +97,7 @@ def _claim(session, target: str) -> None:
 
 def _refuse_bad_pair(session, source: str, target: str) -> None:
     _claim(session, target)
-    # answered, not merely present: a run where nothing was answered copies cleanly, the
-    # judge finds no targets, the series reads as complete on its first job, and the
-    # report lands with n=0 everywhere and three digests over nothing agreeing
+    # answered, not merely present: a run of nothing copies cleanly and reads as complete
     if not session.scalar(
         select(func.count())
         .select_from(QuestionLog)
@@ -107,12 +111,11 @@ def _refuse_bad_pair(session, source: str, target: str) -> None:
 
 
 def carried_columns() -> list[str]:
-    # taken from the model rather than listed by hand: a migration that adds a column
-    # would otherwise produce a copy silently missing it
+    # taken from the model: a migration adding a column would leave the copy missing it
     return [c.name for c in QuestionLog.__table__.columns if c.name != "id"]
 
 
-def copy_statement(source: str, target: str):
+def copy_statement(source: str, target: str, question_ids=None):
     carried = carried_columns()
     overrides = {
         "run_name": literal(target),
@@ -124,37 +127,34 @@ def copy_statement(source: str, target: str):
     picked = select(
         *[overrides.get(name, getattr(QuestionLog, name)) for name in carried]
     ).where(QuestionLog.run_name == source)
+    if question_ids is not None:
+        picked = picked.where(QuestionLog.question_id.in_(list(question_ids)))
     return insert(QuestionLog).from_select(carried, picked).returning(QuestionLog.id)
 
 
-# what an arm may move; everything else is held by construction, the answers being copied
-# rather than produced. `repeat` moves nothing and exists so the same run judged twice by
-# the same judge has two arm names: its delta is the judge's own noise, not an effect
+# what an arm may move. `repeat` moves nothing: its delta is the judge's own noise
 REPEAT = "repeat"
 AXES_ALLOWED = (REPEAT, "judge_model", *[f"judge_{axis}" for axis in AXES])
-# arms are capped by the grid, the work they make is not: one request over the 823-question
-# sets can copy 26k rows and queue 79k judge calls. This caps what the fan-out may cost
+# one request over the 823-question sets can copy 26k rows and queue 79k judge calls
 MAX_ARM_ROWS = 4000
 # what a `repeat` label may look like: it becomes part of a run name on every copied row
 LABEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
-# what the copy will actually make, not what the judge will look at: the cap is about the
-# rows written, and `copy_statement` copies every row of the source
-def _source_rows(source: str) -> int:
+# the cap is about rows written, and `copy_statement` copies every row of the source
+def _source_rows(source: str, question_ids=None) -> int:
+    stmt = select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == source)
+    if question_ids is not None:
+        stmt = stmt.where(QuestionLog.question_id.in_(list(question_ids)))
     with Session() as session:
-        return session.scalar(
-            select(func.count())
-            .select_from(QuestionLog)
-            .where(QuestionLog.run_name == source)
-        ) or 0
+        return session.scalar(stmt) or 0
 
 
-# `existing` is what the experiment already holds: the cap is a property of the experiment,
-# not of one request, and counting only the new arms let a caller post them one at a time
-# and reach the 26k rows the cap was written to refuse
-def refuse_oversized_fanout(source: str, arm_count: int, existing: int = 0) -> None:
-    rows = _source_rows(source)
+# `existing` is what the experiment holds: arms posted one at a time reached 26k rows
+def refuse_oversized_fanout(
+    source: str, arm_count: int, existing: int = 0, question_ids=None
+) -> None:
+    rows = _source_rows(source, question_ids)
     total = rows * (arm_count + existing)
     if total > MAX_ARM_ROWS:
         raise ValueError(
@@ -163,8 +163,7 @@ def refuse_oversized_fanout(source: str, arm_count: int, existing: int = 0) -> N
         )
 
 
-# shape was checked and existence was not, the same hole the retrieval kind had with an
-# undeclared variant: the arm dies per log, the job says done, the experiment waits for ever
+# shape was checked and existence was not: the arm dies per log while the job says done
 def unseeded_prompt_versions(axes: dict) -> list[str]:
     missing = []
     with Session() as session:
@@ -196,6 +195,65 @@ def judges_not_ready(axes: dict) -> list[str]:
     return sorted(set(named) - ready)
 
 
+# an omitted axis is not "nothing", it is whichever version is active right now
+def _effective_judge(arm: dict) -> dict:
+    with Session() as session:
+        served = session.scalar(
+            select(Model.name)
+            .join(ModelRole, ModelRole.model_id == Model.id)
+            .where(ModelRole.role == Role.judging)
+        )
+    unnamed = [Purpose[f"judge_{axis}"] for axis in AXES if not arm.get(f"judge_{axis}")]
+    active = prompt_repo.active_versions(unnamed) if unnamed else {}
+    versions = {
+        axis: arm.get(f"judge_{axis}") or active[f"judge_{axis}"] for axis in AXES
+    }
+    return {"model": arm.get("judge_model") or served, "prompts": versions}
+
+
+# with no prompt versions on the rows, `all()` over nothing was True and any model matched
+def _reproduces(arm: dict, judged: dict) -> bool:
+    named_model = (judged.get("model") or [None])[0]
+    named = {axis: seen for axis, seen in (judged.get("prompts") or {}).items() if len(seen) == 1}
+    if not named_model or not named:
+        return False
+    effective = _effective_judge(arm)
+    if effective["model"] != named_model:
+        return False
+    return all(effective["prompts"][axis] == seen[0] for axis, seen in named.items())
+
+
+# drift between passes has run from -0.0972 to +0.2442, the size of the effects we look for
+def refuse_unpaired_rejudge(source_run: str, arms: list[dict], unpaired: bool = False) -> None:
+    if unpaired:
+        return
+    judged = _judged_by(source_run)
+    named = {axis: seen for axis, seen in (judged.get("prompts") or {}).items()}
+    mixed = sorted(axis for axis, seen in named.items() if len(seen) > 1)
+    if mixed:
+        raise ValueError(
+            f"the rows of {source_run} carry more than one judge prompt version on {mixed},"
+            " so no arm can reproduce their judge: judge a clean source, or pass unpaired=true"
+        )
+    if not named and not judged.get("model"):
+        # rows written before the judge was stamped: the door can only insist a human declared one
+        if not any(REPEAT in arm for arm in arms):
+            raise ValueError(
+                f"the rows of {source_run} carry no judge at all, so the record cannot say"
+                " what a control would have to reproduce: add a `repeat` arm naming the judge"
+                " you believe produced them (about 1.5 h of card per 823 rows), or pass"
+                " unpaired=true and read no deltas against the source"
+            )
+        return
+    if not any(_reproduces(arm, judged) for arm in arms):
+        wanted = {axis: seen[0] for axis, seen in named.items()}
+        raise ValueError(
+            f"no arm reproduces the judge of {source_run} ({judged.get('model')}, {wanted}),"
+            " so every delta against it would carry the drift of another pass: add that arm"
+            " (about 1.5 h of card per 823 rows), or pass unpaired=true"
+        )
+
+
 def validate_axes(axes: dict) -> None:
     unknown = sorted(set(axes) - set(AXES_ALLOWED))
     if unknown:
@@ -208,11 +266,11 @@ def validate_axes(axes: dict) -> None:
         if not values:
             raise ValueError(f"axis {name} has no values")
         if name == "judge_model":
-            # the same shape the generation door demands of a swept model: without it a
-            # 300-character value with a newline in it reached psycopg as a 500
+            # without it a 300-character value with a newline reached psycopg as a 500
             bad = [
                 v for v in values
-                if not isinstance(v, str) or len(v) > 128 or not MODEL_NAME_RE.fullmatch(v)
+                if not isinstance(v, str) or len(v) > MAX_MODEL_NAME
+                or not MODEL_NAME_RE.fullmatch(v)
             ]
             if bad:
                 raise ValueError(f"judge_model takes model names, got {bad}")
@@ -222,8 +280,7 @@ def validate_axes(axes: dict) -> None:
                       for v in values]
             if None in labels:
                 raise ValueError(f"repeat takes labels, got {values}")
-            # the label rides into `run_name` on every copied row, so it is bounded the way
-            # a model name is: unbounded, one request writes gigabytes of run names
+            # the label rides into `run_name` on every copied row, so it is bounded
             bad = [
                 v for v in labels
                 if not LABEL_RE.fullmatch(str(v))
@@ -240,15 +297,12 @@ def validate_axes(axes: dict) -> None:
             raise ValueError(f"{name} takes prompt versions, got {bad}")
 
 
-# from the record, not rebuilt from the axes: adding a value to one axis reshuffles the
-# product, and pairing by position would relabel every arm with a neighbour's name while
-# the lengths still agreed
+# from the record: pairing by position would relabel every arm with a neighbour's name
 def paired_arms(exp) -> list[tuple[dict, str]]:
     stored = (exp.procedure or {}).get("arms")
     if stored:
         return [(row["arm"], row["run"]) for row in stored]
-    # experiments recorded before the mapping was stored: their grid was never extended,
-    # so the product still reproduces the order their names were made in
+    # experiments recorded before the mapping was stored: their grid was never extended
     return list(zip(retrieval_compare.arms(exp.axes), exp.run_names, strict=True))
 
 
@@ -256,9 +310,7 @@ def stored_arms(pairs: list[tuple[dict, str]]) -> list[dict]:
     return [{"arm": arm, "run": name} for arm, name in pairs]
 
 
-# arms named one by one rather than as a grid: the caller adding an arm to a finished
-# experiment knows which arm it wants, and the product of the extended axes would also
-# name the arms already run
+# arms named one by one: the product would also name the arms already run
 def folded_axes(arms: list[dict]) -> dict:
     axes: dict[str, list] = {}
     for arm in arms:
@@ -275,6 +327,11 @@ def validate_arms(arms: list[dict]) -> None:
     if any(not isinstance(arm, dict) or not arm for arm in arms):
         raise ValueError("an arm is a mapping of axis to value, and it is not empty")
     validate_axes(folded_axes(arms))
+    refuse_repeated_names(arms)
+
+
+# two arms under one name are one arm in every reading downstream
+def refuse_repeated_names(arms: list[dict]) -> None:
     names = [retrieval_compare.arm_name(arm) for arm in arms]
     if len(set(names)) != len(names):
         raise ValueError(f"arms do not have distinct names: {sorted(names)}")
@@ -289,24 +346,40 @@ def arm_bench(arm: dict) -> judge.Bench:
     return judge.Bench(model=arm.get("judge_model"), versions=versions or None)
 
 
-def arm_options(arm: dict, run_name: str) -> dict:
-    return {
+# the axes this arm does not move are its control, and may be judged on a sample
+def control_axes(arm: dict) -> list[str]:
+    named = {name.removeprefix("judge_") for name in _prompt_axes(arm)}
+    return [axis for axis in AXES if axis not in named]
+
+
+def arm_options(
+    arm: dict, run_name: str, control_sample: int | None = None, control_seed: int = 0
+) -> dict:
+    out = {
         "run_name": run_name,
         "judge_model": arm.get("judge_model"),
         "judge_prompts": _prompt_axes(arm),
     }
+    if control_sample:
+        out["control_axes"] = control_axes(arm)
+        out["control_sample"] = control_sample
+        # without the seed no reader can say which questions the control was judged on
+        out["control_seed"] = control_seed
+    return out
 
 
-# what was judged, as a fact in the record rather than a promise in the description
-def answers_digest(run_name: str) -> str:
+# `question_ids` narrows it to the shared rows: whole-run digests of two sizes differ
+def answers_digest(run_name: str, question_ids=None) -> str:
+    stmt = (
+        select(QuestionLog.question_id, QuestionLog.answer)
+        # ordered by something stable across copies: `id` comes from an unordered INSERT SELECT
+        .where(QuestionLog.run_name == run_name, QuestionLog.question_id.isnot(None))
+        .order_by(QuestionLog.question_id, QuestionLog.answer)
+    )
+    if question_ids is not None:
+        stmt = stmt.where(QuestionLog.question_id.in_(list(question_ids)))
     with Session() as session:
-        rows = session.execute(
-            select(QuestionLog.question_id, QuestionLog.answer)
-            # the same rows `_scored` reads, ordered by something stable across copies:
-            # `id` comes from an unordered INSERT ... SELECT, so it cannot break the tie
-            .where(QuestionLog.run_name == run_name, QuestionLog.question_id.isnot(None))
-            .order_by(QuestionLog.question_id, QuestionLog.answer)
-        ).all()
+        rows = session.execute(stmt).all()
     digest = hashlib.sha256(usedforsecurity=False)
     for question_id, answer in rows:
         digest.update(f"{question_id}\x00{answer or ''}\x00".encode())
@@ -334,17 +407,19 @@ def _scored(run_name: str) -> dict[int, dict]:
 
 
 def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> dict | None:
-    deltas = []
-    for question_id in sorted(set(before) & set(after)):
-        if which and half_of(question_id) != which:
-            continue
-        was, now = before[question_id].get(axis), after[question_id].get(axis)
-        if was is not None and now is not None:
-            deltas.append(now - was)
+    ids = [
+        qid
+        for qid in sorted(set(before) & set(after))
+        if not which or half_of(qid) == which
+    ]
+    deltas = deltas_over(
+        {qid: before[qid].get(axis) for qid in ids},
+        {qid: after[qid].get(axis) for qid in ids},
+        ids,
+    )
     if not deltas:
         return None
-    # eight seeds, same rule as the model grid: a bound that changes sign when the
-    # resampling changes is a parity, not a result
+    # eight seeds: a bound that changes sign with the resampling is a parity, not a result
     bounds = [bootstrap_ci(deltas, seed=s) for s in range(8)]
     low, high = bounds[0]
     return {
@@ -355,13 +430,25 @@ def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> d
             any(lo <= 0 for lo, _ in bounds) and any(lo > 0 for lo, _ in bounds)
             or any(hi >= 0 for _, hi in bounds) and any(hi < 0 for _, hi in bounds)
         ),
-        "better": sum(1 for d in deltas if d > 0),
-        "worse": sum(1 for d in deltas if d < 0),
+        "better": tally(deltas)["better"],
+        "worse": tally(deltas)["worse"],
+        # the interval says how big, this says whether a family of them survives together
+        "p": 1.0 if all(d == 0 for d in deltas) else round(float(wilcoxon(deltas).pvalue), 6),
     }
 
 
-# every arm names the instrument that scored it: the arm dict says what was asked for, the
-# rows say what actually ran, and a rejudge is the one kind where those can differ
+# named rather than assumed: a round that declared a narrower family corrects over that
+def _annotate_family(deltas: dict, alpha: float = 0.05) -> dict:
+    tests = [
+        stats
+        for axes in deltas.values()
+        for axis, stats in axes.items()
+        if axis in AXES and stats is not None
+    ]
+    return annotate_holm(tests, "every pair of this report on every axis", alpha)
+
+
+# the arm says what was asked for, the rows say what ran, and here those can differ
 def _judged_by(run_name: str) -> dict:
     with Session() as session:
         rows = session.execute(
@@ -380,14 +467,32 @@ def _judged_by(run_name: str) -> dict:
     }
 
 
+def _same_answers(before: str, after: str, source_run: str, loaded: dict) -> bool:
+    shared = sorted(set(loaded[before]) & set(loaded[after]))
+    if not shared:
+        return False
+    digests = {name: answers_digest(name, shared) for name in {before, after, source_run}}
+    return len(set(digests.values())) == 1
+
+
+# the same stable rule the grid samples with, so one size over one source reads one set
+def sample_of(source: str, size: int, seed: int = 0) -> list[int]:
+    with Session() as session:
+        return list(
+            session.scalars(
+                select(QuestionLog.question_id)
+                .where(QuestionLog.run_name == source, QuestionLog.question_id.isnot(None))
+                .order_by(sampling.by_id_and_seed(QuestionLog.question_id, seed))
+                .limit(size)
+            )
+        )
+
+
 def _mean(scored: dict, axis: str) -> float | None:
-    values = [row[axis] for row in scored.values() if axis in row]
-    return round(sum(values) / len(values), 4) if values else None
+    return mean_of((row[axis] for row in scored.values() if axis in row), 4)
 
 
-# every pair while the grid is small, first-against-the-rest once it is not: a pair costs
-# nine bootstraps of eight seeds, about fifteen seconds over 823 rows, and the aggregation
-# holds a transaction while it runs. Which rule was applied goes into the record
+# a pair is fifteen seconds over 823 rows, and the aggregation holds a transaction meanwhile
 PAIR_EVERY_UP_TO = 6
 
 
@@ -410,12 +515,15 @@ def compute_results(source_run: str, param: str, pairs: list[tuple[dict, str]]) 
             "answers_digest": digests[name],
             "judge": _judged_by(name),
             **{axis: _mean(loaded[name], axis) for axis in AXES},
+            # a mean over two hundred rows reads exactly like a mean over eight hundred without this
+            "n_by_axis": {
+                axis: sum(1 for row in loaded[name].values() if axis in row) for axis in AXES
+            },
         }
         for arm, name in pairs
     }
 
-    # the source carries verdicts already, so it is the cheapest arm any rejudge has: one
-    # new arm against the record needs no paid twin to be compared against
+    # the source carries verdicts already: the cheapest arm any rejudge has
     source_scored = _scored(source_run)
     order = list(run_names)
     if source_scored:
@@ -434,14 +542,14 @@ def compute_results(source_run: str, param: str, pairs: list[tuple[dict, str]]) 
                 axis: {w: _paired(loaded[before], loaded[after], axis, w) for w in ("A", "B")}
                 for axis in AXES
             },
-            # the answers are the same by construction; the digest is what says so
-            "same_answers": digests[before] == digests[after] == source,
+            # over the rows the pair shares: an arm judged on fewer rows differs by size alone
+            "same_answers": _same_answers(before, after, source_run, loaded),
         }
 
+    family = _annotate_family(deltas)
+
     return {
-        # the shape changed three times in one week (`pairing`, `source_scored`, the
-        # source's judge), and a record written before a field existed is indistinguishable
-        # from one where the field is absent for a reason. A reader compares this, not dates
+        # the shape changed three times in one week; a reader compares this, not dates
         "schema": SCHEMA,
         "param": param,
         "source_run": source_run,
@@ -454,4 +562,19 @@ def compute_results(source_run: str, param: str, pairs: list[tuple[dict, str]]) 
         "pairing": pairing,
         "per_arm": per_arm,
         "deltas": deltas,
+        "multiplicity": family,
+    }
+
+
+def for_reading(results: dict) -> dict:
+    return {
+        "source_run": results.get("source_run"),
+        "pairing": results.get("pairing"),
+        "multiplicity": results.get("multiplicity"),
+        "ranking": None,
+        "arms": {
+            name: {k: v for k, v in arm.items() if k in ("arm", "n", "judge", "answers_digest")}
+            for name, arm in (results.get("per_arm") or {}).items()
+        },
+        "deltas": results.get("deltas") or {},
     }
