@@ -108,6 +108,8 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 | `WORKER_RERANK_DEVICE` | `cuda` | Where the worker runs the cross-encoder. A phased eval run reranks in a batch that owns the card, and the corpus-first gate scores a handful of pairs per question. Set it to `cpu` only when something else needs the whole card. |
 | `OLLAMA_CONTEXT_LENGTH` | `8192` | Context window the server loads models with. Ollama defaults to 4096 and silently drops whole messages to fit, so an over-long prompt never shows up as a number above the window; the longest hop logged here is 4075 tokens. Raising it costs VRAM the embedder shares, and at 14336 the two evict each other on every switch. After a change, check `llm.model_spilled_to_cpu`; the run snapshot records the window the server reports, not this value. |
 | `WORKER_QUEUES` | `default,io` | Queue lanes the worker serves, one thread each. Network and disk jobs (model pulls, MCP health) live on `io` so they never wait behind GPU work. |
+| `JUDGE_WIDTH` | `1` | Rows the judge scores in flight. Over 1 it is a different instrument, not a faster one: the same rows come back with different scores, so a measured arm stays at 1 and only smokes are widened. Capped by the slots the server has and by the connection pool. |
+| `OLLAMA_NUM_PARALLEL` | `1` | Sequences ollama batches at once. Pinned rather than left unset: unset, the server picks slots from free VRAM, so two arms run on different instruments. |
 | `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
 
 ## REST API
@@ -118,6 +120,7 @@ List endpoints (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) share 
 
 Health:
 - `GET /liveness`, `GET /readiness`
+- `GET /v1/health/stand` (what the stand is right now: the card, which models are resident and how much VRAM each holds, the window the server actually serves against the declared one, the live queue, role drift between config and database, the corpus variant and the search depth per variant. Readable while a run competes with it, so a run that answers slowly can be diagnosed without stopping it)
 
 Chat and search:
 - `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
@@ -134,15 +137,15 @@ Chat and search:
 
 Model lifecycle:
 - `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (create enqueues a pull), `POST /v1/model/{id}/load` (make it resident before a timed run), `DELETE /v1/model/{id}` (409 if assigned to a role)
-- `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role)
+- `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role; the model is asked whether it can do the job first, and a 400 says what it lacks. `anyway: true` insists, which is how a model the server describes wrongly is still seated)
 - `GET /v1/source`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index - ablation / source-of-truth scoping)
 
 Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
-- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops`, `fallback_policy`, `gate_signal`, `weak_distance`, `topic_threshold` and `model` (generator) overrides; config only sets the defaults)
-- `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops`, `model`, `fallback_policy`, `gate_signal`, `weak_distance` or `topic_threshold`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
+- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops`, `fallback_policy`, `gate_signal`, `weak_distance`, `topic_threshold`, `orchestrator`, `variant` (which cut of the corpus the run reads) and `model` (generator) overrides, plus `allow_cpu` for a run that means to measure the processor; config only sets the defaults)
+- `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops`, `model`, `variant`, `orchestrator`, `fallback_policy`, `gate_signal`, `weak_distance` or `topic_threshold`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `GET /v1/eval/compare?runs=A&runs=B` (arms side by side split by pool: in-corpus, out-of-corpus, off-domain, rejected; per arm the judged axes, how often the answer came from a remote tool against the corpus, how often the coverage gate fired, latency avg/p50 and the outcome histogram; per pair of arms a paired Wilcoxon plus a bootstrap interval over the same questions, so a difference is reported with its size and its uncertainty instead of two averages)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
@@ -166,9 +169,9 @@ A single run does not loop per question: it goes through phases so each stage ow
 Measured on 100 questions with reranking on: **2092s → 652s (3.2x)** while `hit@5` and `MRR` stayed identical to the third decimal. Most of the win did not come from batching, it came from noticing that the card was never actually released between phases, so ollama had been loading the generator as 26 layers of 33. The full story, including what the batch alone did *not* buy, is in [the journal entry](docs/experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md).
 
 Experiments (first-class entity over the raw sweep route):
-- `POST /v1/experiment` (creates the experiment - dataset + deterministic seed-based sample / procedure snapshot / varied param - and enqueues the run series), `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`, `POST /v1/experiment/{id}/arms` (a rejudge only: copies more arms of the same answers and re-judges them, from `aggregated` and back to `running`; the arms are named one by one rather than as a grid, and the row cap counts what the experiment already holds)
+- `POST /v1/experiment` (creates the experiment - dataset + deterministic seed-based sample / procedure snapshot / varied param - and enqueues the run series), `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`, `POST /v1/experiment/{id}/arms` (a rejudge only: copies more arms of the same answers and re-judges them, from `aggregated` and back to `running`; the arms are named one by one rather than as a grid, the row cap counts what the experiment already holds, and an arm added later is built on the sample, the control size and the seed the experiment was created with)
 - state machine `draft → running → aggregated → concluded` (+ `failed`); when the last judge job of the series finishes, the aggregator computes per-value metrics and an RRF composite over five axes (the three judged ones, the off-domain refusal rate and the supported rate) and stores them in `results` (retrieval hit@k/MRR reported per value but kept out of the fusion: hit@k is monotonic in `k`, it would confound the composite)
-- results carry **paired significance statistics**, not just point estimates: for the winner vs every other value, per axis - mean paired delta (same question in both runs), bootstrap 95% CI and a Wilcoxon signed-rank p-value, plus Bonferroni-corrected significance flags over the whole test family, so the JSON itself says what survives multiple-comparison correction
+- results carry **paired significance statistics**, not just point estimates: for the winner vs every other value, per axis - mean paired delta (same question in both runs), bootstrap 95% CI and a Wilcoxon signed-rank p-value, plus Holm step-down flags over the test family the record itself names, so the JSON says what survives multiple-comparison correction and against which family it was corrected
 
 One call asks the bench a question; generation, judging and aggregation happen in the background. Questions you can ask this way:
 
@@ -199,6 +202,11 @@ curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -
   "param": "repeat", "axes": {"repeat": [1, 2]}}'
 ```
 
+`control_sample: N` judges the axes the arm does not move on N rows only, drawn by question
+with the experiment's own seed, so a repeat costs a third of the card time and the axes that
+carry the measurement still read every row. The rows outside the sample are marked skipped
+rather than left owed, which is one-way: only a hand-built `log_ids` job reaches them again.
+
 A rejudge answers a question the other kinds cannot: how much of a difference between two
 runs was the judge rather than the answer. Nothing is generated, so an arm costs a judge
 pass and no card time for the generator. The report drops the RRF composite (retrieval
@@ -223,8 +231,8 @@ When the series is judged, `GET /v1/experiment/{id}` returns per-value metrics a
       "method": "rrf", "winner": "5",
       "ranking": [{"value": "5", "rrf": 0.0487}, {"value": "10", "rrf": 0.0484}],
       "pairwise": {
-        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.3669, "n": 100, "significant_raw": false, "significant_bonferroni": false}, "...": "..."}},
-        "method": "bonferroni", "alpha": 0.05, "tests": 15, "threshold": 0.00333
+        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.3669, "n": 100, "holm_threshold": null, "significant_raw": false, "significant_holm": false}, "...": "..."}},
+        "method": "holm", "alpha": 0.05, "tests": 15, "family": "every pair of the grid on every axis"
       }
     }
   }
@@ -244,9 +252,9 @@ than a test. What each of the sixteen refuses and which incident put it there:
 Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment becomes a self-contained artifact: what was varied, on what data, the numbers, the verdict.
 
 Observability:
-- `GET /v1/question-log`, `GET /v1/question-log/{id}` (answer logs; filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; and over the recorded snapshot: `rerank`, `rerank_device`, `phased`, `empty_retrieval`, `max_distance`, `answered_via_remote` - so "show me every answer where the corpus returned nothing" is one request; detail with context)
+- `GET /v1/question-log`, `GET /v1/question-log/{id}` (the row carries what it was asked and what it read: `question_text`, `reference_answer` and `contexts`, the chunks as elements rather than the string they were joined into, because that join cannot be undone. Filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; and over the recorded snapshot: `rerank`, `rerank_device`, `phased`, `empty_retrieval`, `max_distance`, `answered_via_remote` - so "show me every answer where the corpus returned nothing" is one request; detail with context)
 - `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed), `POST /v1/job/{id}/cancel` (cancels the job and its dependent judge, cooperative stop for a running eval)
-- `POST /v1/job/cancel` (cancel a whole run or job type at once: cancelling id by id through a paginated listing is how a supposedly stopped eval quietly kept running)
+- `POST /v1/job/cancel` (cancel a whole run or job type at once: cancelling id by id through a paginated listing is how a supposedly stopped eval quietly kept running). A `type` with no `run_name` is refused with 400 unless the call also passes `every: true` and means it. Either door takes a run's judge down with the run
 
 ## MCP
 
@@ -261,6 +269,7 @@ A second, separate ops server is mounted at `/mcp-ops` - an eval control plane k
 - `run_metrics(run_name)` - aggregated eval metrics for one run (generation axes + retrieval hit@k/MRR).
 - `compare_runs(run_names)` - side-by-side metrics with an RRF composite ranking over the five judged-and-behavioural axes, retrieval excluded.
 - `compare_pools(run_names)` - the same runs split by pool (in-corpus / out-of-corpus / off-domain) with gate firings, latency, outcome histogram and a paired Wilcoxon per pair of runs.
+- `experiment_results(id, pair?)` - one experiment's report, whatever its kind: the arms with their n, the paired deltas per axis with interval and p, and whether each survives the correction over the family the record names.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - job queue control, cancel takes the dependent judge down with the run.
 
 ### MCP client: the agent consumes external servers
@@ -410,7 +419,7 @@ One implementation note worth stealing: under `corpus_first` the withheld extern
 - `app/orchestrators/` - adapters to the framework: `graph` (StateGraph), `react` (bare `create_agent`). No langchain import reaches `use_cases`.
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
-- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `list_jobs` / `cancel_job` over the eval platform.
+- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `experiment_results` / `list_jobs` / `cancel_job` over the eval platform.
 - `app/evals/pools.py`, `app/evals/compare.py` - one place that decides which pool a question belongs to and what the run's outcome was, shared by the metrics, the comparison report and both MCP tools.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
