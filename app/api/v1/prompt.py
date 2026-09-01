@@ -1,11 +1,16 @@
 from datetime import datetime
 
 from crud import ensure_not_active, get_or_404
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from models.registry import Prompt, Purpose
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel
-from query_utils import Page, apply_sort_limit_offset
+from query_utils import (
+    Page,
+    apply_created_between,
+    apply_in_filters,
+    apply_sort_limit_offset,
+)
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,35 +39,16 @@ async def list_prompts(
     page: Page = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
-
-    if (
-        created_from is not None
-        and created_to is not None
-        and created_from > created_to
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="created_from must be earlier than created_to",
-        )
-
-    stmt = select(Prompt)
-
-    filters = {
-        Prompt.id: id,
-        Prompt.purpose: purpose,
-        Prompt.template: template,
-        Prompt.active: active,
-    }
-
-    for column, value in filters.items():
-        if value is not None:
-            stmt = stmt.where(column.in_(value))
-
-    if created_from is not None:
-        stmt = stmt.where(Prompt.created_at >= created_from)
-
-    if created_to is not None:
-        stmt = stmt.where(Prompt.created_at <= created_to)
+    stmt = apply_in_filters(
+        select(Prompt),
+        {
+            Prompt.id: id,
+            Prompt.purpose: purpose,
+            Prompt.template: template,
+            Prompt.active: active,
+        },
+    )
+    stmt = apply_created_between(stmt, Prompt.created_at, created_from, created_to)
 
     stmt = apply_sort_limit_offset(
         stmt=stmt,
