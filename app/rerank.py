@@ -5,6 +5,7 @@ from operator import itemgetter
 from typing import TYPE_CHECKING
 
 import config
+import gpu
 import logging_setup
 
 if TYPE_CHECKING:
@@ -31,8 +32,7 @@ def requested_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
-# ollama does not know this model exists, so `llm.residency` cannot see it and the card
-# arithmetic was held on trust until a paraphrasing model took the card on 30.08
+# ollama cannot see this model, so the card arithmetic has no other source for it
 def residency() -> dict:
     import torch
 
@@ -46,9 +46,7 @@ def residency() -> dict:
     }
     if torch.cuda.is_available():
         out["vram_mb"] = round(torch.cuda.memory_allocated() / 2**20)
-        free, total = torch.cuda.mem_get_info()
-        out["card_free_mb"] = round(free / 2**20)
-        out["card_total_mb"] = round(total / 2**20)
+        out["card_free_mb"], out["card_total_mb"] = gpu.memory_mb()
     return out
 
 
@@ -62,9 +60,7 @@ def off_the_card() -> str | None:
     return None
 
 
-# loaded before the phase asks where it sits: the guard used to run between retrieval and
-# reranking, where the model is still None, so it first fired after the whole set had been
-# reranked on the processor
+# loaded before the phase asks: the guard fired only after the set was reranked on the cpu
 def warm() -> None:
     if config.settings.rerank.enabled:
         _model()

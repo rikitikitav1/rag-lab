@@ -18,34 +18,29 @@ def index_data(options: dict) -> None:
 
     require_embedder_ready()
     built = list(sources.factory.all_sources())
-    # the option was written by the bootstrap and read by nobody, so a job asking for one
-    # source re-indexed all 177 and said nothing
+    # written by the bootstrap and read by nobody: a job for one source re-indexed all 177
     wanted = options.get("source") or "all"
     if wanted != "all":
         built = [s for s in built if s.name == wanted]
         if not built:
             known = sorted(s.name for s in sources.factory.all_sources())
             raise ValueError(f"no such source: {wanted!r}; known: {known}")
-    # resolved once for this job: the call below used to take it bare and requeue itself
-    # with a null that nothing could match
+    # resolved once: the call below took it bare and requeued itself with an unmatchable null
     variant = options.get("variant") or config.settings.corpus.variant
     use_cases.index.collect_data(built, variant=variant, build_index=False)
-    # queued before the index is built: the report reads rows, not the index, and a
-    # failing build must not take the whole coverage report down with it
+    # the report reads rows, not the index, so a failing build must not take it down
     for source in built:
         job_queue.enqueue(
             "analyze_source",
             {"source": source.name, "variant": variant, "mode": "indexed"},
         )
-    # the rows are in and the coverage jobs are queued; a failing index build must not
-    # cost three retries of re-embedding 13k chunks. It is loud and it is separate work
+    # a failing index build must not cost three retries of re-embedding 13k chunks
     try:
         use_cases.index.ensure_vector_index(variant)
         _report_depth()
     except Exception as e:
         log.error("index.vector_index_failed", variant=variant, error=str(e))
-        # the same dedup bootstrap does: three retries of index_data would otherwise
-        # leave three builds of one index waiting on the single-threaded lane
+        # the same dedup bootstrap does: three retries would queue three builds on one lane
         if not job_queue.pending_of_type("build_vector_index", variant=variant):
             job_queue.enqueue("build_vector_index", {"variant": variant})
 
@@ -60,16 +55,13 @@ def build_vector_index(options: dict) -> None:
     _report_depth()
 
 
-# indexing is what moves the depth: the crossover is priced against a sequential read of
-# the whole table, so one more variant changes where every other variant stops walking
-# the index. Read here rather than remembered, because preflight is run by a person
+# indexing moves the depth, and a person runs the preflight, so it is read here
 def _report_depth() -> None:
     from orm.sync_db import engine
     from sqlalchemy import text
     from use_cases import search_depth
 
-    # the plan and reltuples move on ANALYZE, not on CREATE INDEX, so reading the plan
-    # straight after the build reports the table as it was: right answer, stale question
+    # the plan and reltuples move on ANALYZE: right answer to a stale question otherwise
     with engine.connect() as conn:
         conn.execute(text("ANALYZE data_chunks"))
         conn.commit()

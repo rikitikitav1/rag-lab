@@ -64,6 +64,7 @@ async def _limit_body_size(request, call_next):
 
 
 app.include_router(health.router)
+app.include_router(health.v1, prefix="/v1")
 app.include_router(chat.router, prefix="/v1")
 app.include_router(agent.router, prefix="/v1")
 app.include_router(categories.router, prefix="/v1")

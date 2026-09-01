@@ -1,4 +1,5 @@
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,20 +54,25 @@ def resolve_name(role: str) -> str:
     return name
 
 
-def ask(system, user, role="generation", schema=None, model=None) -> Completion:
-    name = model or resolve_name(role)
+# one contract for a failed completion: the same log event and error text, written twice
+def _complete(name: str, messages, params):
     try:
-        resp = _client.chat.completions.create(
-            model=name,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            **_params(role, schema),
-        )
+        return _client.chat.completions.create(model=name, messages=messages, **params)
     except OpenAIError as e:
         log.error("llm.chat_failed", model=name, error=str(e))
         raise RuntimeError(f"LLM chat failed ({name}): {e}") from e
+
+
+def ask(system, user, role="generation", schema=None, model=None) -> Completion:
+    name = model or resolve_name(role)
+    resp = _complete(
+        name,
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        _params(role, schema),
+    )
 
     usage = resp.usage
     log.info(
@@ -87,15 +93,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     params = _params(role, None)
     if tools:
         params["tools"] = tools
-    try:
-        resp = _client.chat.completions.create(
-            model=name,
-            messages=messages,
-            **params,
-        )
-    except OpenAIError as e:
-        log.error("llm.chat_failed", model=name, error=str(e))
-        raise RuntimeError(f"LLM chat failed ({name}): {e}") from e
+    resp = _complete(name, messages, params)
 
     choice = resp.choices[0]
     message = choice.message
@@ -118,9 +116,15 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     )
 
 
+# the same dict the call is made with, so a stamp cannot drift from what was sent
+def sampler_of(role) -> dict:
+    return _params(role, None)
+
+
 def _params(role, schema) -> dict:
     opts = config.settings.llm.roles[role].options
-    params = {k: opts[k] for k in ("temperature", "max_tokens") if k in opts}
+    # at temperature 0 the sampler does not roll, but a batching server needs the run to say
+    params = {k: opts[k] for k in ("temperature", "max_tokens", "seed") if k in opts}
     if schema:
         params["response_format"] = {
             "type": "json_schema",
@@ -133,19 +137,31 @@ def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
 
 
-# the server reports the window it actually loaded, which is not always the one in our config
-def server_context_length(model: str) -> int | None:
+# what the server says is loaded right now, or nothing: a probe must not break a run
+def _loaded_models() -> list:
     try:
-        loaded = _get_request("/api/ps").get("models") or []
-    except Exception as e:  # a probe must not break a run
+        return _get_request("/api/ps").get("models") or []
+    except Exception as e:
         log.warning("llm.ps_failed", error=str(e))
-        return None
+        return []
+
+
+# one row of a run asks, the other 822 read this: the snapshot is written per answer
+_WINDOW_SECONDS = 60
+_windows: dict[str, tuple[float, int | None]] = {}
+
+
+def server_context_length(model: str) -> int | None:
+    seen_at, window = _windows.get(model, (0.0, None))
+    if time.monotonic() - seen_at < _WINDOW_SECONDS:
+        return window
     # the full tag, or llama3.1:8b would read the window of a loaded llama3.1:70b
     wanted = {model, f"{model}:latest"}
-    for entry in loaded:
-        if entry.get("name") in wanted:
-            return entry.get("context_length")
-    return None
+    window = next(
+        (e.get("context_length") for e in _loaded_models() if e.get("name") in wanted), None
+    )
+    _windows[model] = (time.monotonic(), window)
+    return window
 
 
 def list_models():
@@ -153,30 +169,38 @@ def list_models():
 
 
 def residency() -> list[dict]:
-    try:
-        loaded = _get_request("/api/ps").get("models") or []
-    except Exception as e:  # a probe must not break a run
-        log.warning("llm.ps_failed", error=str(e))
-        return []
     return [
         {
             "model": m.get("name", "?"),
             "size_mb": round((m.get("size") or 0) / 2**20),
             "vram_mb": round((m.get("size_vram") or 0) / 2**20),
         }
-        for m in loaded
+        for m in _loaded_models()
         if m.get("size")
     ]
 
 
-# a spill makes the run slower and never louder; nothing in vram at all means the card is gone
+# who serves the window: the configured generator when it is up, else whoever else is
+def window_model(loaded: list[dict] | None = None) -> str | None:
+    names = [m["model"] for m in (residency() if loaded is None else loaded)]
+    configured = resolve_name("generation")
+    if configured in names:
+        return configured
+    return next((n for n in names if "embed" not in n and "bge" not in n), None)
+
+
+# nothing in vram at all: the model answers from the processor
+def off_the_card(entry: dict) -> bool:
+    return entry["vram_mb"] == 0
+
+
 def warn_if_models_do_not_fit() -> list[str]:
     spilled, off_card = [], []
     for entry in residency():
         if entry["vram_mb"] >= entry["size_mb"]:
             continue
         spilled.append(entry["model"])
-        if entry["vram_mb"] == 0:
+        if off_the_card(entry):
             off_card.append(entry["model"])
         log.warning(
             "llm.model_spilled_to_cpu",
@@ -189,7 +213,7 @@ def warn_if_models_do_not_fit() -> list[str]:
 
 
 def models_off_the_card() -> list[str]:
-    return [e["model"] for e in residency() if e["vram_mb"] == 0]
+    return [e["model"] for e in residency() if off_the_card(e)]
 
 
 def request_embeddings_batch(texts, role="embedding"):
@@ -212,12 +236,11 @@ def pull_model(model):
 
 
 def unload(role="embedding", model=None):
-    # frees VRAM between eval phases: keep_alive 0 overrides the server default.
-    # The name lookup is inside the guard too: this runs in teardown, and a teardown that
-    # raises because it could not read a role from the database hides whatever sent it there
+    # keep_alive 0 overrides the default; the lookup is inside the guard, teardown raises
     name = model
     try:
         name = name or resolve_name(role)
+        _windows.pop(name, None)
         _post_request("/api/generate", {"model": name, "keep_alive": 0})
     except Exception as e:
         log.warning("llm.unload_failed", model=name or role, error=str(e))
@@ -265,6 +288,11 @@ def _check(response, path) -> Any:
         return None
 
     return response.json()
+
+
+# what the server says about a model before it is given a role, read rather than assumed
+def shown(model: str) -> dict:
+    return _post_request("/api/show", {"model": model}) or {}
 
 
 def _post_request(path, payload, timeout=_HTTP_TIMEOUT):

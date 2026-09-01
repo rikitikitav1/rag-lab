@@ -16,9 +16,7 @@ def sh(*args: str) -> str:
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
-# asked of the worker rather than imported: this script runs on the host, where the
-# application's dependencies are not installed, and importing app code to read one
-# constant is what broke it. One owner still, just reached the way everything else is
+# asked of the worker: this script runs on the host, without the app's dependencies
 @lru_cache(maxsize=1)
 def vector_index_prefix() -> str:
     out = _in_worker("from use_cases.index import VECTOR_INDEX_PREFIX as p; print(p)")
@@ -69,8 +67,7 @@ def tree_is_clean() -> tuple[bool, str]:
 def worker_imports() -> tuple[bool, str]:
     out = sh(
         "docker", "compose", "exec", "-T", "worker", "python", "-c",
-        "import sys; sys.path.insert(0, '/app/app');"
-        " from orchestrators import graph, react;"
+        "from orchestrators import graph, react;"
         " from use_cases import agent; print('ok')",
     )
     return out.endswith("ok"), f"imports inside the worker: {out or 'failed'}"
@@ -79,23 +76,20 @@ def worker_imports() -> tuple[bool, str]:
 def window_matches_config() -> tuple[bool, str]:
     configured = sh(
         "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import sys; sys.path.insert(0, '/app/app'); import config;"
+        "import config;"
         " print(config.settings.llm.context_length)",
     )
-    # whichever generator is actually loaded, not only the configured one: a run with a
-    # model override leaves the configured name unloaded, and the check then read
-    # "the server says nothing" as though the window disagreed
+    # whichever generator is loaded: an override left the configured name unloaded
     out = _in_worker(
         "import json, llm;"
         " print(json.dumps({'loaded': [e['model'] for e in llm.residency()],"
-        " 'configured': llm.resolve_name('generation')}))"
+        " 'asked': llm.window_model()}))"
     )
     if not out.startswith("{"):
         return False, f"context window: cannot read the residency ({out[:40] or 'no answer'})"
     state = json.loads(out)
-    asked = state["configured"] if state["configured"] in state["loaded"] else next(
-        (m for m in state["loaded"] if "embed" not in m and "bge" not in m), None
-    )
+    # asked of the worker: the route and the record read the same rule from the same holder
+    asked = state["asked"]
     if asked is None:
         return True, (
             f"context window: config {configured or 'unknown'}, no generator loaded"
@@ -111,18 +105,19 @@ def window_matches_config() -> tuple[bool, str]:
 def models_are_on_the_card() -> tuple[bool, str]:
     out = sh(
         "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import sys, json; sys.path.insert(0, '/app/app'); import llm;"
+        "import json, llm;"
         " roles = {r: llm.resolve_name(r) for r in"
         " ('generation', 'embedding', 'judging', 'paraphrasing')};"
-        " print(json.dumps({'roles': roles, 'loaded': llm.residency()}))",
+        " loaded = llm.residency();"
+        " print(json.dumps({'roles': roles, 'loaded': loaded,"
+        " 'off_the_card': [e['model'] for e in loaded if llm.off_the_card(e)]}))",
     )
     if not out.startswith("{"):
         return False, f"residency: cannot read ({out[:60] or 'no answer'})"
     state = json.loads(out)
     loaded = {e["model"]: e for e in state["loaded"]}
     if not loaded:
-        # the card is still worth printing: it is what a run about to load four models
-        # will be given, and it is the half of this check a probe from outside can know
+        # the card is what a run about to load four models will be given
         return False, (
             "no model is loaded: ask one to load before reading the window"
             f"; {_card()}"
@@ -133,15 +128,26 @@ def models_are_on_the_card() -> tuple[bool, str]:
         entry = loaded.get(name)
         where = f"{entry['vram_mb']}/{entry['size_mb']} MiB" if entry else "not resident"
         lines.append(f"{role}={name} {where}")
-    off = [e["model"] for e in state["loaded"] if e["vram_mb"] == 0]
+    off = state["off_the_card"]
     return not off, (
         "; ".join(lines) + (f"; ON CPU: {', '.join(off)}" if off else "") + f"; {_card()}"
     )
 
 
-# the file declares a role's model, the database serves it, and bootstrap leaves an assigned role
-# alone on purpose, so the two drift in silence. Through that gap gemma3:4b served as the generator
-# for a day without tool calling while the config named something else
+# the predicate of `stand_health.drifting_roles`, spelled out because this may not import
+def role_drift(declared: dict, served: dict) -> list[str]:
+    return [
+        f"{role}: config says {name}, the stand serves {served.get(role, 'nothing')}"
+        for role, name in sorted(declared.items())
+        if served.get(role) != name
+    ] + [
+        f"{role}: the stand serves {name}, the config declares no such role"
+        for role, name in sorted(served.items())
+        if role not in declared
+    ]
+
+
+# the file declares a role's model and the database serves it, and the two drift in silence
 def roles_match_the_config() -> tuple[bool, str]:
     out = _in_worker(
         "import json, config; print(json.dumps("
@@ -152,24 +158,19 @@ def roles_match_the_config() -> tuple[bool, str]:
     declared = json.loads(out)
     models = {m["id"]: m["name"] for m in get("/v1/model?limit=200")}
     served = {r["role"]: models.get(r["model_id"], f"model {r['model_id']}") for r in get("/v1/role")}
-    drift = [
-        f"{role}: config says {name}, the stand serves {served.get(role, 'nothing')}"
-        for role, name in sorted(declared.items())
-        if served.get(role) != name
-    ]
+    drift = role_drift(declared, served)
     if drift:
         return False, "; ".join(drift) + ". PUT /v1/role to change it, or edit the file to match"
     return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(served.items()))
 
 
-# only what the driver says: a probe through `docker compose exec` runs in a new process
-# where the reranker was never loaded. Where it sits is asked by the run itself
+# only what the driver says: a `docker compose exec` probe never loaded the reranker
 def _card() -> str:
     out = sh(
         "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import sys, json; sys.path.insert(0, '/app/app'); import torch;"
-        " free, total = torch.cuda.mem_get_info() if torch.cuda.is_available() else (0, 0);"
-        " print(json.dumps({'free': free // 2**20, 'total': total // 2**20}))",
+        "import json, gpu;"
+        " free, total = gpu.memory_mb() or (0, 0);"
+        " print(json.dumps({'free': free, 'total': total}))",
     )
     line = [row for row in out.splitlines() if row.startswith("{")]
     if not line:
@@ -188,14 +189,9 @@ def queue_is_idle() -> tuple[bool, str]:
     return not jobs, f"{len(jobs)} jobs still queued or running"
 
 
-
-# the answer is the last line: anything that touches the application may log on the way,
-# and a check that reads the first line calls a log line a broken answer
+# the answer is the last line: anything touching the application may log on the way
 def _in_worker(code: str) -> str:
-    out = sh(
-        "docker", "compose", "exec", "-T", "worker", "python", "-c",
-        "import sys; sys.path.insert(0, '/app/app');" + code,
-    )
+    out = sh("docker", "compose", "exec", "-T", "worker", "python", "-c", code)
     lines = [line for line in out.splitlines() if line.strip()]
     return lines[-1] if lines else ""
 
@@ -215,11 +211,7 @@ def corpus_variant_is_usable() -> tuple[bool, str]:
     return chunks > 0, f"corpus variant {state['variant']}: {chunks} chunks (known: {listing})"
 
 
-# a generic plan cannot use a partial index, and the fallback is silent
-# every indexed variant, not only the served one: the depth at which the planner stops
-# walking the index is priced against a read of the whole table, so indexing one variant
-# changes where every other one stops. Checking only the served variant is how the
-# crossover moved twice without anybody noticing
+# every indexed variant: indexing one moves where every other stops walking its index
 def every_variant_walks_its_index() -> tuple[bool, str]:
     out = _in_worker(
         "import json; from use_cases import search_depth;"
@@ -241,8 +233,7 @@ def every_variant_walks_its_index() -> tuple[bool, str]:
     )
 
 
-# a comment claiming provenance cannot be checked and two of six were wrong on 30.08;
-# a `# tuned: file=` line pointing at a file with a fingerprint can be
+# a comment claiming provenance cannot be checked; a `# tuned: file=` line can be
 TUNED = re.compile(r"^\s*#\s*tuned:\s*file=(\S+)\s*$")
 
 
@@ -269,8 +260,7 @@ def tuned_numbers_still_describe_the_corpus() -> tuple[bool, str]:
         if not path.exists():
             missing.append(name)
             continue
-        # a csv or a markdown table carries no fingerprint to compare, and counting it as
-        # checked is how "all still describe this corpus" was said over files nobody read
+        # a csv carries no fingerprint, and counting it as checked said more than was read
         if path.suffix != ".json":
             unchecked.append(Path(name).name)
             continue
@@ -281,8 +271,7 @@ def tuned_numbers_still_describe_the_corpus() -> tuple[bool, str]:
             continue
         taken = record.get("fingerprint") if isinstance(record, dict) else None
         variant = (taken or {}).get("variant") or (record or {}).get("variant")
-        # a variant that is no longer indexed is a record of something deleted, not a
-        # stale reading: there is nothing to compare it against and nothing depends on it
+        # a variant no longer indexed is a record of something deleted, not a stale reading
         if not taken or variant not in live:
             unchecked.append(Path(name).name)
             continue
@@ -323,8 +312,7 @@ def one_question_per_original() -> tuple[bool, str]:
         " source_question_id FROM questions WHERE source_question_id IS NOT NULL"
         " GROUP BY 1, 2 HAVING count(*) > 1) d GROUP BY set_name) s\")).scalar())"
     )
-    # a job the worker requeues can paraphrase the same original twice, and the second
-    # paraphrase is new text with a new hash, so nothing else catches it
+    # a requeued job paraphrases the same original twice, with a new hash nothing catches
     return out == "none", f"originals paraphrased more than once: {out or 'unknown'}"
 
 
@@ -345,11 +333,7 @@ SELECT coalesce(string_agg(base || '=' || cnt, ', '), 'none') FROM (
 """
 
 
-# the strongest check this branch has, and it used to look at baseline alone, the one
-# variant frozen by definition. Every indexed variant is asked, and by the text of each
-# chunk rather than by a count per source: fourteen of the sixteen sources that changed
-# under the new parser kept their counts exactly. notes drifts by design, its directory
-# is live and the owner writes in it
+# by the text of each chunk: fourteen of sixteen changed sources kept their counts
 def every_variant_cuts_into_its_own_rows() -> tuple[bool, str]:
     out = _in_worker("import runpy; runpy.run_path('scripts/cut_digest.py', run_name='__main__')")
     line = next(
@@ -377,9 +361,7 @@ def halves_of_pairs_are_counted() -> tuple[bool, str]:
         "from orm.sync_db import engine; from sqlalchemy import text;"
         f' print(engine.connect().execute(text("""{PAIRED_SETS}""")).scalar())'
     )
-    # descriptive on purpose, hence the name: an original makes a pair, and a run that died
-    # between the paraphrase and its translation leaves a half nobody has to remove.
-    # A set with one row per original is not half of anything, so it is not counted
+    # descriptive on purpose: a set with one row per original is not half of anything
     listed = [
         part for part in (out or "").split(", ")
         if part and not part.split("=")[0].startswith(UNPAIRED_SETS)
@@ -400,8 +382,7 @@ def schema_holds_no_variant_indexes() -> tuple[bool, str]:
         for line in dump.read_text().splitlines()
         if vector_index_prefix() in line and line.startswith("CREATE INDEX")
     ]
-    # a variant is a line in the config, so its index is built at runtime; one in the
-    # dump means the dump has become a function of what happened to be indexed locally
+    # one in the dump means the dump became a function of what was indexed locally
     return not leaked, (
         f"schema.sql carries variant indexes: {leaked}"
         if leaked
@@ -415,25 +396,18 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
         return True, "keyword switches: no logged run to compare against yet"
     config_row = (logs[0].get("metrics") or {}).get("config", {})
     logged = config_row.get("keyword")
-    # an agent answer that never called the corpus tool searched at no depth and records
-    # none. That is not a mismatch, so it abstains from this comparison instead of
-    # failing it, and the worker is asked without the depth in that case
+    # an agent answer that never searched records no depth, so it abstains here
     searched = logged is not None and config_row.get("ef_search") is not None
     if searched:
         logged = {**logged, "ef_search": config_row.get("ef_search")}
-    # the depth is resolved, not declared: a run records the number it searched at, and
-    # comparing it against the word `auto` in the config makes this check fail for as
-    # long as the config says `auto`. Resolved for the variant the row was taken on: the
-    # crossover is a property of the table and the answer differs per variant
+    # resolved, not declared, and per variant: the crossover is a property of the table
     variant = json.dumps(config_row.get("variant"))
     depth = (
         f" 'ef_search': search_depth.resolve({variant})," if searched else ""
     )
     out = _in_worker(
         "import json, config; from use_cases import search_depth;"
-        " r = config.settings.retrieval;"
-        " print(json.dumps({'query': r.keyword_query, 'rank': r.keyword_rank,"
-        " 'norm': r.keyword_norm, 'query_lang': r.query_lang,"
+        " print(json.dumps({**config.keyword_switches(),"
         f"{depth}"
         "}))"
     )
@@ -444,9 +418,7 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
     return ok, f"keyword switches: worker {live}, last run {logged}"
 
 
-# only these decide a verdict; elsewhere an unreachable label is a note, not a stop.
-# Asked of the worker rather than written here twice: this list said `paraphrased_ru`
-# for a day after every measurement had moved to v2, and nothing complained
+# asked of the worker rather than written twice; `marks_are_reachable` blocks on these sets
 @lru_cache(maxsize=1)
 def criterion_sets() -> tuple[str, ...]:
     out = _in_worker(
@@ -455,8 +427,7 @@ def criterion_sets() -> tuple[str, ...]:
     return tuple(name for name in out.split(",") if name) or ("paraphrased_v2_ru",)
 
 
-# the veto decides a verdict too: it can only veto, but an unreachable label there reads
-# as a regression on the families the criterion cannot see, which is the whole point of it
+# a veto set can only veto, but an unreachable label in one still reads as a regression
 @lru_cache(maxsize=1)
 def veto_sets() -> tuple[str, ...]:
     out = _in_worker("import config; print(','.join(config.settings.retrieval.veto_sets))")
@@ -464,15 +435,17 @@ def veto_sets() -> tuple[str, ...]:
 
 
 def marks_are_reachable() -> tuple[bool, str]:
+    # `db.live_rows`: this asked only for the variant, so a deactivated file counted
     out = _in_worker(
-        "import json, config;"
+        "import json, config, db;"
         " from orm.sync_db import engine; from sqlalchemy import text;"
-        " sql = text(\"\"\"SELECT q.set_name, count(*) AS unreachable FROM questions q"
-        " WHERE array_length(q.marked_sources, 1) > 0 AND NOT EXISTS ("
-        "   SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m"
-        "   WHERE dc.variant = :v AND dc.source LIKE '%' || m || '%')"
-        " GROUP BY q.set_name ORDER BY 2 DESC\"\"\");"
-        " rows = engine.connect().execute(sql, {'v': config.settings.corpus.variant}).all();"
+        " sql = text(\"SELECT q.set_name, count(*) AS unreachable FROM questions q\""
+        " \" WHERE array_length(q.marked_sources, 1) > 0 AND NOT EXISTS (\""
+        " \"   SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m\""
+        " f\"   WHERE {db.live_rows('dc')} AND dc.source LIKE '%' || m || '%')\""
+        " \" GROUP BY q.set_name ORDER BY 2 DESC\");"
+        " rows = engine.connect().execute("
+        "   sql, {'variant': config.settings.corpus.variant}).all();"
         " print(json.dumps([[r[0], r[1]] for r in rows]))"
     )
     rows = json.loads(out) if out.startswith("[") else None
@@ -487,8 +460,7 @@ def marks_are_reachable() -> tuple[bool, str]:
     return not blocking, f"questions no chunk can satisfy: {listing}{verdict}"
 
 
-# a liveness check, not the gate: what the depth is judged by is max_mrr_loss. The floor
-# and the question count live in config, next to the value they qualify
+# a liveness check, not the gate: the depth is judged by max_mrr_loss
 def index_is_alive() -> tuple[bool, str]:
     thresholds = _alive_thresholds()
     if thresholds is None:
@@ -511,8 +483,7 @@ def index_is_alive() -> tuple[bool, str]:
 
 
 def _alive_thresholds() -> tuple[float, int] | None:
-    # sh() returns "" on any non-zero exit, which is what a downed worker looks like:
-    # the condition this check exists to report, not one to crash on
+    # sh() returns "" on any non-zero exit, which is what a downed worker looks like
     out = _in_worker(
         "import config;"
         " r = config.settings.retrieval;"
@@ -534,8 +505,7 @@ CHECKS = (
     keyword_switches_match_the_worker, marks_are_reachable, index_is_alive,
 )
 
-# these read something out and never refuse: standing among the seventeen checks above made
-# them look like gates with a permanently green light
+# these read something out and never refuse, so they stood as permanently green gates
 NOTES = (halves_of_pairs_are_counted,)
 
 
@@ -550,12 +520,9 @@ def _rows(run_name: str) -> list:
         offset += len(page)
 
 
-# the context guard, checked on what a run actually asked for rather than predicted from
-# the ceiling. A prompt over the window is not an error anywhere: ollama truncates it and
-# answers from what is left, so the row looks like every other row
+# checked on what a run asked for: ollama truncates and answers from what is left
 def _prompts_over_the_window(logs: list) -> list:
-    # the generation role, not the max over roles: the judge reserves as much and never
-    # shares a window with these rows, so the max reserved room a run never asked for
+    # the generation role, not the max: the judge never shares a window with these rows
     out = _in_worker(
         "import config; print(f'{config.settings.llm.context_length}"
         " {config.settings.llm.roles[\'generation\'].options.get(\'max_tokens\', 0)}')"
@@ -563,8 +530,7 @@ def _prompts_over_the_window(logs: list) -> list:
     try:
         window, reserved = (int(part) for part in out.split())
     except ValueError:
-        # a down worker, an import error and an empty roles map all land here, and
-        # answering "no rows over the window" is a guard reporting a pass it never ran
+        # a down worker and an empty roles map both land here, and "no rows over" is a pass
         return [f"cannot read the window from the worker ({out[:40] or 'no answer'})"]
     room = window - reserved
     return sorted(
@@ -580,9 +546,7 @@ def verify_run(spec: str, expect: int | None, shared: set | None) -> int:
         print(f"{run_name}: no rows yet")
         return 1
     questions = {row["question_id"] for row in logs}
-    # the orchestrator and the context window are the agent's to record; a single-shot
-    # snapshot has neither, so requiring them made this check unable to pass on the
-    # default pipeline
+    # a single-shot snapshot has neither, so requiring them made this unable to pass
     agent_rows = [row for row in logs if row.get("pipeline") == "agent"]
     agent_snapshots = [(row.get("metrics") or {}).get("config") or {} for row in agent_rows]
     missing = [
@@ -648,20 +612,18 @@ PINNED = (
 )
 
 
-# a key a row does not record: not a value, so it does not join the set of values two
-# arms have to agree on
+# a key a row does not record is not a value, so it joins no set of values
 _ABSENT = object()
 
 
 def _setting(key: str, snapshot: dict):
+    # a row that never carried this key had its `None` join the set as a value
+    if key not in snapshot:
+        return _ABSENT
     value = snapshot.get(key)
-    # the topic block carries this question's score and the threshold that was applied to
-    # it, and the applied threshold now varies with the question's language. What two arms
-    # have to share is the policy that produced it, not the number it produced
+    # what two arms have to share is the policy, not the number it produced
     if key == "topic" and isinstance(value, dict):
-        # the applied number varies with the question's language, so what two arms share is
-        # the policy. A row written before the policy was recorded is skipped like any
-        # other absent key, the file's own way of saying "not recorded"
+        # a row written before the policy was recorded is skipped like any absent key
         if "policy" not in value:
             return _ABSENT
         return json.dumps(value["policy"], sort_keys=True)
@@ -681,9 +643,7 @@ def _pinned(spec: str) -> dict:
             # the arm without a gate records none on purpose, that is not a settings mismatch
             if key == "gate" and gateless:
                 continue
-            # an agent answer that never called the corpus tool searched at no depth, so
-            # it records none. Rows that did search must still agree with each other, and
-            # a run of both kinds is a normal run, not a settings mismatch
+            # an agent answer that never searched records no depth: not a settings mismatch
             if key == "ef_search" and config.get("ef_search") is None:
                 continue
             seen = _setting(key, config)
