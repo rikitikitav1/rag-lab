@@ -38,8 +38,7 @@ class _Session:
 
         return _R()
 
-    # the done-sets come back as (original id, stored text) so a resumed run can derive
-    # the missing half from the half that is already there
+    # the done-sets come back with the stored text so a resumed run derives the missing half
     def execute(self, stmt):
         rows = [(qid, f"p:q{qid}") for qid in self._rows()]
 
@@ -93,8 +92,7 @@ def test_a_restart_finishes_the_list_instead_of_repeating_it(monkeypatch):
 
 
 def test_the_missing_half_is_derived_from_the_stored_one(monkeypatch):
-    # a fresh paraphrase would be a different question, and the pair exists to be one
-    # question in two languages
+    # a fresh paraphrase is a different question, and the pair is one question in two languages
     texts = []
     store = {"answers": [[_Q(1)], [1], []], "asked": 0}
     monkeypatch.setattr(build_paraphrased, "Session", lambda: _Session(store))
@@ -113,8 +111,7 @@ def test_the_missing_half_is_derived_from_the_stored_one(monkeypatch):
 
 
 def test_an_original_with_only_a_russian_half_is_left_alone(monkeypatch):
-    # the english half cannot be recovered from it, and inventing one writes a pair that
-    # is two different questions
+    # the english half cannot be recovered, and inventing one writes two different questions
     inserted = []
     store = {"answers": [[_Q(1)], [], [1]], "asked": 0}
     monkeypatch.setattr(build_paraphrased, "Session", lambda: _Session(store))
@@ -131,8 +128,7 @@ def test_an_original_with_only_a_russian_half_is_left_alone(monkeypatch):
 
 
 def test_a_run_that_died_between_the_pair_adds_only_the_missing_half(monkeypatch):
-    # one original makes two rows: the paraphrase, then the translation. Counting "done"
-    # across both sets would drop question 1 entirely and leave it without a translation
+    # one original makes two rows, so counting done across both sets hides a half
     inserted = []
     store = {"answers": [[_Q(1), _Q(2)], [1], []], "asked": 0}
     monkeypatch.setattr(build_paraphrased, "Session", lambda: _Session(store))

@@ -1,4 +1,6 @@
+import re
 from functools import lru_cache
+from typing import NamedTuple
 
 import config
 import logging_setup
@@ -11,6 +13,19 @@ DetectorFactory.seed = 0
 log = logging_setup.get_logger(__name__)
 
 RANK_FUNCTIONS = {"ts_rank", "ts_rank_cd"}
+
+
+# built by name, so a column added anywhere but the end cannot move a reader's `row[6]`
+class Hit(NamedTuple):
+    content: str
+    source: str
+    category: str | None
+    chunk_index: int | None
+    vector_rank: int | None
+    keyword_rank: int | None
+    distance: float | None
+    score: float
+    section: str | None
 
 
 # every config knows its own function words, so ask them instead of guessing the language
@@ -84,6 +99,15 @@ def _keyword_query_sql(mode: str) -> str:
     return "plainto_tsquery(CAST(:ts_config AS regconfig), :question)"
 
 
+# this variant, under a source still active: seven places wrote it and one had drifted
+def live_rows(alias: str = "") -> str:
+    col = f"{alias}." if alias else ""
+    return (
+        f"{col}variant = :variant "
+        f"AND {col}source_id IN (SELECT id FROM data_sources WHERE active)"
+    )
+
+
 def cleanup(*, variant):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM data_chunks WHERE variant = :variant"), {"variant": variant})
@@ -95,20 +119,16 @@ def cleanup(*, variant):
         )
 
 
-# the same population retrieval reads: rows under an inactive source answer nothing
 def is_empty(*, variant):
     with engine.connect() as conn:
         return conn.execute(
-            text("""SELECT NOT EXISTS (
-                      SELECT 1 FROM data_chunks
-                      WHERE variant = :variant
-                        AND source_id IN (SELECT id FROM data_sources WHERE active))"""),
+            text(f"""SELECT NOT EXISTS (
+                      SELECT 1 FROM data_chunks WHERE {live_rows()})"""),
             {"variant": variant},
         ).scalar()
 
 
-# losing the bookkeeping must not cost the work it describes: three call sites wrote the
-# same try/except around it, each with its own log event
+# losing the bookkeeping must not cost the work: three call sites wrote this try/except
 def fingerprint_or_none(*, variant) -> dict | None:
     try:
         return corpus_fingerprint(variant=variant)
@@ -119,17 +139,32 @@ def fingerprint_or_none(*, variant) -> dict | None:
 
 # thresholds are calibrated against a corpus, so a run has to record which one it saw
 def corpus_fingerprint(*, variant) -> dict:
-    query = """
+    query = f"""
         SELECT count(*) AS chunks,
                count(DISTINCT source_id) AS sources,
                max(id) AS last_chunk_id
-        FROM data_chunks
-        WHERE variant = :variant
-          AND source_id IN (SELECT id FROM data_sources WHERE active)
+        FROM data_chunks WHERE {live_rows()}
     """
     with engine.connect() as conn:
         row = conn.execute(text(query), {"variant": variant}).mappings().one()
     return {"variant": variant, **dict(row)}
+
+
+# `is_empty` asks whether any row exists, and a half-built variant has plenty
+def sources_missing_from(*, variant) -> list[str]:
+    with engine.connect() as conn:
+        return [
+            row[0]
+            for row in conn.execute(
+                text("""SELECT ds.name FROM data_sources ds
+                        WHERE ds.active
+                          AND NOT EXISTS (
+                            SELECT 1 FROM data_chunks dc
+                            WHERE dc.source_id = ds.id AND dc.variant = :variant)
+                        ORDER BY ds.name"""),
+                {"variant": variant},
+            )
+        ]
 
 
 # a run on the wrong variant otherwise looks like an ordinary run with different numbers
@@ -144,20 +179,17 @@ def corpus_variants() -> list[dict]:
 
 def nearest_distance(embedding, *, variant) -> float | None:
     # same filters as hybrid_search: the topic axis must not see what retrieval cannot
-    query = """
+    query = f"""
         SELECT embedding <=> CAST(:embedding AS vector) AS distance
         FROM data_chunks
-        WHERE embedding IS NOT NULL
-          AND variant = :variant
-          AND source_id IN (SELECT id FROM data_sources WHERE active)
+        WHERE embedding IS NOT NULL AND {live_rows()}
         ORDER BY distance
         LIMIT 1
     """
     from use_cases import search_depth
 
     with engine.connect() as conn:
-        # on the connection already held: `resolve` opens its own otherwise, and the pool
-        # is five plus five
+        # on the connection already held: `resolve` opens its own, and the pool is five plus five
         depth = search_depth.resolve(variant, conn=conn)
         conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
         row = conn.execute(
@@ -166,17 +198,23 @@ def nearest_distance(embedding, *, variant) -> float | None:
     return float(row) if row is not None else None
 
 
+# one rule for both doors: an lquery metacharacter here changes what the filter matches
+CATEGORY_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
+
+
+def refuse_bad_category(category: str | None) -> None:
+    if category is not None and not CATEGORY_RE.fullmatch(category):
+        raise ValueError(f"invalid category filter: {category[:60]!r}")
+
+
 def list_categories(category=None, only_top=None, *, variant):
     cat_filter = "AND category ~ (:category)::lquery" if category else ""
     cat_select = "subpath(category, 0, 1)::text" if only_top else "category"
     params = {"variant": variant}
     if category:
         params["category"] = f"*.{category}.*"
-    # every neighbour filters on active; without it the listing counts chunks retrieval
-    # will never return
     query = f"""SELECT {cat_select} AS cat, COUNT(*) FROM data_chunks
-                WHERE variant = :variant {cat_filter}
-                  AND source_id IN (SELECT id FROM data_sources WHERE active)
+                WHERE {live_rows()} {cat_filter}
                 GROUP BY cat ORDER BY {cat_select}"""
 
     with engine.connect() as conn:
@@ -205,8 +243,7 @@ def hybrid_search(
         raise ValueError(f"keyword_rank must be one of {sorted(RANK_FUNCTIONS)}")
     keyword_query = _keyword_query_sql(retrieval.keyword_query)
     cat_filter = "AND category ~ (:category)::lquery" if category else ""
-    src_filter = """AND variant = :variant
-                    AND source_id IN (SELECT id FROM data_sources WHERE active)"""
+    src_filter = f"AND {live_rows()}"
     query = f"""WITH vector_search AS (
                     SELECT id,
                            embedding <=> CAST(:embedding AS vector) AS distance,
@@ -255,17 +292,15 @@ def hybrid_search(
     }
     if category:
         params["category"] = f"*.{category}.*"
-    # set on the connection this search uses, not on every connection in the pool: the
-    # depth can be overridden per request, and a pooled connection outlives the request
+    # on this connection: the depth is per request and a pooled connection outlives it
     from use_cases import search_depth
 
-    # exact search is what this connection does, not what a listener somewhere set on the
-    # pool: an argument that names a switch and does not throw it is how a run labelled
-    # itself exact while walking the graph at pgvector's default of 40
+    # an argument that names a switch and does not throw it labelled a run exact at 40
     depth = None if exact else search_depth.resolve(variant, ef_search)
     with engine.connect() as conn:
         if exact:
             conn.execute(text("SET LOCAL enable_indexscan = off"))
         else:
             conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
-        return conn.execute(text(query), params).fetchall()
+        rows = conn.execute(text(query), params).mappings().all()
+    return [Hit(**row) for row in rows]

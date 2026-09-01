@@ -1,39 +1,32 @@
 from typing import TypeVar
 
-import config
 from pgvector.asyncpg import register_vector
-from sqlalchemy import URL, event
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 
+from orm import dsn
+
 T = TypeVar("T")
 
 
 def postgres_url():
-    p = config.settings.postgres
-    return URL.create(
-        "postgresql+asyncpg",
-        username=p.user,
-        host=p.host,
-        port=p.port,
-        database=p.dbname,
-    )
+    return dsn.postgres_url("postgresql+asyncpg")
 
 
 engine = create_async_engine(
     postgres_url(),
-    pool_size=5,
-    max_overflow=5,
+    pool_size=dsn.POOL_SIZE,
+    max_overflow=dsn.MAX_OVERFLOW,
     pool_pre_ping=True,
     connect_args={
-        "timeout": 5,
+        "timeout": dsn.CONNECT_TIMEOUT_SECONDS,
         "server_settings": {
-            "statement_timeout": "30000",
-            # a generic plan cannot prove a partial index predicate from a bound parameter
-            "plan_cache_mode": "force_custom_plan",
+            "statement_timeout": str(dsn.STATEMENT_TIMEOUT_MS),
+            "plan_cache_mode": dsn.PLAN_CACHE_MODE,
         },
     },
 )

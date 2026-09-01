@@ -1,14 +1,13 @@
-import hashlib
 import os
 import sys
 
 import llm
 import logging_setup
 import prompt_repo
-from models.eval import Question
+from evals import sampling
+from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
-from sqlalchemy import String as sa_text_type
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -16,10 +15,6 @@ log = logging_setup.get_logger(__name__)
 
 SOURCE_SET = "interview"
 PARAPHRASE_ROLE = "paraphrasing"
-
-
-def _text_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _paraphrase(text: str) -> str:
@@ -40,7 +35,7 @@ def _translate_ru(text: str) -> str:
 
 def _insert(session, text, set_name, language, original) -> bool:
     row = {
-        "text_hash": _text_hash(text),
+        "text_hash": text_hash(text),
         "original_text": text,
         "set_name": set_name,
         "language": language,
@@ -67,10 +62,7 @@ def _pick(
     per_source: int | None,
     grow_set: str | None = None,
 ):
-    # growing a criterion set instead of replacing it: the originals it already used are
-    # skipped, so the questions that are in it keep their rows and stay comparable
-    # an original counts as used only when both halves of the pair exist: with either
-    # half missing the run still has work to do on it
+    # an original counts as used only when both halves of the pair exist
     used = (
         select(Question.source_question_id)
         .where(Question.set_name == grow_set, Question.source_question_id.isnot(None))
@@ -84,25 +76,20 @@ def _pick(
         if grow_set
         else None
     )
-    stmt = select(Question).where(Question.set_name == SOURCE_SET)
+    # one list of conditions for both paths: only one of the two copies would be changed
+    where = [Question.set_name == SOURCE_SET]
     if used is not None:
-        stmt = stmt.where(Question.id.not_in(used))
+        where.append(Question.id.not_in(used))
     if source:
-        stmt = stmt.where(
+        where.append(
             func.array_to_string(Question.marked_sources, " ").ilike(f"%{source}%")
         )
-    order = func.md5(func.concat(func.cast(Question.id, sa_text_type), seed))
+    order = sampling.by_id_and_seed(Question.id, seed)
     if per_source is None:
-        return session.scalars(stmt.order_by(order).limit(limit)).all()
+        return session.scalars(
+            select(Question).where(*where).order_by(order).limit(limit)
+        ).all()
     # limit after stratification would leave part of the sources with fewer than asked
-
-    ranked_where = [Question.set_name == SOURCE_SET]
-    if used is not None:
-        ranked_where.append(Question.id.not_in(used))
-    if source:
-        ranked_where.append(
-            func.array_to_string(Question.marked_sources, " ").ilike(f"%{source}%")
-        )
     ranked = (
         select(
             Question,
@@ -110,20 +97,18 @@ def _pick(
             .over(partition_by=Question.marked_sources[1], order_by=order)
             .label("rank"),
         )
-        .where(*ranked_where)
+        .where(*where)
         .subquery()
     )
-    rows = session.execute(
+    return session.scalars(
         select(Question)
         .join(ranked, Question.id == ranked.c.id)
         .where(ranked.c.rank <= per_source)
-        .order_by(func.md5(func.concat(func.cast(Question.id, sa_text_type), seed)))
-    ).scalars().all()
-    return rows
+        .order_by(order)
+    ).all()
 
 
-# what a run would take, resolved once so it can be written down and repeated. A job that
-# the worker may restart must not decide its own scope from the state of the moment
+# resolved once so it can be written down: a restarted job must not redecide its scope
 def plan(
     limit: int | None,
     source: str | None = None,
@@ -140,11 +125,7 @@ def plan(
         return [q.id for q in picked]
 
 
-# per set, not across both: one original makes two rows, the paraphrase and then the
-# translation, and an attempt that died between them left the original done in one set
-# and absent from the other
-# the text comes back with the id: a half that exists is what the other half must be
-# derived from, and asking for it later would be one query per original
+# per set: a run that died between the two rows left it done in one and absent in the other
 def _already_done(session, set_name: str) -> dict[int, str]:
     return dict(
         session.execute(
@@ -172,9 +153,7 @@ def build(
     made = {set_name: 0, ru_set: 0}
     with Session() as session:
         if originals is not None:
-            # a fixed list survives a restart; picking again would take a second helping
-            # the list is the recipe, so the rows come back in its order: otherwise a
-            # half-finished run is not a prefix of the plan, which is what fixing it was for
+            # the rows come back in the list's order, or a half-finished run is not a prefix of it
             query = select(Question).where(Question.id.in_(originals))
             if originals:
                 query = query.order_by(func.array_position(originals, Question.id))
@@ -187,9 +166,7 @@ def build(
             )
             log.info("paraphrase.picked", n=len(picked), seed=seed, per_source=per_source)
         originals = picked
-        # a fixed list makes the run repeatable; skipping what is already there makes it
-        # resumable. Without this a requeued job paraphrases the whole list again, and a
-        # fresh paraphrase is new text with a new hash, so nothing would stop the double
+        # a fresh paraphrase is new text with a new hash, so nothing would stop the double
         done_en = _already_done(session, set_name)
         done_ru = _already_done(session, ru_set)
         originals = [q for q in originals if not (q.id in done_en and q.id in done_ru)]
@@ -200,9 +177,7 @@ def build(
             )
 
         for i, original in enumerate(originals, 1):
-            # a half that exists is the pair: the other half is derived from it, never
-            # from a fresh paraphrase. Otherwise a resumed run writes two rows that are
-            # two different questions, and nothing downstream can tell
+            # a half that exists is the pair: derived from it, never from a fresh paraphrase
             stored = done_en.get(original.id)
             if original.id in done_ru and stored is None:
                 log.warning("paraphrase.orphan_ru", original=original.id)

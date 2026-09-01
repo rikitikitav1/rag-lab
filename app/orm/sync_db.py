@@ -1,32 +1,26 @@
-import config
 from pgvector.psycopg import register_vector
-from sqlalchemy import URL, create_engine, event
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+
+from orm import dsn
 
 
 def postgres_url():
-    p = config.settings.postgres
-    return URL.create(
-        "postgresql+psycopg",
-        username=p.user,
-        host=p.host,
-        port=p.port,
-        database=p.dbname,
-    )
+    return dsn.postgres_url("postgresql+psycopg")
 
 
 engine = create_engine(
     postgres_url(),
-    pool_size=5,
-    max_overflow=5,
+    pool_size=dsn.POOL_SIZE,
+    max_overflow=dsn.MAX_OVERFLOW,
     pool_pre_ping=True,
     connect_args={
-        "connect_timeout": 5,
-        # a generic plan cannot prove a partial index predicate from a bound parameter
-        # no hnsw.ef_search here: the depth is resolved per search and set on the
-        # statement, because "auto" needs a connection to answer and this is where one
-        # is made
-        "options": "-c statement_timeout=30000 -c plan_cache_mode=force_custom_plan",
+        "connect_timeout": dsn.CONNECT_TIMEOUT_SECONDS,
+        # no hnsw.ef_search here: the depth is resolved per search, and `auto` needs a connection
+        "options": (
+            f"-c statement_timeout={dsn.STATEMENT_TIMEOUT_MS}"
+            f" -c plan_cache_mode={dsn.PLAN_CACHE_MODE}"
+        ),
     },
 )
 

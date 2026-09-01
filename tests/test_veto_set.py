@@ -12,8 +12,7 @@ def test_a_family_is_named_by_prefix_and_commands_are_not_one():
 
 
 def test_the_stored_heading_is_the_one_the_matcher_will_look_for():
-    # `heading_text` strips a numeric prefix and `clean_gold` does not, so a heading
-    # stored as written would never equal the section it came from
+    # `heading_text` strips a numeric prefix and `clean_gold` does not
     section = "Redis license > 12. Licenses of dependencies"
     stored = build_veto._leaf(section)
     assert stored == "Licenses of dependencies"
