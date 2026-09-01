@@ -31,7 +31,7 @@ jobs:
       - name: check the agent graph drawing against the code
         run: |
           uv sync --frozen
-          PYTHONPATH=app uv run python scripts/graph_to_d2.py --check
+          uv run python scripts/graph_to_d2.py --check
       - name: render and check freshness
         run: |
           ./scripts/render_diagrams.sh

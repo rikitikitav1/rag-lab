@@ -1,9 +1,7 @@
-# A number that came out of a measurement carries a `# tuned: file=` line; the reasoning
-# and the corpus it was measured on live in that file, and the preflight compares them.
+# a measured number carries a `# tuned: file=` line, and the preflight compares them
 service:
   retrieval:
-    # last of three distances on one scale: 0.39 flags weak context, ~0.44 refuses off-topic
-    # (both under `agent`), 0.55 cuts the hybrid pool and never empties it (1643 questions)
+    # 0.55 cuts the hybrid pool and never empties it over 1643 questions; 0.39 weak, 0.44 off-topic
     # tuned: file=datasets/measurements/threshold_calibration_20260830.json
     distance_threshold: 0.55
     # this is `k`: how many chunks the generator sees, and what the context guard multiplies
@@ -11,7 +9,7 @@ service:
     limit_vector: 20
     limit_keywords: 20
     rrf_k: 60
-    # AND over every lexeme: OR costs 0.15-0.23 MRR on paraphrases (measured 26.08)
+    # AND over every lexeme: OR costs 0.15-0.23 MRR on paraphrases
     # tuned: file=datasets/measurements/2026-08-26_keyword_switch_grid.txt
     keyword_query: and
     keyword_rank: ts_rank
@@ -38,8 +36,7 @@ service:
     # the winner on the criterion must not lose here; it vetoes, it never chooses
     veto_sets: [veto_v1]
   rerank:
-    # off by owner's decision 30.08: the 8b the agent needs takes the card room this held.
-    # Worth +0.0454 [+0.0250, +0.0670] of section MRR, so this is a price, not a verdict
+    # off: worth +0.0454 of section MRR, and the 8b the agent needs takes its card room
     # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md
     enabled: false
     model: BAAI/bge-reranker-v2-m3
@@ -49,19 +46,17 @@ service:
     fallback_policy: corpus_first
     # both read only at `gate_signal: cross_encoder`; under `distance` they sit unused
     gate_candidates: 5
-    # cross-encoder coverage gate: median 0.916 in-corpus against 0.022 outside (measured 24.08)
+    # cross-encoder coverage gate: median 0.916 in-corpus against 0.022 outside
     # tuned: file=docs/experiments/2026-08-24_corpus-first-and-the-fallback-that-never.md
     weak_threshold: 0.5
 
-    # which signal decides that retrieval is weak; picked by A/B, not by taste (measured 25.08)
+    # which signal decides that retrieval is weak, picked by A/B rather than by taste
     # tuned: file=docs/experiments/2026-08-25_a-cheaper-gate-signal-and-a.md
     gate_signal: distance
-    # one value for both languages, so the 22-of-100 budget it was cut for holds on neither
-    # exactly: the file reads 0.3957 ru and 0.3653 en, and this sits between them
+    # one value for two languages (ru 0.3957, en 0.3653), so its 22-of-100 budget holds on neither
     # tuned: file=datasets/measurements/threshold_calibration_20260830.json
     weak_distance: 0.39
-    # per language: an off-domain english question sits closer to an english corpus
-    # 1% budget for false refusals, where one more catch starts costing more than one question
+    # per language: an off-domain english question sits closer to an english corpus. 1% budget
     # tuned: file=datasets/measurements/threshold_calibration_20260830.json
     topic_threshold:
       ru: 0.4560
@@ -69,8 +64,7 @@ service:
   ingestion:
     batch_size: 100
     commit_size: 1000
-    # a shadow ceiling: the cut reads the variant's `max_chunk_size`, this is the fallback
-    # for a source with no variant policy, and it used to decide `baseline` silently
+    # a shadow ceiling: the fallback for a source with no variant policy
     chunk_max_size: 1024
   corpus:
     description: >-
@@ -89,11 +83,9 @@ service:
         max_chunk_size: 1024
         # what the ceiling counts, said out loud rather than inherited from a default
         ceiling_on: body
-      # variants that lost are gone from here and from the table; their policy rides in the
-      # journal entry that measured them, so one job rebuilds any of them
+      # variants that lost are gone; their policy rides in the entry that measured them
   ingest_quality:
-    # hard means the cut is broken, soft means it is dirty and a human should look
-    # a ceiling abstains below MIN_BREACHING_CHUNKS: a share over few chunks reads as size
+    # hard means the cut is broken, soft means dirty; a ceiling abstains below few chunks
     # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
     hard_gates:
       # a floor, so the abstention above does not apply: missing chunks cannot be counted
@@ -114,8 +106,7 @@ service:
       dup_in_source: 10
       tiny: 10
     history_per_variant: 20
-    # written into every report so a score from another formula is not read as this one.
-    # There is one formula; the field exists for the day there are two
+    # written into every report, so a score from another formula is not read as this one
     score_formula: v1
 
   fts:
@@ -124,8 +115,7 @@ service:
     fallback: english
   repos_dir: /repos
   prompts_dir: prompts
-  # data, not settings: 173 repository names, and the only reason they are in this file is
-  # that nothing else reads them. Nothing below decides anything
+  # data, not settings: 173 repository names that nothing else reads
   sources:
     interview:
       base_url: https://github.com/Devinterview-io
@@ -305,19 +295,17 @@ service:
         - xgboost-interview-questions
         - xml-interview-questions
 llm:
-  # what we expect OLLAMA_CONTEXT_LENGTH to be; the server is the authority, preflight compares
-  # the rest of the OLLAMA_* knobs (residency, loaded models) live in docker-compose.yml
+  # what we expect OLLAMA_CONTEXT_LENGTH to be; the server is the authority
   context_length: 8192
   base_url: http://ollama:11434
   # in the order the pipeline uses them
   roles:
     # index time
     embedding:    { model: bge-m3 }
-    # answering. 8b again by owner's decision 30.08: gemma3 has no tool calling in ollama at all
-    # (`ollama show`: completion, vision), so the agent path refused every question on it
+    # 8b: gemma3 reports no tool calling in ollama, so the agent path refuses every question
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
     # evaluation
-    judging:      { model: qwen2.5:7b,  options: { max_tokens: 1024, temperature: 0 } }
+    judging:      { model: qwen2.5:7b,  options: { max_tokens: 1024, temperature: 0, seed: 0 } }
     # building the question sets
     paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 } }
   candidates: []

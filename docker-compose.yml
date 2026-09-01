@@ -30,8 +30,7 @@ services:
 
   postgresql:
     image: pgvector/pgvector:pg17
-    # an hnsw build asks for maintenance_work_mem of shared memory, and the docker
-    # default of 64m is smaller than the 512m we ask pgvector to use
+    # an hnsw build asks for 512m of shared memory and the docker default is 64m
     shm_size: 1gb
     ports:
       - "127.0.0.1:5432:5432"
@@ -54,9 +53,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: "postgres://postgres@postgresql:5432/postgres?sslmode=disable"
-      # the dump is regenerated on purpose, not on every stack start: up runs on a live
-      # database, and a live database carries the vector index of every variant indexed
-      # on this machine. Refresh it with `docker compose run --rm dbmate dump`
+      # regenerated on purpose: a live database carries the vector index of every variant
       DBMATE_NO_DUMP_SCHEMA: "true"
     volumes:
       - ./db:/db
@@ -95,8 +92,10 @@ services:
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
       WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
       RERANK_DEVICE: ${WORKER_RERANK_DEVICE:-cuda}
-      # the reranker's weights are in hf_cache; without this sentence_transformers still
-      # asks huggingface whether they moved, and a router blinking took a run down with it
+      # read by the judge and capped by the slots ollama was started with
+      JUDGE_WIDTH: ${JUDGE_WIDTH:-1}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+      # without this sentence_transformers asks huggingface whether the weights moved
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
@@ -122,6 +121,8 @@ services:
       - "127.0.0.1:11434:11434"
     environment:
       OLLAMA_MAX_LOADED_MODELS: "2"
+      # pinned: unset, ollama picks slots from free VRAM and two arms differ as instruments
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
       OLLAMA_KEEP_ALIVE: "-1"
       # the server defaults to 4096 and drops whole messages to fit, reporting the trimmed count
       OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-8192}"

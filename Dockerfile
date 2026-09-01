@@ -11,9 +11,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN apt-get update && apt-get install -y --no-install-recommends git \
       && rm -rf /var/lib/apt/lists/*
-# the dependencies are a function of the lock file alone, so they are installed before
-# the app is copied: otherwise a one-line edit reinstalled all of them. The second sync
-# only puts the project itself in, which is what places app/ on sys.path
+# dependencies are a function of the lock file, so a one-line edit does not reinstall them
 RUN uv sync --frozen --no-install-project
 COPY app ./app
 RUN uv sync --frozen
