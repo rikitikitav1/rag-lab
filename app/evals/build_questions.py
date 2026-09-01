@@ -22,18 +22,14 @@ def _readmes():
             yield f"{repo}/README.md", readme.read_text(encoding="utf-8", errors="ignore")
 
 
-# the cut asks the parser which lines are headings and skips the ones inside a fence;
-# this asked a regexp, so `## 1.` written inside a code block became a question that no
-# chunk could ever carry as its section
+# the parser, not a regexp: `## 1.` inside a code block became an unanswerable question
 def _qa_pairs(text, file: str | None = None):
     import ingest
 
     lines = text.split("\n")
     inside, opened = ingest._fence_scan(lines)
     if opened is not None:
-        # the same fallback the cut takes: after a fence that never closes, everything
-        # reads as code, and a question builder that trusts it drops every question after
-        # the stray opener. Four files of 1010 open one; numpy alone loses seven
+        # after a fence that never closes everything reads as code: numpy alone loses seven
         log.warning(
             "questions.unbalanced_fence",
             file=file,

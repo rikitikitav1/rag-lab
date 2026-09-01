@@ -1,18 +1,12 @@
-import sys
-from pathlib import Path
+import config
+from orm.sync_db import engine
+from sqlalchemy import text
+from use_cases.index import check_variant
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
-
-import config  # noqa: E402
-from orm.sync_db import engine  # noqa: E402
-from sqlalchemy import text  # noqa: E402
-from use_cases.index import check_variant  # noqa: E402
+import db
 
 VARIANT = check_variant(config.settings.corpus.variant)
-ACTIVE = (
-    f"dc.variant = '{VARIANT}' "
-    "AND dc.source_id IN (SELECT id FROM data_sources WHERE active)"
-)
+ACTIVE = db.live_rows("dc")
 
 QUERIES = {
     "totals": f"""
@@ -65,11 +59,11 @@ QUERIES = {
         FROM data_chunks dc WHERE {ACTIVE}
         GROUP BY dc.source ORDER BY count(*) DESC LIMIT 10
     """,
-    "chunks per registered source": """
+    "chunks per registered source": f"""
         SELECT ds.name, count(*) AS chunks, count(DISTINCT dc.source) AS files,
                round(avg(length(dc.content))) AS avg_len
         FROM data_chunks dc JOIN data_sources ds ON ds.id = dc.source_id
-        WHERE ds.active AND dc.variant = :variant GROUP BY ds.name ORDER BY count(*) DESC
+        WHERE {ACTIVE} GROUP BY ds.name ORDER BY count(*) DESC
     """,
     "devinterview boilerplate (chunk 0 with the badge)": f"""
         SELECT count(*) AS chunks

@@ -4,21 +4,20 @@ import re
 import llm
 import logging_setup
 import prompt_repo
-from evals.build_paraphrased import _text_hash as text_hash
-from models.eval import Question
+from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from use_cases.retrieval_compare import clean_gold, heading_text
 
+import db
+
 log = logging_setup.get_logger(__name__)
 
 ORIGINALS = "veto_headings"
 ROLE = "paraphrasing"
-# the veto reads the families the primary criterion cannot see. `redis-doc/commands` is
-# left out on purpose: its files have no heading that is a question, and a question made
-# from the file stem is a label, not a question
+# `redis-doc/commands` is out: a question made from its file stem is a label
 FAMILIES = {
     "cheatsheets": "cheatsheets/",
     "redis-doc/docs": "redis-doc/docs/",
@@ -42,16 +41,14 @@ def _family_of(source: str) -> str | None:
     return None
 
 
-# only files every variant of the comparison holds: `baseline` is frozen in time and the
-# local `notes` catalogue is alive, so a question about a file one side never indexed
-# would measure the drift of the corpus rather than the cut
+# only files every variant holds, or the question measures corpus drift, not the cut
 def _shared_sources(session, variants: list[str]) -> set[str]:
     shared: set[str] | None = None
     for variant in variants:
         rows = set(
             session.scalars(
-                text("SELECT DISTINCT source FROM data_chunks WHERE variant = :v"),
-                {"v": variant},
+                text(f"SELECT DISTINCT source FROM data_chunks WHERE {db.live_rows()}"),
+                {"variant": variant},
             )
         )
         shared = rows if shared is None else shared & rows
@@ -60,19 +57,17 @@ def _shared_sources(session, variants: list[str]) -> set[str]:
 
 def _headings(session, variant: str) -> list[tuple[str, str, str]]:
     rows = session.execute(
-        text("""
+        text(f"""
             SELECT DISTINCT source, section, language
             FROM data_chunks
-            WHERE variant = :variant AND section IS NOT NULL AND section <> ''
+            WHERE {db.live_rows()} AND section IS NOT NULL AND section <> ''
         """),
         {"variant": variant},
     ).all()
     return [(r[0], r[1], r[2]) for r in rows]
 
 
-# the leaf as it will be compared, not as it was written: `rank_of_section` matches
-# `_clean(gold)` against `_heading_text(section)`, and the second strips a numeric prefix
-# the first does not. Storing the stripped form is what makes the two agree by construction
+# `rank_of_section` strips a numeric prefix on one side, so the stripped form is stored
 def _leaf(section: str) -> str:
     written = (section or "").split(" > ")[-1].strip()
     return re.sub(r"^\d+\.\s*", "", written).strip()
@@ -82,9 +77,7 @@ def candidates(variants: list[str], cut_from: str) -> list[dict]:
     with Session() as session:
         shared = _shared_sources(session, variants)
         rows = _headings(session, cut_from)
-        # every hash except this set's own originals: including them made a second run a
-        # silent no-op, filtering out every heading the first run had inserted, and the
-        # resume path below unreachable
+        # including this set's own originals made a second run a silent no-op
         taken = set(
             session.scalars(
                 select(Question.text_hash).where(
@@ -102,8 +95,7 @@ def candidates(variants: list[str], cut_from: str) -> list[dict]:
         if len(leaf) < MIN_HEADING:
             continue
         key = clean_gold(leaf)
-        # the gold has to identify one file: a heading two files share would send the
-        # question to whichever of them the search happened to rank first
+        # the gold has to identify one file: a shared heading goes to whichever ranked first
         seen.setdefault(key, []).append(
             {"family": family, "source": source, "heading": leaf, "language": language}
         )
@@ -111,11 +103,9 @@ def candidates(variants: list[str], cut_from: str) -> list[dict]:
     for key, found in sorted(seen.items()):
         if len({row["source"] for row in found}) != 1:
             continue
-        # `_headings` is a DISTINCT with no ORDER BY, so which raw heading becomes the
-        # question was decided by row order rather than by the seed
+        # `_headings` is a DISTINCT with no ORDER BY, so row order decided, not the seed
         row = min(found, key=lambda r: (r["source"], r["heading"]))
-        # a heading that already names a question elsewhere in the bank would be dropped
-        # by the unique index, quietly making the quota smaller than the plan says
+        # a heading already naming a question elsewhere is dropped by the unique index
         if text_hash(row["heading"]) in taken:
             continue
         # the same check the matcher will make, made now rather than after the card is spent
@@ -131,8 +121,7 @@ def _order_key(row: dict, seed: str) -> str:
     ).hexdigest()
 
 
-# resolved once and written down, like the paraphrase plan: a job the worker may restart
-# must not decide its own scope from the state of the moment
+# resolved once and written down: a restarted job must not redecide its scope
 def plan(seed: str, variants: list[str], cut_from: str, quotas: dict | None = None) -> list[dict]:
     quotas = quotas or QUOTAS
     rows = candidates(variants, cut_from)

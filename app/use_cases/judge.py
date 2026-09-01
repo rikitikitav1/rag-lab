@@ -4,7 +4,43 @@ from dataclasses import dataclass, field
 import llm
 import prompt_repo
 from models.registry import Purpose
+from pydantic import BaseModel, Field, ValidationError
 from timing_wrappers import measure_elapsed
+
+
+class Score(BaseModel):
+    reason: str
+    score: int = Field(ge=0, le=10)
+
+
+def _objects(text: str) -> list[str]:
+    decoder = json.JSONDecoder()
+    found = []
+    for start, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            found.append(text[start:end])
+    return found
+
+
+# the last object that validates: the reply may show the format or nest another
+def _verdict_of(text: str | None) -> "Score":
+    found = _objects(text or "")
+    if not found:
+        raise ValueError(f"the judge answered with no JSON object: {(text or '')[:160]!r}")
+    failure = None
+    for candidate in reversed(found):
+        try:
+            return Score.model_validate_json(candidate)
+        except ValidationError as e:
+            failure = e
+    raise ValueError(f"the judge answered {found[0][:160]!r}: {failure.errors()[0]}") from failure
+
 
 SCORE_SCHEMA = {
     "type": "object",
@@ -22,8 +58,7 @@ class Verdict:
     score: int
     elapsed: float = 0.0
     model: str = field(default_factory=lambda: llm.resolve_name("judging"))
-    # which prompt scored this: two verdicts on the same answer differ by model or by
-    # prompt, and without both in the row the difference is not in the record
+    # two verdicts differ by model or by prompt, and without both the difference is unrecorded
     purpose: Purpose | None = None
     prompt_version: int | None = None
 
@@ -31,9 +66,7 @@ class Verdict:
         return f"score: {self.score}, reason: {self.reason}, model: {self.model}, elapsed: {self.elapsed}"
 
 
-# which judge scores, named rather than read from whatever is active right now: an arm that
-# swapped the active prompt or the `judging` role would change the stand under every other
-# reader of it, a live answer being judged in the next thread included
+# named rather than active: swapping the active prompt changes the stand under everyone
 @dataclass(frozen=True)
 class Bench:
     model: str | None = None
@@ -73,10 +106,10 @@ def judge(system_prompt, user_prompt, purpose=None, prompt_version=None, model=N
         system=system_prompt, user=user_prompt, role="judging",
         schema=SCORE_SCHEMA, model=model,
     )
-    parsed = json.loads(completion.text)
+    parsed = _verdict_of(completion.text)
     return Verdict(
-        score=int(parsed["score"]),
-        reason=parsed["reason"],
+        score=parsed.score,
+        reason=parsed.reason,
         model=model or llm.resolve_name("judging"),
         purpose=purpose,
         prompt_version=prompt_version,

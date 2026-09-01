@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+# the ceiling a hop budget may name, on every door that takes one
+MAX_HOPS = 10
+
 TOOL_CALL_NUDGE = (
     "You described a tool call instead of issuing one. Call the tool for real now, "
     "with the arguments its schema lists, or answer without it."
@@ -20,16 +23,14 @@ class GateSignal(StrEnum):
 
 
 class Orchestrator(StrEnum):
-    # gone, and the values stay so their runs are still queryable: 422 logs carry the
-    # hand-rolled loop and 222 the middleware arm
+    # gone, and the values stay queryable: 422 logs carry one arm and 222 the other
     handrolled = "agent"
     langgraph_middleware = "langgraph_middleware"
     langgraph_ported = "langgraph_ported"
     langgraph_idiomatic = "langgraph_idiomatic"
 
 
-# retired implementations: readable in old logs, runnable nowhere. Declared here rather
-# than at the transport, so a fourth retirement is one line and not three
+# retired implementations, declared here so a fourth retirement is one line, not three
 GONE = frozenset({Orchestrator.handrolled, Orchestrator.langgraph_middleware})
 
 

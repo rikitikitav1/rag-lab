@@ -7,7 +7,7 @@ for s in curated paraphrased paraphrased_ru; do
       for n in 0 2; do
         for l in langdetect cyrillic_ratio; do
           tag="${s}__${q}_${r}_n${n}_${l}"
-          res=$(docker compose exec -T -e PYTHONPATH=/app/app worker python /app/scripts/retrieval_report.py \
+          res=$(docker compose exec -T worker python /app/scripts/retrieval_report.py \
             --set "$s" --keyword-query "$q" --keyword-rank "$r" --keyword-norm "$n" \
             --query-lang "$l" --out "$out_dir/$tag.json" 2>/dev/null | grep -E "^  (file|section)")
           f=$(echo "$res" | grep file | grep -o '"MRR@20": [0-9.]*' | cut -d' ' -f2)

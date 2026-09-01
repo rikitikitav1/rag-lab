@@ -52,7 +52,12 @@ def test_dispatch_drops_undeclared_args(monkeypatch):
 def test_search_corpus_formats_content_and_sources(monkeypatch):
     from use_cases import chat
 
-    rows = [("chunk one", "src/a.md"), ("chunk two", "src/b.md")]
+    from db import Hit
+
+    rows = [
+        Hit("chunk one", "src/a.md", "cat", 0, 1, None, 0.1, 0.5, None),
+        Hit("chunk two", "src/b.md", "cat", 0, 2, None, 0.2, 0.4, None),
+    ]
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **k: (rows, None, 200))
     monkeypatch.setattr(chat, "take_sources", lambda r, scores=None, variant=None: ["S1", "S2"])
 
@@ -79,13 +84,12 @@ def test_the_corpus_tool_describes_the_corpus_from_config():
 
 
 def test_the_corpus_tool_carries_the_depth_it_searched_at(monkeypatch):
-    # the agent used to resolve the depth again at logging time, which is a second answer
-    # rather than the same one; the tool hands it up the way it hands up the sources
+    # resolving the depth again at logging time is a second answer, not the same one
     import agent_tools
     from use_cases import chat
 
     monkeypatch.setattr(
-        chat, "search_chunks", lambda *a, **kw: ("content", [], 137)
+        chat, "search_chunks", lambda *a, **kw: ("content", ["chunk"], [], 137)
     )
     res = agent_tools._search_corpus("q", variant="baseline")
     assert res.meta["ef_search"] == 137
@@ -100,8 +104,7 @@ def test_the_topic_threshold_is_resolved_per_language():
 
 
 def test_an_unmeasured_language_gets_the_most_permissive_threshold():
-    # we refuse only where refusing was shown not to cost a real question, and for a
-    # language nobody measured that was shown nowhere
+    # we refuse only where refusing was shown not to cost a real question
     from config import AgentCfg
 
     cfg = AgentCfg(topic_threshold={"ru": 0.4962, "en": 0.4712})

@@ -14,12 +14,9 @@ class Role(StrEnum):
     paraphrasing = "paraphrasing"
 
 
-# what an ollama tag may look like: shared by every door that takes a model name
-# read it with `fullmatch`, never `match`: `$` matches before a trailing newline, and this
-# same string is compiled by pydantic, whose engine has no `\Z`
+# shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
 MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?$")
-# where a three-segment name may point. The shape check lived on the HTTP door alone,
-# and a job that registers a model by name is a second door onto the same pull
+# the shape check lived on the HTTP door alone, and a job is a second door onto one pull
 ALLOWED_REGISTRIES = ("hf.co", "registry.ollama.ai")
 
 
@@ -27,8 +24,7 @@ MAX_MODEL_NAME = 128
 
 
 def refuse_unknown_registry(name: str) -> None:
-    # length and shape are checked here too: the HTTP door gets them from pydantic, and
-    # the job door used to get only the half below
+    # length and shape here too: the job door used to get only the half below
     if not name or len(name) > MAX_MODEL_NAME or not MODEL_NAME_RE.fullmatch(name):
         raise ValueError(f"invalid model name: {name!r}")
     parts = name.split("/")

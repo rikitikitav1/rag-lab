@@ -1,16 +1,25 @@
 from evals import runner
 
 
+def _spec(**kw):
+    kw.setdefault("variant", "baseline")
+    return runner.RunSpec(**kw)
+
+
 def _rows(marker, n=3):
-    return [(f"chunk {marker} {i}", f"{marker}.md", "cat", i, 1, None, 0.1, 0.5) for i in range(n)]
+    from db import Hit
+
+    return [
+        Hit(f"chunk {marker} {i}", f"{marker}.md", "cat", i, 1, None, 0.1, 0.5, None)
+        for i in range(n)
+    ]
 
 
 def _stub_phases(monkeypatch, use_rerank_expected=None):
     from use_cases import search_depth
 
     calls = []
-    # the phase resolves the depth once and carries it into every snapshot; asking the
-    # planner needs a database, and these tests need none
+    # the phase resolves the depth once and carries it; asking the planner needs a database
     monkeypatch.setattr(search_depth, "resolve", lambda *a, **kw: 200)
     monkeypatch.setattr(
         runner.llm, "request_embeddings_batch", lambda texts: [[0.1]] * len(texts)
@@ -42,9 +51,7 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
 
 def test_phases_run_in_order_and_free_vram(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    answered, cancelled = runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None, variant="baseline"
-    )
+    answered, cancelled = runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
     assert (answered, cancelled) == (2, False)
     kinds = [c[0] for c in calls]
     assert kinds == [
@@ -61,9 +68,7 @@ def test_phases_run_in_order_and_free_vram(monkeypatch):
 
 def test_rerank_runs_once_for_the_whole_set(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    runner.run_phased(
-        "run", ["q1", "q2", "q3"], use_rerank=True, language=None, k=2, model=None, job_id=None, variant="baseline"
-    )
+    runner.run_phased(["q1", "q2", "q3"], "run", _spec(use_rerank=True, k=2))
     reranks = [c for c in calls if c[0] == "rerank"]
     assert len(reranks) == 1
     assert reranks[0][1] == 9
@@ -71,18 +76,17 @@ def test_rerank_runs_once_for_the_whole_set(monkeypatch):
 
 def test_retrieval_widens_only_when_reranking(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    runner.run_phased("run", ["q"], use_rerank=True, language=None, k=3, model=None, job_id=None, variant="baseline")
+    runner.run_phased(["q"], "run", _spec(use_rerank=True, k=3))
     wide = [c[2] for c in calls if c[0] == "search"][0]
 
     calls.clear()
-    runner.run_phased("run", ["q"], use_rerank=False, language=None, k=3, model=None, job_id=None, variant="baseline")
+    runner.run_phased(["q"], "run", _spec(use_rerank=False, k=3))
     narrow = [c[2] for c in calls if c[0] == "search"][0]
 
     assert wide == runner.config.settings.rerank.candidates
     assert narrow == 3
     assert not [c for c in calls if c[0] == "rerank"]
-    # a run without a rerank phase still frees the embedder before generating, and gives
-    # the whole card back when it is done, so the next run starts on an empty one
+    # a run without a rerank phase still frees the embedder and gives the card back
     assert [c[1] for c in calls if c[0] == "unload"] == [
         "embedding", "reranker", "embedding", "generation"
     ]
@@ -90,23 +94,23 @@ def test_retrieval_widens_only_when_reranking(monkeypatch):
 
 def test_generation_marks_logs_as_phased(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    runner.run_phased("run", ["q"], use_rerank=False, language=None, k=2, model=None, job_id=None, variant="baseline")
+    runner.run_phased(["q"], "run", _spec(use_rerank=False, k=2))
     assert [c[2] for c in calls if c[0] == "generate"] == [True]
 
 
 def test_cancel_stops_generation_midway(monkeypatch):
     calls = _stub_phases(monkeypatch)
     monkeypatch.setattr(runner.job_queue, "is_cancelled", lambda job_id: True)
-    answered, cancelled = runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=False, language=None, k=2, model=None, job_id=7, variant="baseline"
-    )
+    answered, cancelled = runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2), job_id=7)
     assert (answered, cancelled) == (0, True)
     assert not [c for c in calls if c[0] == "generate"]
 
 
 def _scored_rows(marker, scores):
+    from db import Hit
+
     return [
-        (f"chunk {marker} {i}", f"{marker}.md", "cat", i, 1, None, 0.1, s)
+        Hit(f"chunk {marker} {i}", f"{marker}.md", "cat", i, 1, None, 0.1, s, None)
         for i, s in enumerate(scores)
     ]
 
@@ -159,9 +163,7 @@ def test_unload_targets_the_overridden_generator(monkeypatch):
         runner.llm, "unload",
         lambda role="embedding", model=None: unloaded.append((role, model)),
     )
-    runner.run_phased(
-        "run", ["q"], use_rerank=True, language=None, k=2, model="hf.co/some/model:Q4", job_id=None, variant="baseline"
-    )
+    runner.run_phased(["q"], "run", _spec(use_rerank=True, k=2, model="hf.co/some/model:Q4"))
     assert ("generation", "hf.co/some/model:Q4") in unloaded
     assert calls
 
@@ -177,7 +179,7 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
 
     monkeypatch.setattr(runner.llm, "request_embeddings_batch", flaky)
 
-    out, depth = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], k=3, use_rerank=False, variant="baseline")
+    out, depth = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], _spec(use_rerank=False, k=3))
 
     assert depth == 200
     assert [text for text, _, _ in out] == ["ok1", "ok2"]
@@ -194,7 +196,7 @@ def test_search_failure_skips_one_question(monkeypatch):
 
     monkeypatch.setattr(runner.db, "hybrid_search", flaky)
 
-    out, _depth = runner._phase_retrieve(["good", "bad"], k=3, use_rerank=False, variant="baseline")
+    out, _depth = runner._phase_retrieve(["good", "bad"], _spec(use_rerank=False, k=3))
     assert [text for text, _, _ in out] == ["good"]
 
 
@@ -202,9 +204,7 @@ def test_cancel_between_phases_skips_rerank_and_generation(monkeypatch):
     calls = _stub_phases(monkeypatch)
     monkeypatch.setattr(runner.job_queue, "is_cancelled", lambda job_id: True)
 
-    answered, cancelled = runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=7, variant="baseline"
-    )
+    answered, cancelled = runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2), job_id=7)
 
     assert (answered, cancelled) == (0, True)
     assert not [c for c in calls if c[0] in ("rerank", "generate")]
@@ -219,12 +219,8 @@ def test_phased_snapshot_keeps_the_device_used_during_rerank(monkeypatch):
     )
     monkeypatch.setattr(runner.rerank, "device", lambda: "cpu")
 
-    # a run measuring the processor says so: the card guard now sees the cross-encoder
-    # itself, and a reranker on the cpu is exactly what it refuses
-    runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None, job_id=None,
-        variant="baseline", allow_cpu=True,
-    )
+    # a run measuring the processor says so: the guard now sees the cross-encoder itself
+    runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2), allow_cpu=True)
 
     assert logged == ["cpu", "cpu"]
 
@@ -259,68 +255,52 @@ def test_agent_runs_get_the_fallback_policy(monkeypatch):
 
 
 def test_a_phased_run_records_the_depth_it_searched_at(monkeypatch):
-    # phased is the default for single-shot, and it used to record `ef_search: null`,
-    # so the depth of every generation run on this branch was missing from its own record
+    # phased is the default for single-shot and it recorded `ef_search: null`
     _stub_phases(monkeypatch)
     snap = {}
     monkeypatch.setattr(
         runner.chat, "answer_from_rows",
         lambda *a, **kw: snap.update(ef_search=kw.get("ef_search")),
     )
-    runner.run_phased("r", ["q1"], use_rerank=False, language=None, k=3,
-                      model=None, job_id=None, variant="baseline")
+    runner.run_phased(["q1"], "r", _spec(use_rerank=False, k=3))
     assert snap["ef_search"] == 200
 
 
 def test_the_card_is_asked_about_before_the_generator_is_paid_for(monkeypatch):
-    # the check used to fire only after the first answer, which is after the generator has
-    # been loaded onto the processor. The embedder is enough to see the card is gone
+    # the check fired only after the first answer, with the generator already on the cpu
     import pytest
 
     calls = _stub_phases(monkeypatch)
     monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["bge-m3"])
     with pytest.raises(RuntimeError, match="not on the GPU"):
-        runner.run_phased(
-            "run", ["q1", "q2"], use_rerank=True, language=None, k=2, model=None,
-            job_id=None, variant="baseline",
-        )
+        runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
     assert [c[0] for c in calls] == ["search", "search", "unload", "unload", "unload"], (
         "nothing after retrieval should have run, and the card goes back anyway"
     )
-    # the refusal used to raise past the unload, so the run that found the card full left
-    # its own generator on it and every retry refused for the same reason
+    # the refusal raised past the unload, so the run left its own generator on the card
     assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
 
 
 def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
-    # the sequential path refused from the start and the phased path, which is the
-    # default for single_shot, did not. ollama kept answering off the card at four
-    # times the cost, and nothing in the run said so
+    # the sequential path refused from the start and the phased default did not
     import pytest
 
     _stub_phases(monkeypatch)
     monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["llama3.1:8b"])
     with pytest.raises(RuntimeError, match="not on the GPU"):
-        runner.run_phased(
-            "run", ["q1", "q2"], use_rerank=False, language=None, k=2, model=None,
-            job_id=None, variant="baseline",
-        )
+        runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2))
 
 
 def test_a_phased_run_measuring_the_cpu_says_so_and_proceeds(monkeypatch):
     calls = _stub_phases(monkeypatch)
     monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["llama3.1:8b"])
-    answered, cancelled = runner.run_phased(
-        "run", ["q1", "q2"], use_rerank=False, language=None, k=2, model=None,
-        job_id=None, variant="baseline", allow_cpu=True,
-    )
+    answered, cancelled = runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2), allow_cpu=True)
     assert (answered, cancelled) == (2, False)
     assert [c[0] for c in calls].count("generate") == 2
 
 
 def test_a_rerank_that_throws_still_gives_the_card_back(monkeypatch):
-    # the third uncovered exit: a failure in the rerank phase skipped `rerank.unload()`
-    # and the final unload, so the reranker and the generator both stayed resident
+    # a failure in the rerank phase skipped both unloads
     import pytest
 
     calls = _stub_phases(monkeypatch)
@@ -330,10 +310,7 @@ def test_a_rerank_that_throws_still_gives_the_card_back(monkeypatch):
 
     monkeypatch.setattr(runner.rerank, "score_pairs", _boom)
     with pytest.raises(RuntimeError, match="cuda is unhappy"):
-        runner.run_phased(
-            "run", ["q1"], use_rerank=True, language=None, k=2, model=None,
-            job_id=None, variant="baseline",
-        )
+        runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))
     assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
 
 
@@ -348,8 +325,13 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
     monkeypatch.setattr(runner, "_answer_one", lambda *a, **kw: calls.append(("answer",)))
     monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda allow_cpu, use_rerank=False: None)
     answered, cancelled = runner._run_sequential(
-        ["q1", "q2"], "run", None, runner.Pipeline.agent, None, None, None, "llama3.1:8b",
-        None, None, None, None, None, None, False, "baseline",
+        ["q1", "q2"],
+        "run",
+        runner.RunSpec(
+            variant="baseline", pipeline=runner.Pipeline.agent, model="llama3.1:8b"
+        ),
+        job_id=None,
+        allow_cpu=False,
     )
     assert (answered, cancelled) == (2, False)
     assert [c[1] for c in calls if c[0] == "unload"] == [
@@ -358,8 +340,7 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
 
 
 def test_a_run_refuses_when_its_depth_stopped_walking_the_index(monkeypatch):
-    # the preflight is a snapshot taken before the queue moved: the crossover shifts when a
-    # neighbouring variant is indexed, and the planner then sorts while the record says hnsw
+    # the preflight answers from before the queue moved, and the crossover shifts
     import pytest
 
     monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1"])
@@ -373,8 +354,7 @@ def test_a_run_refuses_when_its_depth_stopped_walking_the_index(monkeypatch):
 
 
 def test_the_card_guard_sees_the_cross_encoder_before_the_set_is_reranked(monkeypatch):
-    # it used to be asked between retrieval and reranking, where the model is still None,
-    # so it first fired after the whole set had been reranked on the processor
+    # asked between retrieval and reranking, the model is still None and the guard is blind
     import pytest
 
     warmed = []
@@ -383,8 +363,25 @@ def test_the_card_guard_sees_the_cross_encoder_before_the_set_is_reranked(monkey
     monkeypatch.setattr(runner.rerank, "off_the_card", lambda: "reranker on cpu")
 
     with pytest.raises(RuntimeError, match="not on the GPU"):
-        runner.run_phased(
-            "run", ["q1"], use_rerank=True, language=None, k=2, model=None, job_id=None,
-            variant="baseline",
-        )
+        runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))
     assert warmed, "the model is loaded before it is asked where it sits"
+
+
+def test_the_answering_knobs_travel_as_one_value_not_as_a_row_of_positions():
+    # fourteen positional arguments in one call and sixteen in another order in the next
+    import inspect
+
+    # every function of the module but the door itself, so the next one added is covered too
+    named = [
+        fn
+        for name, fn in vars(runner).items()
+        if inspect.isfunction(fn) and fn.__module__ == runner.__name__ and name != "run"
+    ]
+    assert len(named) >= 10, "the module lost its functions, and this guard now checks nothing"
+    for fn in named:
+        positional = [
+            p
+            for p in inspect.signature(fn).parameters.values()
+            if p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        ]
+        assert len(positional) <= 3, f"{fn.__name__} takes {len(positional)} by position"

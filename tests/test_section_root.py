@@ -49,9 +49,7 @@ NOTE = """# Notes, база знаний
 """
 
 
-# the declared root is a rule of the hygienic cut, so the tests ask for it under the
-# policy that turns it on, built through the model production loads: `header_prefix` is
-# derived and cannot be written by hand
+# the declared root is a rule of the hygienic cut, so these ask under that policy
 def _policy(**kw) -> dict:
     from config import PolicyCfg
 
@@ -129,8 +127,7 @@ def test_a_numeric_frontmatter_title_is_still_text(tmp_path):
 
 
 def test_the_question_builder_and_the_cut_agree_on_what_a_heading_is():
-    # the cut asks the parser and skips fenced lines; this asked a regexp, so `## 2.`
-    # inside a code block became a question no chunk could carry as its section
+    # the cut asks the parser and skips fenced lines; a regexp made `## 2.` a question
     from evals import build_questions
 
     text = (
@@ -145,8 +142,7 @@ def test_the_question_builder_and_the_cut_agree_on_what_a_heading_is():
 
 
 def test_the_question_builder_falls_back_when_a_fence_never_closes():
-    # the cut reads such a file fence-blind and says so; a builder that trusts the scan
-    # drops every question after the stray opener, and four files of 1010 open one
+    # the cut reads such a file fence-blind and says so; a builder that trusts it drops questions
     from evals import build_questions
 
     text = (

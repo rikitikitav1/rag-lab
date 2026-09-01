@@ -1,9 +1,8 @@
-import hashlib
 import time
 
 import job_queue
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from models.eval import Question
+from models.eval import Question, text_hash
 from orm.async_db import get_session
 from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -12,10 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 router = APIRouter(prefix="/questions", tags=["questions"])
 
 _MAX_UPLOAD = 5 * 1024 * 1024
-
-
-def _text_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _parse(content: str) -> list[tuple[str, str, list[str]]]:
@@ -29,7 +24,7 @@ def _parse(content: str) -> list[tuple[str, str, list[str]]]:
         question = question.strip()
         if not question:
             continue
-        h = _text_hash(question)
+        h = text_hash(question)
         if h in seen:
             continue
         seen.add(h)

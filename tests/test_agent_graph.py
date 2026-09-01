@@ -28,9 +28,7 @@ def script_from_turns(turns) -> list:
     return out
 
 
-# the middleware arm is gone (owner, 27.08: the graph is the implementation), so what was
-# an equivalence harness is now one arm. The assertions about the graph are the point and
-# they stay; what disappeared is the second side of the comparison
+# the middleware arm is gone, so what was an equivalence harness is now one arm
 def _graph_run(monkeypatch_factory, turns, corpus_sources, **kwargs):
     with monkeypatch_factory() as monkeypatch:
         return _scenario(
@@ -448,8 +446,7 @@ def _dispatch_with_depth(monkeypatch, depth):
 
 
 def test_the_graph_records_the_depth_the_tool_searched_at(monkeypatch_factory):
-    # three lines carry the depth out of the tool and into the record, and none of them
-    # were covered: an agent run wrote whatever the recorder felt like
+    # three lines carry the depth out of the tool into the record and none were covered
     turns = [
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
@@ -462,8 +459,7 @@ def test_the_graph_records_the_depth_the_tool_searched_at(monkeypatch_factory):
 
 
 def test_an_agent_answer_without_a_search_records_no_depth(monkeypatch_factory):
-    # and it must stay None rather than borrow the configured one: no search happened,
-    # so there is no depth to report, and a number here would describe nothing
+    # None rather than the configured depth: no search happened, so there is none to report
     turns = [_turn(text="final")]
     with monkeypatch_factory() as monkeypatch:
         _agent_harness(monkeypatch, turns, [_hit()])
@@ -488,3 +484,49 @@ def test_the_idiomatic_arm_records_the_depth_too(monkeypatch_factory):
             "q", orchestrator=agent_policy.Orchestrator.langgraph_idiomatic, max_hops=2
         )
     assert result.ef_search == 400
+
+
+def test_both_orchestrators_write_the_chunks_and_the_hop_that_read_them(monkeypatch_factory):
+    # `contexts` is what the next arc scores and `hop` keeps a rank inside one retrieval
+    script = [
+        {"tool_calls": [{"name": "search_corpus", "args": {"query": "q"}}]},
+        {"content": "the corpus says hello"},
+    ]
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="the corpus says hello"),
+    ]
+    hit = _hit(rerank_score=0.9, vector_distance=0.2)
+
+    with monkeypatch_factory() as monkeypatch:
+        idiomatic = _idiomatic_run(monkeypatch, script, [hit])
+    ported, _ = _graph_run(monkeypatch_factory, turns, [hit])
+
+    from use_cases import agent
+
+    for name, result in (("idiomatic", idiomatic), ("ported", ported)):
+        assert result.contexts == [f"[{hit.source}]\nc"], f"{name} lost the chunks it read"
+        assert [s.hop for s in result.sources] == [1], f"{name} did not say which hop found it"
+        joined = agent._context_from_messages(result.messages)
+        assert "\n\n".join(result.contexts) == joined, f"{name}: the two hold different text"
+
+
+def test_the_context_and_the_chunks_hold_the_same_material(monkeypatch_factory):
+    # the gate empties the message and the sources, and `contexts` came from the untouched meta
+    turns = [
+        _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
+        _turn(text="final"),
+    ]
+    dropped, _ = _graph_run(
+        monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak",
+    )
+
+    from use_cases import agent
+
+    assert agent._context_from_messages(dropped.messages) == ""
+    assert dropped.contexts == [], "a call the gate emptied is in neither"
+
+    kept, _ = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)])
+    joined = agent._context_from_messages(kept.messages)
+
+    assert kept.contexts and "\n\n".join(kept.contexts) == joined

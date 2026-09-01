@@ -21,21 +21,19 @@ log = logging_setup.get_logger(__name__)
 AUTO = "auto"
 INDEX_SCAN = "Index Scan"
 
-# the planner's own inputs, so the cache is invalidated by exactly what moves the answer.
-# Pages, not rows: the alternative to the walk is a sequential read, priced per page, and
-# a DELETE leaves the pages where they were until something rewrites the table. Dropping
-# a variant of 17 498 rows moved neither the page count nor the crossover
+# pages, not rows: dropping a variant of 17 498 rows moved neither pages nor the crossover
 _ESTIMATE = ("SELECT relpages, reltuples::bigint FROM pg_class"
              " WHERE relname = 'data_chunks'")
-# this has to keep the shape `db.hybrid_search` gives the planner, or the gate guards a
-# query nobody runs: same table, same variant filter, same operator, same LIMIT. Changing
-# the vector leg without changing this leaves the depth audit green on the wrong plan
-_PROBE = """
+# the shape `hybrid_search` gives the planner: same table, rows, operator and limit
+def _probe(limit_vector: int | None = None) -> str:
+    # asked per call, because `limit_vector` is a sweepable axis and an arm may move it
+    limit = limit_vector or config.settings.retrieval.limit_vector
+    return f"""
 SELECT id FROM data_chunks
-WHERE variant = :variant AND embedding IS NOT NULL
+WHERE {db.live_rows()} AND embedding IS NOT NULL
 ORDER BY embedding <=> (SELECT embedding FROM data_chunks
-                        WHERE variant = :variant AND embedding IS NOT NULL LIMIT 1)
-LIMIT 20
+                        WHERE {db.live_rows()} AND embedding IS NOT NULL LIMIT 1)
+LIMIT {int(limit)}
 """
 
 _resolved: dict[tuple[str, tuple[int, int]], int] = {}
@@ -50,19 +48,16 @@ def _shape(conn) -> tuple[int, int]:
     return (int(row[0]), int(row[1])) if row else (0, 0)
 
 
-def uses_index(conn, variant: str, ef: int) -> bool:
-    # the measuring path disables index scans on every pooled connection to force exact
-    # search, and this asks the same pool: without turning it back on the probe reads
-    # "the planner wants a sort" for every rung and answers a question nobody asked.
-    # Put back afterwards: the connection belongs to the caller, and a caller that was
-    # measuring exactly would go on measuring something else for the rest of its
-    # transaction
+def uses_index(conn, variant: str, ef: int, limit_vector: int | None = None) -> bool:
+    # a caller measuring exact search turns index scans off on this connection, so ask with them on
     was = conn.execute(text("SHOW enable_indexscan")).scalar()
     conn.execute(text("SET LOCAL enable_indexscan = on"))
     conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(ef)}"))
     try:
         plan = (
-            conn.execute(text("EXPLAIN (COSTS OFF) " + _PROBE), {"variant": variant})
+            conn.execute(
+                text("EXPLAIN (COSTS OFF) " + _probe(limit_vector)), {"variant": variant}
+            )
             .scalars().all()
         )
     finally:
@@ -78,10 +73,7 @@ def deepest_indexed(conn, variant: str) -> int | None:
     return found
 
 
-# resolved per variant and per estimated row count: a variant indexed beside this one
-# changes the answer for this one, and the estimate is what says so. The cache is per
-# process and nobody clears the API's: it does not need clearing, because the key is the
-# statistic the planner itself reads, so the two change their minds together
+# per variant and per row estimate: the key is the statistic the planner itself reads
 def resolve(variant: str | None = None, override: int | None = None, conn=None) -> int:
     if override is not None:
         return override
@@ -98,9 +90,7 @@ def resolve(variant: str | None = None, override: int | None = None, conn=None) 
         depth = deepest_indexed(conn, variant)
     rungs = ladder()
     if depth is None:
-        # never cached: a table whose index the planner refuses at every rung is either
-        # news or a poisoned session, and a poisoned answer that sticks is worse than a
-        # slow one asked again
+        # never cached: a poisoned answer that sticks is worse than a slow one asked again
         log.warning("depth.no_rung_uses_the_index", variant=variant, ladder=rungs)
         return rungs[0]
     _resolved[key] = depth
@@ -112,8 +102,7 @@ def forget() -> None:
     _resolved.clear()
 
 
-# what every indexed variant would run at, and whether the plan agrees: one reading for
-# the preflight, for the end of an index build, and for a person asking
+# one reading for the preflight, for the end of a build, and for a person asking
 def audit(variants: list[str] | None = None) -> list[dict]:
     names = variants if variants is not None else [v["variant"] for v in db.corpus_variants()]
     declared = config.settings.retrieval.ef_search

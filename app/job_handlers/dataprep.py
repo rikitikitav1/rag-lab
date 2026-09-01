@@ -12,7 +12,6 @@ log = logging_setup.get_logger(__name__)
 
 
 # `keep_alive` is Forever, so a role raised for one job holds the card until ollama dies
-# and the next piece of work pays for it, as the reranker did on 30.08
 @contextlib.contextmanager
 def _released(role: Role):
     try:
@@ -39,8 +38,7 @@ def paraphrase_questions(options: dict) -> None:
     job_queue.enqueue("embed_questions", {})
 
 
-# the veto set is generated, not imported: its questions come from headings that the
-# indexed corpus actually holds, so the gold cannot name a section the cut merged away
+# generated, not imported: the gold cannot name a section the cut merged away
 @register("build_veto_set")
 def build_veto_set(options: dict) -> None:
     require_role_ready(Role.paraphrasing)

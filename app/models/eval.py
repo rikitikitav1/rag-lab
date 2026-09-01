@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime
 
 from orm import Base
@@ -7,6 +8,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.registry import Pipeline
+
+
+# the uniqueness key of `questions`: four writers computed it independently
+def text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class Question(Base):
@@ -36,9 +42,14 @@ class QuestionLog(Base):
     run_name: Mapped[str | None]
     pipeline: Mapped[str] = mapped_column(default=Pipeline.single_shot.value)
     question_id: Mapped[int | None] = mapped_column(ForeignKey("questions.id"))
+    # what was asked, on the row: `questions` is a live table and this is a record of one run
+    question_text: Mapped[str | None]
+    reference_answer: Mapped[str | None]
     answered: Mapped[bool]
     answer: Mapped[str | None]
     context: Mapped[str | None]
+    # the same chunks the join above was built from, one per element
+    contexts: Mapped[list | None] = mapped_column(JSONB)
     sources: Mapped[list | None] = mapped_column(JSONB)
     models: Mapped[dict] = mapped_column(JSONB, default=dict)
     prompts: Mapped[dict] = mapped_column(JSONB, default=dict)

@@ -23,8 +23,7 @@ def test_nothing_stale_stays_quiet(monkeypatch):
 
 
 def test_a_deferral_has_a_ceiling_of_its_own(monkeypatch):
-    # a deferral never touched `attempts`, so a job waiting for a model that does not pull
-    # held its lane for ever. Counted in seconds, because the delay is the handler's
+    # a deferral never touched `attempts`, so a job waiting for an absent model held its lane
     import worker
 
     failed, rescheduled = [], []

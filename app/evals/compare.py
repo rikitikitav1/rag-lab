@@ -1,18 +1,28 @@
 import statistics
 import sys
 
+import limits
 from evals.loaders import load_logs
 from evals.pools import ALL_OUTCOMES, POOLS, has_remote_evidence, outcome, split
-from evals.stats import delta_stats
+from evals.stats import delta_stats, deltas_over, mean_of, tally
+from use_cases import rejudge
 
 OUTCOMES = ALL_OUTCOMES
-AXES = ("faithfulness", "relevance", "completeness")
+AXES = rejudge.AXES
 GATE_REASONS = ("empty", "weak", "off_topic")
 
 
-def _avg(values, digits=2):
-    vals = [float(v) for v in values if v is not None]
-    return round(statistics.fmean(vals), digits) if vals else None
+# both doors onto `compare` walk every run named, so the caps belong here and not at one door
+def named_runs(run_names: list[str]) -> list[str]:
+    named = list(dict.fromkeys(run_names))
+    if not named:
+        raise ValueError("run_names must not be empty")
+    if len(named) > limits.MAX_RUNS:
+        raise ValueError(f"{len(named)} runs is over the cap of {limits.MAX_RUNS}")
+    too_long = [n for n in named if len(n) > limits.MAX_RUN_NAME]
+    if too_long:
+        raise ValueError(f"run names over {limits.MAX_RUN_NAME} characters: {too_long[:3]}")
+    return named
 
 
 def summarize(logs) -> dict:
@@ -30,16 +40,16 @@ def summarize(logs) -> dict:
     return {
         "n": len(logs),
         "judged": sum(1 for ql in logs if ql.faithfulness is not None),
-        "faithfulness": _avg(ql.faithfulness for ql in logs),
-        "relevance": _avg(ql.relevance for ql in logs),
-        "completeness": _avg(ql.completeness for ql in logs),
+        "faithfulness": mean_of(ql.faithfulness for ql in logs),
+        "relevance": mean_of(ql.relevance for ql in logs),
+        "completeness": mean_of(ql.completeness for ql in logs),
         "answered_via_remote": len(remote),
         "answered_from_corpus": len(home),
         "answered_from_corpus_gate_shut": len(home) - len(opened),
         "answered_from_corpus_opened_no_evidence": len(opened),
         "answered_from_corpus_rate": round(len(home) / len(logs), 3) if logs else None,
         "gate_fired": sum(1 for r in reasons if r in GATE_REASONS),
-        "latency_avg": _avg(latency, digits=1),
+        "latency_avg": mean_of(latency, digits=1),
         "latency_p50": round(statistics.median(latency), 1) if latency else None,
         "outcomes": {o: marks.count(o) for o in OUTCOMES},
     }
@@ -54,31 +64,35 @@ def _client(logs) -> str | None:
 
 
 def paired(left, right, axis) -> dict:
-    by_question = {ql.question_id: ql for ql in left if ql.question_id is not None}
-    pairs = []
-    for ql in right:
-        other = by_question.get(ql.question_id)
-        if other is None:
-            continue
-        a, b = getattr(other, axis), getattr(ql, axis)
-        if a is not None and b is not None:
-            pairs.append((float(a), float(b)))
+    def scores(logs):
+        return {
+            ql.question_id: None if getattr(ql, axis) is None else float(getattr(ql, axis))
+            for ql in logs
+            if ql.question_id is not None
+        }
 
+    before, after = scores(left), scores(right)
+    # in the order `right` arrives, which is the order the bootstrap was drawn over
+    ids = [ql.question_id for ql in right if ql.question_id in before]
+    kept = [i for i in ids if before[i] is not None and after[i] is not None]
+    deltas = deltas_over(before, after, ids)
+
+    counted = tally(deltas)
     result = {
-        "n": len(pairs),
-        "left": _avg(a for a, _ in pairs),
-        "right": _avg(b for _, b in pairs),
-        "better": sum(1 for a, b in pairs if b > a),
-        "worse": sum(1 for a, b in pairs if b < a),
+        "n": len(deltas),
+        "left": mean_of(before[i] for i in kept),
+        "right": mean_of(after[i] for i in kept),
+        "better": counted["better"],
+        "worse": counted["worse"],
         "mean_delta": None,
         "ci95": None,
         "p_value": None,
     }
-    if pairs:
-        stats = delta_stats([b - a for a, b in pairs])
+    if deltas:
+        stats = delta_stats(deltas)
         result["mean_delta"] = stats["mean_delta"]
         result["ci95"] = stats["ci95"]
-        result["p_value"] = stats["p"] if any(a != b for a, b in pairs) else None
+        result["p_value"] = stats["p"] if any(d != 0 for d in deltas) else None
     return result
 
 

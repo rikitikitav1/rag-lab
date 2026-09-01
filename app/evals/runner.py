@@ -1,5 +1,6 @@
 import sys
 import time
+from dataclasses import dataclass, replace
 from operator import itemgetter
 
 import config
@@ -12,6 +13,9 @@ from models.registry import Pipeline
 from orm.sync_db import Session
 from sqlalchemy import select
 from use_cases import agent, chat, search_depth
+
+# the same resolver every other caller asks: a default is one default only if one decides
+from use_cases.chat import resolve_rerank
 
 import db
 
@@ -28,61 +32,60 @@ def _target_texts(set_name: str | None, question_ids: list[int] | None) -> list[
         return list(session.scalars(stmt))
 
 
-def _answer_one(
-    text: str,
-    run_name: str,
-    use_rerank: bool | None,
-    pipeline: Pipeline,
-    language: str | None,
-    k: int | None,
-    max_hops: int | None,
-    model: str | None,
-    fallback_policy: str | None,
-    gate_signal: str | None,
-    weak_distance: float | None,
-    topic_threshold: float | None,
-    orchestrator: str | None,
-    variant: str,
-) -> None:
-    if pipeline == Pipeline.agent:
+# the knobs a run answers with, carried whole: fourteen positional arguments, then sixteen
+@dataclass(frozen=True)
+class RunSpec:
+    variant: str
+    pipeline: Pipeline = Pipeline.single_shot
+    use_rerank: bool | None = None
+    language: str | None = None
+    k: int | None = None
+    max_hops: int | None = None
+    model: str | None = None
+    fallback_policy: str | None = None
+    gate_signal: str | None = None
+    weak_distance: float | None = None
+    topic_threshold: float | None = None
+    orchestrator: str | None = None
+
+
+def _answer_one(text: str, run_name: str, spec: RunSpec) -> None:
+    if spec.pipeline == Pipeline.agent:
         agent.run(
             text,
             run_name=run_name,
-            language=language,
-            k=k,
-            max_hops=max_hops,
-            use_rerank=use_rerank,
-            model=model,
-            fallback_policy=fallback_policy,
-            gate_signal=gate_signal,
-            weak_distance=weak_distance,
-            topic_threshold=topic_threshold,
-            orchestrator=orchestrator,
-            variant=variant,
+            language=spec.language,
+            k=spec.k,
+            max_hops=spec.max_hops,
+            use_rerank=spec.use_rerank,
+            model=spec.model,
+            fallback_policy=spec.fallback_policy,
+            gate_signal=spec.gate_signal,
+            weak_distance=spec.weak_distance,
+            topic_threshold=spec.topic_threshold,
+            orchestrator=spec.orchestrator,
+            variant=spec.variant,
         )
-    elif pipeline == Pipeline.single_shot:
+    elif spec.pipeline == Pipeline.single_shot:
         chat.answer(
             text,
             add_context=True,
             run_name=run_name,
-            use_rerank=use_rerank,
-            language=language,
-            k=k,
-            model=model,
-            variant=variant,
+            use_rerank=spec.use_rerank,
+            language=spec.language,
+            k=spec.k,
+            model=spec.model,
+            variant=spec.variant,
         )
     else:
-        raise ValueError(f"unknown pipeline: {pipeline}")
+        raise ValueError(f"unknown pipeline: {spec.pipeline}")
 
 
 def _refuse_a_cpu_run(allow_cpu: bool, use_rerank: bool = False) -> None:
-    # ollama drops the card and keeps answering: same numbers, four times the hours, and
-    # nothing in the run says so. Both paths ask after the first answer, when the
-    # generator is loaded and a spill is finally visible
+    # ollama drops the card and keeps answering: same numbers, four times the hours
     llm.warn_if_models_do_not_fit()
     off_card = llm.models_off_the_card()
-    # ollama cannot see the cross-encoder: it is torch in this process, and it is loaded
-    # here or the question is asked of a model that is not anywhere yet
+    # ollama cannot see the cross-encoder: it is torch in this process and is loaded here
     if use_rerank:
         rerank.warm()
     spilled = rerank.off_the_card()
@@ -98,45 +101,25 @@ def _refuse_a_cpu_run(allow_cpu: bool, use_rerank: bool = False) -> None:
 
 
 def _run_sequential(
-    texts: list[str],
-    run_name: str,
-    use_rerank: bool | None,
-    pipeline: Pipeline,
-    language: str | None,
-    k: int | None,
-    max_hops: int | None,
-    model: str | None,
-    fallback_policy: str | None,
-    gate_signal: str | None,
-    weak_distance: float | None,
-    topic_threshold: float | None,
-    orchestrator: str | None,
-    job_id: int | None,
-    allow_cpu: bool,
-    variant: str,
+    texts: list[str], run_name: str, spec: RunSpec, *, job_id: int | None, allow_cpu: bool
 ) -> tuple[int, bool]:
     answered = 0
-    # the agent path is this one, and a sweep over `model` runs several of them back to
-    # back: without giving the card back, arm two loads its generator beside arm one's
+    # without giving the card back, arm two loads its generator beside arm one's
     try:
         for text in texts:
             if job_id is not None and job_queue.is_cancelled(job_id):
                 return answered, True
             # after the first answer the generator is loaded, so a spill is finally visible
             if answered == 1:
-                _refuse_a_cpu_run(allow_cpu, use_rerank)
+                _refuse_a_cpu_run(allow_cpu, spec.use_rerank)
             try:
-                _answer_one(
-                    text, run_name, use_rerank, pipeline, language, k, max_hops, model,
-                    fallback_policy, gate_signal, weak_distance, topic_threshold,
-                    orchestrator, variant,
-                )
+                _answer_one(text, run_name, spec)
                 answered += 1
             except Exception as e:
                 log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
         return answered, False
     finally:
-        _free_the_card(model)
+        _free_the_card(spec.model)
 
 
 def _embed_in_batches(texts: list[str]) -> list:
@@ -152,14 +135,10 @@ def _embed_in_batches(texts: list[str]) -> list:
     return vectors
 
 
-def _phase_retrieve(texts: list[str], k: int, use_rerank: bool, variant: str) -> tuple[list, int]:
-    from use_cases import search_depth
-
-    limit = config.settings.rerank.candidates if use_rerank else k
-    # resolved once for the phase and carried into every snapshot: a phased run used to
-    # record `ef_search: null`, and phased is the default for single-shot, so the depth of
-    # the runs this branch produced was not in their own records
-    depth = search_depth.resolve(variant)
+def _phase_retrieve(texts: list[str], spec: RunSpec) -> tuple[list, int]:
+    limit = config.settings.rerank.candidates if spec.use_rerank else spec.k
+    # resolved once and carried: a phased run recorded `ef_search: null`, and phased is default
+    depth = search_depth.resolve(spec.variant)
     retrieved = []
     for text, vector in zip(texts, _embed_in_batches(texts), strict=True):
         if vector is None:
@@ -168,7 +147,7 @@ def _phase_retrieve(texts: list[str], k: int, use_rerank: bool, variant: str) ->
             retrieved.append(
                 (
                     text,
-                    db.hybrid_search(text, vector, None, limit=limit, variant=variant,
+                    db.hybrid_search(text, vector, None, limit=limit, variant=spec.variant,
                                      ef_search=depth),
                     None,
                 )
@@ -180,7 +159,7 @@ def _phase_retrieve(texts: list[str], k: int, use_rerank: bool, variant: str) ->
 
 def _phase_rerank(retrieved: list, k: int) -> list:
     scores = rerank.score_pairs(
-        [(text, row[0]) for text, rows, _ in retrieved for row in rows]
+        [(text, hit.content) for text, rows, _ in retrieved for hit in rows]
     )
 
     ranked, offset = [], 0
@@ -196,15 +175,12 @@ def _phase_rerank(retrieved: list, k: int) -> list:
 def _phase_generate(
     retrieved: list,
     run_name: str,
-    use_rerank: bool,
-    language: str | None,
-    k: int,
-    model: str | None,
-    job_id: int | None,
-    variant: str,
+    spec: RunSpec,
+    *,
+    job_id: int | None = None,
+    allow_cpu: bool = False,
     rerank_device: str | None = None,
     ef_search: int | None = None,
-    allow_cpu: bool = False,
 ) -> tuple[int, bool]:
     answered = 0
     for text, rows, rerank_scores in retrieved:
@@ -217,13 +193,13 @@ def _phase_generate(
                 rerank_scores=rerank_scores,
                 add_context=True,
                 run_name=run_name,
-                use_rerank=use_rerank,
-                language=language,
-                k=k,
-                model=model,
+                use_rerank=spec.use_rerank,
+                language=spec.language,
+                k=spec.k,
+                model=spec.model,
                 phased=True,
                 rerank_device=rerank_device,
-                variant=variant,
+                variant=spec.variant,
                 ef_search=ef_search,
             )
             answered += 1
@@ -231,31 +207,20 @@ def _phase_generate(
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
         # outside the try: a guard whose refusal the loop swallows is not a guard
         if answered == 1:
-            _refuse_a_cpu_run(allow_cpu, use_rerank)
+            _refuse_a_cpu_run(allow_cpu, spec.use_rerank)
     return answered, False
 
 
 def run_phased(
-    run_name: str,
-    texts: list[str],
-    use_rerank: bool,
-    language: str | None,
-    k: int | None,
-    model: str | None,
-    job_id: int | None,
-    variant: str,
-    allow_cpu: bool = False,
+    texts: list[str], run_name: str, spec: RunSpec, *,
+    job_id: int | None = None, allow_cpu: bool = False,
 ) -> tuple[int, bool]:
-    k = k or config.settings.retrieval.results_limit
+    spec = replace(spec, k=spec.k or config.settings.retrieval.results_limit)
     try:
-        return _phased(
-            run_name, texts, use_rerank, language, k, model, job_id, variant, allow_cpu
-        )
+        return _phased(texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu)
     finally:
-        # every exit, not only the last line: the refusal below raises, a cancel returns
-        # early, and a rerank that throws skips both unloads. A run that leaves its own
-        # generator on the card makes the retry refuse too, and the loop never breaks
-        _free_the_card(model)
+        # every exit: a run that leaves its generator on the card makes the retry refuse too
+        _free_the_card(spec.model)
 
 
 def _free_the_card(model: str | None) -> None:
@@ -265,38 +230,27 @@ def _free_the_card(model: str | None) -> None:
 
 
 def _phased(
-    run_name: str,
-    texts: list[str],
-    use_rerank: bool,
-    language: str | None,
-    k: int,
-    model: str | None,
-    job_id: int | None,
-    variant: str,
-    allow_cpu: bool,
+    texts: list[str], run_name: str, spec: RunSpec, *, job_id: int | None, allow_cpu: bool
 ) -> tuple[int, bool]:
     rerank_device = None
     started = time.perf_counter()
-    retrieved, ef_search = _phase_retrieve(texts, k, use_rerank, variant)
+    retrieved, ef_search = _phase_retrieve(texts, spec)
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
              elapsed=round(time.perf_counter() - started, 1))
 
-    # asked here and not only after the first answer: the embedder is loaded and a lost
-    # card is already visible, so a run that would answer off the card stops two minutes
-    # in rather than after the generator has been loaded onto the processor
-    _refuse_a_cpu_run(allow_cpu, use_rerank)
+    # here, so a run that would answer off the card stops two minutes in
+    _refuse_a_cpu_run(allow_cpu, spec.use_rerank)
 
-    # retrieval is over, and its model is 1.2 GiB the generator is about to want on a
-    # card that holds 8
+    # retrieval is over, and its model is 1.2 GiB the generator wants on a card that holds 8
     llm.unload("embedding")
 
     if job_id is not None and job_queue.is_cancelled(job_id):
         return 0, True
 
-    if use_rerank:
-        llm.unload("generation", model=model)
+    if spec.use_rerank:
+        llm.unload("generation", model=spec.model)
         started = time.perf_counter()
-        retrieved = _phase_rerank(retrieved, k)
+        retrieved = _phase_rerank(retrieved, spec.k)
         log.info("eval_run.phase", name="rerank", n=len(retrieved),
                  elapsed=round(time.perf_counter() - started, 1))
         rerank_device = rerank.device()
@@ -307,17 +261,12 @@ def _phased(
 
     started = time.perf_counter()
     answered, cancelled = _phase_generate(
-        retrieved, run_name, use_rerank, language, k, model, job_id, variant,
-        rerank_device, ef_search, allow_cpu,
+        retrieved, run_name, spec, job_id=job_id, allow_cpu=allow_cpu,
+        rerank_device=rerank_device, ef_search=ef_search,
     )
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))
     return answered, cancelled
-
-
-# the runner asks the same resolver every other caller does: a default is only one
-# default if one place decides it
-from use_cases.chat import resolve_rerank  # noqa: E402
 
 
 def _walks_the_index(variant: str, depth: int) -> bool:
@@ -330,7 +279,7 @@ def run(
     set_name: str | None = None,
     question_ids: list[int] | None = None,
     use_rerank: bool | None = None,
-    pipeline: str = "single_shot",
+    pipeline: str = Pipeline.single_shot,
     language: str | None = None,
     k: int | None = None,
     max_hops: int | None = None,
@@ -355,9 +304,7 @@ def run(
             f"corpus variant '{variant}' is empty; known variants: "
             f"{[v['variant'] for v in known]}"
         )
-    # the preflight is a snapshot taken before the queue moved; the crossover can shift
-    # under a long run when a neighbouring variant is indexed or autovacuum lands, and the
-    # planner then answers by sorting the table while the record still says hnsw
+    # the preflight answers from before the queue moved, and the crossover can shift
     depth = search_depth.resolve(variant)
     if not _walks_the_index(variant, depth):
         raise RuntimeError(
@@ -369,16 +316,28 @@ def run(
     use_rerank = resolve_rerank(use_rerank)
     if phased is None:
         phased = pipeline == Pipeline.single_shot
+    spec = RunSpec(
+        variant=variant,
+        pipeline=pipeline,
+        use_rerank=use_rerank,
+        language=language,
+        k=k,
+        max_hops=max_hops,
+        model=model,
+        fallback_policy=fallback_policy,
+        gate_signal=gate_signal,
+        weak_distance=weak_distance,
+        topic_threshold=topic_threshold,
+        orchestrator=orchestrator,
+    )
 
     if phased and pipeline == Pipeline.single_shot:
         answered, cancelled = run_phased(
-            run_name, texts, use_rerank, language, k, model, job_id, variant, allow_cpu
+            texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
         )
     else:
         answered, cancelled = _run_sequential(
-            texts, run_name, use_rerank, pipeline, language, k, max_hops, model,
-            fallback_policy, gate_signal, weak_distance, topic_threshold, orchestrator,
-            job_id, allow_cpu, variant,
+            texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
         )
     if not cancelled:
         job_queue.enqueue("judge_answers", {"run_name": run_name})

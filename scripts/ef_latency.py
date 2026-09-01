@@ -1,26 +1,13 @@
 import argparse
 import json
 import statistics
-import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
+import config
+from sqlalchemy import text
 
-import config  # noqa: E402
-from sqlalchemy import text  # noqa: E402
-from use_cases import retrieval_compare  # noqa: E402
-
-import db  # noqa: E402
-
-
-# the depth travels with the call rather than with the pool. It used to be installed on
-# checkout and then overridden by `hybrid_search`'s own `SET LOCAL`, so every rung of the
-# ladder measured the same resolved depth and the ladder measured nothing
-def apply_ef(ef: int) -> None:
-    retrieval_compare.prepare(exact=False, ef=ef)
-    db.engine.dispose()
-
+import db
 
 SAMPLE = """
 SELECT original_text, embedding::text FROM questions
@@ -30,10 +17,7 @@ ORDER BY id LIMIT :limit
 
 
 def timings(rows, variant: str, ef: int) -> dict:
-    # on checkout, because hybrid_search opens its own connection: setting the guc on a
-    # connection the query never uses measures the same depth in both arms, which is
-    # exactly what the first version of this script did
-    apply_ef(ef)
+    # hybrid_search opens its own connection and sets the depth on it, per call
     took = []
     for question, embedding in rows:
         started = time.perf_counter()
@@ -73,8 +57,7 @@ def main() -> int:
             print(f"{variant:14} ef={ef:<4} median {got['median_ms']:6.1f} ms  p95 {got['p95_ms']:6.1f} ms")
     from use_cases import search_depth
 
-    # what the server would serve right now, resolved: the config may say `auto`, and an
-    # artifact that records the word cannot be compared against one that records a number
+    # resolved: an artifact recording the word `auto` cannot be compared against a number
     report["serving_ef_search"] = search_depth.resolve()
     report["declared_ef_search"] = config.settings.retrieval.ef_search
     with db.engine.connect() as conn:
@@ -88,7 +71,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import atexit
-
-    atexit.register(retrieval_compare.release)
     raise SystemExit(main())

@@ -7,15 +7,16 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-# a comparison is an experiment of another kind: the dataset, the fixed question ids and
-# the state machine are the same, the unit of a run is not. Generation spends the card and
-# a judge; retrieval reads ranks, in minutes, with neither
+# same dataset and state machine, and the unit of a run is not: ranks, in minutes
 class ExperimentKind(StrEnum):
     generation = "generation"
     retrieval = "retrieval"
-    # the answers are held still and the judge moves: the only kind whose arms provably
-    # share their input, because they are copies of one run rather than runs of their own
+    # the answers are held still and the judge moves: the arms are copies of one run
     rejudge = "rejudge"
+
+
+# every key a report answers a reader with, written by all three kinds whether they hold it
+READING_KEYS = ("source_run", "pairing", "multiplicity", "ranking", "arms", "deltas")
 
 
 class ExperimentStatus(StrEnum):
@@ -29,8 +30,7 @@ class ExperimentStatus(StrEnum):
 _TRANSITIONS: dict[ExperimentStatus, set[ExperimentStatus]] = {
     ExperimentStatus.draft: {ExperimentStatus.running},
     ExperimentStatus.running: {ExperimentStatus.aggregated, ExperimentStatus.failed},
-    # back to running because a rejudge may gain an arm after its report is read: the
-    # answers are still there, so the extra arm is a copy and a judge job, not a rerun
+    # a rejudge may gain an arm after its report is read: a copy and a judge job, not a rerun
     ExperimentStatus.aggregated: {ExperimentStatus.concluded, ExperimentStatus.running},
     ExperimentStatus.failed: {ExperimentStatus.running},
     ExperimentStatus.concluded: set(),
@@ -60,8 +60,7 @@ class Experiment(Base):
     procedure: Mapped[dict] = mapped_column(JSONB, default=dict)
     param: Mapped[str]
     param_values: Mapped[list] = mapped_column(JSONB, default=list)
-    # every variable this comparison moves, {name: [values]}. param names the one it is
-    # reported along, and it has to be a key here or the headline disagrees with the grid
+    # param has to be a key here, or the headline disagrees with the grid
     axes: Mapped[dict] = mapped_column(JSONB, default=dict)
     run_names: Mapped[list] = mapped_column(JSONB, default=list)
     results: Mapped[dict | None] = mapped_column(JSONB)

@@ -1,5 +1,4 @@
 import csv
-import hashlib
 import json
 import os
 import re
@@ -9,7 +8,7 @@ from pathlib import Path
 
 import config
 import logging_setup
-from models.eval import Question
+from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
 from models.registry import Prompt, Purpose
 from orm.sync_db import Session
@@ -101,10 +100,6 @@ QUESTIONS_TSV = "questions.tsv"
 ANSWERS_JSONL = "answers_interview.jsonl"
 
 
-def _text_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
 def _reference_answers(path=ANSWERS_JSONL) -> dict[str, str]:
     answers = {}
     file = Path(path)
@@ -128,22 +123,25 @@ def _question_rows() -> list[dict]:
             continue
         row = dict(zip(header, line.split("\t"), strict=False))
         text = row["original_text"]
-        text_hash = _text_hash(text)
-        if text_hash in seen:
+        digest = text_hash(text)
+        if digest in seen:
             continue
-        seen.add(text_hash)
-        rows.append(
-            {
-                "text_hash": text_hash,
-                "original_text": text,
-                "set_name": row["set_name"] or None,
-                "language": row["language"] or None,
-                "kind": row["kind"] or None,
-                "marked_sources": [s for s in row["marked_sources"].split(",") if s],
-                "reference_answer": answers.get(text),
-            }
-        )
+        seen.add(digest)
+        rows.append(_question_row(row, answers.get(text)))
     return rows
+
+
+# the seven columns of a question row: two readers built the same dictionary
+def _question_row(row: dict, reference_answer: str | None) -> dict:
+    return {
+        "text_hash": text_hash(row["original_text"]),
+        "original_text": row["original_text"],
+        "set_name": row["set_name"] or None,
+        "language": row["language"] or None,
+        "kind": row["kind"] or None,
+        "marked_sources": [s for s in row["marked_sources"].split(",") if s],
+        "reference_answer": reference_answer,
+    }
 
 
 EXPORTED_SETS = Path("datasets/questions")
@@ -161,13 +159,7 @@ def _exported_rows() -> list[dict]:
                 origin = row.get("source_question_text") or None
                 rows.append(
                     {
-                        "text_hash": _text_hash(row["original_text"]),
-                        "original_text": row["original_text"],
-                        "set_name": row["set_name"] or None,
-                        "language": row["language"] or None,
-                        "kind": row["kind"] or None,
-                        "marked_sources": [s for s in row["marked_sources"].split(",") if s],
-                        "reference_answer": answers.get(origin or row["original_text"]),
+                        **_question_row(row, answers.get(origin or row["original_text"])),
                         # every row carries the key, or the insert would drop it for the whole batch
                         "source_question_id": None,
                         "_source_text": origin,
@@ -176,9 +168,7 @@ def _exported_rows() -> list[dict]:
     return rows
 
 
-# after the insert, never before: a set's originals can live in the same exported batch,
-# and a lookup that runs first finds nothing while `on_conflict_do_nothing` makes the
-# missing link permanent. Unlinked, a question takes its own text as the gold heading
+# after the insert: a lookup first finds nothing and the missing link becomes permanent
 def _link_originals(session, rows: list[dict]) -> None:
     wanted = {r.get("_source_text") for r in rows if r.get("_source_text")}
     if not wanted:
@@ -186,14 +176,14 @@ def _link_originals(session, rows: list[dict]) -> None:
     ids = dict(
         session.execute(
             select(Question.text_hash, Question.id).where(
-                Question.text_hash.in_([_text_hash(t) for t in wanted])
+                Question.text_hash.in_([text_hash(t) for t in wanted])
             )
         ).all()
     )
     linked = 0
     for row in rows:
         origin = row.pop("_source_text", None)
-        target = ids.get(_text_hash(origin)) if origin else None
+        target = ids.get(text_hash(origin)) if origin else None
         if target is None:
             continue
         linked += session.execute(
@@ -225,7 +215,6 @@ def seed_questions() -> None:
             _insert_questions(session, rows)
         exported = _exported_rows()
         if exported:
-            # the link is resolved after the insert, so the batch goes in without it and
             # `_source_text` stays out of the statement: it is a lookup key, not a column
             _insert_questions(
                 session,

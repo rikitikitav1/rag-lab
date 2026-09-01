@@ -1,4 +1,3 @@
-import re
 from typing import Annotated, Literal
 
 import config
@@ -17,7 +16,6 @@ log = logging_setup.get_logger(__name__)
 mcp = FastMCP("rag-lab", mask_error_details=True)
 
 _MAX_QUERY_LEN = 2000
-_CATEGORY_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 
 
 class AnswerResult(BaseModel):
@@ -34,8 +32,10 @@ def _check_text(value: str, field: str) -> None:
 
 
 def _safe_category(category: str | None) -> str | None:
-    if category is not None and not _CATEGORY_RE.match(category):
-        raise ToolError("invalid category filter")
+    try:
+        db.refuse_bad_category(category)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
     return category
 
 
@@ -82,7 +82,7 @@ def search_corpus(
 ) -> str:
     _check_text(query, "query")
     category = _safe_category(category)
-    content, _, _depth = chat.search_chunks(
+    content, _texts, _sources, _depth = chat.search_chunks(
         query, category, variant=config.settings.corpus.variant
     )
     return content

@@ -11,9 +11,7 @@ log = logging_setup.get_logger(__name__)
 
 POLL_INTERVAL = 3
 MAX_ATTEMPTS = 3
-# a deferral waits for something outside the job (a model pull, a role becoming ready) and
-# is not a failure, so it has a ceiling of its own. Counted in seconds waited, because the
-# delay is the handler's to choose and counting deferrals made the budget depend on it
+# a deferral is not a failure, so it has a ceiling of its own, counted in seconds waited
 MAX_DEFERRED_SECONDS = 3600
 
 Deferred = job_handlers.Deferred
@@ -46,9 +44,7 @@ def run_once(queues: list[str]) -> bool:
         job_queue.complete(claimed.id, elapsed=elapsed)
         log.info("worker.done", id=claimed.id, type=claimed.type, elapsed=elapsed)
     except Deferred as d:
-        # a deferral is not a failure and does not touch `attempts`, so without a ceiling
-        # of its own a job waiting for something that never arrives (a model tag that does
-        # not pull, a role nobody registers) holds its lane for the life of the process
+        # without a ceiling of its own a job waiting for what never arrives holds its lane
         waited = claimed.options.get("deferred_seconds", 0) + d.delay_seconds
         if waited > MAX_DEFERRED_SECONDS:
             job_queue.fail(
@@ -96,16 +92,10 @@ def run_once(queues: list[str]) -> bool:
     return True
 
 
-# a job that ran out of attempts leaves its experiment waiting for a sibling that is not
-# coming: the series never completes, so nothing aggregates and nothing moves it. Judging
-# counts as well as answering, and more so: aggregation is reachable only through it, so
-# a dead judge strands the experiment even when every answer landed
-_EXPERIMENT_JOBS = ("eval_run", "judge_answers")
-
-
+# judging counts as the experiment's work too: aggregation is reachable only through it
 def _fail_the_experiment_waiting_on(claimed) -> None:
     run_name = (claimed.options or {}).get("run_name")
-    if claimed.type not in _EXPERIMENT_JOBS or not run_name:
+    if claimed.type not in job_queue.EXPERIMENT_JOBS or not run_name:
         return
     try:
         from use_cases import experiment

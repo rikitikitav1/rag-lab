@@ -5,6 +5,7 @@ import logging_setup
 from models.registry import Model, ModelRole, Role, Status
 from orm.sync_db import Session
 from sqlalchemy import exists, select
+from use_cases import model_acceptance
 
 log = logging_setup.get_logger(__name__)
 
@@ -35,8 +36,15 @@ def _ensure_roles() -> None:
             if Role(role) in assigned:
                 continue
             model = session.scalar(select(Model).where(Model.name == cfg.model))
-            if model is not None:
-                session.add(ModelRole(role=Role(role), model_id=model.id))
+            if model is None:
+                continue
+            # the same gate `PUT /v1/role` runs: an empty database is the usual way roles are set
+            try:
+                model_acceptance.refuse_unfit_model(Role(role), cfg.model)
+            except ValueError as e:
+                log.error("bootstrap.role_refused", role=role, model=cfg.model, error=str(e))
+                continue
+            session.add(ModelRole(role=Role(role), model_id=model.id))
         session.commit()
 
 
@@ -75,19 +83,14 @@ def _ensure_index() -> None:
     log.info("bootstrap.index_enqueued", variant=variant)
 
 
-# every variant that has rows gets its index, so no migration ever names one and
-# db/schema.sql stays a function of the migrations rather than of what is indexed. Queued,
-# never built here: the API and the worker both wait for this service to finish, an hnsw
-# build takes tens of minutes, and a migration that drops an index would otherwise hold
-# the whole stack down while it comes back
+# queued, never built here: an hnsw build takes tens of minutes and the stack waits for boot
 def _ensure_vector_indexes() -> None:
     import use_cases.index
 
     import db
 
     for row in db.corpus_variants():
-        # the API and the worker both gate on this service finishing, so one variant whose
-        # index cannot even be asked about must not keep the stack down
+        # one variant whose index cannot even be asked about must not keep the stack down
         try:
             present = use_cases.index.has_vector_index(row["variant"])
         except Exception as e:
@@ -100,10 +103,7 @@ def _ensure_vector_indexes() -> None:
 
 
 
-# the served variant without its index answers every question with a sequential scan over
-# every vector: right answers at a quietly different scale, and a migration can drop one.
-# Refusing to boot would deadlock the repair, because the worker runs that job and the
-# worker waits for this service, so the job is queued again on every start until it lands
+# without its index the served variant scans: right answers at a quietly different scale
 def _repair_served_vector_index() -> None:
     import use_cases.index
 
@@ -127,9 +127,7 @@ def _repair_served_vector_index() -> None:
     _queue_index_build(served)
 
 
-# the build takes tens of minutes and bootstrap runs on every start, so a variant that is
-# already waiting must not be queued again: the failing path and the served-variant repair
-# both point at the same index
+# bootstrap runs on every start, so a variant already waiting must not be queued twice
 def _queue_index_build(variant: str) -> None:
     if job_queue.pending_of_type("build_vector_index", variant=variant):
         log.info("bootstrap.index_build_already_queued", variant=variant)

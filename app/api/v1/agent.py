@@ -2,26 +2,19 @@ from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from use_cases import agent
+from use_cases import agent, agent_policy
+
+from api.v1.schemas import AnswerSource
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 class AgentRequest(BaseModel):
     text: str
-    max_hops: int | None = Field(default=None, ge=1, le=10)
+    max_hops: int | None = Field(default=None, ge=1, le=agent_policy.MAX_HOPS)
     language: Literal["ru", "en"] | None = None
     fallback_policy: agent.FallbackPolicy | None = None
     debug: bool = False
-
-
-class AgentSource(BaseModel):
-    link: str
-    vector_distance: float | None = None
-    vector_rank: float | None = None
-    keyword_rank: float | None = None
-    score: float
-    rerank_score: float | None = None
 
 
 class AgentResponse(BaseModel):
@@ -31,7 +24,7 @@ class AgentResponse(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     elapsed_time_seconds: float
-    sources: list[AgentSource] = []
+    sources: list[AnswerSource] = []
     trace: list[dict] | None = None
 
 
@@ -54,16 +47,6 @@ def ask(request: AgentRequest) -> AgentResponse:
         prompt_tokens=res.prompt_tokens,
         completion_tokens=res.completion_tokens,
         elapsed_time_seconds=res.elapsed,
-        sources=[
-            AgentSource(
-                link=s.source,
-                vector_distance=s.vector_distance,
-                vector_rank=s.vector_rank,
-                keyword_rank=s.keyword_rank,
-                score=s.score,
-                rerank_score=s.rerank_score,
-            )
-            for s in res.sources
-        ],
+        sources=[AnswerSource.of(s) for s in res.sources],
         trace=_serialize_trace(res.messages) if request.debug else None,
     )

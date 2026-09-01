@@ -64,3 +64,69 @@ def test_run_metrics_masks_unexpected_through_client(monkeypatch):
     with pytest.raises(ToolError) as ei:
         asyncio.run(go())
     assert "SECRET" not in str(ei.value)
+
+
+class _SessionWith:
+    def __init__(self, row):
+        self._row = row
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get(self, _model, _id):
+        return self._row
+
+
+def _experiment():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=36, name="judge_clause_language", kind="rejudge", status="concluded",
+        conclusion="the clause that works is the one about meaning",
+        results={
+            "source_run": "grid_llama31_8b_ru_plain",
+            "pairing": "every pair",
+            "multiplicity": {"method": "holm", "tests": 4},
+            "per_arm": {
+                "arm_a": {
+                    "arm": {"judge_faithfulness": 3}, "n": 823,
+                    "judge": {"model": ["qwen2.5:7b"]},
+                    "answers_digest": "sha256:55697f805b010e7d:823",
+                    "faithfulness": 7.4,
+                }
+            },
+            "deltas": {
+                "repeat_vs_arm_a": {
+                    "faithfulness": {"delta": 0.2005, "p": 6.5e-07, "significant_holm": True},
+                    "halves": {"faithfulness": {"A": {}, "B": {}}},
+                    "same_answers": True,
+                }
+            },
+        },
+    )
+
+
+def test_experiment_results_reads_the_report_without_the_aggregation_scaffolding(monkeypatch):
+    # `halves` is the aggregation's control on itself and reads as four more numbers per axis
+    monkeypatch.setattr(mcp_ops, "Session", lambda: _SessionWith(_experiment()))
+    out = mcp_ops.experiment_results(36)
+
+    assert out["conclusion"].startswith("the clause that works")
+    assert out["multiplicity"]["method"] == "holm"
+    assert out["arms"]["arm_a"]["answers_digest"].endswith(":823")
+    assert "faithfulness" not in out["arms"]["arm_a"], "the arm's own means are not the report"
+    assert "halves" not in out["deltas"]["repeat_vs_arm_a"]
+    assert out["deltas"]["repeat_vs_arm_a"]["same_answers"] is True
+
+
+def test_experiment_results_names_the_pairs_it_has_when_asked_for_another(monkeypatch):
+    monkeypatch.setattr(mcp_ops, "Session", lambda: _SessionWith(_experiment()))
+    with pytest.raises(ToolError, match="repeat_vs_arm_a"):
+        mcp_ops.experiment_results(36, pair="nothing_like_it")
+
+    monkeypatch.setattr(mcp_ops, "Session", lambda: _SessionWith(None))
+    with pytest.raises(ToolError, match="no experiment"):
+        mcp_ops.experiment_results(1)

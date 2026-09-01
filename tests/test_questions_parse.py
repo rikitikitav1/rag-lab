@@ -24,5 +24,5 @@ def test_parse_dedups_by_question_hash():
 
 
 def test_text_hash_is_stable_and_distinct():
-    assert questions._text_hash("abc") == questions._text_hash("abc")
-    assert questions._text_hash("abc") != questions._text_hash("abd")
+    assert questions.text_hash("abc") == questions.text_hash("abc")
+    assert questions.text_hash("abc") != questions.text_hash("abd")

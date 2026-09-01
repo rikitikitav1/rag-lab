@@ -22,7 +22,7 @@ judge: judge_answers job\nLLM judge, 0-10 per axis {
 agg: Experiment aggregator {
   direction: right
   composite: RRF composite\n(generation axes only)
-  pairwise: pairwise stats\nbootstrap CI + Wilcoxon\n+ Bonferroni flags
+  pairwise: pairwise stats\nbootstrap CI + Wilcoxon\n+ Holm flags
 }
 
 results: results.composite\nwinner + significance {

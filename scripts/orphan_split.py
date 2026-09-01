@@ -1,13 +1,11 @@
-import sys
-from pathlib import Path
+import config
+from orm.sync_db import engine
+from sqlalchemy import text
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
-
-import config  # noqa: E402
-from orm.sync_db import engine  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+import db
 
 VARIANT = config.settings.corpus.variant
+ACTIVE = db.live_rows("dc")
 
 FAMILY = """
     CASE WHEN ds.name LIKE '%-interview-questions' THEN 'interview'
@@ -21,28 +19,28 @@ SELECT {FAMILY} AS family, count(*) AS chunks,
        count(*) FILTER (WHERE length(dc.content) >= 1000) AS at_the_cap,
        round(avg(length(dc.content))) AS avg_len
 FROM data_chunks dc JOIN data_sources ds ON ds.id = dc.source_id
-WHERE ds.active AND dc.variant = :variant GROUP BY 1 ORDER BY 2 DESC
+WHERE {ACTIVE} GROUP BY 1 ORDER BY 2 DESC
 """
 
 # how a single question is spread across chunks, interview repos only
-spread = """
+spread = f"""
 SELECT n_chunks, count(*) AS questions FROM (
     SELECT source, question_no, count(*) AS n_chunks FROM (
         SELECT dc.source, dc.chunk_index,
                count(*) FILTER (WHERE dc.content ~ '^# .*\\n## ')
                    OVER (PARTITION BY dc.source ORDER BY dc.chunk_index) AS question_no
         FROM data_chunks dc JOIN data_sources ds ON ds.id = dc.source_id
-        WHERE ds.active AND dc.variant = :variant AND ds.name LIKE '%-interview-questions'
+        WHERE {ACTIVE} AND ds.name LIKE '%-interview-questions'
     ) marked WHERE question_no > 0
     GROUP BY source, question_no
 ) g GROUP BY 1 ORDER BY 1
 """
 
-headings = """
+headings = f"""
 SELECT count(*) FILTER (WHERE content ~ '^# .*\\n## ') AS question_heads,
        count(*) AS chunks
 FROM data_chunks dc JOIN data_sources ds ON ds.id = dc.source_id
-WHERE ds.active AND dc.variant = :variant AND ds.name LIKE '%-interview-questions'
+WHERE {ACTIVE} AND ds.name LIKE '%-interview-questions'
 """
 
 with engine.connect() as conn:

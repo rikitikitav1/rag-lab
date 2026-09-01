@@ -5,7 +5,12 @@ from models.eval import Question, QuestionLog
 from models.registry import Pipeline
 from orm.async_db import get_session
 from pydantic import BaseModel
-from query_utils import Page, apply_sort_limit_offset
+from query_utils import (
+    Page,
+    apply_created_between,
+    apply_in_filters,
+    apply_sort_limit_offset,
+)
 from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONPATH
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,22 +119,19 @@ async def list_question_logs(
 
     if question_id is not None:
         stmt = stmt.where(QuestionLog.question_id == question_id)
-    if run_name is not None:
-        stmt = stmt.where(QuestionLog.run_name.in_(run_name))
-    if pipeline is not None:
-        stmt = stmt.where(QuestionLog.pipeline.in_(pipeline))
     if answered is not None:
         stmt = stmt.where(QuestionLog.answered.is_(answered))
-    if faithfulness is not None:
-        stmt = stmt.where(QuestionLog.faithfulness.in_(faithfulness))
-    if relevance is not None:
-        stmt = stmt.where(QuestionLog.relevance.in_(relevance))
-    if completeness is not None:
-        stmt = stmt.where(QuestionLog.completeness.in_(completeness))
-    if created_from is not None:
-        stmt = stmt.where(QuestionLog.created_at >= created_from)
-    if created_to is not None:
-        stmt = stmt.where(QuestionLog.created_at <= created_to)
+    stmt = apply_in_filters(
+        stmt,
+        {
+            QuestionLog.run_name: run_name,
+            QuestionLog.pipeline: pipeline,
+            QuestionLog.faithfulness: faithfulness,
+            QuestionLog.relevance: relevance,
+            QuestionLog.completeness: completeness,
+        },
+    )
+    stmt = apply_created_between(stmt, QuestionLog.created_at, created_from, created_to)
 
     config = QuestionLog.metrics["config"]
     retrieval = QuestionLog.metrics["retrieval"]

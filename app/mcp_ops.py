@@ -1,16 +1,19 @@
 from typing import Annotated
 
 import job_queue
+import limits
 import logging_setup
 from evals import compare, generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models import Job, JobStatus
+from models.experiment import Experiment, ExperimentKind
 from orm.sync_db import Session
 from pydantic import Field
 from sqlalchemy import select
 from use_cases import experiment as experiment_uc
+from use_cases import rejudge, retrieval_compare
 
 log = logging_setup.get_logger(__name__)
 
@@ -30,11 +33,17 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
 def run_metrics(
     run_name: Annotated[str, Field(description="The run_name to aggregate.")],
 ) -> dict:
-    if not run_name.strip():
-        raise ToolError("run_name must not be empty")
+    _named_runs([run_name.strip()] if run_name.strip() else [])
     gen = generation_metrics.evaluate(run_name)
     ret = retrieval_metrics.evaluate(run_name)
     return {"run_name": run_name, **gen, **ret}
+
+
+def _named_runs(run_names: list[str]) -> list[str]:
+    try:
+        return compare.named_runs(run_names)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp_ops.tool(
@@ -49,11 +58,12 @@ def run_metrics(
     annotations={"readOnlyHint": True},
 )
 def compare_runs(
-    run_names: Annotated[list[str], Field(description="Run names to compare.")],
+    run_names: Annotated[
+        list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)
+    ],
 ) -> dict:
-    if not run_names:
-        raise ToolError("run_names must not be empty")
-    return experiment_uc.compute_results("run", run_names, run_names)
+    names = _named_runs(run_names)
+    return experiment_uc.compute_results("run", names, names)
 
 
 @mcp_ops.tool(
@@ -70,15 +80,70 @@ def compare_runs(
     annotations={"readOnlyHint": True},
 )
 def compare_pools(
-    run_names: Annotated[list[str], Field(description="Run names to compare.")],
+    run_names: Annotated[
+        list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)
+    ],
 ) -> dict:
-    if not run_names:
-        raise ToolError("run_names must not be empty")
-    runs = {name: load_logs(name) for name in dict.fromkeys(run_names)}
+    runs = {name: load_logs(name) for name in _named_runs(run_names)}
     empty = [name for name, logs in runs.items() if not logs]
     if empty:
         raise ToolError(f"no logs for runs: {empty}")
     return compare.compare(runs)
+
+
+READING = {
+    ExperimentKind.generation: experiment_uc.for_reading,
+    ExperimentKind.retrieval: retrieval_compare.for_reading,
+    ExperimentKind.rejudge: rejudge.for_reading,
+}
+
+
+@mcp_ops.tool(
+    name="experiment_results",
+    description=(
+        "The report of one experiment: its status and conclusion, the arms with "
+        "the judge that scored each and their answers_digest, and the paired "
+        "delta of every pair on every axis with its interval, its p and whether "
+        "it survives the multiplicity correction over the family this report "
+        "holds. For a rejudge, same_answers says the arms judged the same "
+        "answers; a false there means the deltas compare two different sets. "
+        "Read this instead of the raw record: the record carries halves and "
+        "seeds that only the aggregation is meant to read."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def experiment_results(
+    id: Annotated[int, Field(description="Experiment id.", ge=1)],
+    pair: Annotated[
+        str | None,
+        Field(description="Only this pair, as it is named in the report."),
+    ] = None,
+) -> dict:
+    with Session() as session:
+        exp = session.get(Experiment, id)
+        if exp is None:
+            raise ToolError(f"no experiment {id}")
+        # each kind writes its own shape, and only its writer knows which key holds what
+        read = READING[ExperimentKind(exp.kind)](exp.results or {})
+        out = {
+            "id": exp.id,
+            "name": exp.name,
+            "kind": exp.kind,
+            "status": exp.status,
+            "conclusion": exp.conclusion,
+            **{k: v for k, v in read.items() if k != "deltas"},
+        }
+        deltas = read["deltas"]
+        if pair is not None:
+            if pair not in deltas:
+                raise ToolError(f"no pair {pair!r}; this report has {sorted(deltas)}")
+            deltas = {pair: deltas[pair]}
+        # halves are the aggregation's own check and read as four more numbers per axis here
+        out["deltas"] = {
+            name: {k: v for k, v in body.items() if k != "halves"}
+            for name, body in deltas.items()
+        }
+        return out
 
 
 @mcp_ops.tool(
@@ -130,18 +195,6 @@ def cancel_job(
     id: Annotated[int, Field(description="Job id to cancel.")],
 ) -> dict:
     with Session() as session:
-        job = session.get(Job, id)
-        if job is None:
+        if session.get(Job, id) is None:
             raise ToolError(f"job {id} not found")
-        ids = [job.id]
-        run_name = (job.options or {}).get("run_name")
-        if job.type == "eval_run" and run_name:
-            deps = session.scalars(
-                select(Job.id).where(
-                    Job.type == "judge_answers",
-                    Job.status.in_([JobStatus.new, JobStatus.running]),
-                    Job.options["run_name"].astext == run_name,
-                )
-            ).all()
-            ids += list(deps)
-    return {"cancelled": job_queue.cancel(ids)}
+    return {"cancelled": job_queue.cancel_with_its_judge(id)}

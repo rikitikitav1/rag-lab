@@ -1,8 +1,5 @@
 -- migrate:up
--- 20260827000007 stated the rule and applied it to one column. Four enum-shaped checks
--- were left, and the last of them was added by this branch: a fourth verdict would cost
--- a migration and an edit of VERDICTS in ingest_quality.py, with nothing saying when the
--- two disagree. The model is the one place that decides what a value may be.
+-- the four checks 20260827000007 left: the model is the one place that decides a value
 ALTER TABLE data_sources DROP CONSTRAINT IF EXISTS data_sources_ingest_quality_check;
 ALTER TABLE model_roles DROP CONSTRAINT IF EXISTS model_roles_role_check;
 ALTER TABLE models DROP CONSTRAINT IF EXISTS models_status_check;

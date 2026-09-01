@@ -1,6 +1,6 @@
 import logging_setup
 from evals import runner
-from models.registry import Role
+from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from sqlalchemy import update
 
@@ -21,10 +21,9 @@ def eval_run(options: dict) -> None:
         run_name=options["run_name"],
         set_name=options.get("set_name"),
         question_ids=options.get("question_ids"),
-        # the runner resolves the default: two places deciding one switch is how a null
-        # ended up recorded as the procedure of every run
+        # the runner resolves the default: two deciders is how a null became every run's procedure
         use_rerank=options.get("rerank"),
-        pipeline=options.get("pipeline", "single_shot"),
+        pipeline=options.get("pipeline", Pipeline.single_shot),
         language=options.get("language"),
         k=options.get("k"),
         max_hops=options.get("max_hops"),
@@ -46,7 +45,7 @@ def compare_retrieval(options: dict) -> None:
     from datetime import UTC, datetime
 
     from models.experiment import Experiment, ExperimentStatus, can_advance
-    from use_cases import retrieval_compare
+    from use_cases import experiment, retrieval_compare
     from use_cases.retrieval_compare import ComparisonPlan
 
     job_id = options.get("_job_id")
@@ -54,9 +53,7 @@ def compare_retrieval(options: dict) -> None:
         exp = session.get(Experiment, options["experiment_id"])
         if exp is None:
             raise LookupError(f"no such experiment: {options['experiment_id']}")
-        # a retry arrives with the row left `failed` by the attempt before it, and
-        # aggregating from there is refused, so the grid would be measured and thrown
-        # away. The transition is declared; nothing was traversing it
+        # a retry arrives with the row left `failed`, and aggregating from there is refused
         if exp.status == ExperimentStatus.failed and can_advance(
             exp.status, ExperimentStatus.running
         ):
@@ -74,13 +71,11 @@ def compare_retrieval(options: dict) -> None:
         )
         started = exp.started_at
 
-    # measured outside the session: the arms take minutes and a transaction held open for
-    # them is a lock nobody is waiting to be told about
+    # outside the session: the arms take minutes and a held transaction is an unannounced lock
     try:
         results = retrieval_compare.run(plan)
     except Exception:
-        # the same compare-and-swap the success path uses: a row that moved on must not be
-        # marked failed by an attempt that no longer owns it
+        # the same swap the success path uses: a row that moved on is not failed by this attempt
         with Session() as session:
             session.execute(
                 update(Experiment)
@@ -93,35 +88,18 @@ def compare_retrieval(options: dict) -> None:
             session.commit()
         raise
 
+    # check and write as one operation, the same one the generation kind lands through
+    if experiment.record_report(options["experiment_id"], results, started):
+        log.info(
+            "compare.done", experiment=options["experiment_id"], arms=len(results["arms"])
+        )
+        return
+
     with Session() as session:
         exp = session.get(Experiment, options["experiment_id"])
         if exp is None:
             raise LookupError(f"no such experiment: {options['experiment_id']}")
-        # check and write as one operation, the way the generation kind does it
-        finished = datetime.now(UTC)
-        won = session.execute(
-            update(Experiment)
-            .where(
-                Experiment.id == exp.id,
-                Experiment.status == ExperimentStatus.running,
-            )
-            .values(
-                results=results,
-                status=ExperimentStatus.aggregated,
-                finished_at=finished,
-                elapsed=(finished - started).total_seconds() if started else None,
-            )
-        ).rowcount
-        if won:
-            session.commit()
-            log.info(
-                "compare.done", experiment=exp.id, arms=len(results["arms"])
-            )
-            return
-        session.rollback()
-        # the row moved on. An hour of measuring is not a log line, but a conclusion names
-        # the numbers it was written about, so the grid is kept only where nothing is lost
-        session.refresh(exp)
+        # an hour of measuring is not a log line, so the grid is kept where nothing is lost
         kept = exp.results is None
         if kept:
             exp.results = results

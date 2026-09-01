@@ -1,6 +1,5 @@
 -- migrate:up
--- the verdict is about our cut of the source, never about the source itself:
--- the redis documentation is the cleanest material in the corpus and the worst cut
+-- the verdict is about our cut of the source, never about the source itself
 ALTER TABLE data_sources ADD COLUMN ingest_quality text;
 ALTER TABLE data_sources ADD COLUMN ingest_variant text;
 ALTER TABLE data_sources ADD COLUMN ingest_checked_at timestamptz;

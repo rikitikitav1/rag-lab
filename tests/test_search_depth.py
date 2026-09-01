@@ -3,8 +3,7 @@ import pytest
 from use_cases import search_depth
 
 
-# the suite runs without a stack, and most of these need none: they hand `resolve` a
-# connection it never touches. The one that exercises the real pool says so
+# the suite runs without a stack: these hand `resolve` a connection it never opens
 def _stack_is_up() -> bool:
     try:
         with search_depth.db.engine.connect():
@@ -20,8 +19,7 @@ def _clean_cache():
     search_depth.forget()
 
 
-# a connection the caller already holds, so these never reach for a stack. The two that
-# do open one are the production paths, and they are exercised by the stack, not here
+# a connection the caller already holds, so these never reach for a stack
 CONN = object()
 
 
@@ -39,8 +37,7 @@ def test_auto_takes_the_deepest_rung_the_plan_still_walks(monkeypatch):
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
     monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
     monkeypatch.setattr(search_depth, "_shape", lambda conn: (8959, 42668))
-    # the plan walks the index at 100 and 200 and sorts at 400, which is what the table
-    # actually did on 28.08 with three variants in it
+    # the plan walks the index at 100 and 200 and sorts at 400, as the table actually did
     monkeypatch.setattr(
         search_depth, "uses_index", lambda conn, variant, ef: ef <= 200
     )
@@ -57,8 +54,7 @@ def test_the_answer_is_re_asked_when_the_row_estimate_moves(monkeypatch):
         lambda conn, variant, ef: ef <= (200 if shape["pages"] > 6000 else 100),
     )
     assert search_depth.resolve("clean_1024", conn=CONN) == 200
-    # the table was rewritten and the pages went with it, so the crossover comes back
-    # down. Rows alone would not have noticed: a DELETE leaves the pages where they were
+    # the table was rewritten and the pages went with it, so the crossover comes back down
     shape["pages"] = 5000
     assert search_depth.resolve("clean_1024", conn=CONN) == 100
 
@@ -72,9 +68,7 @@ def test_a_table_no_rung_walks_serves_the_floor_and_says_so(monkeypatch, caplog)
 
 
 def test_the_probe_asks_for_the_index_back_before_it_looks(monkeypatch):
-    # the measuring path turns index scans off on every pooled connection to force exact
-    # search. This asks the same pool, so without turning them back on the probe reads
-    # "the planner wants a sort" at every rung, falls to the floor and caches it
+    # the measuring path turns index scans off on every pooled connection
     issued = []
 
     class _Conn:
@@ -97,16 +91,13 @@ def test_the_probe_asks_for_the_index_back_before_it_looks(monkeypatch):
     assert any("enable_indexscan = on" in q for q in issued), (
         "the probe must undo the exact-search mode for its own statement"
     )
-    # and put it back: the connection belongs to the caller, and a caller measuring
-    # exactly would go on measuring something else for the rest of its transaction
+    # put back: the connection belongs to the caller, who was measuring something else
     assert issued[-1] == "SET LOCAL enable_indexscan = off"
 
 
 @pytest.mark.skipif(not _stack_is_up(), reason="needs the database this probe asks")
 def test_the_probe_is_not_poisoned_by_the_exact_search_mode(monkeypatch):
-    # the depth this resolves to is a property of the table on the day, and the arc has
-    # moved it twice; what must hold is that the exact-search mode does not drag the
-    # answer to the floor of the ladder, which is what a poisoned probe reads
+    # the depth is a property of the table on the day, and the arc has moved it twice
     from use_cases import retrieval_compare as rc
 
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
@@ -121,8 +112,7 @@ def test_the_probe_is_not_poisoned_by_the_exact_search_mode(monkeypatch):
 
 
 def test_a_table_no_rung_walks_is_not_remembered(monkeypatch):
-    # a poisoned session answers "no rung" too, and a poisoned answer that sticks is
-    # worse than a slow one asked again
+    # a poisoned session answers "no rung" too, and a poisoned answer that sticks is worse
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
     monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
     monkeypatch.setattr(search_depth, "_shape", lambda conn: (8959, 42668))
@@ -134,8 +124,7 @@ def test_a_table_no_rung_walks_is_not_remembered(monkeypatch):
 
 
 def test_an_exact_search_resolves_no_depth(monkeypatch):
-    # the switch has to switch something: an arm that turned index scans off must not
-    # pay a probe to learn how deep to walk a graph it does not walk
+    # an arm that turned index scans off must not pay a probe to learn how deep to walk
     import db
 
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
@@ -156,7 +145,10 @@ def test_an_exact_search_resolves_no_depth(monkeypatch):
             issued.append(str(statement))
 
             class _R:
-                def fetchall(self_inner):
+                def mappings(self_inner):
+                    return self_inner
+
+                def all(self_inner):
                     return []
 
             return _R()
@@ -167,9 +159,7 @@ def test_an_exact_search_resolves_no_depth(monkeypatch):
 
 
 def test_an_exact_search_turns_the_index_off_on_its_own_connection(monkeypatch):
-    # exactness used to come entirely from a listener another function installs on the
-    # shared pool, so a caller that said `exact=True` without it walked the graph at
-    # pgvector's default of 40 and every label downstream said "exact"
+    # exactness came from a listener on the shared pool, so a caller saying `exact` walked at 40
     import db
 
     issued = []
@@ -185,7 +175,10 @@ def test_an_exact_search_turns_the_index_off_on_its_own_connection(monkeypatch):
             issued.append(str(statement))
 
             class _R:
-                def fetchall(self_inner):
+                def mappings(self_inner):
+                    return self_inner
+
+                def all(self_inner):
                     return []
 
             return _R()

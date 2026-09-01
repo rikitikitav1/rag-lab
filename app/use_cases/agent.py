@@ -3,20 +3,18 @@ from dataclasses import asdict, dataclass, field
 
 import agent_tools
 import config
-import errors
 import job_queue
 import llm
 import logging_setup
 import outcomes
 import prompt_repo
-import version
 from models.eval import QuestionLog
 from models.registry import Pipeline, Purpose
 from orchestrators import graph as orch_graph
 from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
-from use_cases import chat
+from use_cases import chat, run_snapshot
 from use_cases.agent_policy import (
     GONE,
     FallbackPolicy,
@@ -40,6 +38,7 @@ class AgentResult:
     success: bool = False
     hops: int = 0
     sources: list = field(default_factory=list)
+    contexts: list = field(default_factory=list)
     messages: list = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -120,9 +119,7 @@ def run(
         {"role": "user", "content": question},
     ]
     result = AgentResult(messages=messages)
-    # the axis is a distance to the corpus, so it is resolved per question rather than per
-    # run: an off-topic question in the corpus's own language lands closer than one in
-    # another language, and a single number is in effect the calibration of one of them
+    # per question: an off-topic question in the corpus's own language lands closer
     threshold = (
         topic_threshold
         if topic_threshold is not None
@@ -222,8 +219,7 @@ def run(
             max_hops, topic, admission_ran,
             {
                 "name": str(orchestrator),
-                # the middleware arm raises before this line; naming it here as well
-                # would say a client was used by an orchestrator nothing can run
+                # the middleware arm raises before this line, and naming it would claim a client it cannot
                 "client": (
                     "ChatOllama"
                     if orchestrator == Orchestrator.langgraph_idiomatic
@@ -271,9 +267,6 @@ def _admissible(
     return admitted
 
 
-
-
-
 def _topic_score(question: str, variant: str) -> float | None:
     try:
         return db.nearest_distance(llm.embed(question), variant=variant)
@@ -291,12 +284,12 @@ def _retrieval_snapshot(sources: list, dropped_hits: list, dropped: list | None 
     scored = kept + corpus_only(dropped_hits)
     distances = [s.vector_distance for s in scored if s.vector_distance is not None]
     scores = [s.rerank_score for s in scored if s.rerank_score is not None]
-    return {
-        "results_count": len(kept),
-        "min_distance": min(distances) if distances else None,
-        "top_rerank_score": max(scores) if scores else None,
-        "dropped_sources": sorted(set(dropped or [])) or None,
-    }
+    return run_snapshot.of_retrieval(
+        results_count=len(kept),
+        min_distance=min(distances) if distances else None,
+        top_rerank_score=max(scores) if scores else None,
+        dropped_sources=sorted(set(dropped or [])) or None,
+    )
 
 
 def _unique_sources(sources: list) -> list:
@@ -315,9 +308,7 @@ def _context_from_messages(messages) -> str:
         for m in messages
         if isinstance(m, dict)
         and m.get("role") == "tool"
-        # the standard tool node capitalises its errors, and the judge must not score one
-        and not m["content"].lower().startswith(errors.ERROR_PREFIX)
-        and not m["content"].startswith(chat.NO_RESULTS)
+        and agent_tools.counts_as_context(m["content"])
     )
 
 
@@ -346,33 +337,26 @@ def _log_answer(
         log_row = QuestionLog(
             run_name=run_name,
             question_id=question.id,
+            question_text=question.original_text,
+            reference_answer=question.reference_answer,
             answered=result.success,
             answer=result.text,
             context=_context_from_messages(result.messages) or None,
+            contexts=result.contexts or None,
             sources=[asdict(s) for s in result.sources],
             pipeline=Pipeline.agent.value,
             models={
                 "generation": model or llm.resolve_name("generation"),
                 "embedding": llm.resolve_name("embedding"),
             },
-            prompts={
-                "agent_system": prompt_repo.active_version(Purpose.agent_system),
-                **(
-                    {"agent_fallback": prompt_repo.active_version(Purpose.agent_fallback)}
-                    if result.fallback_announced
-                    else {}
-                ),
-                **(
-                    {"agent_no_evidence": prompt_repo.active_version(Purpose.agent_no_evidence)}
-                    if result.no_evidence_prompted
-                    else {}
-                ),
-                **(
-                    {"agent_tool_match": prompt_repo.active_version(Purpose.agent_tool_match)}
-                    if admission_ran
-                    else {}
-                ),
-            },
+            prompts=prompt_repo.active_versions(
+                [
+                    Purpose.agent_system,
+                    *([Purpose.agent_fallback] if result.fallback_announced else []),
+                    *([Purpose.agent_no_evidence] if result.no_evidence_prompted else []),
+                    *([Purpose.agent_tool_match] if admission_ran else []),
+                ]
+            ),
             metrics={
                 "hops": result.hops,
                 "no_evidence": not bool(result.sources),
@@ -387,11 +371,16 @@ def _log_answer(
                 "failed": result.failed or None,
                 "stages": result.stages or None,
                 "tool_errors": result.tool_errors or None,
-                "config": {
-                    "rerank": use_rerank,
-                    "orchestrator": orchestrator,
-                    "fallback_policy": str(fallback_policy),
-                    "gate": (
+                "config": run_snapshot.of_run(
+                    variant=variant,
+                    use_rerank=use_rerank,
+                    k=k or config.settings.retrieval.results_limit,
+                    ef_search=result.ef_search,
+                    distance_threshold=round(config.settings.retrieval.distance_threshold, 3),
+                    model=model,
+                    orchestrator=orchestrator,
+                    fallback_policy=str(fallback_policy),
+                    gate=(
                         {
                             "signal": str(gate.signal),
                             "top": gate.top,
@@ -401,44 +390,19 @@ def _log_answer(
                         if gate and (gate.threshold or gate.distance_threshold)
                         else None
                     ),
-                    "distance_threshold": round(
-                        config.settings.retrieval.distance_threshold, 3
-                    ),
-                    "context_length": llm.server_context_length(
-                        model or llm.resolve_name("generation")
-                    ),
-                    "truncated_hops": result.truncated_hops or None,
-                    "k": k or config.settings.retrieval.results_limit,
-                    "max_hops": max_hops or config.settings.agent.max_hops,
-                    "corpus": config.settings.corpus.description,
-                    "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
-                    "variant": variant,
-                    "keyword": {
-                        "query": config.settings.retrieval.keyword_query,
-                        "rank": config.settings.retrieval.keyword_rank,
-                        "norm": config.settings.retrieval.keyword_norm,
-                        "query_lang": config.settings.retrieval.query_lang,
-                    },
-                    "ef_search": result.ef_search,
-                    "variant_policy": config.settings.corpus.policy_or_none(variant),
-                    "code_version": version.CODE_VERSION,
-                    "drop_weak_context": bool(gate and gate.drop_weak_context),
-                    "topic": (
-                        {
-                            "threshold": topic.threshold,
-                            "score": round(topic.score, 3) if topic.score is not None else None,
-                            "input": "question",
-                            # what was configured, beside what was applied: the applied
-                            # number varies with the question's language, so it is not
-                            # what two arms have to share
-                            "policy": config.settings.agent.topic_threshold,
-                        }
+                    truncated_hops=result.truncated_hops or None,
+                    max_hops=max_hops or config.settings.agent.max_hops,
+                    drop_weak_context=bool(gate and gate.drop_weak_context),
+                    topic=(
+                        run_snapshot.of_topic(
+                            topic.threshold, topic.score, config.settings.agent.topic_threshold
+                        )
                         if topic and topic.threshold is not None
                         else None
                     ),
-                    "mcp": mcp_names or [],
-                    "mcp_configured": mcp_configured or [],
-                },
+                    mcp=mcp_names or [],
+                    mcp_configured=mcp_configured or [],
+                ),
             },
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,

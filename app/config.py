@@ -22,8 +22,7 @@ class RetrievalCfg(BaseModel):
     keyword_rank: str = "ts_rank"
     keyword_norm: int = 0
     query_lang: str = "function_words"
-    # a number pins the depth; "auto" asks the planner for the deepest rung of the ladder
-    # that still walks the index, because where it stops walking moves with the table
+    # "auto" asks the planner for the deepest rung still walking the index, which moves
     ef_search: int | Literal["auto"] = "auto"
     ef_ladder: list[int] = [100, 200, 400]
     recall_gate: float = 0.98
@@ -47,8 +46,7 @@ class AgentCfg(BaseModel):
     gate_candidates: int = 5
     weak_threshold: float = 0.5
     gate_signal: str = "distance"
-    # one number, or one per language: the axis is a distance to this corpus, and an
-    # off-domain english question sits closer to an english corpus than a russian one
+    # an off-domain english question sits closer to an english corpus than a russian one
     topic_threshold: float | dict[str, float] | None = None
     weak_distance: float = 0.39
 
@@ -57,12 +55,10 @@ class AgentCfg(BaseModel):
             return self.topic_threshold
         if not self.topic_threshold:
             return None
-        # membership, not truthiness: zero is how a language switches the axis off, and
-        # `or` turned that into the most permissive threshold instead of into no gate
+        # membership, not truthiness: zero switches the axis off, and `or` made it permissive
         if language in self.topic_threshold:
             return self.topic_threshold[language]
-        # a language nobody measured gets the most permissive of the measured thresholds:
-        # we refuse only where refusing was shown not to cost a real question
+        # a language nobody measured gets the most permissive of the measured thresholds
         return max(self.topic_threshold.values())
 
 
@@ -71,16 +67,13 @@ class FtsCfg(BaseModel):
     fallback: str = "english"
 
 
-# typed like the gates that judge it: a key nobody reads and a mix nobody meant are both
-# refused at start, not discovered by a cut that came out wrong
+# typed like the gates that judge it: a typo fails the start, not the cut
 class PolicyCfg(BaseModel):
     model_config = {"extra": "forbid"}
     chunker: Literal["legacy", "rooted", "structured"]
     max_chunk_size: int = Field(gt=0)
     ceiling_on: Literal["body", "content"] = "body"
-    # a block repeated verbatim across half of a source's files is dropped, unless it is
-    # the only carrier of its section. Off by default: it changes the cut, so it is a
-    # corpus variant of its own and never a switch under an existing one
+    # off by default: it changes the cut, so it is a corpus variant of its own
     drop_boilerplate: bool = False
 
     # derived, not declared: two keys deciding one thing is how they came to disagree
@@ -118,8 +111,7 @@ class GateCfg(BaseModel):
     max: float | None = None
 
 
-# named fields rather than a free dict: a typo in the config of the instrument that
-# judges the corpus must fail the start, not quietly gate nothing
+# named fields, not a free dict: a typo in the judge's config must fail the start
 class MetricGatesCfg(BaseModel):
     model_config = {"extra": "forbid"}
     section_coverage: GateCfg | None = None
@@ -201,12 +193,14 @@ class McpIntegrationsCfg(BaseModel):
 
 
 class AppConfig(BaseModel):
+    # forbid, like the four models above: `_load` now hands the whole section over
+    model_config = {"extra": "forbid"}
     retrieval: RetrievalCfg
-    rerank: RerankCfg
-    agent: AgentCfg
+    rerank: RerankCfg = RerankCfg()
+    agent: AgentCfg = AgentCfg()
     ingestion: IngestionCfg
     ingest_quality: IngestQualityCfg = IngestQualityCfg()
-    fts: FtsCfg
+    fts: FtsCfg = FtsCfg()
     corpus: CorpusCfg
     repos_dir: str
     prompts_dir: str
@@ -219,18 +213,9 @@ class AppConfig(BaseModel):
 def _load(path: str) -> AppConfig:
     with open(path) as f:
         raw = yaml.safe_load(f)
-    service = raw["service"]
+    # the keys under `service` are the field names, so a new one needs no second edit
     return AppConfig(
-        retrieval=service["retrieval"],
-        rerank=service.get("rerank", {}),
-        agent=service.get("agent", {}),
-        ingestion=service["ingestion"],
-        ingest_quality=service.get("ingest_quality", {}),
-        fts=service.get("fts", {}),
-        corpus=service.get("corpus", {}),
-        repos_dir=service["repos_dir"],
-        prompts_dir=service["prompts_dir"],
-        sources=service["sources"],
+        **raw["service"],
         llm=raw["llm"],
         postgres=raw["postgres"],
         mcp_integrations=raw.get("mcp_integrations", {}),
@@ -238,3 +223,16 @@ def _load(path: str) -> AppConfig:
 
 
 settings = _load(CONFIG_PATH)
+
+
+# the keyword leg by the name the record uses: five places wrote this set out
+KEYWORD_SWITCHES = {
+    "query": "keyword_query",
+    "rank": "keyword_rank",
+    "norm": "keyword_norm",
+    "query_lang": "query_lang",
+}
+
+
+def keyword_switches() -> dict:
+    return {key: getattr(settings.retrieval, field) for key, field in KEYWORD_SWITCHES.items()}

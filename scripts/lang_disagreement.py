@@ -4,16 +4,12 @@ Compares every rule against the configured default. Bucketed by question length 
 because the set grouping was a judgement and the length is what decides whether langdetect copes.
 """
 
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
+import config
+from orm.sync_db import engine
+from sqlalchemy import text
 
-import config  # noqa: E402
-from orm.sync_db import engine  # noqa: E402
-from sqlalchemy import text  # noqa: E402
-
-import db  # noqa: E402
+import db
 
 BUCKETS = ((0, 40), (40, 80), (80, 10_000))
 RULES = ("langdetect", "cyrillic_ratio", "function_words")

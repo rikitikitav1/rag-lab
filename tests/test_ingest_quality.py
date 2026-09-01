@@ -11,9 +11,7 @@ from use_cases.ingest_quality import (
 
 CEILING = 100
 
-# read from the config the production code reads, not copied: four of five hand-written
-# gates had drifted from `config.yaml`, and a test that asserts against a dict it wrote
-# itself cannot be falsified by changing the thing it is about
+# from the config production reads, not copied: four of five hand-written gates had drifted
 def _gates(kind: str) -> dict:
     import config
 
@@ -70,8 +68,7 @@ def test_section_coverage_is_the_share_with_a_heading_path():
 
 
 def test_a_cut_that_cannot_record_sections_abstains_instead_of_reading_zero():
-    # the legacy cut only records a section when the file opens with an H1 then an H2, so
-    # a source carrying its title in frontmatter would read 0.0 forever
+    # the legacy cut records a section only where the file opens H1 then H2
     m = measure([chunk(section=None), chunk(section=None)], CEILING, records_sections=False)
     assert m.section_coverage is None
 
@@ -107,8 +104,7 @@ def test_tiny_counts_chunks_too_short_to_answer_anything():
 
 
 def test_size_cut_is_what_the_cutter_said_not_what_a_length_suggests():
-    # a body just under the ceiling looks the same whether structure or the counter put
-    # it there; only the cut knows, so the cut is asked
+    # a body just under the ceiling looks the same whichever cut put it there
     by_size = Sample(
         file="src/a.md", content="# T\n## S\n" + "x" * 90, chunk_index=0,
         body="x" * 90, section="T > S", root="T", cut_by="size",
@@ -165,8 +161,7 @@ def test_a_source_without_any_section_breaches_a_hard_gate_and_is_broken():
 
 
 def test_a_soft_breach_alone_is_dirty_not_broken():
-    # six repeats rather than two: a ceiling abstains below MIN_BREACHING_CHUNKS, so a
-    # source small enough that one chunk decides the share cannot express this at all
+    # six repeats, not two: a ceiling abstains below MIN_BREACHING_CHUNKS
     same = "# T\n## S\n" + BODY
     m = measure([chunk(content=same, i=i) for i in range(6)], CEILING)
     assert gate_breaches(m, HARD) == []
@@ -204,14 +199,12 @@ def test_without_weights_there_is_no_score_but_the_verdict_still_works():
 def test_score_is_an_integer_on_a_hundred_point_scale():
     m = measure([chunk()], CEILING)
     s = score(m, {"section_coverage": 1.0})
-    # perfect coverage under the only metric where more is better: emptying
-    # HIGHER_IS_BETTER turns this into 0, and `0 <= s <= 100` would not notice
+    # perfect coverage under the only metric where more is better
     assert s == 100
 
 
 def test_a_metric_with_nothing_to_measure_is_none_not_zero():
-    # indexed rows of a frozen variant carry no root and no body: the gates behind those
-    # metrics must abstain rather than pass on a number nobody took
+    # indexed rows of a frozen variant carry no root and no body, so those gates abstain
     bare = [
         Sample(file="src/a.md", content="# T\n## S\nbody", chunk_index=0, section="T > S")
     ]
@@ -243,8 +236,7 @@ def test_defects_are_measured_on_the_body_so_the_prefix_cannot_hide_them():
 
 
 def test_nothing_to_measure_gives_no_verdict_rather_than_broken():
-    # an unknown variant selects no rows. "the cut is broken" and "there was no cut here"
-    # must not come out as the same word
+    # "the cut is broken" and "there was no cut here" must not come out the same
     m = measure([], CEILING)
     assert m.section_coverage is None
     assert judged_by(m, HARD) == []
@@ -253,8 +245,7 @@ def test_nothing_to_measure_gives_no_verdict_rather_than_broken():
 
 
 def test_boilerplate_counts_one_population_on_both_sides():
-    # the floor used to count every file while the ratio counted only those with a body,
-    # so a source with two measurable files out of four read 1.0 against a gate of 0.1
+    # the floor counted every file while the ratio counted only those with a body
     same = "the same block in both"
     samples = [
         Sample(file="a.md", content=same, chunk_index=0, body=same, section="T > S"),
@@ -268,11 +259,7 @@ def test_boilerplate_counts_one_population_on_both_sides():
 
 
 def test_boilerplate_reads_the_same_population_above_the_floor():
-    # the floor used to count every file while the ratio counted only those with a body:
-    # reverting the denominator to `files` reads 1.0 here instead of the share below
-    # four measurable files against ten in all: the block is in every measurable one
-    # (4/4 = 1.0, over the 0.5 share) and in under half of all of them (4/10), so the two
-    # denominators disagree instead of both reading 1.0 on the boundary
+    # reverting the denominator alone would leave the floor counting a different population
     same = "the same block in every measurable file"
     with_body = [
         Sample(file=f"{n}.md", content=same, chunk_index=0, body=same, section="T > S")
@@ -296,9 +283,7 @@ def _sized(chunks: int, **metrics):
 
 
 def test_a_ceiling_abstains_when_too_few_chunks_breach_it():
-    # three sources were called broken for holding two chunks whose heading path is
-    # longer than their body, while six larger sources held the same two and passed:
-    # the gate was reading the size of the source, not the quality of its cut
+    # three sources were called broken for two chunks whose heading path outruns their body
     gates = {"prefix_dominates": {"max": 0.05}}
     assert gate_breaches(_sized(35, prefix_dominates=2 / 35), gates) == []
     assert gate_breaches(_sized(337, prefix_dominates=2 / 337), gates) == []
@@ -320,3 +305,34 @@ def test_a_floor_is_not_softened_by_the_count():
     assert gate_breaches(
         _sized(30, section_coverage=0.1), gates
     ) == ["section_coverage.min"]
+
+
+def test_a_gate_naming_something_nothing_measures_is_refused_instead_of_skipped():
+    # `getattr(metrics, name, None)` gave an unknown name the answer an abstention gives
+    m = _sized(100, dup_in_file=0.9)
+    with pytest.raises(ValueError, match="nothing measures"):
+        gate_breaches(m, {"dup_in_files": {"max": 0.1}})
+    with pytest.raises(ValueError, match="nothing measures"):
+        score(m, {"dup_in_files": 1.0})
+
+
+def test_the_gates_the_weights_and_the_metrics_name_the_same_set():
+    # four hand-written lists of ten names, and one of them is what the measurement carries
+    from dataclasses import fields
+
+    from config import MetricGatesCfg, MetricWeightsCfg
+
+    gates = set(MetricGatesCfg.model_fields)
+    weights = set(MetricWeightsCfg.model_fields)
+    carried = {f.name for f in fields(Metrics)}
+
+    assert gates == weights
+    assert gates <= carried
+
+
+def test_every_share_a_gate_reads_brings_the_count_it_was_taken_over():
+    # a share whose denominator is missing falls back to the chunk count
+    m = measure([chunk()], CEILING)
+    shares = set(HARD) | set(SOFT)
+
+    assert shares <= set(m.denominators)

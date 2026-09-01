@@ -42,9 +42,7 @@ def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
 
 
 def test_every_field_a_run_declares_reaches_the_queue(client, monkeypatch):
-    # the options dict is copied field by field, so a field added to the request and not
-    # to the copy is accepted, validated and dropped. `variant` was dropped that way and
-    # eight arms would have run on the configured corpus instead of the asked one
+    # the options dict is copied field by field, so a new field is accepted and never carried
     from types import SimpleNamespace
 
     import api.v1.eval as eval_mod
@@ -192,6 +190,52 @@ def test_fallback_policy_is_rejected_for_single_shot(client):
 def test_bulk_cancel_needs_a_filter(client):
     r = client.post("/v1/job/cancel", json={})
     assert r.status_code == 400
+
+
+class _SessionOfLiveJobs:
+    async def scalars(self, _statement):
+        return [11, 12]
+
+    async def commit(self):
+        return None
+
+
+def _with_live_jobs():
+    import server
+    from orm.async_db import get_session
+
+    async def _fake():
+        yield _SessionOfLiveJobs()
+
+    server.app.dependency_overrides[get_session] = _fake
+
+
+def test_cancelling_a_type_with_no_run_name_is_said_out_loud(client, monkeypatch):
+    # `type: judge_answers` alone is every live judge job, which is several arms of several runs
+    import job_queue
+
+    r = client.post("/v1/job/cancel", json={"type": "judge_answers"})
+    assert r.status_code == 400
+    assert "every=true" in r.json()["detail"]
+
+    _with_live_jobs()
+    monkeypatch.setattr(job_queue, "cancel", lambda ids: list(ids))
+    r = client.post("/v1/job/cancel", json={"type": "judge_answers", "every": True})
+    assert r.status_code == 200 and r.json()["cancelled"] == [11, 12]
+
+
+def test_a_cancel_goes_through_the_queue_so_the_experiment_is_not_left_waiting(
+    client, monkeypatch
+):
+    # the route flipped the status itself while `mark_failed_for_run` lives in the queue
+    import job_queue
+
+    seen = []
+    _with_live_jobs()
+    monkeypatch.setattr(job_queue, "cancel", lambda ids: seen.append(ids) or list(ids))
+
+    assert client.post("/v1/job/cancel", json={"run_name": "arm"}).status_code == 200
+    assert seen == [[11, 12]], "the route must delegate rather than write the status itself"
 
 
 def test_two_cuts_of_one_source_are_read_side_by_side(client, monkeypatch):

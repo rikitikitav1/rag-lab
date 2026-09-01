@@ -9,8 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_utils import LtreeType
 
 
-# the migration that dropped the CHECK says the model is the one place that decides what
-# a value may be. For three of the four columns that was true; this one was plain text
+# the model is the one place that decides what a value may be; this column was plain text
 class Verdict(StrEnum):
     ok = "ok"
     dirty = "dirty"
