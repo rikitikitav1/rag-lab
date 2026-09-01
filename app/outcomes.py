@@ -10,8 +10,7 @@ REFUSAL_MARKERS = (
     "не располагаю",
 )
 
-# these phrases refuse only when the answer also blames the sources: "not found" alone
-# is ordinary technical prose ("if the key is not found, nil is returned")
+# these refuse only when the answer blames the sources: "not found" alone is prose
 MISSING_MARKERS = (
     "no information", "not found", "don't have", "do not have", "не удалось", "не найдено",
     "нет данных", "не содержится", "отсутствует",
@@ -22,7 +21,10 @@ SOURCE_MARKERS = (
 
 
 class Outcome(StrEnum):
+    # a stored `answered` is the pre-judge reading: only a recomputed one can be ungrounded
     answered = "answered"
+    # sources came back and nothing in the answer was grounded in them
+    answered_ungrounded = "answered_ungrounded"
     refused = "refused"
     unsupported_answer = "unsupported_answer"
     narrated_call = "narrated_call"
@@ -65,8 +67,10 @@ def refusal(text: str) -> bool:
     )
 
 
-# refusal before evidence: a policy that keeps weak chunks would never register one otherwise
-def classify(text: str | None, has_sources: bool, names=(), prefixes=(), exhausted=False) -> str:
+# `grounded` is None where nothing judged the row, and such a row stays `answered`
+def classify(
+    text: str | None, has_sources: bool, names=(), prefixes=(), exhausted=False, grounded=None
+) -> str:
     if not text:
         return Outcome.exhausted if exhausted else Outcome.error
     if narrated_tool_call(text, names, prefixes):
@@ -74,5 +78,5 @@ def classify(text: str | None, has_sources: bool, names=(), prefixes=(), exhaust
     if refusal(text):
         return Outcome.refused
     if has_sources:
-        return Outcome.answered
+        return Outcome.answered if grounded is not False else Outcome.answered_ungrounded
     return Outcome.unsupported_answer

@@ -27,6 +27,7 @@ def _merge(old: dict, new: dict) -> dict:
 class State(TypedDict, total=False):
     messages: Annotated[list, operator.add]
     sources: Annotated[list, operator.add]
+    contexts: Annotated[list, operator.add]
     dropped_sources: Annotated[list, operator.add]
     dropped_hits: Annotated[list, operator.add]
     prompt_tokens: Annotated[int, operator.add]
@@ -173,7 +174,12 @@ def tools_node(state: State, config) -> dict:
             {"role": "tool", "tool_call_id": tc.id, "content": content}
             for tc, _res, content, _sources in calls
         ],
-        "sources": [s for c in calls for s in c[3]],
+        "sources": chat.stamped([s for c in calls for s in c[3]], state["hops"]),
+        "contexts": [
+            piece
+            for _tc, res, content, _s in calls
+            for piece in agent_tools.context_pieces(res.meta, content)
+        ],
         "dropped_sources": dropped,
         "dropped_hits": dropped_hits,
         "tool_errors": errors_seen,
@@ -264,6 +270,7 @@ def _initial_state(question: str, system: str, external: bool) -> State:
             {"role": "user", "content": question},
         ],
         "sources": [],
+        "contexts": [],
         "dropped_sources": [],
         "dropped_hits": [],
         "prompt_tokens": 0,
@@ -305,6 +312,7 @@ def invoke(question, system, ctx, result) -> None:
     result.messages.clear()
     result.messages.extend(state["messages"])
     result.sources = list(state["sources"])
+    result.contexts = list(state["contexts"])
     result.dropped_sources = list(state["dropped_sources"])
     result.dropped_hits = list(state["dropped_hits"])
     result.hops = state["hops"]

@@ -6,6 +6,7 @@ import config
 import llm
 import logging_setup
 from langchain_core.tools import StructuredTool
+from use_cases import chat
 
 log = logging_setup.get_logger(__name__)
 
@@ -32,12 +33,11 @@ def chat_model(role: str = "generation", model: str | None = None):
 # two-layer contract: content to the model, artifact to the pipeline. No room for error kinds
 def as_tools(remote: dict, k=None, use_rerank=None, result=None, variant=None) -> list:
     def make(name: str, tool):
-        def call(**kwargs) -> tuple[str, list]:
+        def call(**kwargs) -> tuple[str, dict]:
             # the tool node is built once from every tool, so the gate has to refuse here
-            extra = remote
             started = time.perf_counter()
             res = agent_tools.dispatch(
-                name, json.dumps(kwargs), extra=extra, k=k, use_rerank=use_rerank,
+                name, json.dumps(kwargs), extra=remote, k=k, use_rerank=use_rerank,
                 gate_top=None, variant=variant,
             )
             if result is not None:
@@ -46,7 +46,8 @@ def as_tools(remote: dict, k=None, use_rerank=None, result=None, variant=None) -
                     result.tool_errors[name] = res.meta["error_kind"]
                 if res.meta.get("ef_search") is not None:
                     result.ef_search = res.meta["ef_search"]
-            return res.content, res.meta.get("sources", [])
+            # the whole meta: the chunks a hop read are on it, and this artifact is the only way out
+            return res.content, res.meta
 
         return StructuredTool.from_function(
             func=call,
@@ -56,9 +57,8 @@ def as_tools(remote: dict, k=None, use_rerank=None, result=None, variant=None) -
             response_format="content_and_artifact",
         )
 
-    offered = remote
     tools = [make(t.name, t) for t in agent_tools.registry()]
-    return tools + [make(name, tool) for name, tool in offered.items()]
+    return tools + [make(name, tool) for name, tool in remote.items()]
 
 
 # two steps per hop plus the answer, no final turn, so this limit IS the hop budget
@@ -94,8 +94,7 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
         result.hops = ctx["max_hops"] + 1
         result.text = ""
         result.success = False
-        # for this arm the limit is the budget itself, so reaching it is exhaustion,
-        # not a failure
+        # for this arm the limit is the budget, so reaching it is exhaustion, not a failure
         result.failed = False
         return
     except Exception as e:
@@ -106,17 +105,22 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
         return
     messages = state["messages"]
     replies = [m for m in messages if getattr(m, "type", None) == "ai"]
-    collected = [
-        source
-        for m in messages
-        if getattr(m, "type", None) == "tool"
-        for source in (getattr(m, "artifact", None) or [])
-    ]
+    # the hop a tool answered on is the number of replies before it
+    hop, collected, contexts = 0, [], []
+    for message in messages:
+        kind = getattr(message, "type", None)
+        if kind == "ai":
+            hop += 1
+        elif kind == "tool":
+            meta = getattr(message, "artifact", None) or {}
+            collected += chat.stamped(meta.get("sources") or [], hop)
+            contexts += agent_tools.context_pieces(meta, str(message.content))
     result.messages.clear()
     result.messages.extend(
         {"role": getattr(m, "type", "unknown"), "content": str(m.content)} for m in messages
     )
     result.sources = list(collected)
+    result.contexts = contexts
     result.hops = len(replies)
     result.text = str(replies[-1].content) if replies else ""
     result.success = bool(result.text)

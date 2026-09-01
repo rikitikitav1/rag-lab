@@ -16,6 +16,20 @@ from use_cases import chat
 log = logging_setup.get_logger(__name__)
 
 
+# the pieces whose join is the row's context: a call the gate emptied says nothing
+def context_pieces(meta: dict | None, content: str) -> list[str]:
+    if not counts_as_context(content):
+        return []
+    return list((meta or {}).get("contexts") or [content])
+
+
+def counts_as_context(content: str) -> bool:
+    return not (
+        content.lower().startswith(errors.ERROR_PREFIX)
+        or content.startswith(chat.NO_RESULTS)
+    )
+
+
 @dataclass
 class ToolResult:
     content: str
@@ -111,13 +125,16 @@ def _search_corpus(
     variant: str | None = None,
 ) -> ToolResult:
     # dispatch drops runtime values that are None, so the orchestrator always supplies this one
-    content, sources, ef_search = chat.search_chunks(
+    content, contexts, sources, ef_search = chat.search_chunks(
         query, category, k=k, use_rerank=use_rerank, gate_top=gate_top,
         variant=variant or config.settings.corpus.variant,
     )
-    # the depth travels with the answer, so the snapshot records what the search used
-    # rather than what the resolver says an hour later
-    return ToolResult(content=content, meta={"sources": sources, "ef_search": ef_search})
+    # the depth travels with the answer, not with what the resolver says an hour later
+    return ToolResult(
+        content=content,
+        # the elements a reader that scores positions needs: they are not recoverable from the join
+        meta={"sources": sources, "contexts": contexts, "ef_search": ef_search},
+    )
 
 
 def _remote_run(integration, tool_name):

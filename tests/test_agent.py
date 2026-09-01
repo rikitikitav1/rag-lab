@@ -88,7 +88,12 @@ def _agent_harness(monkeypatch, turns, corpus_sources, seen_runtime=None):
             if name == agent_tools.CORPUS_TOOL
             else [SimpleNamespace(source="remote")]
         )
-        return agent_tools.ToolResult(content="c", meta={"sources": sources})
+        # the real tool returns the join of its own chunks, or the harness cannot see them drift
+        contexts = [f"[{s.source}]\nc" for s in sources]
+        return agent_tools.ToolResult(
+            content="\n\n".join(contexts),
+            meta={"sources": sources, "contexts": contexts},
+        )
 
     monkeypatch.setattr(agent.llm, "chat", fake_chat)
     monkeypatch.setattr(agent_tools, "dispatch", fake_dispatch)
