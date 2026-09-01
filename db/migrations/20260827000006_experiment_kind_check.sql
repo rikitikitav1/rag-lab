@@ -1,6 +1,5 @@
 -- migrate:up
--- the model declares an enum and the column was plain text, so a typo would have been a
--- valid kind in the database and an invalid one in the code
+-- the column was plain text while the model declares an enum, so a typo was valid in one
 ALTER TABLE experiments
   ADD CONSTRAINT experiments_kind_check CHECK (kind IN ('generation', 'retrieval'));
 

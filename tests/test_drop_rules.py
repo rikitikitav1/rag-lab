@@ -9,9 +9,7 @@ from sources.interview import InterviewSource
 from sources.notes import NotesSource
 
 
-# built through the model production loads, so a fixture the config could never produce
-# (an unknown key, a derived one written by hand, a required one missing) fails here
-# rather than testing a shape that cannot exist
+# built through the model production loads, so an impossible fixture cannot pass here
 def _policy(**kw) -> dict:
     from config import PolicyCfg
 
@@ -92,15 +90,13 @@ def test_the_index_shim_never_fires_on_a_variant_that_was_cut_with_the_rule():
         policy = config.settings.corpus.policy(variant)
         hidden = chat._hidden_by_cut("notes/index.md", variant)
         assert hidden != base.hygienic(policy), variant
-    # every declared variant makes the two exact complements, so the assertion above
-    # passes under "the chunker is named legacy" too. This is the case that separates them
+    # every declared variant makes the two exact complements, so the assertion needs more
     assert base.hygienic({"chunker": "structured"}) is True
     assert base.hygienic({"chunker": "legacy"}) is False
 
 
 def test_a_missing_index_is_queued_rather_than_built_while_the_stack_waits(monkeypatch):
-    # the API and the worker both wait for bootstrap, and an hnsw build takes tens of
-    # minutes, so building here would hold the stack down every time a migration drops one
+    # an hnsw build takes tens of minutes and the whole stack waits on bootstrap
     import bootstrap
 
     queued = []

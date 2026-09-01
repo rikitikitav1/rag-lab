@@ -22,8 +22,7 @@ class InterviewSource(Base):
         topic = self.name.removesuffix("-interview-questions")
         return f"interview.{topic}"
 
-    # the badge above the first question: a logo, a link and a line offering the rest
-    # of the answers. It answers nothing and it is identical in all 173 repositories
+    # the badge above the first question: identical in all 173 repositories and answers nothing
     BOILERPLATE = "You can also find all"
 
     def postprocess(self, docs, policy=None):

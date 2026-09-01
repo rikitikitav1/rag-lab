@@ -71,8 +71,7 @@ def test_a_block_repeated_across_half_the_files_is_dropped():
 
 
 def test_the_only_carrier_of_its_section_stays():
-    # hygiene that removes the answer is not hygiene: on this corpus the exception saved
-    # six sections and all six were the gold of a veto question
+    # hygiene that removes the answer is not hygiene: the exception saved six gold sections
     nav = "see the index"
     docs = [_doc(f"f{i}.md", nav, "topic") for i in range(4)]
     # f3.md holds nothing under `topic` but the shared block, so its chunk is the carrier
@@ -96,11 +95,27 @@ def test_a_source_of_two_files_is_left_alone():
 
 
 def test_the_legacy_cut_honours_the_ceiling_its_variant_declares():
-    # it used to fall through to the module constant, so `baseline` declared a ceiling
-    # nothing read and `ingestion.chunk_max_size` decided the frozen variant's cut instead
+    # falling through to the constant let `baseline` declare a ceiling nothing read
     from ingest import chunk_markdown
 
     body = "x" * 900
     content = f"# T\n{body}\n## S\n{body}"
     assert all(len(c) <= 300 for c in chunk_markdown(content, ceiling=300))
     assert any(len(c) > 300 for c in chunk_markdown(content, ceiling=2000))
+
+
+def test_a_source_is_replaced_in_one_transaction_or_not_at_all(monkeypatch):
+    # the delete committed on its own, so the source stood empty while its embeddings ran
+    import inspect
+
+    from use_cases import index
+
+    source = inspect.getsource(index._provision_source)
+    assert "delete(DataChunk)" not in source, "the delete belongs with the insert that replaces"
+
+    replace = inspect.getsource(index._replace_chunks)
+    assert replace.index("delete(DataChunk)") < replace.index("session.add_all")
+    assert replace.count("session.commit()") == 1, "one commit, so the pair is atomic"
+    assert replace.index("request_embeddings_batch") < replace.index("delete(DataChunk)"), (
+        "embed first: the old rows must outlive the slow part"
+    )

@@ -1,20 +1,14 @@
 """Retrieval quality over stored question embeddings: no generator, no judge, no noise."""
 
 import argparse
-import hashlib
 import json
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "app"))
+import config
 
-import config  # noqa: E402  the path above is what makes it importable
-
-# the measuring lives in the app so the comparison job and this script read a rank the
-# same way; what stays here is the CLI, the artifacts and the comparison of two files
-from use_cases import search_depth  # noqa: E402
-from use_cases.retrieval_compare import (  # noqa: E402
+# the measuring lives in the app; the CLI, the artifacts and the file comparison stay here
+from use_cases import search_depth
+from use_cases.retrieval_compare import (
     CANDIDATES,
     DEPTH,
     NO_THRESHOLD,
@@ -23,21 +17,18 @@ from use_cases.retrieval_compare import (  # noqa: E402
     comparable,
     file_drift,
     half_of,
+    ids_hash,
     measure,
     paired_delta,
     questions,
+    rr,
     summarise,
 )
 
 
-# a rung deep enough for the planner to prefer sorting the whole table is not a rung of
-# the index at all: recall then compares exact search with exact search and reads 1.0 by
-# construction. The crossover moves with the row count, so this is asked per variant and
-# per depth rather than remembered
+# a rung deep enough to sort the table is no rung of the index: exact against exact
 def vector_plan(conn, variant: str, ef: int) -> str:
-    # one owner for the question: this used to ask its own EXPLAIN, with another LIMIT
-    # and an inner select that could pick a row with no embedding, so the two answers
-    # agreed only by luck
+    # one owner: this asked its own EXPLAIN, with another LIMIT and a row with no embedding
     return "index" if search_depth.uses_index(conn, variant, ef) else "sort"
 
 
@@ -54,16 +45,9 @@ def recall_against_exact(db, conn, set_name, variant, limit, ef=None):
     return round(sum(scores) / len(scores), 4) if scores else None
 
 
-def _rr(rank):
-    return 1.0 / rank if rank else 0.0
-
-# a delta between two different procedures is a number about nothing
-# the ladder is fixed and small on purpose: a required_ef read off a continuous search
-# would be a number chosen from the data it is meant to judge. It lives in the config
-# with the value it produces, so the two cannot drift apart
+# fixed and small: a required_ef off a continuous search is chosen from its own data
 def ef_ladder() -> tuple[int, ...]:
-    # sorted, through the same accessor production uses: two readings of one ladder, one
-    # of them sorted, is two different ladders whenever somebody writes it out of order
+    # through the same accessor production uses: two readings of one ladder are two ladders
     return tuple(search_depth.ladder())
 
 
@@ -79,17 +63,14 @@ def lost_questions_gate() -> int:
     return config.settings.retrieval.max_questions_lost
 
 
-# recall@20 says how many of the exact neighbours the graph found. What we are paid for is
-# where the right section lands, and a neighbour lost at rank 18 does not move that at all.
-# So the depth is judged by what it costs the metric, on the same questions, paired
+# a neighbour lost at rank 18 does not move where the right section lands
 def index_cost(db, conn, set_name, variant, limit, ef):
     exact = measure(db, conn, set_name, variant, limit, True)
     approx = measure(db, conn, set_name, variant, limit, False, ef)
     out = {}
     for level in ("section", "file"):
         out[level] = paired_delta(exact, approx, level)
-        # a summary saying "4 worse" is a number without a body: the questions that paid
-        # are the only thing a person can look at
+        # "4 worse" is a number without a body: the questions that paid are what a person reads
         rows = _worse_rows(exact, approx, level)
         out[level]["worse_rows"] = rows
         # the ones that did not merely slip: exact found the section, the index did not
@@ -105,24 +86,18 @@ def _worse_rows(exact, approx, level):
         then = was.get(now["id"])
         if then is None or (level == "section" and not now.get("section_scorable")):
             continue
-        if _rr(now[key]) < _rr(then[key]):
+        if rr(now[key]) < rr(then[key]):
             rows.append(
                 {"id": now["id"], "exact": then[key], "index": now[key], "repo": now.get("repo")}
             )
     return rows
 
 
-
 def repo_coverage(rows, ids) -> int:
     return len({row.get("repo") for row in rows if row["id"] in ids and row.get("repo")})
 
 
-def ids_hash(ids) -> str:
-    joined = ",".join(str(i) for i in sorted(ids))
-    return hashlib.md5(joined.encode(), usedforsecurity=False).hexdigest()[:12]
-
-# a grown set is not a different procedure: same questions plus new ones, and the old
-# ids still sit inside. Anything else differing still refuses, --force is for that
+# a grown set is not a different procedure: the old ids still sit inside
 def set_grew(before, after, differ) -> bool:
     if [field for field, _, _ in differ] != ["questions_hash"]:
         return False
@@ -131,8 +106,7 @@ def set_grew(before, after, differ) -> bool:
     return bool(was) and was < now
 
 
-# the delta is over questions, and a question can only move if both sides hold its file.
-# What each side holds alone belongs next to the delta, not in a separate investigation
+# a question can only move if both sides hold its file, so this belongs beside the delta
 def print_file_drift(before: str, after: str) -> None:
     try:
         from orm.sync_db import engine
@@ -153,8 +127,7 @@ def print_file_drift(before: str, after: str) -> None:
 
 
 def compare_half(before, after, level, which):
-    # over the ids both sides carry, not over everything the newer run measured: the hash
-    # has to name the questions the numbers were taken on
+    # over the ids both sides carry: the hash names the questions the numbers came from
     shared = {r["id"] for r in before} & {r["id"] for r in after}
     kept = {qid for qid in shared if half_of(qid) == which}
     result = paired_delta(
@@ -231,8 +204,7 @@ def main() -> int:
         print(f"{before['variant']} -> {after['variant']}  set={after['set']} "
               f"search={after.get('search')} pool={after.get('limit_vector')}")
         print_file_drift(before["variant"], after["variant"])
-        # a report taken before rows carried a repository still splits by id parity, the
-        # same rule as now; the repository is printed as coverage, never used to split
+        # a report taken before rows carried a repository still splits by id parity
         for level in ("file", "section"):
             print(json.dumps(paired_delta(before["rows"], after["rows"], level)))
             for which in ("A", "B"):
@@ -244,13 +216,12 @@ def main() -> int:
 
     import db
 
-    # default to what the server runs, or a gate would pass while production loses recall.
-    # Resolved, never `auto`: what a report says it measured has to be a number
+    # resolved, never `auto`: what a report says it measured has to be a number
     variant_for_depth = args.variant or config.settings.corpus.variant
     if args.ef is None:
         args.ef = search_depth.resolve(variant_for_depth)
 
-    for name in ("keyword_query", "keyword_rank", "keyword_norm", "query_lang"):
+    for name in config.KEYWORD_SWITCHES.values():
         chosen = getattr(args, name)
         if chosen is not None:
             setattr(config.settings.retrieval, name, chosen)
@@ -273,9 +244,7 @@ def main() -> int:
                     continue
                 cost = index_cost(db, conn, args.set_name, variant, args.limit, ef)
                 costs[ef] = cost
-                # `paired_delta` answers "no shared questions" with an error and no
-                # interval; reading `ci95` off that shape blew up two lines below and
-                # called a failure to measure a crash
+                # `paired_delta` answers with an error and no interval, and reading `ci95` off that crashed
                 if "error" in cost["section"]:
                     print(
                         f"variant={variant} ef_search={ef} not measured: "
@@ -289,8 +258,7 @@ def main() -> int:
                     f"{cost['section']['delta_MRR']:+.4f} ci95 {cost['section']['ci95']} "
                     f"n={cost['section']['questions']}"
                 )
-                # the interval, not the point: a loss we cannot tell from zero is a loss
-                # we have no business paying depth for
+                # the interval, not the point: a loss we cannot tell from zero buys no depth
                 if lost > lost_questions_gate():
                     print(
                         f"variant={variant} ef_search={ef} refused: {lost} questions the exact "
@@ -299,9 +267,7 @@ def main() -> int:
                     continue
                 if cheapest is None and worst <= mrr_loss_gate():
                     cheapest = ef
-            # not the depth production serves: `search_depth` takes the deepest rung
-            # that still walks the index, this takes the shallowest rung inside the
-            # gate. Two questions, two numbers, and only this one is a recommendation
+            # the shallowest rung inside the gate, not the deepest that still walks the index
             print(f"cheapest_ef={cheapest} (shallowest rung inside the gate: worst-case "
                   f"section MRR loss {mrr_loss_gate()}; the served depth is the deepest "
                   f"rung that still walks the index, see search_depth)")
@@ -311,8 +277,7 @@ def main() -> int:
                 report["index_cost"] = {str(k): v for k, v in costs.items()}
                 report["set"] = args.set_name
                 report["variant"] = variant
-                # the corpus this depth was priced against: without it a file cannot say
-                # whether it still describes the table, and two of them already did not
+                # without the corpus a file cannot say whether it still describes the table
                 report["fingerprint"] = db.fingerprint_or_none(variant=variant)
                 report["cheapest_ef"] = cheapest
                 report["mrr_loss_gate"] = mrr_loss_gate()
@@ -381,9 +346,7 @@ def main() -> int:
         )
 
     shortfall = list(POOL_SHORTFALL)
-    # the same producer the comparison job writes each of its arms with: one run of this
-    # script is one arm, and two artifacts of different provenance stay comparable only
-    # while nobody writes the shape twice
+    # the same producer the comparison job writes its arms with: one run is one arm
     arm = {
         "variant": variant,
         "ef_search": None if exact else args.ef,

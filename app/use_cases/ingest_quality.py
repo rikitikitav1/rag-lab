@@ -1,12 +1,12 @@
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 
 import config
 import ingest
 import logging_setup
 import sources.base
-from ingest import BOILERPLATE_FILE_SHARE, BOILERPLATE_MIN_FILES, MAX_CHUNK_SIZE
+from ingest import BOILERPLATE_MIN_FILES, MAX_CHUNK_SIZE
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -14,15 +14,12 @@ from sqlalchemy.orm.attributes import flag_modified
 
 log = logging_setup.get_logger(__name__)
 
-# named by the model, not here: two declarations of one closed set is how the column
-# came to accept any string while a migration said it did not
+# named by the model: two declarations of one closed set let the column take any string
 VERDICTS = tuple(v.value for v in Verdict)
 MODES = ("dry", "indexed")
 
 
-# one shape for both a chunk that was just cut and a chunk read back from the table.
-# body and root come from the cut; the table does not store them yet, so in "indexed"
-# mode they are None and the entry says so instead of quietly measuring something else
+# one shape for a chunk just cut and one read back: indexed rows have no body or root
 @dataclass
 class Sample:
     file: str
@@ -31,8 +28,7 @@ class Sample:
     body: str | None = None
     section: str | None = None
     root: str | None = None
-    # only a dry run knows it: the cutter is there. Indexed rows abstain rather than
-    # guess it back from a length, which is what at_ceiling used to do and got wrong
+    # only a dry run knows it; indexed rows abstain rather than guess it back from a length
     cut_by: str | None = None
 
 
@@ -45,16 +41,14 @@ class Metrics:
     dup_in_file: float | None
     dup_in_source: float | None
     tiny: float | None
-    # None, not zero: a source of one file cannot have a block standing in most of its
-    # files, and zero would read as "clean" on all 172 interview repositories
+    # None, not zero: zero would read as clean on all 172 interview repositories
     boilerplate: float | None
     orphans: float | None
     size_cut: float | None
     soup: float | None
     code_only: float | None
     score: int | None = None
-    # how many rows each share was taken over, by metric name: a ceiling that abstains
-    # below a count needs the count, and the shares do not share one denominator
+    # a ceiling that abstains below a count needs the count, and the shares differ
     denominators: dict[str, int] | None = None
 
 
@@ -78,8 +72,7 @@ NOT_ALNUM_OR_SPACE = re.compile(r"[^\w\s]", re.UNICODE)
 OPENS_WITH_HEADING = re.compile(r"^\s*#")
 
 
-# None where there was nothing to measure. Zero would pass a gate on a number nobody
-# took, and award its full weight in the score while doing it
+# zero would pass a gate on a number nobody took, and take its full weight in the score
 def _share(hits: int, total: int) -> float | None:
     return hits / total if total else None
 
@@ -90,9 +83,7 @@ def _prefix_of(sample: Sample) -> str | None:
     return sample.content[: len(sample.content) - len(sample.body)]
 
 
-# the rooted cut writes a section on every piece, so "has a section" is always true and
-# gates nothing. What the gate was for is whether the source has structure under its
-# root, which is the two-level path both cutters write the same way
+# the gate is about structure under the root, the two-level path both cutters write
 def _under_a_heading(sample: Sample) -> bool:
     return bool(sample.section) and " > " in sample.section
 
@@ -120,10 +111,7 @@ def _is_code_only(text: str) -> bool:
 
 
 def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:
-    spread: dict[str, set[str]] = {}
-    for s in samples:
-        spread.setdefault(s.body, set()).add(s.file)
-    wide = {c for c, fs in spread.items() if len(fs) / measurable_files >= BOILERPLATE_FILE_SHARE}
+    wide = ingest.wide_bodies(((s.body, s.file) for s in samples), measurable_files)
     return sum(1 for s in samples if s.body in wide)
 
 
@@ -135,8 +123,7 @@ def measure(
     tiny_below = ceiling * TINY_SHARE_OF_CEILING
 
     bodied = [(s, p) for s in samples if (p := _prefix_of(s)) is not None]
-    # the prefix is ours and repeats on every sibling: measured on content it makes
-    # chunks look full, identical and prose-like when the text underneath is none of that
+    # the prefix repeats on every sibling: on content the chunks look full and prose-like
     measurable = [s for s in samples if s.body is not None]
     decided = [s for s in samples if s.cut_by is not None]
     text = {s.file: [] for s in measurable}
@@ -144,8 +131,7 @@ def measure(
         text[s.file].append(s.body)
     bodies = [s.body for s in measurable]
     n = len(measurable)
-    # the population the numerator is drawn from, named once: the floor and the
-    # denominator counting different things is what inverted this metric before
+    # named once: a floor and a denominator counting different things inverted this metric
     measurable_files = len({s.file for s in measurable})
 
     return Metrics(
@@ -190,31 +176,34 @@ def measure(
     )
 
 
-# a share over a small denominator measures the size of the source, not its cut: three
-# sources read broken for the same two chunks six larger ones hold and pass with. Below
-# this many breaching chunks a ceiling abstains, as the metrics do with nothing to measure
+# a share over a small denominator measures the size of the source, not its cut
 MIN_BREACHING_CHUNKS = 5
 
 
 def _too_few_to_judge(metrics: Metrics, name: str, value: float) -> bool:
-    # the share's own denominator, never the chunk count: `size_cut` over three decided
-    # chunks in a hundred read as a hundred breaching ones, the failure this exists to stop
+    # the share's own denominator: `size_cut` over three decided chunks read as a hundred
     denominator = (metrics.denominators or {}).get(name, metrics.chunks)
     return round(value * denominator) < MIN_BREACHING_CHUNKS
+
+
+# `getattr(..., None)` gave an unknown name the answer an abstaining metric gives
+def _measured(metrics: "Metrics", name: str):
+    if name not in {f.name for f in fields(Metrics)}:
+        raise ValueError(f"nothing measures {name!r}: gates and weights name what Metrics carries")
+    return getattr(metrics, name)
 
 
 def gate_breaches(metrics: Metrics, gates) -> list[str]:
     declared = gates if isinstance(gates, dict) else gates.model_dump(exclude_none=True)
     breached = []
     for name, bounds in declared.items():
-        value = getattr(metrics, name, None)
+        value = _measured(metrics, name)
         if value is None or not bounds:
             continue
         low, high = bounds.get("min"), bounds.get("max")
         if low is not None and value < low:
             breached.append(f"{name}.min")
-        # only the ceiling: a floor like `section_coverage.min` is breached by chunks that
-        # are missing, and counting the ones that are there says nothing about those
+        # only the ceiling: a floor is breached by chunks that are missing, which says nothing
         if high is not None and value > high and not _too_few_to_judge(metrics, name, value):
             breached.append(f"{name}.max")
     return breached
@@ -225,15 +214,14 @@ def judged_by(metrics: Metrics, gates) -> list[str]:
     return [
         name
         for name, bounds in declared.items()
-        if bounds and getattr(metrics, name, None) is not None
+        if bounds and _measured(metrics, name) is not None
     ]
 
 
 def verdict(
     hard: list[str], soft: list[str] | None = None, judged: bool = True
 ) -> str | None:
-    # no verdict where no hard gate could be evaluated. "ok" would mean the same thing
-    # as a source that passed everything, and it would be the opposite of true
+    # no verdict where no hard gate could be evaluated: "ok" would be the opposite of true
     if not judged:
         return None
     if hard:
@@ -241,18 +229,19 @@ def verdict(
     return "dirty" if soft else "ok"
 
 
-def score(metrics: Metrics, weights) -> int | None:
-    # no declared weights means no score, which is not the same as no opinion: the
-    # verdict comes from the gates, never from the score
+# a metric that was not measured leaves the score, weight and all
+def scored_weights(metrics: Metrics, weights) -> dict[str, float]:
     declared = weights if isinstance(weights, dict) else weights.model_dump()
-    declared = {k: v for k, v in declared.items() if v}
-    # a metric that was not measured leaves the score, weight and all: keeping its weight
-    # in the denominator would read as a penalty, keeping its value as a free full mark
-    scored = {
+    return {
         name: weight
         for name, weight in declared.items()
-        if getattr(metrics, name, None) is not None
+        if weight and _measured(metrics, name) is not None
     }
+
+
+def score(metrics: Metrics, weights) -> int | None:
+    # no declared weights means no score: the verdict comes from the gates
+    scored = scored_weights(metrics, weights)
     total = sum(scored.values())
     if not total:
         return None
@@ -268,9 +257,7 @@ def collect_dry(source_name: str, *, variant: str) -> list[Sample]:
 
     source = sources.factory.one(source_name)
     policy = config.settings.corpus.policy(variant)
-    # the same door the indexer and the digest walk: a rule that has to see every file of
-    # a source is applied there, and reading the cut any other way measures a corpus the
-    # index does not hold
+    # the same door the indexer and the digest walk
     return [
         Sample(
             file=doc.source,
@@ -299,10 +286,7 @@ def collect_indexed(source_name: str, *, variant: str) -> list[Sample]:
                 chunk_index=r.chunk_index,
                 body=None if r.prefix_len is None else r.content[r.prefix_len :],
                 section=r.section,
-                # no root: the stored path and the stored prefix both descend from the
-                # same string at cut time, so comparing them answers nothing. Prefix
-                # integrity is a dry-run check, and indexed rows say so instead of
-                # reporting a tautology as a passed gate
+                # the stored path and prefix descend from one string, so comparing them answers nothing
                 root=None,
             )
             for r in rows
@@ -324,9 +308,7 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         if mode == "dry"
         else collect_indexed(source_name, variant=variant)
     )
-    # the legacy cut records a section only where the file opens with an H1 and an H2, so
-    # a source carrying its title in frontmatter reads zero coverage forever. That is the
-    # recorder's limit, not the source's, and a hard gate must not read it as a verdict
+    # the legacy cut records a section only where the file opens H1 then H2
     metrics = measure(
         samples,
         ceiling=policy.get("max_chunk_size") or MAX_CHUNK_SIZE,
@@ -341,21 +323,15 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         "mode": mode,
         "verdict": verdict(hard, soft, judged=bool(judged)),
         "judged_by": judged,
-        # which weights the score was actually computed over: a variant that abstains on
-        # a metric is scored on a different basis, and two such scores do not compare
-        "score_basis": [
-            name
-            for name, weight in cfg.weights.model_dump().items()
-            if weight and getattr(metrics, name, None) is not None
-        ],
+        # a variant that abstains on a metric is scored on another basis, and the two differ
+        "score_basis": list(scored_weights(metrics, cfg.weights)),
         "breaches": hard + soft,
         "hard_breaches": hard,
         "soft_breaches": soft,
         "hard_gates": cfg.hard_gates.model_dump(exclude_none=True),
         "soft_gates": cfg.soft_gates.model_dump(exclude_none=True),
         "score_formula": cfg.score_formula,
-        # what the numbers could be computed from, so a dry run is never compared
-        # against an indexed one without noticing they saw different fields
+        # so a dry run is never compared against an indexed one that saw different fields
         "body_available": any(s.body is not None for s in samples),
         "root_available": any(s.root is not None for s in samples),
         "policy": policy,
@@ -389,13 +365,7 @@ def _persist(source_name: str, *, variant: str, entry: dict, mode: str) -> None:
         reports[variant] = history[-keep:] if keep else []
         source.ingest_reports = reports
         flag_modified(source, "ingest_reports")
-        # a dry run says what the cut would be, not what the corpus is: it must not
-        # overwrite a verdict measured on rows people actually search
-        # a run that judged nothing leaves the standing verdict alone rather than
-        # blanking it: "we did not look" is not news about the source
-        # the column says what the corpus people search is like, so only the served
-        # variant writes it: otherwise the last variant that happened to run overwrites
-        # a verdict about a different cut with its own
+        # only the served variant writes it: a dry run says what the cut would be
         served = variant == config.settings.corpus.variant
         if mode == "indexed" and served and entry["verdict"] is not None:
             source.ingest_quality = entry["verdict"]

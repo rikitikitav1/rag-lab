@@ -88,10 +88,7 @@ class CheatsheetsSource(Base):
         "inkscape": "graphics editor",
     }
 
-    # our domain, but the file is pictures rather than text. Kept apart from the list
-    # above because the reason differs, and because a general rule for "this file is a
-    # picture" is still missing: ascii art drawn with letters and spaces reads as prose
-    # to every ratio we tried
+    # our domain, but the file is pictures: a general rule for that is still missing
     NOT_TEXT_FILES = {
         "figlet": "samples of every ascii font, one line of knowledge per screen of drawing",
     }
@@ -99,8 +96,7 @@ class CheatsheetsSource(Base):
     def files(self):
         return self.root.glob("*.md")
 
-    # a version in the file name means a dead stack, and the unversioned sheet is
-    # always there next to it
+    # a version in the file name means a dead stack, and the unversioned sheet is next to it
     def discover(self, policy=None):
         for file in super().discover(policy):
             if not base.hygienic(policy):

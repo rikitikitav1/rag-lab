@@ -65,9 +65,7 @@ def test_the_ceiling_is_spent_on_the_body_unless_the_variant_says_otherwise():
     assert all(len(p.prefix) + len(p.body) <= 100 for p in on_content)
 
 
-# measured over all 1001 files: 15652 headings, the longest 177, none over 200. The cap
-# is above every real heading so that no question is stored truncated, and the recorded
-# path is bounded separately because the gold matches it as a string
+# over all 1001 files: 15652 headings, the longest 177, so the cap touches nothing real
 def test_a_capped_heading_does_not_shorten_the_recorded_section():
     long_heading = "H" * (ingest.HEADING_CAP - 10)
     pieces = ingest.cut_with_root(f"## {long_heading}\n\nbody", "Root")
@@ -187,24 +185,21 @@ def test_a_heading_indented_inside_the_line_is_still_a_heading():
 
 
 def test_a_file_whose_fences_do_not_close_is_read_without_them():
-    # the missing bracket cannot be put back, and reading the rest of the file as one
-    # code block would swallow every heading after it
+    # the missing bracket cannot be put back, and one code block would swallow every heading
     content = "## One\n\n```python\nprint(1)\n\n## Two\n\nbody\n\n## Three\n\nmore"
     sections = [p.section for p in ingest.cut_with_root(content, "Root")]
     assert sections == ["Root > One", "Root > Two", "Root > Three"]
 
 
 def test_a_tab_inside_a_heading_does_not_lose_the_file():
-    # the parser reports the heading with non-printables removed, so comparing it against
-    # the raw line missed, and one miss used to cost every heading after it
+    # the parser reports headings with non-printables removed, so a raw comparison missed
     content = "## one\ttwo\n\nbody\n\n## plain\n\nmore"
     sections = [p.section for p in ingest.cut_with_root(content, "Root")]
     assert sections == ["Root > one\ttwo", "Root > plain"]
 
 
 def test_the_file_title_does_not_ride_into_a_structured_intro():
-    # an intro over the ceiling with its own subheadings used to emit the declared root
-    # and the file's H1 stacked, which is what stripping the H1 exists to prevent
+    # an over-ceiling intro emitted the declared root and the file's H1 stacked
     content = "# File Title\n\n" + "intro " * 60 + "\n\n### Sub\n\n" + "body " * 60
     pieces = ingest.cut_structured(content, "Root", ceiling=200)
     assert not any("# File Title" in p.body for p in pieces)
@@ -236,9 +231,7 @@ def test_a_piece_with_no_text_joins_the_text_beside_it():
 
 
 def test_a_textless_piece_beside_a_full_one_is_bounded_rather_than_absorbed():
-    # the two properties conflict when the neighbour already fills the ceiling: the join
-    # would break it, so the heading stands alone. Bounded beats textless, and the corpus
-    # pays 6 chunks of 12102 for it (temp_files/cutcheck.py)
+    # the join would break the ceiling, so the heading stands alone
     content = "## S\n\n### Empty\n### Real\n\n" + "z " * 120
     pieces = structured(content)
     assert all(len(p.body) <= 200 for p in pieces), "nothing over the ceiling"
@@ -246,8 +239,7 @@ def test_a_textless_piece_beside_a_full_one_is_bounded_rather_than_absorbed():
 
 
 def test_a_fenced_heading_stays_fenced_even_when_the_same_text_is_a_real_heading():
-    # the parser reports which texts are headings, not which lines, so a fenced copy of a
-    # real heading would have slipped through on the text alone
+    # the parser reports which texts are headings, not which lines, so a fenced copy slipped
     content = "## Setup\n\nreal\n\n```bash\n## Setup\n```\n\ntail"
     pieces = ingest.cut_with_root(content, "Root")
     assert [p.section for p in pieces] == ["Root > Setup"]
@@ -255,8 +247,7 @@ def test_a_fenced_heading_stays_fenced_even_when_the_same_text_is_a_real_heading
 
 
 def test_an_empty_subheading_between_two_full_pieces_stays_under_the_ceiling():
-    # neither neighbour has room, so the heading stands alone rather than break the
-    # ceiling. Same trade as the test above, from the other side
+    # neither neighbour has room, so the heading stands alone rather than break the ceiling
     content = "## S\n\n### Big\n\n" + "y " * 100 + "\n\n### Empty\n### Real\n\n" + "z " * 100
     pieces = structured(content)
     assert all(len(p.body) <= 200 for p in pieces)
@@ -270,9 +261,7 @@ def test_an_empty_subheading_after_a_full_piece_joins_when_there_is_room():
 
 
 def test_a_run_of_empty_headings_is_bounded_by_the_ceiling_on_both_cutters():
-    # the first fix let textless pieces ride past the budget, and sixty headings grew one
-    # chunk to 11944 characters. Both cutters, because clean_1024 is the rooted one and
-    # `_merge_slivers` is reached from the structured one alone
+    # textless pieces rode past the budget and sixty headings grew one chunk to 11944 chars
     heads = "".join(f"### Subheading number {i} with an ordinary length\n\n" for i in range(60))
     content = f"# Root\n\n## S\n\n{heads}### Real\n\n" + "word " * 300
     for cut in (ingest.cut_with_root, ingest.cut_structured):
@@ -282,8 +271,7 @@ def test_a_run_of_empty_headings_is_bounded_by_the_ceiling_on_both_cutters():
 
 
 def test_the_rooted_cutter_folds_a_textless_slice_too():
-    # the rule used to live on `_merge_slivers`, which `cut_with_root` never calls, so the
-    # variant carrying the arc's result was the one still shipping chunks of headings
+    # the rule lived on `_merge_slivers`, which `cut_with_root` never calls
     heads = "".join(f"### Heading {i}\n\n" for i in range(6))
     content = f"# Root\n\n## S\n\n{heads}### Real\n\nreal body text under the last one.\n"
     pieces = ingest.cut_with_root(content, "Root", ceiling=1024)

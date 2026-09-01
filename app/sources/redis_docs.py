@@ -17,8 +17,7 @@ class RedisDocsSource(Base):
     def category_for(self, rel_path):
         return "databases.redis." + ingest.path_to_category(rel_path)
 
-    # frontmatter was not parsed here before this branch, and the old cut has to keep
-    # seeing what it saw: the fence as the first line
+    # the old cut has to keep seeing what it saw: the fence as the first line
     def read(self, file, rel, policy=None):
         if not base.hygienic(policy):
             return super().read(file, rel, policy)

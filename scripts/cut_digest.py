@@ -7,31 +7,28 @@ kept the same count. This compares the text itself.
 import hashlib
 import json
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "app"))
+import config
+import sources.factory
+from orm.sync_db import Session
+from sqlalchemy import text
 
-import config  # noqa: E402
-import sources.factory  # noqa: E402
-from orm.sync_db import Session  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+import db
 
 
 def digest(value: str) -> str:
     return hashlib.md5(value.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
-# keyed by file and position, not by a set of texts: a source can hold the same texts in
-# a different order or a different number of pieces and that is still a changed cut
+# keyed by file and position: the same texts in another order is still a changed cut
 def stored(variant: str) -> dict[tuple[str, str, int], str]:
     with Session() as session:
         rows = session.execute(
             text(
                 "SELECT ds.name, dc.source, dc.chunk_index, dc.content FROM data_chunks dc "
-                "JOIN data_sources ds ON ds.id = dc.source_id WHERE dc.variant = :v"
+                f"JOIN data_sources ds ON ds.id = dc.source_id WHERE {db.live_rows('dc')}"
             ),
-            {"v": variant},
+            {"variant": variant},
         )
         return {(name, src, idx): digest(content) for name, src, idx, content in rows}
 
@@ -40,8 +37,7 @@ def freshly_cut(variant: str) -> dict[tuple[str, str, int], str]:
     policy = config.settings.corpus.policy(variant)
     out = {}
     for source in sources.factory.all_sources():
-        # the same method the indexer walks: a rule applied by one and not the other
-        # would read as a changed cut for the life of the variant
+        # the same method the indexer walks, or the variant reads as changed for its whole life
         for doc in source.documents(policy):
             out[(source.name, doc.source, doc.chunk_index)] = digest(doc.content)
     return out

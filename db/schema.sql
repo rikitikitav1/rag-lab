@@ -372,7 +372,10 @@ CREATE TABLE public.question_logs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     context text,
     pipeline text DEFAULT 'single_shot'::text NOT NULL,
-    completeness text
+    completeness text,
+    question_text text,
+    reference_answer text,
+    contexts jsonb
 );
 
 
@@ -781,4 +784,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260827000005'),
     ('20260827000006'),
     ('20260827000007'),
-    ('20260827000008');
+    ('20260827000008'),
+    ('20260831000001'),
+    ('20260831000002');

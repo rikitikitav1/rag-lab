@@ -21,8 +21,9 @@ VARIANT_RE = re.compile(r"^[a-z0-9_]{1,36}$")
 MAINTENANCE_WORK_MEM = "512MB"
 
 
+# fullmatch: `$` admits a trailing newline, and the name reaches DDL twice
 def check_variant(name: str) -> str:
-    if not VARIANT_RE.match(name or ""):
+    if not VARIANT_RE.fullmatch(name or ""):
         raise ValueError(f"corpus variant '{name}' must match {VARIANT_RE.pattern}")
     return name
 
@@ -59,13 +60,26 @@ def _provision_source(session, source, variant) -> DataSource:
         .returning(DataSource)
     )
     data_source = session.scalar(select(DataSource).from_statement(stmt))
-    session.execute(
-        delete(DataChunk).where(
-            DataChunk.source_id == data_source.id, DataChunk.variant == variant
-        )
-    )
     session.commit()
     return data_source
+
+
+# on its own it left the source empty for as long as the embeddings took
+def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_size: int) -> int:
+    for i in range(0, len(chunks), embed_size):
+        batch = chunks[i : i + embed_size]
+        for chunk, vector in zip(
+            batch, llm.request_embeddings_batch([c.content for c in batch]), strict=True
+        ):
+            chunk.embedding = vector
+    session.execute(
+        delete(DataChunk).where(
+            DataChunk.source_id == source_id, DataChunk.variant == variant
+        )
+    )
+    session.add_all(chunks)
+    session.commit()
+    return len(chunks)
 
 
 # whitespace must not decide whether two repositories hold the same answer
@@ -76,8 +90,7 @@ def _body_hash(body: str) -> str:
 
 
 def _prefix_len(doc) -> int | None:
-    # only when the body really is the tail of the content: a guessed length would
-    # silently hand the metrics a body that was never there
+    # only when the body really is the tail: a guessed length hands the metrics nothing real
     if doc.body is None or not doc.content.endswith(doc.body):
         return None
     return len(doc.content) - len(doc.body)
@@ -98,41 +111,21 @@ def _chunk(source_id, doc, variant) -> DataChunk:
     )
 
 
-def _flush(session, chunks: list[DataChunk], embed_size: int) -> int:
-    for i in range(0, len(chunks), embed_size):
-        batch = chunks[i : i + embed_size]
-        vectors = llm.request_embeddings_batch([c.content for c in batch])
-        for chunk, vector in zip(batch, vectors, strict=True):
-            chunk.embedding = vector
-    session.add_all(chunks)
-    session.commit()
-    return len(chunks)
-
-
 @measure_elapsed
-def collect_data(
-    sources, commit_size=None, embed_size=None, variant=None, build_index=True
-) -> IndexResult:
-    commit_size = commit_size or config.settings.ingestion.commit_size
+def collect_data(sources, embed_size=None, variant=None, build_index=True) -> IndexResult:
     embed_size = embed_size or config.settings.ingestion.batch_size
     variant = check_variant(variant or config.settings.corpus.variant)
     policy = config.settings.corpus.policy(variant)
     log.info("index.start", sources=len(sources), variant=variant)
-    total, buffer = 0, []
+    total = 0
 
     with Session() as session:
         for source in sources:
             data_source = _provision_source(session, source, variant)
-            # the whole source at once: a rule that has to see every file of it cannot be
-            # applied per file, and the cut digest reads the same method
-            for doc in source.documents(policy):
-                buffer.append(_chunk(data_source.id, doc, variant))
-                if len(buffer) >= commit_size:
-                    total += _flush(session, buffer, embed_size)
-                    log.info("index.committed", committed=total)
-                    buffer = []
-        if buffer:
-            total += _flush(session, buffer, embed_size)
+            # the whole source at once, and the cut digest reads the same method
+            buffer = [_chunk(data_source.id, doc, variant) for doc in source.documents(policy)]
+            total += _replace_chunks(session, data_source.id, variant, buffer, embed_size)
+            log.info("index.committed", source=source.name, chunks=len(buffer), total=total)
 
     if build_index:
         ensure_vector_index(variant)
@@ -140,8 +133,7 @@ def collect_data(
     return IndexResult(sources=len(sources), chunks=total)
 
 
-# the one owner of the name, so the three readers of "an index that belongs to a variant"
-# ask here instead of each spelling the prefix out
+# the one owner of the name, so the three readers ask here
 VECTOR_INDEX_PREFIX = "data_chunks_embedding_"
 
 
