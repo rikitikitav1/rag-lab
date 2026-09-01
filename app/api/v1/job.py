@@ -1,11 +1,18 @@
 from datetime import datetime
 
+import job_queue
 from crud import get_or_404
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from models.jobs import Job, JobStatus
 from orm.async_db import get_session
 from pydantic import BaseModel
-from query_utils import Page, apply_sort_limit_offset
+from query_utils import (
+    Page,
+    apply_created_between,
+    apply_in_filters,
+    apply_sort_limit_offset,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,15 +50,8 @@ async def list_jobs(
     page: Page = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(Job)
-    if type is not None:
-        stmt = stmt.where(Job.type.in_(type))
-    if status is not None:
-        stmt = stmt.where(Job.status.in_(status))
-    if created_from is not None:
-        stmt = stmt.where(Job.created_at >= created_from)
-    if created_to is not None:
-        stmt = stmt.where(Job.created_at <= created_to)
+    stmt = apply_in_filters(select(Job), {Job.type: type, Job.status: status})
+    stmt = apply_created_between(stmt, Job.created_at, created_from, created_to)
 
     stmt = apply_sort_limit_offset(
         stmt=stmt,
@@ -75,12 +75,11 @@ class CancelResponse(BaseModel):
     cancelled: list[int]
 
 
-_ACTIVE = (JobStatus.new, JobStatus.running)
-
-
 class BulkCancelRequest(BaseModel):
     run_name: str | None = None
     type: str | None = None
+    # a type with no run name is every live job of that kind, which is a thing to say out loud
+    every: bool = False
 
 
 @router.post("/cancel", response_model=CancelResponse)
@@ -90,38 +89,29 @@ async def cancel_jobs(
 ):
     if not request.run_name and not request.type:
         raise HTTPException(status_code=400, detail="run_name or type is required")
-    stmt = select(Job).where(Job.status.in_(_ACTIVE))
+    if request.every and request.run_name:
+        raise HTTPException(
+            status_code=400,
+            detail="every=true widens a cancel to a whole job type, so it takes no run_name",
+        )
+    if request.type and not request.run_name and not request.every:
+        raise HTTPException(
+            status_code=400,
+            detail=f"type '{request.type}' with no run_name cancels every live job of that"
+            " kind: name the run, or pass every=true and mean it",
+        )
+    stmt = select(Job.id).where(Job.status.in_(job_queue.ACTIVE))
     if request.run_name:
         stmt = stmt.where(Job.options["run_name"].astext == request.run_name)
     if request.type:
         stmt = stmt.where(Job.type == request.type)
-    jobs = (await session.scalars(stmt)).all()
-    for job in jobs:
-        job.status = JobStatus.cancelled
-    await session.commit()
-    return CancelResponse(cancelled=[j.id for j in jobs])
+    ids = list(await session.scalars(stmt))
+    # through the queue: it fails the stranded experiment and takes each run's judge along
+    return CancelResponse(cancelled=await run_in_threadpool(job_queue.cancel, ids))
 
 
 @router.post("/{id}/cancel", response_model=CancelResponse)
 async def cancel_job(id: int, session: AsyncSession = Depends(get_session)):
-    job = await get_or_404(Job, id, session)
-    targets = [job]
-
-    run_name = (job.options or {}).get("run_name")
-    if job.type == "eval_run" and run_name:
-        deps = await session.scalars(
-            select(Job).where(
-                Job.type == "judge_answers",
-                Job.status.in_(_ACTIVE),
-                Job.options["run_name"].astext == run_name,
-            )
-        )
-        targets.extend(deps)
-
-    cancelled = []
-    for t in targets:
-        if t.status in _ACTIVE:
-            t.status = JobStatus.cancelled
-            cancelled.append(t.id)
-    await session.commit()
+    await get_or_404(Job, id, session)
+    cancelled = await run_in_threadpool(job_queue.cancel_with_its_judge, id)
     return CancelResponse(cancelled=cancelled)

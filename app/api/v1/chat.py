@@ -5,6 +5,9 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from use_cases import chat
 
+import db
+from api.v1.schemas import AnswerSource
+
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
@@ -16,7 +19,8 @@ class QuestionOptions(BaseModel):
 
 
 class QuestionFilter(BaseModel):
-    category: str | None = None
+    # the MCP door validated this and the REST doors did not, onto the same lquery
+    category: str | None = Field(default=None, pattern=db.CATEGORY_RE.pattern)
     tags: list[str] = []
 
 
@@ -26,9 +30,7 @@ class QuestionRequest(BaseModel):
     options: QuestionOptions | None = None
     rerank: bool | None = None
     language: Literal["ru", "en"] | None = None
-    # pins the hnsw walk for this request; the configured `auto` decides otherwise.
-    # 1..1000 is what the server accepts, and a value it refuses would die after the
-    # embedding was paid for
+    # 1..1000 is what the server accepts: a value it refuses dies after the embedding is paid
     ef_search: int | None = Field(default=None, ge=1, le=1000)
 
 
@@ -39,15 +41,6 @@ class AnswerMetrics(BaseModel):
     distance_threshold: float
     prompt_tokens: int
     completion_tokens: int
-
-
-class AnswerSource(BaseModel):
-    link: str
-    vector_distance: float | None = None
-    vector_rank: float | None = None
-    keyword_rank: float | None = None
-    score: float
-    rerank_score: float | None = None
 
 
 class QuestionResponse(BaseModel):
@@ -81,17 +74,7 @@ def ask(question: QuestionRequest) -> QuestionResponse:
             prompt_tokens=res.metrics.prompt_tokens,
             completion_tokens=res.metrics.completion_tokens,
         ),
-        sources=[
-            AnswerSource(
-                link=s.source,
-                vector_distance=s.vector_distance,
-                vector_rank=s.vector_rank,
-                keyword_rank=s.keyword_rank,
-                score=s.score,
-                rerank_score=s.rerank_score,
-            )
-            for s in res.sources
-        ],
+        sources=[AnswerSource.of(s) for s in res.sources],
     )
 
 
@@ -103,16 +86,6 @@ def quick_ask(question: QuestionRequest) -> RetrievalResponse:
         ef_search=question.ef_search,
     )
     return RetrievalResponse(
-        sources=[
-            AnswerSource(
-                link=s.source,
-                vector_distance=s.vector_distance,
-                vector_rank=s.vector_rank,
-                keyword_rank=s.keyword_rank,
-                score=s.score,
-                rerank_score=s.rerank_score,
-            )
-            for s in res.sources
-        ],
+        sources=[AnswerSource.of(s) for s in res.sources],
         elapsed_time_seconds=res.elapsed,
     )

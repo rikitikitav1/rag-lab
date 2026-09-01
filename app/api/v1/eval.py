@@ -5,31 +5,30 @@ from typing import Literal
 
 import config
 import job_queue
+import limits
 from evals import compare as compare_uc
+from evals import retrieval_metrics
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.eval import QuestionLog
-from models.registry import MODEL_NAME_RE, Pipeline
+from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, refuse_unknown_registry
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from use_cases import rejudge, retrieval_compare
+from use_cases import agent_policy, rejudge, retrieval_compare
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.chat import resolve_rerank
 from use_cases.index import VARIANT_RE
 
-# what a run may ask for, which is not what a log may hold: both retired arms stay
-# queryable, and which they are is the domain's fact, declared in agent_policy
+# what a run may ask for is not what a log may hold: both retired arms stay queryable
 RunnableOrchestrator = StrEnum(
     "RunnableOrchestrator",
     {o.name: o.value for o in Orchestrator if o not in GONE},
 )
 
 router = APIRouter(prefix="/eval", tags=["eval"])
-
-
 
 
 class JobEnqueuedResponse(BaseModel):
@@ -39,8 +38,8 @@ class JobEnqueuedResponse(BaseModel):
 
 
 class RejudgeRequest(BaseModel):
-    source: str = Field(min_length=1, max_length=200)
-    run_name: str = Field(min_length=1, max_length=200)
+    source: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
+    run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
 
 
 class RejudgeResponse(BaseModel):
@@ -59,15 +58,17 @@ class ParaphraseRequest(BaseModel):
 
 
 class EvalRunRequest(BaseModel):
-    run_name: str | None = None
+    run_name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
     set_name: str | None = None
-    question_ids: list[int] | None = None
+    question_ids: list[int] | None = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
-    k: int | None = None
-    max_hops: int | None = None
-    model: str | None = Field(default=None, max_length=128, pattern=MODEL_NAME_RE.pattern)
+    k: int | None = Field(default=None, ge=1, le=limits.MAX_K)
+    max_hops: int | None = Field(default=None, ge=1, le=agent_policy.MAX_HOPS)
+    model: str | None = Field(
+        default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern
+    )
     fallback_policy: FallbackPolicy | None = None
     gate_signal: GateSignal | None = None
     weak_distance: float | None = Field(default=None, ge=0, le=2)
@@ -78,9 +79,9 @@ class EvalRunRequest(BaseModel):
 
 
 class ExperimentRequest(BaseModel):
-    run_name: str | None = None
+    run_name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
     set_name: str | None = None
-    question_ids: list[int] | None = None
+    question_ids: list[int] | None = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
@@ -88,7 +89,9 @@ class ExperimentRequest(BaseModel):
         "k", "max_hops", "model", "fallback_policy", "gate_signal", "weak_distance",
         "topic_threshold", "orchestrator", "variant",
     ] = "k"
-    values: list[int | float | str] = Field(min_length=1)
+    values: list[int | float | str] = Field(
+        min_length=1, max_length=retrieval_compare.GRID_CAP
+    )
     # the corpus every arm reads unless `variant` is the swept parameter
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
 
@@ -114,11 +117,7 @@ async def enqueue_paraphrase(
         "per_source": request.per_source,
         "grow": request.grow,
     }
-    # resolved at enqueue, not at run: the worker returns a stale job to the queue and
-    # a second pick would take a second helping of originals, which is how the set grew
-    # past its plan on 27.08. The list is also the recipe, readable in the queue
-    # plan() opens a sync session, so it goes to a thread: on the loop it blocks every
-    # other request for the length of that query
+    # off the loop and resolved at enqueue: a stale job back in the queue takes a second helping
     options["originals"] = await run_in_threadpool(build_paraphrased.plan, **options)
     return await _enqueue(session, "paraphrase_questions", options)
 
@@ -162,7 +161,7 @@ async def eval_misses(
             continue
         in_corpus += 1
         got = [s["source"] for s in (ql.sources or [])]
-        hit = any(any(exp in g for exp in q.marked_sources) for g in got)
+        hit = any(retrieval_metrics.is_gold(g, q.marked_sources) for g in got)
         if not hit:
             items.append(
                 MissItem(
@@ -195,8 +194,12 @@ async def eval_compare(
     runs: list[str] = Query(min_length=1),
     session: AsyncSession = Depends(get_session),
 ):
+    try:
+        named = compare_uc.named_runs(runs)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     loaded = {}
-    for run_name in dict.fromkeys(runs):
+    for run_name in named:
         stmt = (
             select(QuestionLog)
             .options(selectinload(QuestionLog.question))
@@ -224,10 +227,6 @@ def validate_axis_values(axis: str, values: list) -> None:
 
 
 def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:
-    # the axis validator learned that declared is not measurable; this one swept `variant`
-    # over a corpus with no rows and reported the difference between something and nothing
-    if param == "variant":
-        validate_axis_values("variant", values)
     agent_only = (
         "fallback_policy", "max_hops", "gate_signal", "weak_distance", "topic_threshold",
         "orchestrator",
@@ -237,7 +236,7 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
             status_code=400, detail=f"{param} only applies to the agent pipeline"
         )
     if param == "model":
-        bad = [v for v in values if not isinstance(v, str) or not MODEL_NAME_RE.fullmatch(v)]
+        bad = [v for v in values if not isinstance(v, str) or not _known_model(v)]
         if bad:
             raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
     elif param in ("topic_threshold", "weak_distance"):
@@ -245,20 +244,8 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
         if bad:
             raise HTTPException(status_code=400, detail=f"{param} must be 0..2: {bad}")
     elif param == "variant":
-        bad = [v for v in values if not isinstance(v, str) or not VARIANT_RE.match(v)]
-        if bad:
-            raise HTTPException(
-                status_code=400, detail=f"variant must match {VARIANT_RE.pattern}: {bad}"
-            )
-        # the shape is not the question: an undeclared variant passes the regex and dies
-        # per question inside the runner, and whether it is declared is knowable here
-        declared = set(config.settings.corpus.variants)
-        missing = [v for v in values if v not in declared]
-        if missing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"no such variant in config: {missing}, declared: {sorted(declared)}",
-            )
+        # inside the chain: outside it every corpus sweep was refused as not an integer
+        validate_axis_values("variant", values)
     elif param in ("fallback_policy", "gate_signal", "orchestrator"):
         enums = {
             "fallback_policy": FallbackPolicy, "gate_signal": GateSignal,
@@ -272,12 +259,30 @@ def validate_param_values(param: str, values: list, pipeline: Pipeline | None = 
             raise HTTPException(
                 status_code=400, detail=f"{param} must be one of {sorted(allowed)}: {bad}"
             )
+    elif param == "k":
+        bad = [v for v in values if not isinstance(v, int) or not 1 <= v <= limits.MAX_K]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"k must be 1..{limits.MAX_K}: {bad}")
+    elif param == "max_hops":
+        bad = [v for v in values if not isinstance(v, int) or not 1 <= v <= agent_policy.MAX_HOPS]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"max_hops must be 1..{agent_policy.MAX_HOPS}: {bad}"
+            )
     else:
         bad = [v for v in values if not isinstance(v, int) or v < 1]
         if bad:
             raise HTTPException(
                 status_code=400, detail=f"{param} values must be positive integers"
             )
+
+
+def _known_model(name: str) -> bool:
+    try:
+        refuse_unknown_registry(name)
+    except ValueError:
+        return False
+    return True
 
 
 def value_suffix(value) -> str:
@@ -316,9 +321,7 @@ async def enqueue_eval_run(
     )
 
 
-# sync on purpose: the copy is one statement against the sync session the use case owns,
-# and FastAPI runs a sync handler in its threadpool. Copying here rather than inside the
-# judge job is what makes a taken name or a missing source a 400 instead of a dead job
+# copying here rather than in the judge job makes a taken name a 400, not a dead job
 @router.post("/rejudge", response_model=RejudgeResponse)
 def enqueue_rejudge(request: RejudgeRequest):
     try:
@@ -328,9 +331,7 @@ def enqueue_rejudge(request: RejudgeRequest):
     try:
         job_id = job_queue.enqueue("judge_answers", {"run_name": request.run_name})
     except BaseException:
-        # the copy is committed and the job is not: rows owned by nobody that a judge sweep
-        # would spend the card on, under a name no retry can reuse. BaseException because a
-        # cancelled request leaves exactly that
+        # the copy is committed and the job is not, under a name no retry can reuse
         rejudge.delete_runs([request.run_name])
         raise
     return RejudgeResponse(job_id=job_id, run_name=request.run_name, copied=copied)
@@ -344,7 +345,13 @@ async def enqueue_experiment(
     validate_param_values(request.param, request.values, request.pipeline)
     if request.variant:
         validate_axis_values("variant", [request.variant])
-    base = request.run_name or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
+    base = (
+        request.run_name
+        or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
+    )
+    # what the row claims it filtered by: ids win over the set, as `_target_texts` reads them
+    set_name = request.set_name if not request.question_ids else None
+    rerank = resolve_rerank(request.rerank)
     jobs = []
     for value in request.values:
         job = await _enqueue(
@@ -352,9 +359,9 @@ async def enqueue_experiment(
             "eval_run",
             {
                 "run_name": f"{base}_{request.param}_{value_suffix(value)}",
-                "set_name": request.set_name,
+                "set_name": set_name,
                 "question_ids": request.question_ids,
-                "rerank": resolve_rerank(request.rerank),
+                "rerank": rerank,
                 "pipeline": request.pipeline.value,
                 "language": request.language,
                 # the swept value wins: it comes after the pinned one

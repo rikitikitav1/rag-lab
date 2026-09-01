@@ -1,5 +1,5 @@
 import config
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 import db
@@ -15,7 +15,8 @@ class Category(BaseModel):
 
 @router.get("")
 def list_categories(
-    only_top: bool | None = None, category: str | None = None
+    only_top: bool | None = None,
+    category: str | None = Query(default=None, pattern=db.CATEGORY_RE.pattern),
 ) -> list[Category]:
     rows = db.list_categories(only_top=only_top, category=category, variant=config.settings.corpus.variant)
     return [

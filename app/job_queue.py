@@ -24,9 +24,7 @@ def enqueue(type: str, options: dict | None = None, queue: str = "default") -> i
         return job.id
 
 
-# a second identical job is not idempotence, it is a queue nobody reads
-# the options matter as well as the type: two variants may each be honestly waiting for
-# their own index, and a job for one is not a job for the other
+# the options matter as well as the type: two variants may each wait for their own index
 def pending_of_type(type: str, **options) -> bool:
     with Session() as session:
         query = select(Job.id).where(
@@ -34,8 +32,7 @@ def pending_of_type(type: str, **options) -> bool:
             Job.status.in_([JobStatus.new, JobStatus.running]),
         )
         for key, value in options.items():
-            # a json null renders as the string "None" through astext and matches nothing,
-            # so the caller's null and the row's null would look like different jobs
+            # a json null renders as "None" through astext, so two nulls would look like two jobs
             if value is None:
                 query = query.where(Job.options[key].astext.is_(None))
             else:
@@ -112,27 +109,61 @@ def reschedule(
     _update(id, **fields)
 
 
+# a job that has not run yet or is running: the only two states a cancellation can act on
+ACTIVE = (JobStatus.new, JobStatus.running)
+
+# a dead answerer and a dead judge strand the experiment the same way
+EXPERIMENT_JOBS = ("eval_run", "judge_answers")
+
+
+def cancel_with_its_judge(job_id: int) -> list[int]:
+    return cancel([job_id])
+
+
+# a run's judge is cancelled with the job it waits on, or it waits for rows never coming
+def _their_judges(session, jobs) -> list[int]:
+    runs = [
+        (j.options or {}).get("run_name")
+        for j in jobs
+        if j.type == "eval_run" and (j.options or {}).get("run_name")
+    ]
+    if not runs:
+        return []
+    return list(
+        session.scalars(
+            select(Job.id).where(
+                Job.type == "judge_answers",
+                Job.status.in_(ACTIVE),
+                Job.options["run_name"].astext.in_(runs),
+            )
+        )
+    )
+
+
 def cancel(ids: list[int]) -> list[int]:
     if not ids:
         return []
     with Session() as session:
         jobs = session.scalars(
-            select(Job).where(
-                Job.id.in_(ids),
-                Job.status.in_([JobStatus.new, JobStatus.running]),
-            )
+            select(Job).where(Job.id.in_(ids), Job.status.in_(ACTIVE))
         ).all()
+        judges = _their_judges(session, jobs)
+        if judges:
+            jobs = session.scalars(
+                select(Job).where(
+                    Job.id.in_({*ids, *judges}), Job.status.in_(ACTIVE)
+                )
+            ).all()
         cancelled = [j.id for j in jobs]
         stranded = [
             (j.options or {}).get("run_name")
             for j in jobs
-            if j.type in ("eval_run", "judge_answers") and (j.options or {}).get("run_name")
+            if j.type in EXPERIMENT_JOBS and (j.options or {}).get("run_name")
         ]
         for job in jobs:
             job.status = JobStatus.cancelled
         session.commit()
-    # after the commit, and outside this session: an experiment waiting on a cancelled
-    # arm waits for ever, because aggregation is reachable only through judging
+    # after the commit: an experiment waiting on a cancelled arm waits for ever
     for run_name in stranded:
         try:
             from use_cases import experiment

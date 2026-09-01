@@ -8,7 +8,12 @@ from fastapi.concurrency import run_in_threadpool
 from models.mcp_integration import TOOL_NAME_RE, McpIntegration, McpStatus, can_switch
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
-from query_utils import Page, apply_sort_limit_offset
+from query_utils import (
+    Page,
+    apply_in_filters,
+    apply_sort_limit_offset,
+    refuse_backwards_range,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,9 +82,9 @@ async def list_integrations(
         McpIntegration.name: name,
         McpIntegration.status: status,
     }
-    for column, value in in_filters.items():
-        if value is not None:
-            stmt = stmt.where(column.in_(value))
+    stmt = apply_in_filters(stmt, in_filters)
+    refuse_backwards_range(checked_after, checked_before, "checked_after", "checked_before")
+    refuse_backwards_range(created_after, created_before, "created_after", "created_before")
 
     if url_like is not None:
         stmt = stmt.where(McpIntegration.url.ilike(f"%{url_like}%"))

@@ -20,8 +20,7 @@ class SourceResponse(BaseModel):
     name: str
     kind: str
     active: bool
-    # every variant's rows, which is what it always meant. The verdict beside it is about
-    # one cut, so the cut's own count travels next to it rather than being read into this
+    # every variant's rows; the verdict beside it is about one cut, so its count travels along
     chunks: int
     chunks_in_variant: int = 0
     ingest_quality: str | None = None
@@ -87,9 +86,7 @@ async def list_sources(session: AsyncSession = Depends(get_session)):
         ).all()
     )
     sources = (await session.scalars(select(DataSource).order_by(DataSource.name))).all()
-    # per source and per the cut its own verdict is about, which is `ingest_variant` and
-    # not the configured one: the two numbers beside each other have to describe the same
-    # thing or the pair is worse than either alone
+    # `ingest_variant`, not the configured one: two numbers side by side must describe one thing
     per_variant = {
         (source_id, variant): n
         for source_id, variant, n in (
@@ -125,9 +122,7 @@ async def set_source_active(
     return _response(source, count or 0, in_variant or 0)
 
 
-# no job and no re-measuring: the reports are already written per source and per variant,
-# and what was missing was a reading that puts two cuts of one source side by side.
-# Declared before `/{id}` so a literal path is not read as an id
+# declared before `/{id}` so a literal path is not read as an id
 @router.get("/compare", response_model=SourceCompareResponse)
 async def compare_sources(
     variants: list[str] = Query(min_length=2),
