@@ -153,3 +153,25 @@ def test_a_long_answer_is_not_a_refusal_because_of_one_phrase(monkeypatch):
     m = _evaluate(monkeypatch, [log])
     assert m["false_refusal"] == "0/1"
     assert m["outcomes"]["answered"] == 1
+
+
+def test_the_summary_carries_the_shape_of_the_scores_not_only_their_mean(monkeypatch):
+    # two prompts can share a mean and differ in where the mass sits
+    logs = [_log(marked=["a.md"], faith=f, rel=10, compl=5) for f in (10, 10, 8, 4)]
+    m = _evaluate(monkeypatch, logs)
+
+    assert m["distribution"]["faithfulness"] == {"n": 4, "tens": 0.5, "at_least_8": 0.75}
+    assert m["distribution"]["relevance"]["tens"] == 1.0
+    assert m["faithfulness"] == 8.0
+
+
+def test_a_refusal_does_not_drag_the_axis_means_of_the_answers(monkeypatch):
+    # a refusal takes a ten on faithfulness and a zero on relevance by the prompts themselves
+    answers = [_log(marked=["a.md"], faith=6, rel=8), _log(marked=["a.md"], faith=6, rel=8)]
+    refusal = _log(marked=["a.md"], faith=10, rel=0, outcome="refused")
+    m = _evaluate(monkeypatch, answers + [refusal])
+
+    assert (m["faithfulness"], m["relevance"]) == (7.33, 5.33)
+    assert m["answered_only"] == {
+        "n": 2, "faithfulness": 6.0, "relevance": 8.0, "completeness": None
+    }

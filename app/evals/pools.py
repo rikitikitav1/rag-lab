@@ -1,7 +1,9 @@
+import config
 import outcomes
+from evals.stats import score_of
+from outcomes import Outcome
 
-# the report reads the taxonomy from the enum: a fourth bucket appeared in the data
-# while the pre-registration listed three, because both were written from memory
+# the taxonomy from the enum: a fourth bucket appeared while the pre-registration had three
 ALL_OUTCOMES = tuple(o.value for o in outcomes.Outcome)
 
 POOLS = ("in_corpus", "out_of_corpus", "off_domain", "rejected")
@@ -18,21 +20,25 @@ def kind(ql) -> str:
 def outcome(ql) -> str:
     metrics = ql.metrics or {}
     recorded = metrics.get("outcome")
-    if recorded in ("narrated_call", "exhausted"):
+    if recorded in (Outcome.narrated_call, Outcome.exhausted):
         return recorded
-    config = metrics.get("config") or {}
+    snapshot = metrics.get("config") or {}
+    # the row's own ceiling, today's default only where it recorded none
+    its_ceiling = snapshot.get("max_hops")
+    ceiling = config.settings.agent.max_hops if its_ceiling is None else its_ceiling
     exhausted = (
         metrics.get("hops") is not None
-        and metrics["hops"] >= config.get("max_hops", 4)
+        and metrics["hops"] >= ceiling
         and not metrics.get("failed")
     )
-    if recorded == "error":
-        return "exhausted" if exhausted else "error"
+    if recorded == Outcome.error:
+        return Outcome.exhausted if exhausted else Outcome.error
     return outcomes.classify(
         ql.answer,
         bool(ql.sources),
-        prefixes=[f"{name}__" for name in config.get("mcp_configured") or []],
+        prefixes=[f"{name}__" for name in snapshot.get("mcp_configured") or []],
         exhausted=exhausted,
+        grounded=None if ql.faithfulness is None else score_of(ql.faithfulness) > 0,
     )
 
 
