@@ -138,7 +138,7 @@ def test_every_row_is_judged_once_whatever_the_width(monkeypatch):
     seen = []
     monkeypatch.setattr(judging, "_target_log_ids", lambda session, options: list(range(20)))
     monkeypatch.setattr(
-        judging, "_judge_log", lambda log_id, force, bench, width, skip: seen.append(log_id)
+        judging, "_judge_log", lambda log_id, **kw: seen.append(log_id)
     )
     monkeypatch.setattr(judging, "Session", FakeSession)
     monkeypatch.setattr(judging.experiment, "try_aggregate_for_run", lambda run: None)
@@ -164,6 +164,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     written = judging._axis_metric(verdict, judging._stamp(4))
     # the time, because a pair of arms is comparable only inside one residency
     when = written.pop("judged_at")
+    assert written.pop("residency_id") is None, "no pass named it, so the stamp says so"
     assert written == {
         "reason": "because", "elapsed": 1.5, "model": "qwen2.5:7b", "seed": 0, "width": 4,
         "slots_believed": 4,
@@ -174,6 +175,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     monkeypatch.setattr(judging.llm, "sampler_of", lambda role: {"temperature": 0})
     bare = judging._stamp(1)
     bare.pop("judged_at")
+    bare.pop("residency_id")
     assert bare == {"seed": None, "width": 1, "slots_believed": 4}
 
 
@@ -361,7 +363,7 @@ def test_a_skipped_axis_does_not_erase_a_verdict_the_row_already_carries(monkeyp
 
     monkeypatch.setattr(judging, "Session", _Session)
     monkeypatch.setattr(judging, "_apply_axis", lambda *a, **kw: False)
-    monkeypatch.setattr(judging, "_stamp", lambda width: {"seed": 0, "width": width})
+    monkeypatch.setattr(judging, "_stamp", lambda width, residency=None: {"seed": 0, "width": width})
 
     judging._judge_log(5, skip=("relevance", "completeness"))
 
@@ -451,3 +453,39 @@ def test_a_refusal_owes_no_axis_and_both_halves_of_the_rule_say_so():
     assert _owed(silent) != ()
 
     assert "true" in str(still_to_judge().compile().params.values()), "the sql half is missing it"
+
+
+def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
+    # the rule lived in a log, and two people took the wrong pair on the same day because of it
+    from types import SimpleNamespace
+
+    from evals.compare import residencies
+
+    def row(rid):
+        return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid}} if rid else {})
+
+    same = residencies({"a": [row(7), row(7)], "b": [row(7)]})
+    assert same["one_residency"] is True and same["read_this_first"] is None
+
+    split = residencies({"a": [row(7)], "b": [row(9)]})
+    assert split["one_residency"] is False and "not comparable" in split["read_this_first"]
+
+    old = residencies({"a": [row(None)], "b": [row(None)]})
+    assert old["one_residency"] is None and "nothing can be said" in old["read_this_first"]
+
+
+def test_a_pass_names_the_residency_it_caused_or_inherits_the_last():
+    # `/api/ps` has no load moment, so the pass that found the card empty is the one that names it
+    import job_handlers.judging as j
+
+    on_card, last = [None], [None]
+    real_card, real_last = j.judge_on_card, j._last_residency
+    j.judge_on_card, j._last_residency = lambda: on_card[0], lambda: last[0]
+    try:
+        assert j._residency_id(42) == 42, "the card was empty, so this pass loads it"
+        on_card[0], last[0] = True, 7
+        assert j._residency_id(42) == 7, "it was resident, so the residency is the older one"
+        last[0] = None
+        assert j._residency_id(42) == 42
+    finally:
+        j.judge_on_card, j._last_residency = real_card, real_last

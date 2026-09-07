@@ -178,6 +178,7 @@ def judge_answers(options: dict) -> None:
     force = bool(options.get("log_ids"))
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
+    residency = _residency_id(job_id)
     judged = 0
 
     def one(log_id):
@@ -185,7 +186,9 @@ def judge_answers(options: dict) -> None:
             return False
         skip = () if log_id in judged_for_control else control
         try:
-            return _judge_log(log_id, force=force, bench=bench, width=width, skip=skip)
+            return _judge_log(
+                log_id, force=force, bench=bench, width=width, skip=skip, residency=residency
+            )
         except Exception as e:
             log.error("judge.log_failed", log_id=log_id, error=str(e))
             _count_the_attempt(log_id, skip, f"{type(e).__name__}: {e}")
@@ -271,7 +274,7 @@ def judge_guest_axes(options: dict) -> None:
     budget = set(log_ids)
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
-    stamp = _stamp(width)
+    stamp = _stamp(width, _residency_id(job_id))
     started_on_card = judge_on_card()
 
     def one(log_id):
@@ -442,15 +445,45 @@ def _bench_from(options: dict) -> judge.Bench:
     )
 
 
+# `/api/ps` carries no load moment, so a residency is named by the pass that caused the load
+def _residency_id(job_id) -> int | None:
+    try:
+        if judge_on_card() is None:
+            return job_id
+        return _last_residency() or job_id
+    except Exception as e:
+        # a reading about the card must not take down the pass that only wanted to stamp itself
+        log.warning("judge.residency_unknown", error=str(e))
+        return None
+
+
+def _last_residency() -> int | None:
+    from sqlalchemy import desc
+
+    with Session() as session:
+        for axis in rejudge.AXES:
+            got = session.scalar(
+                select(QuestionLog.metrics[(axis, "residency_id")].as_integer())
+                .where(QuestionLog.metrics[(axis, "residency_id")].as_integer().isnot(None))
+                .order_by(desc(QuestionLog.id))
+                .limit(1)
+            )
+            if got is not None:
+                return got
+    return None
+
+
 # once per row, not per axis: the width belongs to the pass and the sampler to the role
-def _stamp(width: int) -> dict:
+def _stamp(width: int, residency: int | None = None) -> dict:
     from datetime import datetime, timezone
 
     sampler = llm.sampler_of("judging")
     return {
+        # at temperature zero this says the sampler took no part, not that the pass repeats
         "seed": sampler.get("seed"),
         "width": width,
-        # without it the residency of two arms was checked by hand against ollama's log
+        # two arms are comparable only inside one residency, and this is how a reader checks
+        "residency_id": residency,
         "judged_at": datetime.now(timezone.utc).isoformat(),
         # `/api/ps` does not report slots, so the record names the mirror it was capped by
         "slots_believed": _parallel_slots(),
@@ -486,7 +519,8 @@ def _mark_skipped(snapshot, ql, skip) -> None:
 
 
 # scored outside the lock: three model calls under `FOR UPDATE` closed an axis on the loser's timeout
-def _judge_log(log_id: int, force: bool = False, bench=None, width: int = 1, skip=()) -> bool:
+def _judge_log(log_id: int, force: bool = False, bench=None, width: int = 1, skip=(),
+               residency: int | None = None) -> bool:
     bench = bench or judge.ACTIVE
     with Session() as session:
         ql = session.get(QuestionLog, log_id)
@@ -506,7 +540,7 @@ def _judge_log(log_id: int, force: bool = False, bench=None, width: int = 1, ski
             ),
         }
 
-    stamp = _stamp(width)
+    stamp = _stamp(width, residency)
     taken = {}
     for axis, (verdict_fn, args) in calls.items():
         if axis not in owed or (not force and _errored(metrics, axis)):
