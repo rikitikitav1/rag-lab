@@ -160,7 +160,11 @@ def residencies(runs: dict[str, list]) -> dict:
             "its scores and 58% of its reason texts on byte-identical input"
             if one is False else
             "rows judged before this was recorded carry no residency, so nothing can be said"
-            if one is None else None
+            if one is None else
+            "one residency is necessary, not sufficient: two arms with identical rows, order and "
+            "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
+            "than inheriting a zero. A reading that rests on the reason text holds only here, and "
+            "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
         ),
     }
 

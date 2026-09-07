@@ -465,7 +465,8 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
         return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid}} if rid else {})
 
     same = residencies({"a": [row(7), row(7)], "b": [row(7)]})
-    assert same["one_residency"] is True and same["read_this_first"] is None
+    assert same["one_residency"] is True
+    assert "necessary, not sufficient" in same["read_this_first"]
 
     split = residencies({"a": [row(7)], "b": [row(9)]})
     assert split["one_residency"] is False and "not comparable" in split["read_this_first"]
