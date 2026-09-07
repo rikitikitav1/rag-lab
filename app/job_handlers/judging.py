@@ -115,7 +115,10 @@ def still_to_judge():
 def _target_log_ids(session, options) -> list[int]:
     stmt = select(QuestionLog.id).where(QuestionLog.answered.is_(True))
     if options.get("log_ids"):
-        return list(session.scalars(stmt.where(QuestionLog.id.in_(options["log_ids"]))))
+        asked = list(options["log_ids"])
+        found = set(session.scalars(stmt.where(QuestionLog.id.in_(asked))))
+        # the caller's order is kept: the judge's own history of requests is a measured variable
+        return [i for i in asked if i in found]
 
     stmt = stmt.join(Question, QuestionLog.question_id == Question.id).where(still_to_judge())
     if options.get("run_name"):

@@ -489,3 +489,15 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last():
         assert j._residency_id(42) == 42
     finally:
         j.judge_on_card, j._last_residency = real_card, real_last
+
+
+def test_a_pass_walks_the_rows_in_the_order_it_was_given():
+    # the order of requests is what the drift measurement moves, so postgres may not choose it
+    from job_handlers import judging
+
+    class _Session:
+        def scalars(self, stmt):
+            return [3, 1, 2]
+
+    got = judging._target_log_ids(_Session(), {"log_ids": [2, 3, 1, 99]})
+    assert got == [2, 3, 1], "the caller's order, and nothing it did not ask for"
