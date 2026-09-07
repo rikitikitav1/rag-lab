@@ -1,0 +1,43 @@
+{
+  "schema": 3,
+  "n": 14569,
+  "n_one_label": 14393,
+  "runs": 99,
+  "pipelines": [
+    "agent",
+    "single_shot"
+  ],
+  "means": {
+    "hit": 0.9016,
+    "rr": 0.8074,
+    "id_recall": 0.8958,
+    "id_precision": 0.539
+  },
+  "declared_identity": {
+    "claim": "with one label per question ID-recall is hit@k row by row",
+    "rows_where_they_differ": 0,
+    "checked_on": 14393
+  },
+  "correlations": {
+    "hit_vs_id_recall": {
+      "rho": 0.9569,
+      "p": 0.0,
+      "n": 14569
+    },
+    "mrr_vs_id_recall": {
+      "rho": 0.6386,
+      "p": 0.0,
+      "n": 14569
+    },
+    "mrr_vs_id_precision": {
+      "rho": 0.627,
+      "p": 0.0,
+      "n": 14569
+    },
+    "hit_vs_id_precision": {
+      "rho": 0.5312,
+      "p": 0.0,
+      "n": 14569
+    }
+  }
+}

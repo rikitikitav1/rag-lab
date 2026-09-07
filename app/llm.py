@@ -11,7 +11,8 @@ from openai import OpenAI, OpenAIError
 from orm.sync_db import Session
 from sqlalchemy import select
 
-LLM_BASE = config.settings.llm.base_url
+# the compose hostname resolves inside the network only; a script on the host says where
+LLM_BASE = os.getenv("OLLAMA_BASE_URL") or config.settings.llm.base_url
 
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 

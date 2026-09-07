@@ -67,7 +67,14 @@ def refusal(text: str) -> bool:
     )
 
 
+# the half of a classification that never moves: it reads the text and the tool names, never a judge
+def reads_as_refusal(text: str | None, names=(), prefixes=()) -> bool:
+    return bool(text) and not narrated_tool_call(text, names, prefixes) and refusal(text)
+
+
 # `grounded` is None where nothing judged the row, and such a row stays `answered`
+
+
 def classify(
     text: str | None, has_sources: bool, names=(), prefixes=(), exhausted=False, grounded=None
 ) -> str:

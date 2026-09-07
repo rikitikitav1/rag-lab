@@ -41,6 +41,16 @@ class FallbackReason(StrEnum):
     off_topic = "off_topic"
 
 
+# which edge ended the graph: `final` meant three things, and the reader re-derived one of them
+class FinishedBy(StrEnum):
+    answer = "answer"
+    hops_exhausted = "hops_exhausted"
+    # the loop stopped without the model producing text, and the ceiling was not the reason
+    no_answer = "no_answer"
+    # a bare `create_agent` has no edge of ours; the emptiness is named rather than silent
+    unrecorded = "unrecorded"
+
+
 @dataclass
 class Topic:
     threshold: float | None = None

@@ -375,7 +375,9 @@ CREATE TABLE public.question_logs (
     completeness text,
     question_text text,
     reference_answer text,
-    contexts jsonb
+    contexts jsonb,
+    chunks jsonb,
+    transcript jsonb
 );
 
 
@@ -786,4 +788,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260827000007'),
     ('20260827000008'),
     ('20260831000001'),
-    ('20260831000002');
+    ('20260831000002'),
+    ('20260906000001'),
+    ('20260906000002');

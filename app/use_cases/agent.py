@@ -39,7 +39,11 @@ class AgentResult:
     hops: int = 0
     sources: list = field(default_factory=list)
     contexts: list = field(default_factory=list)
+    chunks: list = field(default_factory=list)
     messages: list = field(default_factory=list)
+    finished_by: str | None = None
+    spans: list = field(default_factory=list)
+    tools_offered: list = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
     max_prompt_tokens: int = 0
@@ -49,6 +53,7 @@ class AgentResult:
     elapsed: float = 0.0
     fallback_reason: str = FallbackReason.none
     fallback_announced: bool = False
+    announced_text: str = ""
     fallback_opened: bool = False
     no_evidence_prompted: bool = False
     dropped_sources: list = field(default_factory=list)
@@ -100,6 +105,7 @@ def run(
     model: str | None = None,
     fallback_policy: str | None = None,
     gate_signal: str | None = None,
+    restate_tools: bool = False,
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
     orchestrator: str | None = None,
@@ -185,21 +191,13 @@ def run(
             orch_graph.context(
                 remote=remote, gate=gate, external=external, k=k, use_rerank=use_rerank,
                 role=role, model=model, max_hops=max_hops, variant=variant,
+                restate_tools=restate_tools,
             ),
             result,
         )
     messages = result.messages
 
-    result.sources = _unique_sources(result.sources)
-
-    result.outcome = outcomes.classify(
-        result.text,
-        bool(result.sources),
-        (*remote, agent_tools.CORPUS_TOOL),
-        # a guard that fired is a failure, not a run that politely used up its hops
-        exhausted=result.hops >= max_hops and not result.failed,
-    )
-    result.success = bool(result.sources and result.text)
+    finish(result, (*remote, agent_tools.CORPUS_TOOL), max_hops)
 
     result.elapsed = round(time.perf_counter() - start, 3)
     log.info(
@@ -227,6 +225,7 @@ def run(
                 ),
                 **orch_graph.versions(),
             },
+            restate_tools=restate_tools,
             variant=variant,
         )
     except SQLAlchemyError as e:
@@ -237,6 +236,19 @@ def run(
     ):
         result.text = chat.NO_RESULTS
     return result
+
+
+# one tail for the live run and for the replay: while they were two they drifted twice
+def finish(result, tool_names: tuple, max_hops: int) -> None:
+    result.sources = _unique_sources(result.sources)
+    result.outcome = outcomes.classify(
+        result.text,
+        bool(result.sources),
+        tool_names,
+        # a guard that fired is a failure, not a run that politely used up its hops
+        exhausted=result.hops >= max_hops and not result.failed,
+    )
+    result.success = bool(result.sources and result.text)
 
 
 def _admissible(
@@ -302,6 +314,29 @@ def _unique_sources(sources: list) -> list:
     return out
 
 
+def _of(message, key: str):
+    return message.get(key) if isinstance(message, dict) else getattr(message, key, None)
+
+
+# what a replay needs and nothing more: the tool results are already the row's `contexts`
+def transcript_of(messages) -> list[dict]:
+    out = []
+    for m in messages:
+        role = _of(m, "role") or ("tool" if _of(m, "tool_call_id") else "assistant")
+        turn = {"role": role}
+        if role != "tool":
+            turn["content"] = _of(m, "content") or ""
+        calls = _of(m, "tool_calls") or []
+        if calls:
+            turn["tool_calls"] = [
+                {"name": _of(_of(c, "function") or c, "name"),
+                 "arguments": _of(_of(c, "function") or c, "arguments")}
+                for c in calls
+            ]
+        out.append(turn)
+    return out
+
+
 def _context_from_messages(messages) -> str:
     return "\n\n".join(
         m["content"]
@@ -328,6 +363,7 @@ def _log_answer(
     topic: Topic | None = None,
     admission_ran: bool = False,
     orchestrator: dict | None = None,
+    restate_tools: bool = False,
     *, variant: str,
 ) -> None:
     use_rerank = chat.resolve_rerank(use_rerank)
@@ -343,6 +379,8 @@ def _log_answer(
             answer=result.text,
             context=_context_from_messages(result.messages) or None,
             contexts=result.contexts or None,
+            chunks=result.chunks or None,
+            transcript=transcript_of(result.messages) or None,
             sources=[asdict(s) for s in result.sources],
             pipeline=Pipeline.agent.value,
             models={
@@ -359,6 +397,14 @@ def _log_answer(
             ),
             metrics={
                 "hops": result.hops,
+                # which edge ended the graph, so no reader recomputes it from `hops >= ceiling`
+                "finished_by": result.finished_by,
+                # `contexts` is flat across hops and calls; this says which piece came from where
+                "spans": result.spans or None,
+                # which toolbox each hop got, so a replay can check it was handed the same one
+                "tools_offered": result.tools_offered or None,
+                # the notice the gate appended, which `announced` only said had happened
+                "announced_text": result.announced_text or None,
                 "no_evidence": not bool(result.sources),
                 "context_tokens": result.max_prompt_tokens,
                 "retrieval": _retrieval_snapshot(
@@ -367,6 +413,12 @@ def _log_answer(
                 "fallback_reason": str(result.fallback_reason),
                 "fallback_opened": result.fallback_opened,
                 "outcome": str(result.outcome),
+                # the one fact both the judge and the report may read: neither re-derives it
+                "refusal": outcomes.reads_as_refusal(
+                    result.text,
+                    tuple(mcp_names or ()),
+                    [f"{n}__" for n in (mcp_configured or [])],
+                ),
                 # without this the report reads a guard that fired as a run that spent its hops
                 "failed": result.failed or None,
                 "stages": result.stages or None,
@@ -393,6 +445,7 @@ def _log_answer(
                     truncated_hops=result.truncated_hops or None,
                     max_hops=max_hops or config.settings.agent.max_hops,
                     drop_weak_context=bool(gate and gate.drop_weak_context),
+                    restate_tools=restate_tools or None,
                     topic=(
                         run_snapshot.of_topic(
                             topic.threshold, topic.score, config.settings.agent.topic_threshold
@@ -402,6 +455,7 @@ def _log_answer(
                     ),
                     mcp=mcp_names or [],
                     mcp_configured=mcp_configured or [],
+                    language=language,
                 ),
             },
             prompt_tokens=result.prompt_tokens,

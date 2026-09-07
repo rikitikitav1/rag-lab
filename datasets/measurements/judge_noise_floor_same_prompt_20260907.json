@@ -1,0 +1,33 @@
+{
+  "schema": 2,
+  "source_run": "arc3_ported_after_split",
+  "arms": [
+    "arc3_ported_after_split",
+    "judge faithfulness v2 against v3, read by the guest_judge_faithfulness=2"
+  ],
+  "population": "judge_correlation.rows_of, the declared one",
+  "population_counts": {
+    "refused_excluded": 0,
+    "guest_abstained": 0,
+    "refused_and_abstained": 0,
+    "outside_the_declared_population": 47
+  },
+  "n": 91,
+  "same_answers": "91/91",
+  "measures_the_judge": true,
+  "rank_swaps_between_arms": 19,
+  "means": {
+    "left": 7.5055,
+    "right": 7.3626,
+    "shift": -0.1429
+  },
+  "rho_with_guest": {
+    "left": 0.3828,
+    "right": 0.3221
+  },
+  "rho_difference_right_minus_left": -0.0607,
+  "difference_ci95": [
+    -0.2008,
+    0.0644
+  ]
+}

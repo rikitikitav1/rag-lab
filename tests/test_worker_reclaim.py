@@ -38,12 +38,14 @@ def test_a_deferral_has_a_ceiling_of_its_own(monkeypatch):
         raise worker.Deferred(30)
 
     monkeypatch.setitem(worker.HANDLERS, "judge_answers", _defer)
-    claimed = SimpleNamespace(id=1, type="judge_answers", options={"deferred_seconds": 0})
+    claimed = SimpleNamespace(
+        id=1, type="judge_answers", options={"run_name": "r", "deferred_seconds": 0}
+    )
     monkeypatch.setattr(worker.job_queue, "claim_next", lambda queues: claimed)
 
     worker.run_once(["cpu"])
     assert rescheduled == [30], "an early deferral is rescheduled with the time it waited"
 
-    claimed.options = {"deferred_seconds": worker.MAX_DEFERRED_SECONDS}
+    claimed.options = {"run_name": "r", "deferred_seconds": worker.MAX_DEFERRED_SECONDS}
     worker.run_once(["cpu"])
     assert failed and "gave up" in failed[0]["error"]

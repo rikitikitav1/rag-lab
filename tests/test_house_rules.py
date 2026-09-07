@@ -135,6 +135,7 @@ def test_one_value_is_capped_the_same_at_every_door_that_names_it():
         (eval_door.ExperimentRequest, "run_name"),
         (eval_door.RejudgeRequest, "run_name"),
         (eval_door.RejudgeRequest, "source"),
+        (eval_door.GuestAxesRequest, "run_name"),
     ]
     for model, field in run_name:
         assert cap(model, field) == limits.MAX_RUN_NAME, f"{model.__name__}.{field}"

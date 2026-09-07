@@ -1,0 +1,484 @@
+{
+  "run_name": "arc3_agent_baseline",
+  "n": {
+    "code_kept": 15,
+    "code_stripped": 15,
+    "no_code": 20
+  },
+  "failures": 3,
+  "means": {
+    "code_kept": 0.8261,
+    "code_stripped": 0.857,
+    "no_code": 0.7279
+  },
+  "paired": {
+    "n": 13,
+    "mean_kept": 0.8261,
+    "mean_stripped": 0.846,
+    "rows_that_dropped": 5,
+    "rows_that_rose": 3,
+    "statements_kept": 9.85,
+    "statements_stripped": 7.08,
+    "wilcoxon": {
+      "statistic": 17.0,
+      "p": 0.94531
+    }
+  },
+  "natural": {
+    "statistic": 155.0,
+    "p": 0.17369,
+    "alternative": "code-bearing answers score higher"
+  },
+  "rows": [
+    {
+      "row": 33450,
+      "arm": "code_kept",
+      "code_share": 0.2782,
+      "score": 1.0,
+      "n_statements": 8,
+      "error": null,
+      "chars": 1391
+    },
+    {
+      "row": 33450,
+      "arm": "code_stripped",
+      "code_share": 0.2782,
+      "score": 1.0,
+      "n_statements": 6,
+      "error": null,
+      "chars": 1004
+    },
+    {
+      "row": 33455,
+      "arm": "code_kept",
+      "code_share": 0.5344,
+      "score": 1.0,
+      "n_statements": 13,
+      "error": null,
+      "chars": 1512
+    },
+    {
+      "row": 33455,
+      "arm": "code_stripped",
+      "code_share": 0.5344,
+      "score": 0.6666666666666666,
+      "n_statements": 6,
+      "error": null,
+      "chars": 700
+    },
+    {
+      "row": 33458,
+      "arm": "code_kept",
+      "code_share": 0.2672,
+      "score": 1.0,
+      "n_statements": 14,
+      "error": null,
+      "chars": 1800
+    },
+    {
+      "row": 33458,
+      "arm": "code_stripped",
+      "code_share": 0.2672,
+      "score": 1.0,
+      "n_statements": 13,
+      "error": null,
+      "chars": 1317
+    },
+    {
+      "row": 33471,
+      "arm": "code_kept",
+      "code_share": 0.2663,
+      "score": null,
+      "n_statements": 0,
+      "error": "OutputParserException: Failed to parse NLIStatementOutput from completion {\"statements\": [{\"statement\": \"В Scikit-Learn ",
+      "chars": 1487
+    },
+    {
+      "row": 33471,
+      "arm": "code_stripped",
+      "code_share": 0.2663,
+      "score": 1.0,
+      "n_statements": 11,
+      "error": null,
+      "chars": 1085
+    },
+    {
+      "row": 33476,
+      "arm": "code_kept",
+      "code_share": 0.371,
+      "score": 1.0,
+      "n_statements": 8,
+      "error": null,
+      "chars": 717
+    },
+    {
+      "row": 33476,
+      "arm": "code_stripped",
+      "code_share": 0.371,
+      "score": 1.0,
+      "n_statements": 4,
+      "error": null,
+      "chars": 449
+    },
+    {
+      "row": 33520,
+      "arm": "code_kept",
+      "code_share": 0.3428,
+      "score": 0.0,
+      "n_statements": 13,
+      "error": null,
+      "chars": 1164
+    },
+    {
+      "row": 33520,
+      "arm": "code_stripped",
+      "code_share": 0.3428,
+      "score": 0.6666666666666666,
+      "n_statements": 6,
+      "error": null,
+      "chars": 763
+    },
+    {
+      "row": 33527,
+      "arm": "code_kept",
+      "code_share": 0.2105,
+      "score": 0.8,
+      "n_statements": 10,
+      "error": null,
+      "chars": 1753
+    },
+    {
+      "row": 33527,
+      "arm": "code_stripped",
+      "code_share": 0.2105,
+      "score": 0.7777777777777778,
+      "n_statements": 9,
+      "error": null,
+      "chars": 1384
+    },
+    {
+      "row": 33623,
+      "arm": "code_kept",
+      "code_share": 0.3597,
+      "score": null,
+      "n_statements": 0,
+      "error": "OutputParserException: Invalid json output: The output string did not satisfy the constraints given in the prompt. Fix t",
+      "chars": 1176
+    },
+    {
+      "row": 33623,
+      "arm": "code_stripped",
+      "code_share": 0.3597,
+      "score": null,
+      "n_statements": 0,
+      "error": "OutputParserException: Invalid json output: The Fibonacci sequence can be generated without using recursion by using eit",
+      "chars": 749
+    },
+    {
+      "row": 33624,
+      "arm": "code_kept",
+      "code_share": 0.5382,
+      "score": 1.0,
+      "n_statements": 10,
+      "error": null,
+      "chars": 1020
+    },
+    {
+      "row": 33624,
+      "arm": "code_stripped",
+      "code_share": 0.5382,
+      "score": 1.0,
+      "n_statements": 6,
+      "error": null,
+      "chars": 467
+    },
+    {
+      "row": 33627,
+      "arm": "code_kept",
+      "code_share": 0.3158,
+      "score": 0.9,
+      "n_statements": 10,
+      "error": null,
+      "chars": 1688
+    },
+    {
+      "row": 33627,
+      "arm": "code_stripped",
+      "code_share": 0.3158,
+      "score": 1.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 1151
+    },
+    {
+      "row": 33670,
+      "arm": "code_kept",
+      "code_share": 0.3301,
+      "score": 0.9,
+      "n_statements": 10,
+      "error": null,
+      "chars": 818
+    },
+    {
+      "row": 33670,
+      "arm": "code_stripped",
+      "code_share": 0.3301,
+      "score": 0.8333333333333334,
+      "n_statements": 6,
+      "error": null,
+      "chars": 540
+    },
+    {
+      "row": 33671,
+      "arm": "code_kept",
+      "code_share": 0.4451,
+      "score": 0.8,
+      "n_statements": 10,
+      "error": null,
+      "chars": 1438
+    },
+    {
+      "row": 33671,
+      "arm": "code_stripped",
+      "code_share": 0.4451,
+      "score": 0.625,
+      "n_statements": 8,
+      "error": null,
+      "chars": 796
+    },
+    {
+      "row": 33673,
+      "arm": "code_kept",
+      "code_share": 0.2386,
+      "score": 1.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 947
+    },
+    {
+      "row": 33673,
+      "arm": "code_stripped",
+      "code_share": 0.2386,
+      "score": 1.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 719
+    },
+    {
+      "row": 33683,
+      "arm": "code_kept",
+      "code_share": 0.2809,
+      "score": 0.625,
+      "n_statements": 8,
+      "error": null,
+      "chars": 1164
+    },
+    {
+      "row": 33683,
+      "arm": "code_stripped",
+      "code_share": 0.2809,
+      "score": 0.42857142857142855,
+      "n_statements": 7,
+      "error": null,
+      "chars": 831
+    },
+    {
+      "row": 33684,
+      "arm": "code_kept",
+      "code_share": 0.2533,
+      "score": 0.7142857142857143,
+      "n_statements": 7,
+      "error": null,
+      "chars": 1070
+    },
+    {
+      "row": 33684,
+      "arm": "code_stripped",
+      "code_share": 0.2533,
+      "score": 1.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 797
+    },
+    {
+      "row": 33440,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.0,
+      "n_statements": 4,
+      "error": null,
+      "chars": 275
+    },
+    {
+      "row": 33441,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.3333333333333333,
+      "n_statements": 3,
+      "error": null,
+      "chars": 311
+    },
+    {
+      "row": 33444,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.6,
+      "n_statements": 5,
+      "error": null,
+      "chars": 854
+    },
+    {
+      "row": 33456,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.8333333333333334,
+      "n_statements": 14,
+      "error": null,
+      "chars": 1779
+    },
+    {
+      "row": 33453,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 984
+    },
+    {
+      "row": 33454,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.6666666666666666,
+      "n_statements": 6,
+      "error": null,
+      "chars": 948
+    },
+    {
+      "row": 33460,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.7,
+      "n_statements": 10,
+      "error": null,
+      "chars": 838
+    },
+    {
+      "row": 33463,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.5,
+      "n_statements": 10,
+      "error": null,
+      "chars": 1218
+    },
+    {
+      "row": 33465,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 9,
+      "error": null,
+      "chars": 1165
+    },
+    {
+      "row": 33467,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.5,
+      "n_statements": 4,
+      "error": null,
+      "chars": 688
+    },
+    {
+      "row": 33469,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 10,
+      "error": null,
+      "chars": 1523
+    },
+    {
+      "row": 33466,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.7857142857142857,
+      "n_statements": 14,
+      "error": null,
+      "chars": 1280
+    },
+    {
+      "row": 33468,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 11,
+      "error": null,
+      "chars": 1389
+    },
+    {
+      "row": 33474,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 398
+    },
+    {
+      "row": 33475,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 9,
+      "error": null,
+      "chars": 1152
+    },
+    {
+      "row": 33478,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 5,
+      "error": null,
+      "chars": 942
+    },
+    {
+      "row": 33481,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 1396
+    },
+    {
+      "row": 33479,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 1.0,
+      "n_statements": 7,
+      "error": null,
+      "chars": 1066
+    },
+    {
+      "row": 33482,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.75,
+      "n_statements": 4,
+      "error": null,
+      "chars": 381
+    },
+    {
+      "row": 33485,
+      "arm": "no_code",
+      "code_share": 0.0,
+      "score": 0.8888888888888888,
+      "n_statements": 9,
+      "error": null,
+      "chars": 1100
+    }
+  ]
+}

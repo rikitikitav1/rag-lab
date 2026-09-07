@@ -110,6 +110,11 @@ def _is_code_only(text: str) -> bool:
     return not PROSE_WORD.search(FENCE.sub(" ", text))
 
 
+# how much of a chunk is fenced code: `_is_code_only` answers a different question
+def code_fraction(text: str) -> float:
+    return sum(len(m) for m in FENCE.findall(text or "")) / len(text) if text else 0.0
+
+
 def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:
     wide = ingest.wide_bodies(((s.body, s.file) for s in samples), measurable_files)
     return sum(1 for s in samples if s.body in wide)

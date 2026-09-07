@@ -7,6 +7,7 @@ from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
 from evals.stats import mean_of, score_of
 from outcomes import Outcome
+from use_cases import rejudge
 
 # refusals and non-answers: shapes where the model said nothing to score
 _SAID_NOTHING = (
@@ -30,12 +31,29 @@ def _distribution(scores) -> dict:
     }
 
 
+# read off the rule rather than restated beside it: two spellings of one table is the usual defect
+def _abstentions() -> dict:
+    return {
+        "ours": {
+            "outcomes": ["refused"],
+            "axes": list(rejudge.AXES),
+            "why": "on a refusal the axis does not apply, and the judge prompt is left alone",
+            "read_from": "metrics.refusal, written by both answering paths from one function",
+        },
+        "guests": {
+            "ragas_faithfulness": "abstains where the row carries no answer or no context",
+            "ragas_context_precision": "abstains where the question carries no reference answer",
+            "ragas_context_recall": "abstains where the question carries no reference answer",
+        },
+    }
+
+
 def _share(logs, outcome) -> str:
     return f"{sum(1 for ql in logs if _outcome(ql) == outcome)}/{len(logs)}"
 
 
-# 1 before `answered_ungrounded`; 2 adds it, `distribution` and `answered_only`
-SCHEMA = 2
+# 1 before `answered_ungrounded`; 2 adds those three; 3 says where the axes abstain
+SCHEMA = 3
 
 
 def evaluate(run_name=None, verbose=False) -> dict:
@@ -73,6 +91,8 @@ def evaluate(run_name=None, verbose=False) -> dict:
 
     return {
         "schema": SCHEMA,
+        # what the silence in an axis means: an abstention is not a low score and not a missing pass
+        "axes_abstain_on": _abstentions(),
         "n_logs": len(logs),
         "n_scored": n,
         "answered": sum(1 for ql in logs if ql.answered),

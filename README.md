@@ -14,7 +14,7 @@ This is a **showcase lab**: a bench for practicing LLM/RAG engineering approache
 - **Hybrid retrieval**: vector search (pgvector) + full-text (Postgres FTS with per-language stemming), fused via **RRF** (Reciprocal Rank Fusion). Filter by hierarchical categories (ltree), a distance threshold with an honest refusal on out-of-corpus questions.
 - **Local models** through Ollama, keyed by role: generation, embeddings (`bge-m3`), LLM judge. A role is decoupled from a concrete model: which model serves a role lives in the DB and can be switched at runtime.
 - **Multi-source**, one taxonomy: personal notes (ru), 173 Devinterview-io interview repos (en), and three documentation sources with rules of their own: `system-design-primer`, `redis-doc` (frontmatter titles) and `cheatsheets` (frontmatter plus per-file junk rules). Per-source ingestion strategies, declared as a policy rather than special-cased in the cutter.
-- **Eval bench, 5 quality axes**: retrieval (hit@k / MRR), faithfulness, relevance, completeness, refusal accuracy, all via **LLM-as-judge** with structured output. Scores are reported per pool (grounded in the corpus, grounded in an external tool, refusals) rather than as one average, and a run records an outcome per question (`answered`, `refused`, `unsupported_answer`, `narrated_call`, `exhausted`, `error`), because counting an unsupported answer as a refusal flatters exactly the policy under test.
+- **Eval bench, 5 quality axes**: retrieval (hit@k / MRR, plus `file_precision` and the same pair over sections rather than files, because a chunk of the right file in the wrong section is not a hit), faithfulness, relevance, completeness, refusal accuracy, all via **LLM-as-judge** with structured output. Scores are reported per pool (grounded in the corpus, grounded in an external tool, refusals) rather than as one average, and a run records an outcome per question (`answered`, `refused`, `unsupported_answer`, `narrated_call`, `exhausted`, `error`), because counting an unsupported answer as a refusal flatters exactly the policy under test. On a refusal the three judged axes **abstain** rather than score: the row carries the one fact both sides read, written by whichever path answered, and the judge prompt is left alone so the arc's numbers stay comparable.
 - **Async job queue**: heavy operations (model pull/delete, corpus indexing, embedding the question bank) go to a Postgres-backed queue processed by a worker. The service depends only on Postgres: Ollama may be unavailable at startup, jobs defer/retry, the app does not crash.
 - **Reranking, off by default since 30.08 and measured both ways**: a cross-encoder (`bge-reranker-v2-m3`) on top of hybrid retrieval (retrieve-wide → rerank → narrow). It was the default until the agent path turned out to need a generator with tool calling: the 8b that has it takes the card room the reranker held, so a request or a run now turns reranking **on**. Its measured worth is unchanged; the default is a card decision, not a verdict on the method. At the level of the ranking the evidence disagrees with itself: on 823 cross-lingual questions it is worth **+0.0369 section MRR** [0.0155, 0.0596], and on the 820 same-language ones **−0.0245** [−0.0460, −0.0021], both clear of zero. At the level of the answer it costs nothing for the generator we serve: `gemma3:4b` with reranking against without gives relevance **+0.324** [0.111, 0.530] and completeness **+0.277** [0.111, 0.433] on the Russian set and three intervals through zero on the English one. Cost on the card: 168 ms a question in a phased run, against 2.76 s on cpu.
 - **Agent on LangGraph**: a tool-calling graph where the model decides when to search the corpus, may refine the query and multi-hop, then answers. It started as a hand-rolled loop, which was retired only after the port agreed with it within the bench's own noise. The policies around it (coverage gate, topic axis, tool admission) stayed ours and are measured, not assumed. Selectable as an eval pipeline (`pipeline: agent`) and benchmarked head-to-head against single-shot RAG.
@@ -94,7 +94,7 @@ Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagram
 | `seed` | loads prompts and the question bank, runs once after migrations |
 | `bootstrap` | prepares models, roles and indexing jobs, runs to completion before the rest |
 | `rag-lab` | FastAPI server (uvicorn) |
-| `worker` | processes the job queue, twelve types: pull/delete a model, index the corpus, build a vector index, analyze a source, embed questions, paraphrase questions, build the veto set, eval run, judge answers, compare retrieval, mcp health |
+| `worker` | processes the job queue, fourteen types: pull/delete a model, index the corpus, build a vector index, analyze a source, embed questions, paraphrase questions, build the veto set, eval run, judge answers, judge the guest axes, the language probe, compare retrieval, mcp health |
 | `ollama` | local inference on GPU |
 
 ### Environment knobs
@@ -111,6 +111,8 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 | `JUDGE_WIDTH` | `1` | Rows the judge scores in flight. Over 1 it is a different instrument, not a faster one: the same rows come back with different scores, so a measured arm stays at 1 and only smokes are widened. Capped by the slots the server has and by the connection pool. |
 | `OLLAMA_NUM_PARALLEL` | `1` | Sequences ollama batches at once. Pinned rather than left unset: unset, the server picks slots from free VRAM, so two arms run on different instruments. |
 | `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
+| `RAGAS_DO_NOT_TRACK` | `true` | Turns off the usage event `ragas` posts per generation. It is sent synchronously, inside the window the guest pass measures, so leaving it on prices the network into the axis. |
+| `POSTGRES_HOST`, `OLLAMA_BASE_URL` | empty | Only for a script run on the host. Inside compose the service names resolve and both stay unset. |
 
 ## REST API
 
@@ -216,7 +218,23 @@ first-against-the-rest once it does not, the A/B halves, and an `answers_digest`
 per arm beside the source's, so "the arms judged the same answers" is a fact of the record
 rather than a claim in its description.
 
-To re-judge one run without making an experiment of it: `POST /v1/eval/rejudge` with
+Any job type can be queued through one door: `POST /v1/job` with `{"type": ..., "options": {...}}`.
+What each type accepts is a model per type in `app/job_specs.py`, checked when the job is queued,
+whichever door or script queues it, and again when the worker takes it, so a row written straight
+into the table meets the same refusal. A door of its own is for work done before the enqueue rather
+than for checking: `/eval/rejudge` copies a run, `/eval/guest-axes` answers on a property of the
+runtime. The lane belongs to the type, not to the caller.
+
+To judge a run in place: `POST /v1/eval/judge` with `{"run_name": "<run>"}` queues our three axes
+over the rows that still owe them, and refuses with 404 when the run holds no answered row or owes
+nothing. `POST /v1/eval/guest-axes` queues the standard's axes over a run, and takes `sample` and
+`seed`: the guests cost between six and eight times our three axes a row, so they calibrate on a drawn
+subsample rather than riding every run. They ride the same judging pass and land on the same row,
+so a correlation between the two is a join rather than a comparison of two copies, and they stay
+out of the composite and out of our axes' Holm family: a ruler used to check a ruler is not a
+fourth measure of quality. `POST /v1/eval/language-probe` restates a row's own answer
+in two languages and scores both against the same context, which asks whether our faithfulness
+prompt loses a point on Russian. To re-judge one run without making an experiment of it: `POST /v1/eval/rejudge` with
 `{"source": "<run>", "run_name": "<copy>"}` copies the answers under a new name with the
 verdicts cleared and queues the judge over them.
 
@@ -253,7 +271,7 @@ Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment
 
 Observability:
 - `GET /v1/question-log`, `GET /v1/question-log/{id}` (the row carries what it was asked and what it read: `question_text`, `reference_answer` and `contexts`, the chunks as elements rather than the string they were joined into, because that join cannot be undone. Filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; and over the recorded snapshot: `rerank`, `rerank_device`, `phased`, `empty_retrieval`, `max_distance`, `answered_via_remote` - so "show me every answer where the corpus returned nothing" is one request; detail with context)
-- `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed), `POST /v1/job/{id}/cancel` (cancels the job and its dependent judge, cooperative stop for a running eval)
+- `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed; filters incl. `type`, `status` and `run_name`, which the MCP console could already do and the route could not), `POST /v1/job/{id}/cancel` (cancels the job and its dependent judge). A running job stops between rows: an eval run, a retrieval comparison and all three judging passes read the cancellation, and a judging pass that was cancelled does not queue its next sweep
 - `POST /v1/job/cancel` (cancel a whole run or job type at once: cancelling id by id through a paginated listing is how a supposedly stopped eval quietly kept running). A `type` with no `run_name` is refused with 400 unless the call also passes `every: true` and means it. Either door takes a run's judge down with the run
 
 ## MCP
@@ -266,9 +284,11 @@ An MCP (Model Context Protocol) server is mounted at `/mcp` (streamable HTTP), e
 Connect: `claude mcp add --transport http rag-lab http://127.0.0.1:8000/mcp/`, or point the MCP Inspector at the same URL.
 
 A second, separate ops server is mounted at `/mcp-ops` - an eval control plane kept off the product surface (an external client gets search/answer tools, not admin verbs):
-- `run_metrics(run_name)` - aggregated eval metrics for one run (generation axes + retrieval hit@k/MRR).
+- `run_metrics(run_name)` - aggregated eval metrics for one run (generation axes + retrieval hit@k/MRR) plus `debts`: how many rows still owe each axis, what the others are missing, what finishing the debt costs at this run's own measured price, and whether a replay can drive each row at all.
 - `compare_runs(run_names)` - side-by-side metrics with an RRF composite ranking over the five judged-and-behavioural axes, retrieval excluded.
 - `compare_pools(run_names)` - the same runs split by pool (in-corpus / out-of-corpus / off-domain) with gate firings, latency, outcome histogram and a paired Wilcoxon per pair of runs.
+- `judge_correlation(run_name?)` - our judge against the standard's on the same rows: spearman, the overlap covariate, the partial correlation behind it, and the strata by code share.
+- `question_sets(set_name?)` - what each question set holds and therefore which axes a run over it can be scored on: pools, languages, how many carry marked sources (the retrieval axes) and how many carry a reference answer (the two guest context axes).
 - `experiment_results(id, pair?)` - one experiment's report, whatever its kind: the arms with their n, the paired deltas per axis with interval and p, and whether each survives the correction over the family the record names.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - job queue control, cancel takes the dependent judge down with the run.
 
@@ -326,13 +346,13 @@ Both the policy and the reason ride in the log snapshot, so runs before and afte
 
 Measured on three pools of a hundred questions each. The empty rule fires **zero** times, because hybrid search always returns something above the threshold; the coverage gate turns that into 60 questions sent outside and lifts grounding on them from 2.31 to 5.08 (p<0.001) while the in-corpus half does not move. Corpus priority is free in quality and not in time: about two seconds per question for the gate, twelve more for an external hop. Numbers and caveats: [the journal entry](docs/experiments/2026-08-25_the-gate-that-fires-and-the-refusal-that.md).
 
-Which signal calls retrieval weak got its own A/B, three arms of 200 questions with one variable. No axis separates `distance` from the cross-encoder, and the intervals bound how strong that claim may be (±0.8 of a point in-corpus, ±1.5 outside), while `distance` is seconds cheaper, so it is the default. `either` buys relevance and not grounding, and relevance is the axis the same measurement shows to be blind to hallucination, so it stays a measured option rather than the default.
+Which signal calls retrieval weak got its own A/B, three arms of 200 questions with one variable. No axis separates `distance` from the cross-encoder, and the intervals bound how strong that claim may be (±0.8 of a point in-corpus, ±1.5 outside), while `distance` is seconds cheaper, so it is the default. `either` buys relevance and not grounding, and relevance is the axis the same measurement shows to be blind to hallucination, so it stays a measured option rather than the default. Numbers and caveats: [the journal entry](docs/experiments/2026-08-25_a-cheaper-gate-signal-and-a.md).
 
 The same run says something less comfortable: **no policy ever refuses.** On the hundred questions nothing can answer, all three arms answer, fluently and grounded in nothing. Deciding whether the corpus covers a question is not the same as deciding whether anyone does. Numbers: [the journal entry](docs/experiments/2026-08-25_the-gate-that-fires-and-the-refusal-that.md).
 
 ### The topic axis: refusing instead of reaching out
 
-Coverage and topic are different questions, and the run above answers only the first. `agent.topic_threshold` adds the second: the distance from the question to the nearest chunk, computed before any tool is offered. Above it the question is not ours, nothing external is admitted and the run refuses. Refusals on the off-domain hundred go from 11 to 50 (p<0.001) with false refusals on in-corpus paraphrases staying at 0 of 100; both limits were written down before the run.
+Coverage and topic are different questions, and the run above answers only the first. `agent.topic_threshold` adds the second: the distance from the question to the nearest chunk, computed before any tool is offered. Above it the question is not ours, nothing external is admitted and the run refuses (one threshold per language, today 0.4560 for Russian and 0.4374 for English). Refusals on the off-domain hundred go from 11 to 50 (p<0.001) with false refusals on in-corpus paraphrases staying at 0 of 100; both limits were written down before the run.
 
 The threshold is declared per language, because the axis is a distance to *this* corpus and how far an off-topic question lands depends on whether it shares the corpus's vocabulary. The corpus is almost entirely English, so an off-domain English question sits at a median 0.4547 from it against 0.5116 for a Russian one, and one number cannot be right for both.
 
@@ -410,6 +430,7 @@ One implementation note worth stealing: under `corpus_first` the withheld extern
 - `app/llm.py` - Ollama client via the OpenAI SDK (generation / embeddings / structured output) + role→model resolver.
 - `app/rerank.py` - cross-encoder reranker (sentence-transformers, lazy-loaded, on the card by default and refusing a run that finds it on the CPU).
 - `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - Postgres queue (FOR UPDATE SKIP LOCKED) and worker with retries/defer; handlers split by theme.
+- `app/job_specs.py` - what each job type accepts, one model per type. Checked when a job is queued, by whichever door or script queues it, and again when the worker takes it; the queue lane belongs to the type rather than to the caller.
 - `app/bootstrap.py` - idempotent startup init.
 - `app/sources/` - per-source ingestion (reader pattern: `Base` ABC + sources), each source declaring its policy rather than being special-cased downstream.
 - `app/ingest.py` - the cutter: headings located by `MarkdownHeaderTextSplitter`, text sliced from the file itself, sections cut by subheading before size, slivers merged, and what decided each boundary recorded on the chunk.
@@ -419,11 +440,11 @@ One implementation note worth stealing: under `corpus_first` the withheld extern
 - `app/orchestrators/` - adapters to the framework: `graph` (StateGraph), `react` (bare `create_agent`). No langchain import reaches `use_cases`.
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
-- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `experiment_results` / `list_jobs` / `cancel_job` over the eval platform.
+- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` over the eval platform.
 - `app/evals/pools.py`, `app/evals/compare.py` - one place that decides which pool a question belongs to and what the run's outcome was, shared by the metrics, the comparison report and both MCP tools.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
-- `app/evals/` - eval bench (runner + retrieval and generation metrics via the judge).
+- `app/evals/` - eval bench: the runner, retrieval and generation metrics, the guest axes (`guest_axes`, `guest_llm`, `guest_probes`), the judge-against-judge report (`judge_correlation`), the language probe, the replay (`replay`), what a run still owes (`run_debts`), what a question set holds (`question_sets`) and where a job leaves its number (`measurements`).
 - `tests/` - unit tests (pure logic, no DB/Ollama): `docker compose exec rag-lab pytest -q`.
 
 ## Status

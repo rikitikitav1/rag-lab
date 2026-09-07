@@ -112,3 +112,68 @@ def test_a_row_is_read_against_the_ceiling_it_recorded_not_the_one_configured_no
     assert pools.outcome(row(None, 99)) == "exhausted"
     # the case `or` could not express, unreachable through the door today
     assert pools.outcome(row(0, 0)) == "exhausted"
+
+
+def _question(**over):
+    from types import SimpleNamespace
+
+    base = dict(kind=None, marked_sources=[], reference_answer=None, language="en",
+                source_question_id=None, set_name="s")
+    return SimpleNamespace(**{**base, **over})
+
+
+def test_the_inventory_counts_what_each_axis_needs_before_a_pass_is_spent():
+    # an hour of card went on two pools whose reference answers were zero, and the set knew
+    from evals.question_sets import _of
+
+    out = _of([
+        _question(marked_sources=["a.md"], reference_answer="ref"),
+        _question(marked_sources=["b.md"]),
+        _question(kind="off_domain"),
+    ])
+
+    assert out["questions"] == 3
+    assert out["pools"] == {"in_corpus": 2, "off_domain": 1}
+    assert out["with_marked_sources"] == 2
+    assert out["with_reference_answer"] == 1
+
+
+def test_the_pool_rule_has_one_holder_for_a_row_and_for_a_question():
+    # the inventory asks it of a question, `split` asks it of a log, and they parted once already
+    from types import SimpleNamespace
+
+    from evals import pools
+
+    question = _question(marked_sources=["a.md"])
+    assert pools.kind(SimpleNamespace(question=question)) == pools.kind_of_question(question)
+    assert pools.kind_of_question(_question(kind="rejected")) == "rejected"
+
+
+def test_the_stored_refusal_says_exactly_what_the_report_would_say():
+    # the judge read a raw key only the agent wrote and the report re-derived from the text
+    import outcomes
+
+    names, prefixes = ("search_corpus",), ("web__",)
+    cases = [
+        "I cannot answer this from the corpus",
+        "the corpus has nothing on that",
+        outcomes.NO_RESULTS,
+        "A middleware records the method and the url of each request.",
+        "",
+        None,
+        "I will call search_corpus with the query logging",
+    ]
+    for text in cases:
+        report_says = outcomes.classify(text or "", True, names, prefixes) == outcomes.Outcome.refused
+        assert outcomes.reads_as_refusal(text, names, prefixes) == report_says, text
+
+
+def test_both_answering_paths_record_the_refusal_fact():
+    # the judge abstained on agent rows and judged the same refusal on single_shot ones
+    import inspect
+
+    from use_cases import agent, chat
+
+    for module in (agent, chat):
+        source = inspect.getsource(module)
+        assert '"refusal": outcomes.reads_as_refusal(' in source, module.__name__

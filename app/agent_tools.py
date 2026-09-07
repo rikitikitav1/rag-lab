@@ -23,6 +23,16 @@ def context_pieces(meta: dict | None, content: str) -> list[str]:
     return list((meta or {}).get("contexts") or [content])
 
 
+# one address per piece, `None` where the piece is not a corpus chunk: a remote tool answers too
+def chunk_pieces(meta: dict | None, content: str) -> list[dict | None]:
+    pieces = context_pieces(meta, content)
+    # the gate empties the content after the search, and the addresses outlived it in 133 of 300
+    if not pieces:
+        return []
+    chunks = (meta or {}).get("chunks") or []
+    return list(chunks) if len(chunks) == len(pieces) else [None] * len(pieces)
+
+
 def counts_as_context(content: str) -> bool:
     return not (
         content.lower().startswith(errors.ERROR_PREFIX)
@@ -125,7 +135,7 @@ def _search_corpus(
     variant: str | None = None,
 ) -> ToolResult:
     # dispatch drops runtime values that are None, so the orchestrator always supplies this one
-    content, contexts, sources, ef_search = chat.search_chunks(
+    content, contexts, sources, ef_search, chunks = chat.search_chunks(
         query, category, k=k, use_rerank=use_rerank, gate_top=gate_top,
         variant=variant or config.settings.corpus.variant,
     )
@@ -133,7 +143,8 @@ def _search_corpus(
     return ToolResult(
         content=content,
         # the elements a reader that scores positions needs: they are not recoverable from the join
-        meta={"sources": sources, "contexts": contexts, "ef_search": ef_search},
+        meta={"sources": sources, "contexts": contexts, "chunks": chunks,
+              "ef_search": ef_search},
     )
 
 

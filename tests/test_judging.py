@@ -43,12 +43,11 @@ def _verdict(score=8, **kw):
 
 
 def test_a_written_verdict_names_the_judge_and_its_prompt():
-    from job_handlers.judging import _judge_axis, _Snapshot
+    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
 
     snapshot = _Snapshot({}, {"generate_answer": 3}, {"generation": "gemma3:4b"})
-    wrote = _judge_axis(
-        _Log(), snapshot, "relevance", True, False, lambda *a: _verdict(), (),
-    )
+    v, err = _run_axis(1, "relevance", lambda *a: _verdict())
+    wrote = _apply_axis(_Log(), snapshot, "relevance", v, err)
     assert wrote is True
     assert snapshot.models["judging"] == "qwen2.5:7b"
     assert snapshot.prompts["judge_relevance"] == 2
@@ -58,27 +57,28 @@ def test_a_written_verdict_names_the_judge_and_its_prompt():
 
 
 def test_a_failed_axis_leaves_the_snapshot_alone():
-    from job_handlers.judging import _judge_axis, _Snapshot
+    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
 
     def boom(*a):
         raise RuntimeError("judge is down")
 
     snapshot = _Snapshot({}, {}, {})
-    wrote = _judge_axis(_Log(), snapshot, "relevance", True, False, boom, ())
+    v, err = _run_axis(1, "relevance", boom)
+    wrote = _apply_axis(_Log(), snapshot, "relevance", v, err)
     assert wrote is False
     assert snapshot.models == {} and snapshot.prompts == {}
     assert snapshot.metrics["relevance"]["attempts"] == 1
 
 
 def test_rejudging_replaces_the_prompt_version_it_names():
-    from job_handlers.judging import _judge_axis, _Snapshot
+    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
     from models.registry import Purpose
 
     snapshot = _Snapshot({}, {"judge_relevance": 2}, {})
-    _judge_axis(
-        _Log(), snapshot, "relevance", True, True,
-        lambda *a: _verdict(purpose=Purpose.judge_relevance, prompt_version=3), (),
+    v, err = _run_axis(
+        1, "relevance", lambda *a: _verdict(purpose=Purpose.judge_relevance, prompt_version=3)
     )
+    _apply_axis(_Log(), snapshot, "relevance", v, err)
     assert snapshot.prompts["judge_relevance"] == 3
 
 
@@ -138,7 +138,7 @@ def test_every_row_is_judged_once_whatever_the_width(monkeypatch):
     seen = []
     monkeypatch.setattr(judging, "_target_log_ids", lambda session, options: list(range(20)))
     monkeypatch.setattr(
-        judging, "_judge_log", lambda log_id, force, bench, width, skip: seen.append(log_id)
+        judging, "_judge_log", lambda log_id, **kw: seen.append(log_id)
     )
     monkeypatch.setattr(judging, "Session", FakeSession)
     monkeypatch.setattr(judging.experiment, "try_aggregate_for_run", lambda run: None)
@@ -161,14 +161,22 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     verdict = SimpleNamespace(reason="because", elapsed=1.5, model="qwen2.5:7b")
 
     monkeypatch.setenv("OLLAMA_NUM_PARALLEL", "4")
-    assert judging._axis_metric(verdict, judging._stamp(4)) == {
+    written = judging._axis_metric(verdict, judging._stamp(4))
+    # the time, because a pair of arms is comparable only inside one residency
+    when = written.pop("judged_at")
+    assert written.pop("residency_id") is None, "no pass named it, so the stamp says so"
+    assert written == {
         "reason": "because", "elapsed": 1.5, "model": "qwen2.5:7b", "seed": 0, "width": 4,
         "slots_believed": 4,
     }
+    assert when.endswith("+00:00"), "the stamp must say when in utc, or two arms cannot be paired"
 
     # a role with no seed says so rather than implying one: the passes before 31.08 had none
     monkeypatch.setattr(judging.llm, "sampler_of", lambda role: {"temperature": 0})
-    assert judging._stamp(1) == {"seed": None, "width": 1, "slots_believed": 4}
+    bare = judging._stamp(1)
+    bare.pop("judged_at")
+    bare.pop("residency_id")
+    assert bare == {"seed": None, "width": 1, "slots_believed": 4}
 
 
 def test_a_row_the_judge_failed_on_is_swept_again_instead_of_stranding_the_series(monkeypatch):
@@ -256,7 +264,7 @@ def test_the_sweep_ends_even_when_the_rows_stay_owed_for_ever(monkeypatch):
 
 
 def test_a_row_that_broke_before_any_axis_ran_stops_being_owed(monkeypatch):
-    # `attempts` only grew inside `_judge_axis`, so a failure elsewhere left it untouched
+    # `attempts` only grew inside the axis writer, so a failure elsewhere left it untouched
     from types import SimpleNamespace
 
     from job_handlers import judging
@@ -277,7 +285,10 @@ def test_a_row_that_broke_before_any_axis_ran_stops_being_owed(monkeypatch):
             def __exit__(self, *_):
                 return False
 
-            def get(self, model, ident):
+            def execute(self, statement, params=None):
+                return None
+
+            def get(self, model, ident, **kw):
                 return ql
 
             def commit(self):
@@ -341,15 +352,18 @@ def test_a_skipped_axis_does_not_erase_a_verdict_the_row_already_carries(monkeyp
         def __exit__(self, *_):
             return False
 
-        def get(self, model, ident):
+        def execute(self, statement, params=None):
+            return None
+
+        def get(self, model, ident, **kw):
             return ql
 
         def commit(self):
             pass
 
     monkeypatch.setattr(judging, "Session", _Session)
-    monkeypatch.setattr(judging, "_judge_axis", lambda *a, **kw: False)
-    monkeypatch.setattr(judging, "_stamp", lambda width: {"seed": 0, "width": width})
+    monkeypatch.setattr(judging, "_apply_axis", lambda *a, **kw: False)
+    monkeypatch.setattr(judging, "_stamp", lambda width, residency=None: {"seed": 0, "width": width})
 
     judging._judge_log(5, skip=("relevance", "completeness"))
 
@@ -401,3 +415,90 @@ def test_a_sweep_does_not_carry_the_finished_job_id_into_the_next_one(monkeypatc
     judging._sweep_again_if_rows_are_still_owed({"run_name": "arm", "_job_id": 41}, "arm")
 
     assert enqueued == [{"run_name": "arm", "sweep": 1}]
+
+
+def test_our_judge_scores_outside_the_lock_and_writes_under_it():
+    # three model calls under `FOR UPDATE` timed out whoever lost the race, closing an axis on it
+    import inspect
+
+    from job_handlers import judging
+
+    scoring = inspect.getsource(judging._judge_log)
+    assert "with_for_update" not in scoring, "the lock is back around the model calls"
+    assert "_run_axis" in scoring and "_merge_our_scores" in scoring
+
+    merging = inspect.getsource(judging._merge_our_scores)
+    assert "with_for_update" in merging and "_run_axis" not in merging
+    # a verdict taken meanwhile wins: the merge asks again what is owed
+    assert "_owed" in merging
+
+
+def test_a_refusal_owes_no_axis_and_both_halves_of_the_rule_say_so():
+    # the owner's rule of 06.09: abstain, rather than bend the judge prompt towards the guest
+    from types import SimpleNamespace
+
+    from job_handlers.judging import _owed, still_to_judge
+
+    refused = SimpleNamespace(
+        metrics={"refusal": True}, relevance=None, faithfulness=None, completeness=None,
+        context="ctx", question=SimpleNamespace(reference_answer="ref"),
+    )
+    assert _owed(refused) == ()
+
+    answered = SimpleNamespace(**{**vars(refused), "metrics": {"refusal": False}})
+    assert set(_owed(answered)) == {"relevance", "faithfulness", "completeness"}
+
+    # a row with no such fact keeps the old behaviour rather than being silenced on a guess
+    silent = SimpleNamespace(**{**vars(refused), "metrics": {}})
+    assert _owed(silent) != ()
+
+    assert "true" in str(still_to_judge().compile().params.values()), "the sql half is missing it"
+
+
+def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
+    # the rule lived in a log, and two people took the wrong pair on the same day because of it
+    from types import SimpleNamespace
+
+    from evals.compare import residencies
+
+    def row(rid):
+        return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid}} if rid else {})
+
+    same = residencies({"a": [row(7), row(7)], "b": [row(7)]})
+    assert same["one_residency"] is True
+    assert "necessary, not sufficient" in same["read_this_first"]
+
+    split = residencies({"a": [row(7)], "b": [row(9)]})
+    assert split["one_residency"] is False and "not comparable" in split["read_this_first"]
+
+    old = residencies({"a": [row(None)], "b": [row(None)]})
+    assert old["one_residency"] is None and "nothing can be said" in old["read_this_first"]
+
+
+def test_a_pass_names_the_residency_it_caused_or_inherits_the_last():
+    # `/api/ps` has no load moment, so the pass that found the card empty is the one that names it
+    import job_handlers.judging as j
+
+    on_card, last = [None], [None]
+    real_card, real_last = j.judge_on_card, j._last_residency
+    j.judge_on_card, j._last_residency = lambda: on_card[0], lambda: last[0]
+    try:
+        assert j._residency_id(42) == 42, "the card was empty, so this pass loads it"
+        on_card[0], last[0] = True, 7
+        assert j._residency_id(42) == 7, "it was resident, so the residency is the older one"
+        last[0] = None
+        assert j._residency_id(42) == 42
+    finally:
+        j.judge_on_card, j._last_residency = real_card, real_last
+
+
+def test_a_pass_walks_the_rows_in_the_order_it_was_given():
+    # the order of requests is what the drift measurement moves, so postgres may not choose it
+    from job_handlers import judging
+
+    class _Session:
+        def scalars(self, stmt):
+            return [3, 1, 2]
+
+    got = judging._target_log_ids(_Session(), {"log_ids": [2, 3, 1, 99]})
+    assert got == [2, 3, 1], "the caller's order, and nothing it did not ask for"

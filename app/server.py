@@ -1,6 +1,7 @@
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
 
+import job_specs
 import logging_setup
 from api import health
 from api.v1 import (
@@ -40,6 +41,14 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+
+# a job's options are checked in the queue, so every door that enqueues refuses with the same text
+@app.exception_handler(job_specs.Refused)
+async def _refused_options(request, bad: job_specs.Refused):
+    return JSONResponse(status_code=400, content={"detail": str(bad)})
+
 
 app.mount("/mcp", mcp_app)
 app.mount("/mcp-ops", mcp_ops_app)

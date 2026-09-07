@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "run_name": "arc3_control_b",
+  "fields": [
+    "transcript",
+    "sources",
+    "chunks",
+    "contexts",
+    "fallback_reason",
+    "outcome",
+    "announced"
+  ],
+  "rows": 300,
+  "replayed": 300,
+  "identical": 300,
+  "differing": {},
+  "branches_walked": {
+    "off_topic": 156,
+    "none": 144
+  },
+  "announced_on": 0,
+  "refused": {},
+  "code_version": "d9856975c99a"
+}

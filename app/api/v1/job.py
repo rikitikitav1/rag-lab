@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import job_queue
+import job_specs
 from crud import get_or_404
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
@@ -47,11 +48,14 @@ async def list_jobs(
     status: list[JobStatus] | None = Query(default=None),
     created_from: datetime | None = Query(default=None),
     created_to: datetime | None = Query(default=None),
+    run_name: str | None = Query(default=None),
     page: Page = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = apply_in_filters(select(Job), {Job.type: type, Job.status: status})
     stmt = apply_created_between(stmt, Job.created_at, created_from, created_to)
+    if run_name:
+        stmt = stmt.where(Job.options["run_name"].astext == run_name)
 
     stmt = apply_sort_limit_offset(
         stmt=stmt,
@@ -64,6 +68,30 @@ async def list_jobs(
 
     result = await session.scalars(stmt)
     return result.all()
+
+
+class EnqueueRequest(BaseModel):
+    type: str
+    options: dict = {}
+
+
+# one door for every type: a door of its own is for work done before the enqueue, not for checking
+@router.post("", response_model=JobResponse, status_code=201)
+async def enqueue_job(
+    request: EnqueueRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    if request.type not in job_specs.SPECS and request.type not in job_specs.FREE:
+        raise HTTPException(status_code=400, detail=f"no such job type: {request.type}")
+    try:
+        job_specs.check(request.type, request.options)
+    except job_specs.Refused as bad:
+        raise HTTPException(status_code=400, detail=str(bad)) from bad
+
+    job = job_queue.add_job(session, request.type, request.options)
+    await session.commit()
+    await session.refresh(job)
+    return job
 
 
 @router.get("/{id}", response_model=JobResponse)

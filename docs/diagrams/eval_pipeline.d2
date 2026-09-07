@@ -17,6 +17,17 @@ logs: question_logs\n(answer, context, sources) {
 
 judge: judge_answers job\nLLM judge, 0-10 per axis {
   axes: faithfulness / relevance / completeness
+  silent: "on a refusal the axes abstain:\nthe row carries metrics.refusal and\nneither side scores it" {
+    style.stroke-dash: 3
+  }
+}
+
+guests: judge_guest_axes job\nragas, by request only {
+  style.fill: "#fff3cd"
+  gaxes: ragas_faithfulness\nragas_context_precision\nragas_context_recall
+  sample: "a calibration on a drawn subsample,\nnot an axis every run carries:\n51.4s of model time a row against 6.6s" {
+    style.stroke-dash: 3
+  }
 }
 
 agg: Experiment aggregator {
@@ -32,10 +43,16 @@ results: results.composite\nwinner + significance {
 exp -> runs: enqueue (find-or-create\nmissing models)
 runs -> logs
 logs -> judge
+logs -> guests: "by request, on a subsample"
+guests -> logs: "the scores land on the same row,\nso a correlation with ours is a join"
 judge -> agg: live trigger on\nlast run judged
+guests -> agg: "never: out of the composite\nand out of the Holm family" {
+  style.stroke-dash: 4
+  style.opacity: 0.6
+}
 agg -> results
 
-note: "hit@k and MRR stay out of the composite:\nhit@k grows with k and would confound it" {
+note: "hit@k and MRR stay out of the composite:\nhit@k grows with k and would confound it.\nThe guest axes stay out of it too, and out of the\nHolm family: a ruler used to check a ruler is not\na fourth measure of quality (owner, 07.09)" {
   near: bottom-center
   style.stroke-dash: 3
 }

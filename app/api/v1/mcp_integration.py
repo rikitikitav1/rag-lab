@@ -163,7 +163,7 @@ async def create_integration(
             status_code=409, detail=f"name '{request.name}' is taken"
         ) from None
     job_queue.add_job(
-        session, "check_mcp_health", {"integration_id": integration.id}, queue="io"
+        session, "check_mcp_health", {"integration_id": integration.id}
     )
     return await commit_and_refresh(session, integration)
 
@@ -196,7 +196,7 @@ async def update_integration(
     for field, value in request.model_dump().items():
         setattr(integration, field, value)
     job_queue.add_job(
-        session, "check_mcp_health", {"integration_id": integration.id}, queue="io"
+        session, "check_mcp_health", {"integration_id": integration.id}
     )
     return await commit_and_refresh(session, integration)
 

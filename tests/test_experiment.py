@@ -477,12 +477,18 @@ def test_cancelling_an_arm_does_not_leave_its_experiment_running(monkeypatch):
 
 def test_every_kind_of_report_declares_its_schema():
     # a record written before a field existed is indistinguishable from one where it is absent
-    from evals import generation_metrics, retrieval_metrics
+    from evals import generation_metrics, judge_correlation, retrieval_metrics
     from use_cases import experiment, rejudge, retrieval_compare, run_snapshot
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (3, 4, 2)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (2, 3, 2)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (3, 6, 3)
+    # the judge-against-judge report is a record of its own, and its predictions were declared
+    from evals import guest_probes, judge_language, replay
+
+    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (4, 1, 2)
+    # the equality report is a record too: what it compared moved once already
+    assert replay.SCHEMA == 1
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():
@@ -822,3 +828,12 @@ def test_a_field_only_a_rejudge_reads_is_refused_by_the_other_kinds(client):
               "control_sample": 200},
     )
     assert out.status_code == 422 and "apply to a rejudge" in out.text
+
+
+def test_a_run_without_a_target_is_refused_rather_than_sweeping_every_question():
+    # `__noop__` swept 19645 questions through a typed door: the bound was missing in the holder
+    import pytest
+    from evals.runner import _target_texts
+
+    with pytest.raises(ValueError, match="target"):
+        _target_texts(None, None)

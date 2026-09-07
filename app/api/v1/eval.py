@@ -5,13 +5,15 @@ from typing import Literal
 
 import config
 import job_queue
+import job_specs
 import limits
+import logging_setup
 from evals import compare as compare_uc
 from evals import retrieval_metrics
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.eval import QuestionLog
-from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, refuse_unknown_registry
+from models.registry import Pipeline, refuse_unknown_registry
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -27,6 +29,8 @@ RunnableOrchestrator = StrEnum(
     "RunnableOrchestrator",
     {o.name: o.value for o in Orchestrator if o not in GONE},
 )
+
+log = logging_setup.get_logger(__name__)
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
@@ -48,6 +52,24 @@ class RejudgeResponse(BaseModel):
     copied: int
 
 
+class GuestAxesRequest(BaseModel):
+    run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
+    judge_width: int | None = Field(default=None, ge=1, le=limits.MAX_RUNS)
+    # the owner's decision of 07.09: the guests calibrate on a subsample, they are not an axis
+    sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
+    seed: int | None = None
+
+
+class JudgeRequest(BaseModel):
+    run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
+    judge_width: int | None = Field(default=None, ge=1, le=limits.MAX_RUNS)
+
+
+class LanguageProbeRequest(BaseModel):
+    run_name: str = Field(default="arc3_agent_baseline", max_length=limits.MAX_RUN_NAME)
+    rows: int = Field(default=40, ge=1, le=limits.MAX_GUEST_ROWS)
+
+
 class ParaphraseRequest(BaseModel):
     limit: int | None = 100
     source: str | None = None
@@ -57,25 +79,10 @@ class ParaphraseRequest(BaseModel):
     grow: bool = False
 
 
-class EvalRunRequest(BaseModel):
+# the door is the queue's own model with the name made optional: it invents one when none came
+class EvalRunRequest(job_specs.EvalRunFields):
     run_name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
-    set_name: str | None = None
-    question_ids: list[int] | None = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
-    rerank: bool | None = None
-    pipeline: Pipeline = Pipeline.single_shot
-    language: Literal["ru", "en"] | None = None
-    k: int | None = Field(default=None, ge=1, le=limits.MAX_K)
-    max_hops: int | None = Field(default=None, ge=1, le=agent_policy.MAX_HOPS)
-    model: str | None = Field(
-        default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern
-    )
-    fallback_policy: FallbackPolicy | None = None
-    gate_signal: GateSignal | None = None
-    weak_distance: float | None = Field(default=None, ge=0, le=2)
-    topic_threshold: float | None = Field(default=None, ge=0, le=2)
     orchestrator: RunnableOrchestrator | None = None
-    allow_cpu: bool = False
-    variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
 
 
 class ExperimentRequest(BaseModel):
@@ -94,6 +101,18 @@ class ExperimentRequest(BaseModel):
     )
     # the corpus every arm reads unless `variant` is the swept parameter
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
+
+
+# `safely` returns no counts when the diagnostic itself failed, and the door read them anyway
+def _debts_or_none(run_name: str):
+    from evals.run_debts import safely
+
+    debts = safely(run_name)
+    if "unavailable" in debts:
+        # the handler decides on the rows it finds: a broken diagnostic must not refuse real work
+        log.warning("eval.debts_unavailable", run_name=run_name, why=debts["unavailable"])
+        return None
+    return debts
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
@@ -316,6 +335,7 @@ async def enqueue_eval_run(
             "orchestrator": request.orchestrator and request.orchestrator.value,
             "topic_threshold": request.topic_threshold,
             "allow_cpu": request.allow_cpu,
+            "restate_tools": request.restate_tools,
             "variant": request.variant,
         },
     )
@@ -335,6 +355,80 @@ def enqueue_rejudge(request: RejudgeRequest):
         rejudge.delete_runs([request.run_name])
         raise
     return RejudgeResponse(job_id=job_id, run_name=request.run_name, copied=copied)
+
+
+# `/rejudge` judges a copy; a run judged in place had no door, and the queue was filled by hand
+@router.post("/judge", response_model=JobEnqueuedResponse)
+async def enqueue_judge(
+    request: JudgeRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    debts = await run_in_threadpool(_debts_or_none, request.run_name)
+    if debts is not None and not debts["answered_rows"]:
+        raise HTTPException(
+            status_code=404, detail=f"run {request.run_name} holds no answered row"
+        )
+    if debts is not None and not debts["ours_still_to_judge"]:
+        raise HTTPException(
+            status_code=404, detail=f"run {request.run_name} owes our judge nothing"
+        )
+    return await _enqueue(
+        session,
+        "judge_answers",
+        {"run_name": request.run_name, "judge_width": request.judge_width},
+    )
+
+
+# two calls a row and no card guard beside the judge: it queues rather than running host side
+@router.post("/language-probe", response_model=JobEnqueuedResponse)
+async def enqueue_language_probe(
+    request: LanguageProbeRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    debts = await run_in_threadpool(_debts_or_none, request.run_name)
+    if debts is not None and not debts["answered_rows"]:
+        raise HTTPException(
+            status_code=404, detail=f"run {request.run_name} holds no answered row"
+        )
+    return await _enqueue(
+        session,
+        "judge_language",
+        {"run_name": request.run_name, "rows": request.rows},
+    )
+
+
+# by request only: the guests cost 6.62x our three axes, so no run and no arm asks for them
+@router.post("/guest-axes", response_model=JobEnqueuedResponse)
+async def enqueue_guest_axes(
+    request: GuestAxesRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    from job_handlers.judging import guest_rows_of, guests_available
+
+    if not guests_available():
+        raise HTTPException(
+            status_code=409,
+            detail="this runtime carries no `ragas`, the guest axes cannot be scored",
+        )
+    # a typo in the name used to be a job over nothing, and no cap stood where `/rejudge` has one
+    owed = await run_in_threadpool(guest_rows_of, request.run_name)
+    if not owed:
+        raise HTTPException(
+            status_code=404, detail=f"run {request.run_name} owes no guest axis"
+        )
+    # the pass walks the drawn subsample, so the cap is read over the same rows the handler counts
+    will_walk = min(owed, request.sample) if request.sample else owed
+    if will_walk > limits.MAX_GUEST_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{will_walk} rows would be walked, over the cap of {limits.MAX_GUEST_ROWS}",
+        )
+    return await _enqueue(
+        session,
+        "judge_guest_axes",
+        {"run_name": request.run_name, "judge_width": request.judge_width,
+         "sample": request.sample, "seed": request.seed},
+    )
 
 
 @router.post("/experiment", response_model=list[JobEnqueuedResponse])

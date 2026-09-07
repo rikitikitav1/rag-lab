@@ -9,12 +9,33 @@ ALL_OUTCOMES = tuple(o.value for o in outcomes.Outcome)
 POOLS = ("in_corpus", "out_of_corpus", "off_domain", "rejected")
 
 
-def kind(ql) -> str:
-    marked = ql.question.marked_sources if ql.question else None
-    declared = ql.question.kind if ql.question else None
+# the rule lives here alone: the set inventory asks the same question of a question, not a log
+def kind_of_question(question) -> str:
+    declared = question.kind if question else None
     if declared in POOLS:
         return declared
-    return "in_corpus" if marked else "out_of_corpus"
+    return "in_corpus" if (question.marked_sources if question else None) else "out_of_corpus"
+
+
+def kind(ql) -> str:
+    return kind_of_question(ql.question if ql else None)
+
+
+# the row says which edge ended it; the ceiling is re-derived only for rows written before it did
+def _exhausted(metrics: dict, snapshot: dict) -> bool:
+    from use_cases.agent_policy import FinishedBy
+
+    said = metrics.get("finished_by")
+    # `unrecorded` is the bare arm saying it has no edge of ours, so the ceiling is re-derived
+    if said and said != FinishedBy.unrecorded:
+        return said == FinishedBy.hops_exhausted and not metrics.get("failed")
+    its_ceiling = snapshot.get("max_hops")
+    ceiling = config.settings.agent.max_hops if its_ceiling is None else its_ceiling
+    return (
+        metrics.get("hops") is not None
+        and metrics["hops"] >= ceiling
+        and not metrics.get("failed")
+    )
 
 
 def outcome(ql) -> str:
@@ -23,14 +44,7 @@ def outcome(ql) -> str:
     if recorded in (Outcome.narrated_call, Outcome.exhausted):
         return recorded
     snapshot = metrics.get("config") or {}
-    # the row's own ceiling, today's default only where it recorded none
-    its_ceiling = snapshot.get("max_hops")
-    ceiling = config.settings.agent.max_hops if its_ceiling is None else its_ceiling
-    exhausted = (
-        metrics.get("hops") is not None
-        and metrics["hops"] >= ceiling
-        and not metrics.get("failed")
-    )
+    exhausted = _exhausted(metrics, snapshot)
     if recorded == Outcome.error:
         return Outcome.exhausted if exhausted else Outcome.error
     return outcomes.classify(

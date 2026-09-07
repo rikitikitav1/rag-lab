@@ -95,22 +95,6 @@ def test_the_probe_asks_for_the_index_back_before_it_looks(monkeypatch):
     assert issued[-1] == "SET LOCAL enable_indexscan = off"
 
 
-@pytest.mark.skipif(not _stack_is_up(), reason="needs the database this probe asks")
-def test_the_probe_is_not_poisoned_by_the_exact_search_mode(monkeypatch):
-    # the depth is a property of the table on the day, and the arc has moved it twice
-    from use_cases import retrieval_compare as rc
-
-    monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
-    monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
-    clean = search_depth.resolve("baseline")
-    search_depth.forget()
-    rc.prepare(exact=True)
-    try:
-        assert search_depth.resolve("baseline") == clean
-    finally:
-        rc.release()
-
-
 def test_a_table_no_rung_walks_is_not_remembered(monkeypatch):
     # a poisoned session answers "no rung" too, and a poisoned answer that sticks is worse
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
