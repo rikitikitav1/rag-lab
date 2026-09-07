@@ -3,7 +3,7 @@ import itertools
 import re
 
 import prompt_repo
-from evals import sampling
+from evals import guest_axes, sampling
 from evals.stats import annotate_holm, deltas_over, mean_of, tally
 from models.eval import QuestionLog
 from models.registry import (
@@ -119,7 +119,7 @@ def copy_statement(source: str, target: str, question_ids=None):
     carried = carried_columns()
     overrides = {
         "run_name": literal(target),
-        "metrics": _stripped(QuestionLog.metrics, AXES),
+        "metrics": _stripped(QuestionLog.metrics, (*AXES, *guest_axes.NAMES)),
         "prompts": _stripped(QuestionLog.prompts, [f"judge_{axis}" for axis in AXES]),
         "models": _stripped(QuestionLog.models, [JUDGE_MODEL_KEY]),
         **{axis: literal(None) for axis in AXES},

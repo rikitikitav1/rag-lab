@@ -177,14 +177,21 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
     return [row for row, _ in ranked], [score for _, score in ranked], depth
 
 
+# one filter, one order, one pass: the text and its address cannot come out different lengths
+def kept_chunks(rows, variant: str | None = None) -> tuple[list[str], list[dict]]:
+    variant = variant or config.settings.corpus.variant
+    kept = [hit for hit in rows if not _hidden_by_cut(hit.source, variant)]
+    texts = [f"[{hit.source}]\n{hit.content}" for hit in kept]
+    chunks = [
+        {"source": hit.source, "section": hit.section, "chunk_index": hit.chunk_index}
+        for hit in kept
+    ]
+    return texts, chunks
+
+
 # the join is built from these same elements, so the two cannot drift
 def chunk_texts(rows, variant: str | None = None) -> list[str]:
-    variant = variant or config.settings.corpus.variant
-    return [
-        f"[{hit.source}]\n{hit.content}"
-        for hit in rows
-        if not _hidden_by_cut(hit.source, variant)
-    ]
+    return kept_chunks(rows, variant)[0]
 
 
 def format_chunks(rows, variant: str | None = None) -> str:
@@ -207,20 +214,21 @@ def search_chunks(
     gate_top: int | None = None,
     *,
     variant: str,
-) -> tuple[str, list[str], list[Source], int]:
+) -> tuple[str, list[str], list[Source], int, list[dict]]:
     k = k or config.settings.retrieval.results_limit
     use_rerank = resolve_rerank(use_rerank)
     rows, rerank_scores, depth = _retrieve_rows(query, category, k, use_rerank, variant)
     if not rows:
-        return NO_RESULTS, [], [], depth
+        return NO_RESULTS, [], [], depth, []
     if rerank_scores is None and gate_top:
         rerank_scores = _gate_scores(query, rows, gate_top)
-    texts = chunk_texts(rows, variant)
+    texts, chunks = kept_chunks(rows, variant)
     return (
         "\n\n".join(texts) or NO_RESULTS,
         texts,
         take_sources(rows, rerank_scores, variant),
         depth,
+        chunks,
     )
 
 
@@ -297,7 +305,7 @@ def answer_from_rows(
     use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
 
-    texts = chunk_texts(rows, variant) if rows else []
+    texts, chunks = kept_chunks(rows, variant) if rows else ([], [])
     context = "\n\n".join(texts) or None
     if not context:
         ans = Answer(text=NO_RESULTS)
@@ -331,7 +339,7 @@ def answer_from_rows(
         _log_answer(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
             _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
-            contexts=texts or None,
+            contexts=texts or None, chunks=chunks or None,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -383,7 +391,7 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
 def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
-    *, variant: str, ef_search: int | None = None, contexts=None,
+    *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -396,6 +404,7 @@ def _log_answer(
             answer=ans.text,
             context=context,
             contexts=contexts,
+            chunks=chunks,
             sources=[asdict(s) for s in ans.sources],
             models={
                 "generation": ans.metrics.model,
@@ -412,6 +421,8 @@ def _log_answer(
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand
                 "context_chars": len(context) if context else 0,
+                # the one fact both the judge and the report may read: neither re-derives it
+                "refusal": outcomes.reads_as_refusal(ans.text),
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

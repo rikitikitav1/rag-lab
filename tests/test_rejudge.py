@@ -162,9 +162,9 @@ def test_a_copy_may_not_claim_a_judge_the_row_has_not_had():
     from job_handlers import judging
 
     snapshot = judging._Snapshot({}, {}, {})
-    judging._judge_axis(
-        type("L", (), {"id": 1, "relevance": None})(), snapshot, "relevance", True, False,
-        lambda *a: _verdict_for_contract(), (),
+    v, err = judging._run_axis(1, "relevance", _verdict_for_contract)
+    judging._apply_axis(
+        type("L", (), {"id": 1, "relevance": None})(), snapshot, "relevance", v, err
     )
     assert set(snapshot.models) == {rejudge.JUDGE_MODEL_KEY}
 
