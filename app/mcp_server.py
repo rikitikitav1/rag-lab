@@ -82,7 +82,7 @@ def search_corpus(
 ) -> str:
     _check_text(query, "query")
     category = _safe_category(category)
-    content, _texts, _sources, _depth = chat.search_chunks(
+    content, _texts, _sources, _depth, _chunks = chat.search_chunks(
         query, category, variant=config.settings.corpus.variant
     )
     return content

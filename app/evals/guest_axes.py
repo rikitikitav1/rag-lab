@@ -1,0 +1,116 @@
+"""The standard's judged axes as guests on our own row.
+
+They ride the same judging pass as our three: same client, same seed, same row. What they are not
+is a second arm, and nothing here may decide whether the row counts as judged by us.
+"""
+
+import asyncio
+import math
+import time
+from dataclasses import dataclass
+
+# one prefix tells a guest key from ours in `metrics`, in a copy and in a report
+PREFIX = "ragas_"
+
+
+@dataclass(frozen=True)
+class Guest:
+    metric: str
+    # what the row must carry, named once: the sweep's query and the row's check read this
+    needs: tuple[str, ...]
+    # how many calls one row costs, so a smoke can price a set before it runs
+    calls_per_row: str
+
+
+# every axis is handed `user_input`, so `question_text` is material to all three
+AXES = {
+    f"{PREFIX}faithfulness": Guest(
+        "Faithfulness", ("question_text", "answer", "contexts"), "2"
+    ),
+    f"{PREFIX}context_precision": Guest(
+        "LLMContextPrecisionWithReference",
+        ("question_text", "contexts", "reference"), "one per context",
+    ),
+    f"{PREFIX}context_recall": Guest(
+        "LLMContextRecall", ("question_text", "contexts", "reference"), "1"
+    ),
+}
+
+NAMES = tuple(AXES)
+
+HAS = {
+    "question_text": lambda ql: bool(ql.question_text),
+    "answer": lambda ql: bool(ql.answer),
+    "contexts": lambda ql: bool(ql.contexts),
+    "reference": lambda ql: bool(ql.question and ql.question.reference_answer),
+}
+
+
+def material(axis: str, ql) -> bool:
+    return all(HAS[name](ql) for name in AXES[axis].needs)
+
+
+# an axis that abstained holds no score and is still answered: `nan` is the standard's verdict
+def owed(ql, metrics: dict) -> tuple[str, ...]:
+    return tuple(
+        axis
+        for axis in AXES
+        if "abstained" not in (metrics.get(axis) or {}) and material(axis, ql)
+    )
+
+
+# the four fields a guest reads, off the session: scoring held a connection idle for minutes
+def carried(ql):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        question_text=ql.question_text,
+        answer=ql.answer,
+        contexts=list(ql.contexts or []),
+        question=SimpleNamespace(
+            reference_answer=ql.question.reference_answer if ql.question else None
+        ),
+    )
+
+
+def _sample(ql):
+    from ragas.dataset_schema import SingleTurnSample
+
+    return SingleTurnSample(
+        user_input=ql.question_text or "",
+        response=ql.answer or "",
+        retrieved_contexts=list(ql.contexts or []),
+        reference=ql.question.reference_answer if ql.question else None,
+    )
+
+
+_METRICS: dict = {}
+
+
+def _metric(axis: str):
+    if axis not in _METRICS:
+        import ragas.metrics as guest_metrics
+        from evals.guest_llm import OurClient
+
+        _METRICS[axis] = getattr(guest_metrics, AXES[axis].metric)(llm=OurClient())
+    return _METRICS[axis]
+
+
+# nan is how the standard abstains, and JSONB has no place to put it
+def _finite(score) -> float | None:
+    value = float(score)
+    return None if math.isnan(value) else round(value, 4)
+
+
+def score(axis: str, ql) -> dict:
+    from evals.guest_llm import stamp
+
+    start = time.perf_counter()
+    value = asyncio.run(_metric(axis).single_turn_ascore(_sample(ql)))
+    finite = _finite(value)
+    return {
+        "score": finite,
+        "abstained": finite is None,
+        "elapsed": round(time.perf_counter() - start, 3),
+        **stamp(),
+    }

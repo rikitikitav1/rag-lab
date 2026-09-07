@@ -6,11 +6,16 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 
-def test_run_metrics_merges_gen_and_retrieval(monkeypatch):
+def test_run_metrics_merges_gen_retrieval_and_the_debt(monkeypatch):
+    # n_scored says who was scored and nothing about why the rest was not
     monkeypatch.setattr(mcp_ops.generation_metrics, "evaluate", lambda rn: {"faithfulness": 7})
     monkeypatch.setattr(mcp_ops.retrieval_metrics, "evaluate", lambda rn: {"hit_at_k": 0.9})
+    monkeypatch.setattr(mcp_ops.run_debts, "of", lambda rn: {"ours_still_to_judge": 3})
     out = mcp_ops.run_metrics("some_run")
-    assert out == {"run_name": "some_run", "faithfulness": 7, "hit_at_k": 0.9}
+    assert out == {
+        "run_name": "some_run", "faithfulness": 7, "hit_at_k": 0.9,
+        "debts": {"ours_still_to_judge": 3},
+    }
 
 
 def test_run_metrics_empty_raises():
@@ -130,3 +135,10 @@ def test_experiment_results_names_the_pairs_it_has_when_asked_for_another(monkey
     monkeypatch.setattr(mcp_ops, "Session", lambda: _SessionWith(None))
     with pytest.raises(ToolError, match="no experiment"):
         mcp_ops.experiment_results(1)
+
+
+def test_question_sets_names_the_set_that_is_not_there(monkeypatch):
+    monkeypatch.setattr(mcp_ops.question_sets, "inventory", lambda name: [])
+    with pytest.raises(ToolError) as ei:
+        mcp_ops.list_question_sets("ghost")
+    assert "ghost" in str(ei.value)
