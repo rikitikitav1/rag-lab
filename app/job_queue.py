@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+import job_specs
 import logging_setup
 from models import Job, JobStatus
 from orm.sync_db import Session
@@ -16,9 +17,11 @@ class ClaimedJob:
     options: dict
 
 
-def enqueue(type: str, options: dict | None = None, queue: str = "default") -> int:
+# the lane is a property of the type: left to the caller, a card job reached the io lane by hand
+def enqueue(type: str, options: dict | None = None, queue: str | None = None) -> int:
+    job_specs.check(type, options)
     with Session() as session:
-        job = Job(type=type, options=options or {}, queue=queue)
+        job = Job(type=type, options=options or {}, queue=queue or job_specs.lane(type))
         session.add(job)
         session.commit()
         return job.id
@@ -41,10 +44,11 @@ def pending_of_type(type: str, **options) -> bool:
 
 
 def add_job(
-    session, type: str, options: dict | None = None, queue: str = "default"
+    session, type: str, options: dict | None = None, queue: str | None = None
 ) -> Job:
     # stage a job in the caller's transaction (caller commits); async-safe: .add() is sync
-    job = Job(type=type, options=options or {}, queue=queue)
+    job_specs.check(type, options)
+    job = Job(type=type, options=options or {}, queue=queue or job_specs.lane(type))
     session.add(job)
     return job
 

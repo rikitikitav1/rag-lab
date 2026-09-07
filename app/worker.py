@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import job_handlers
 import job_queue
+import job_specs
 import logging_setup
 
 log = logging_setup.get_logger(__name__)
@@ -35,6 +36,13 @@ def run_once(queues: list[str]) -> bool:
     handler = HANDLERS.get(claimed.type)
     if handler is None:
         job_queue.fail(claimed.id, {"error": f"no handler for type {claimed.type}"})
+        return True
+
+    # a row written straight into the table never passed the door, so the check runs here too
+    try:
+        job_specs.check(claimed.type, claimed.options)
+    except Exception as bad:
+        job_queue.fail(claimed.id, {"error": str(bad)})
         return True
 
     start = time.perf_counter()
