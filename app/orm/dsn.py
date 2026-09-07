@@ -1,3 +1,5 @@
+import os
+
 import config
 from sqlalchemy import URL
 
@@ -12,4 +14,6 @@ PLAN_CACHE_MODE = "force_custom_plan"
 
 def postgres_url(driver: str):
     p = config.settings.postgres
-    return URL.create(driver, username=p.user, host=p.host, port=p.port, database=p.dbname)
+    # the compose hostname resolves inside the network only; a script on the host says where
+    host = os.getenv("POSTGRES_HOST") or p.host
+    return URL.create(driver, username=p.user, host=host, port=p.port, database=p.dbname)

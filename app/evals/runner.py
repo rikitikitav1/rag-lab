@@ -22,12 +22,15 @@ import db
 log = logging_setup.get_logger(__name__)
 
 
+# an unnamed target is every question there is: `__noop__` swept the corpus through a typed door
 def _target_texts(set_name: str | None, question_ids: list[int] | None) -> list[str]:
+    if not question_ids and not set_name:
+        raise ValueError("a run needs a target: name a set or the question ids, not neither")
     with Session() as session:
         stmt = select(Question.original_text)
         if question_ids:
             stmt = stmt.where(Question.id.in_(question_ids))
-        elif set_name:
+        else:
             stmt = stmt.where(Question.set_name == set_name)
         return list(session.scalars(stmt))
 
@@ -44,6 +47,7 @@ class RunSpec:
     model: str | None = None
     fallback_policy: str | None = None
     gate_signal: str | None = None
+    restate_tools: bool = False
     weak_distance: float | None = None
     topic_threshold: float | None = None
     orchestrator: str | None = None
@@ -61,6 +65,7 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> None:
             model=spec.model,
             fallback_policy=spec.fallback_policy,
             gate_signal=spec.gate_signal,
+            restate_tools=spec.restate_tools,
             weak_distance=spec.weak_distance,
             topic_threshold=spec.topic_threshold,
             orchestrator=spec.orchestrator,
@@ -286,6 +291,7 @@ def run(
     model: str | None = None,
     fallback_policy: str | None = None,
     gate_signal: str | None = None,
+    restate_tools: bool = False,
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
     orchestrator: str | None = None,
@@ -326,6 +332,7 @@ def run(
         model=model,
         fallback_policy=fallback_policy,
         gate_signal=gate_signal,
+        restate_tools=restate_tools,
         weak_distance=weak_distance,
         topic_threshold=topic_threshold,
         orchestrator=orchestrator,
