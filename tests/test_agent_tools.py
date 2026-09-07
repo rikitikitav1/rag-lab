@@ -89,7 +89,7 @@ def test_the_corpus_tool_carries_the_depth_it_searched_at(monkeypatch):
     from use_cases import chat
 
     monkeypatch.setattr(
-        chat, "search_chunks", lambda *a, **kw: ("content", ["chunk"], [], 137)
+        chat, "search_chunks", lambda *a, **kw: ("content", ["chunk"], [], 137, [{"source": "a.md"}])
     )
     res = agent_tools._search_corpus("q", variant="baseline")
     assert res.meta["ef_search"] == 137

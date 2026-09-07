@@ -530,3 +530,40 @@ def test_the_context_and_the_chunks_hold_the_same_material(monkeypatch_factory):
     joined = agent._context_from_messages(kept.messages)
 
     assert kept.contexts and "\n\n".join(kept.contexts) == joined
+
+
+# dropping weak chunks and announcing the fallback change what the model sees
+def test_search_and_the_verdict_on_it_are_two_nodes_with_the_verdict_on_the_edge():
+    from orchestrators import graph
+
+    compiled = graph.build().get_graph()
+    assert {"retrieve", "fallback", "emit"} <= {
+        n for n in compiled.nodes if not n.startswith("__")
+    }
+    out_of_retrieve = {e.target for e in compiled.edges if e.source == "retrieve"}
+    assert out_of_retrieve == {"fallback", "emit"}, "the coverage verdict is not an edge"
+    assert {e.target for e in compiled.edges if e.source == "fallback"} == {"emit"}
+
+
+def test_only_the_node_after_the_verdict_speaks_to_the_model():
+    import inspect
+
+    from orchestrators import graph
+
+    nodes = ("retrieve_node", "fallback_node", "emit_node")
+    speaking = [n for n in nodes if '"role": "tool"' in inspect.getsource(getattr(graph, n))]
+    assert speaking == ["emit_node"]
+
+
+def test_the_hand_drawn_diagram_names_no_node_the_graph_does_not_have():
+    # `--check` guards only the generated file, and the hand-drawn one kept `tools` for a day
+    import re
+    from pathlib import Path
+
+    from orchestrators import graph
+
+    drawing = Path(__file__).resolve().parent.parent / "docs" / "diagrams"
+    text = (drawing / "agent_nodes_and_the_row.d2").read_text()
+    block = text[text.index("today:"): text.index("planned:")]
+    drawn = set(re.findall(r"^  (\w+):", block, re.M))
+    assert drawn == {n for n in graph.build().get_graph().nodes if not n.startswith("__")}

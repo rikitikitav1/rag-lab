@@ -6,7 +6,9 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "diagrams" / "agent_graph.d2"
 LABELS = {
     "model": "model\\ncall the LLM with the tools this hop is allowed",
-    "tools": "tools\\nour dispatch, then one coverage verdict for the turn",
+    "retrieve": "retrieve\\nour dispatch, raw results into the state,\\nno message for the model",
+    "fallback": "fallback\\nthe coverage verdict fired: drop weak,\\nannounce, open external",
+    "emit": "emit\\ntool messages for the model, after the verdict",
     "final": "final\\nlast turn without tools,\\nagent.no_evidence when nothing answered",
     "__start__": "start",
     "__end__": "end",

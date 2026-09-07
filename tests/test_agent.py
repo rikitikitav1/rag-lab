@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import agent_tools
@@ -149,6 +151,9 @@ def test_the_notice_rides_in_the_tool_result_not_a_system_message(monkeypatch):
     assert tool_messages[0]["content"].endswith(f"tpl:{Purpose.agent_fallback}")
     assert [m["role"] for m in result.messages].count("system") == 1
     assert result.fallback_announced is True
+    # the flag says it fired; without the text no reader can tell what the model was told
+    assert result.announced_text.endswith(f"tpl:{Purpose.agent_fallback}")
+    assert result.announced_text in tool_messages[0]["content"]
 
 
 def test_no_notice_when_the_corpus_answered(monkeypatch):
@@ -161,6 +166,7 @@ def test_no_notice_when_the_corpus_answered(monkeypatch):
     result = agent.run("q", max_hops=2)
 
     assert result.fallback_announced is False
+    assert result.announced_text == ""
     assert all(f"tpl:{Purpose.agent_fallback}" not in m.get("content", "") for m in result.messages)
 
 
@@ -613,7 +619,9 @@ def test_a_run_with_no_evidence_is_asked_to_refuse_in_words(monkeypatch):
     result = agent.run("how do I cook carbonara?", max_hops=2)
 
     assert result.no_evidence_prompted is True
-    assert result.messages[-1]["content"] == f"tpl:{Purpose.agent_no_evidence}"
+    # the prompt, then the turn it produced: the answering turn is kept now, so it comes last
+    assert result.messages[-2]["content"] == f"tpl:{Purpose.agent_no_evidence}"
+    assert result.messages[-1]["content"] == "I cannot answer this from the available sources"
     assert result.outcome == outcomes.Outcome.refused
     assert result.text == "I cannot answer this from the available sources"
 
@@ -829,3 +837,117 @@ def test_server_timings_are_taken_only_when_reported():
 
     assert result.stages["prefill"] == {"ms": 31, "calls": 1}
     assert result.stages["decode"] == {"ms": 49, "calls": 1}
+
+
+def test_the_row_says_which_edge_ended_the_graph():
+    # `final` meant three things, and `pools.outcome` re-derived one of them from `hops >= ceiling`
+    from orchestrators import graph
+    from use_cases.agent_policy import FinishedBy
+
+    ctx = {"max_hops": 4, "result": None, "role": "generation", "model": None}
+    answered = graph.final_node({"text": "an answer", "hops": 2, "sources": ["a"]},
+                                {"configurable": {"run": ctx}})
+    assert answered == {"finished_by": FinishedBy.answer}
+
+
+def test_a_reader_trusts_the_recorded_edge_over_the_ceiling_it_would_guess():
+    from evals.pools import _exhausted
+    from use_cases.agent_policy import FinishedBy
+
+    ceiling = {"max_hops": 4}
+    # the row spent its hops and answered anyway: the old rule called that exhausted
+    said_answer = {"hops": 4, "finished_by": str(FinishedBy.answer)}
+    assert _exhausted(said_answer, ceiling) is False
+    assert _exhausted({"hops": 4}, ceiling) is True
+
+    said_out = {"hops": 4, "finished_by": str(FinishedBy.hops_exhausted)}
+    assert _exhausted(said_out, ceiling) is True
+    assert _exhausted({**said_out, "failed": True}, ceiling) is False
+
+
+def test_the_idiomatic_arm_names_why_the_field_is_empty():
+    # a gap without a reason reads as a fault a month later
+    from use_cases.agent_policy import FinishedBy
+
+    assert FinishedBy.unrecorded == "unrecorded"
+    source = Path(__file__).resolve().parent.parent / "app" / "orchestrators" / "react.py"
+    assert "FinishedBy.unrecorded" in source.read_text()
+
+
+def test_the_transcript_keeps_the_turns_and_leaves_the_tool_results_alone():
+    # `contexts` already holds every chunk; repeating them here would double the row
+    from use_cases.agent import transcript_of
+
+    chunk = "[src/a.md]\nthe whole of a retrieved chunk, a kilobyte of it"
+    messages = [
+        {"role": "system", "content": "you are"},
+        {"role": "user", "content": "how do I log a request"},
+        SimpleNamespace(
+            role="assistant", content="",
+            tool_calls=[SimpleNamespace(
+                function=SimpleNamespace(name="search_corpus", arguments='{"query": "logging"}')
+            )],
+        ),
+        {"role": "tool", "tool_call_id": "1", "content": chunk},
+        {"role": "assistant", "content": "use a middleware"},
+    ]
+    out = transcript_of(messages)
+
+    assert [t["role"] for t in out] == ["system", "user", "assistant", "tool", "assistant"]
+    assert out[2]["tool_calls"] == [{"name": "search_corpus", "arguments": '{"query": "logging"}'}]
+    assert "content" not in out[3], "a tool result belongs to `contexts`, not to the transcript"
+    assert chunk not in json.dumps(out, ensure_ascii=False)
+    assert out[4]["content"] == "use a middleware"
+
+
+def test_the_row_carries_the_transcript_as_its_own_column():
+    from models.eval import QuestionLog
+
+    assert "transcript" in QuestionLog.__table__.columns
+    source = Path(__file__).resolve().parent.parent / "app" / "use_cases" / "agent.py"
+    assert "transcript=transcript_of(result.messages)" in source.read_text()
+
+
+def test_the_row_says_which_pieces_came_from_which_call():
+    # `contexts` is flat across hops and calls, and a replay cannot regroup a flat list
+    from orchestrators import graph
+
+    assert "spans" in graph.State.__annotations__
+    source = Path(__file__).resolve().parent.parent / "app"
+    for arm in ("orchestrators/graph.py", "orchestrators/react.py"):
+        text = (source / arm).read_text()
+        assert '"pieces": len(' in text, f"{arm} records no span"
+        assert '"hop":' in text and '"tool_call_id":' in text
+    assert '"spans": result.spans or None' in (source / "use_cases" / "agent.py").read_text()
+
+
+def test_a_forced_final_is_not_always_the_ceiling():
+    # `hops_exhausted` on an empty first hop was the same lie the field was added to end
+    from orchestrators import graph
+    from use_cases.agent_policy import FinishedBy
+
+    ctx = {"max_hops": 4, "result": SimpleNamespace(took=lambda *a: None, note_prompt=lambda t: None),
+           "role": "generation", "model": None,
+           "chat": lambda *a, **kw: llm.ChatTurn(text="t", tool_calls=[], message=None,
+                                                 prompt_tokens=0, completion_tokens=0)}
+    early = graph.final_node({"text": "", "hops": 1, "sources": ["a"], "messages": []},
+                             {"configurable": {"run": ctx}})
+    assert early["finished_by"] == FinishedBy.no_answer
+
+    late = graph.final_node({"text": "", "hops": 4, "sources": ["a"], "messages": []},
+                            {"configurable": {"run": ctx}})
+    assert late["finished_by"] == FinishedBy.hops_exhausted
+
+
+def test_the_tools_are_said_again_after_a_tool_answer_only_when_asked(monkeypatch):
+    # llama3.1 renders tool schemas in the last user message, and a tool answer buries them
+    from orchestrators import graph
+
+    state = {"external": False, "pending": [], "hops": 1}
+    ctx = graph.context(remote={}, gate=None, external=False)
+    assert graph._restated(ctx, state) == [], "it must not fire unless the run asked"
+
+    asked = graph.context(remote={}, gate=None, external=False, restate_tools=True)
+    said = graph._restated(asked, state)
+    assert len(said) == 1 and said[0]["role"] == "user"
+    assert "search_corpus" in said[0]["content"]

@@ -117,7 +117,7 @@ def test_search_chunks_attaches_gate_scores_with_rerank_off(monkeypatch):
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, None, 200))
     monkeypatch.setattr(chat, "_gate_scores", lambda query, rows, top: [0.42, None])
 
-    _, _texts, sources, _ = chat.search_chunks(
+    _, _texts, sources, _, _chunks = chat.search_chunks(
         "q", use_rerank=False, gate_top=1, variant="baseline"
     )
 
@@ -129,7 +129,7 @@ def test_search_chunks_leaves_rerank_scores_alone(monkeypatch):
     monkeypatch.setattr(chat, "_retrieve_rows", lambda *a, **kw: (rows, [0.77], 200))
     monkeypatch.setattr(chat, "_gate_scores", lambda *a, **kw: pytest.fail("gate ran anyway"))
 
-    _, _texts, sources, _ = chat.search_chunks(
+    _, _texts, sources, _, _chunks = chat.search_chunks(
         "q", use_rerank=True, gate_top=5, variant="baseline"
     )
 
@@ -197,7 +197,7 @@ def test_the_corpus_tool_hands_the_chunks_on_as_well_as_the_text(monkeypatch):
     from use_cases import chat as chat_module
 
     monkeypatch.setattr(
-        chat_module, "search_chunks", lambda *a, **kw: ("joined", ["one", "two"], [], 100)
+        chat_module, "search_chunks", lambda *a, **kw: ("joined", ["one", "two"], [], 100, [None, None])
     )
     result = agent_tools._search_corpus("q", variant="baseline")
 
@@ -239,3 +239,54 @@ def test_the_row_snapshot_says_which_schema_it_is(monkeypatch):
     snap = chat._config_snapshot(False, 5, True, 0.55, None, "baseline")
 
     assert snap["schema"] == run_snapshot.SCHEMA
+
+
+def _hit(source, section, index, content="body"):
+    from db import Hit
+
+    return Hit(content, source, "cat", index, 1, None, 0.1, 0.5, section)
+
+
+def test_the_text_and_its_address_come_out_of_one_pass(monkeypatch):
+    # two lists, one filter, one order: a reader joins them by position and must not be wrong
+    from use_cases import chat
+
+    monkeypatch.setattr(chat, "_hidden_by_cut", lambda source, variant: source == "index.md")
+    rows = [_hit("a.md", "A > one", 0), _hit("index.md", None, 0), _hit("b.md", "B > two", 3)]
+
+    texts, chunks = chat.kept_chunks(rows, "baseline")
+
+    assert len(texts) == len(chunks) == 2, "the cut hid one row from both lists"
+    assert [c["source"] for c in chunks] == ["a.md", "b.md"]
+    assert [c["section"] for c in chunks] == ["A > one", "B > two"]
+    assert [c["chunk_index"] for c in chunks] == [0, 3]
+    assert texts[0].startswith("[a.md]"), "position one in one list is position one in the other"
+
+
+def test_a_piece_that_is_not_a_corpus_chunk_still_holds_its_place():
+    # a remote tool answers with context and no address: the lists stay the same length
+    import agent_tools
+
+    remote = agent_tools.chunk_pieces({"sources": []}, "an answer from a remote tool")
+    assert remote == [None]
+
+    corpus = agent_tools.chunk_pieces(
+        {"contexts": ["one", "two"], "chunks": [{"source": "a.md"}, {"source": "b.md"}]},
+        "one\n\ntwo",
+    )
+    assert [c["source"] for c in corpus] == ["a.md", "b.md"]
+
+    refused = agent_tools.chunk_pieces({}, "No relevant documents found.")
+    assert refused == [], "a call the gate emptied contributes neither text nor address"
+
+    # the run of 06.09: the gate replaced the content and the addresses outlived it, 133 rows of 300
+    gated = agent_tools.chunk_pieces(
+        {"chunks": [{"source": "a.md"}, {"source": "b.md"}]}, "No relevant documents found."
+    )
+    assert gated == [], "the search found them, the gate hid them, and the row says neither"
+
+    # and a meta whose lists disagree cannot pass its disagreement on to the row
+    mismatched = agent_tools.chunk_pieces(
+        {"contexts": ["one", "two"], "chunks": [{"source": "a.md"}]}, "one\n\ntwo"
+    )
+    assert mismatched == [None, None]

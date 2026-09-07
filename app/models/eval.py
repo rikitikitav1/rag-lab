@@ -50,6 +50,9 @@ class QuestionLog(Base):
     context: Mapped[str | None]
     # the same chunks the join above was built from, one per element
     contexts: Mapped[list | None] = mapped_column(JSONB)
+    chunks: Mapped[list | None] = mapped_column(JSONB)
+    # what a replay needs: the turns, not the tool results `contexts` already holds
+    transcript: Mapped[list | None] = mapped_column(JSONB)
     sources: Mapped[list | None] = mapped_column(JSONB)
     models: Mapped[dict] = mapped_column(JSONB, default=dict)
     prompts: Mapped[dict] = mapped_column(JSONB, default=dict)

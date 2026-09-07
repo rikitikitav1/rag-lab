@@ -6,6 +6,7 @@ import config
 import llm
 import logging_setup
 from langchain_core.tools import StructuredTool
+from use_cases import agent_policy as policy
 from use_cases import chat
 
 log = logging_setup.get_logger(__name__)
@@ -70,6 +71,25 @@ def recursion_limit(max_hops: int) -> int:
     return BARE_STEPS_PER_HOP * max_hops + BARE_ANSWER_STEP
 
 
+# langchain says `ai` and `human` where the rest of the stand says `assistant` and `user`
+_ROLES = {"ai": "assistant", "human": "user", "system": "system", "tool": "tool"}
+
+
+# one shape of message on both arms: the reader of a transcript must not learn two dialects
+def _as_message(m) -> dict:
+    kind = getattr(m, "type", None)
+    out = {"role": _ROLES.get(kind, kind or "unknown"), "content": str(m.content)}
+    calls = getattr(m, "tool_calls", None) or []
+    if calls:
+        out["tool_calls"] = [
+            {"function": {"name": c.get("name"), "arguments": json.dumps(c.get("args") or {})}}
+            for c in calls
+        ]
+    if getattr(m, "tool_call_id", None):
+        out["tool_call_id"] = m.tool_call_id
+    return out
+
+
 def invoke(question: str, system: str, ctx: dict, result) -> None:
     from langchain.agents import create_agent
     from langgraph.errors import GraphRecursionError
@@ -106,22 +126,33 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
     messages = state["messages"]
     replies = [m for m in messages if getattr(m, "type", None) == "ai"]
     # the hop a tool answered on is the number of replies before it
-    hop, collected, contexts = 0, [], []
+    hop, collected, contexts, chunks, spans = 0, [], [], [], []
     for message in messages:
         kind = getattr(message, "type", None)
         if kind == "ai":
             hop += 1
         elif kind == "tool":
             meta = getattr(message, "artifact", None) or {}
+            pieces = agent_tools.context_pieces(meta, str(message.content))
             collected += chat.stamped(meta.get("sources") or [], hop)
-            contexts += agent_tools.context_pieces(meta, str(message.content))
+            contexts += pieces
+            chunks += agent_tools.chunk_pieces(meta, str(message.content))
+            spans.append({
+                "tool_call_id": getattr(message, "tool_call_id", None),
+                "tool": getattr(message, "name", None),
+                "hop": hop,
+                "pieces": len(pieces),
+                "sources": [s.source for s in (meta.get("sources") or [])],
+            })
     result.messages.clear()
-    result.messages.extend(
-        {"role": getattr(m, "type", "unknown"), "content": str(m.content)} for m in messages
-    )
+    result.messages.extend(_as_message(m) for m in messages)
     result.sources = list(collected)
+    result.spans = spans
     result.contexts = contexts
+    result.chunks = chunks
     result.hops = len(replies)
+    # a bare `create_agent` has no edge of ours to record, and a silent gap reads as a fault
+    result.finished_by = str(policy.FinishedBy.unrecorded)
     result.text = str(replies[-1].content) if replies else ""
     result.success = bool(result.text)
     for reply in replies:

@@ -26,8 +26,12 @@ def _merge(old: dict, new: dict) -> dict:
 
 class State(TypedDict, total=False):
     messages: Annotated[list, operator.add]
+    # which pieces came from which call: `contexts` is flat, and a replay cannot regroup it
+    spans: Annotated[list, operator.add]
+    finished_by: str
     sources: Annotated[list, operator.add]
     contexts: Annotated[list, operator.add]
+    chunks: Annotated[list, operator.add]
     dropped_sources: Annotated[list, operator.add]
     dropped_hits: Annotated[list, operator.add]
     prompt_tokens: Annotated[int, operator.add]
@@ -39,11 +43,18 @@ class State(TypedDict, total=False):
     fallback_reason: str
     fallback_opened: bool
     fallback_announced: bool
+    announced_text: str
     no_evidence_prompted: bool
     text: str
     finished: bool
     awaiting_tools: bool
     turn: object
+    # the toolbox each hop was handed: a replay cannot see it, the scripted chat ignores `tools`
+    tools_offered: Annotated[list, operator.add]
+    # what retrieval found before anything graded it: only `emit` turns this into messages
+    pending: object
+    coverage: str
+    dropped_before_emit: dict
     tool_errors: Annotated[dict, _merge]
 
 
@@ -53,6 +64,11 @@ def _ctx(config) -> dict:
 
 def _tool_names(ctx) -> tuple:
     return (*ctx["remote"], agent_tools.CORPUS_TOOL)
+
+
+# what the model was allowed to call on this hop: the schemas are built from exactly this
+def _offered(ctx, external: bool) -> list:
+    return [agent_tools.CORPUS_TOOL, *(sorted(ctx["remote"]) if external else ())]
 
 
 def _schemas(ctx, external: bool) -> list:
@@ -80,6 +96,7 @@ def model_node(state: State, config) -> dict:
     ctx["result"].note_prompt(turn.prompt_tokens)
     update = {
         "hops": hop,
+        "tools_offered": [_offered(ctx, state["external"])],
         "prompt_tokens": turn.prompt_tokens,
         "completion_tokens": turn.completion_tokens,
         "max_prompt_tokens": turn.prompt_tokens,
@@ -98,6 +115,8 @@ def model_node(state: State, config) -> dict:
             {"role": "user", "content": policy.TOOL_CALL_NUDGE},
         ]
         return update
+    # the answering turn was the one turn the row never kept, and a replay cannot invent it
+    update["messages"] = [turn.message or {"role": "assistant", "content": turn.text or ""}]
     update["text"] = turn.text or ""
     update["finished"] = True
     if turn.finish_reason == "length":
@@ -111,7 +130,7 @@ def _dispatch(state: State, ctx: dict) -> tuple[list, dict]:
     for tc in state["turn"].tool_calls:
         log.info("graph.tool_call", tool=tc.function.name, arguments=tc.function.arguments)
         started = time.perf_counter()
-        res = agent_tools.dispatch(
+        res = ctx["dispatch"](
             tc.function.name,
             tc.function.arguments,
             extra=ctx["remote"] if state["external"] else None,
@@ -129,85 +148,149 @@ def _dispatch(state: State, ctx: dict) -> tuple[list, dict]:
     return calls, errors_seen
 
 
-def _drop_weak(corpus: list, hop: int) -> tuple[list, list]:
+# the field list comes from the dataclass, so a new gate signal cannot be left out of the record
+def _as_row(source) -> dict:
+    from dataclasses import fields
+
+    return {f.name: getattr(source, f.name, None) for f in fields(chat.Source)}
+
+
+# what the call returned before this rewrote it: without it no replay can reach the gate branch
+def _drop_weak(corpus: list, hop: int) -> tuple[list, list, dict]:
     log.info("graph.weak_context_dropped", hop=hop)
-    dropped, hits = [], []
+    dropped, hits, by_call = [], [], {}
     for call in corpus:
         dropped.extend(s.source for s in call[3])
         hits.extend(call[3])
+        by_call[call[0].id] = {
+            "sources": [_as_row(s) for s in call[3]],
+            "pieces": len(agent_tools.context_pieces(call[1].meta, call[2])),
+        }
         call[2], call[3] = chat.NO_RESULTS, []
-    return dropped, hits
+    return dropped, hits, by_call
 
 
-def _announce(corpus: list, gate: policy.Gate) -> None:
-    notice = prompt_repo.active_template(Purpose.agent_fallback)
-    corpus[-1][2] = f"{corpus[-1][2]}\n\n{notice.replace('{tools}', gate.tool_signatures)}"
+# returns what it appended: `announced` says the notice fired, and nothing said what it said
+def _announce(corpus: list, gate: policy.Gate, template) -> str:
+    notice = template(Purpose.agent_fallback).replace("{tools}", gate.tool_signatures)
+    corpus[-1][2] = f"{corpus[-1][2]}\n\n{notice}"
+    return notice
 
 
-def tools_node(state: State, config) -> dict:
-    ctx = _ctx(config)
-    gate: policy.Gate = ctx["gate"]
-    calls, errors_seen = _dispatch(state, ctx)
-    corpus = [
+def _corpus_calls(calls: list) -> list:
+    return [
         c for c in calls
         if c[0].function.name == agent_tools.CORPUS_TOOL and not c[1].meta.get("error_kind")
     ]
+
+
+# search only: the results sit in the state, and no message for the model leaves this node
+def retrieve_node(state: State, config) -> dict:
+    ctx = _ctx(config)
+    gate: policy.Gate = ctx["gate"]
+    calls, errors_seen = _dispatch(state, ctx)
+    corpus = _corpus_calls(calls)
     verdict = policy.verdict([s for c in corpus for s in c[3]], gate) if corpus else None
     if gate.off_topic and corpus:
         verdict = policy.FallbackReason.off_topic
+    return {"pending": calls, "coverage": verdict or "", "tool_errors": errors_seen}
 
-    dropped, dropped_hits = [], []
+
+# reached only over the edge the verdict decides, so `coverage` here is never empty
+def fallback_node(state: State, config) -> dict:
+    ctx = _ctx(config)
+    gate: policy.Gate = ctx["gate"]
+    verdict, corpus = state["coverage"], _corpus_calls(state["pending"])
+    update = {}
     if verdict in (policy.FallbackReason.weak, policy.FallbackReason.off_topic) and (
         gate.drop_weak_context
     ):
-        dropped, dropped_hits = _drop_weak(corpus, state["hops"])
-
+        dropped, hits, before = _drop_weak(corpus, state["hops"])
+        update["dropped_sources"], update["dropped_hits"] = dropped, hits
+        update["dropped_before_emit"] = before
     # the loop recomputes announce per hop and it dies once external is open
-    announced = bool(verdict and gate.announce and not state["external"] and corpus)
-    if announced:
-        _announce(corpus, gate)
-    if verdict and gate.off_topic:
-        verdict = policy.FallbackReason.off_topic
-
-    update = {
-        "messages": [
-            {"role": "tool", "tool_call_id": tc.id, "content": content}
-            for tc, _res, content, _sources in calls
-        ],
-        "sources": chat.stamped([s for c in calls for s in c[3]], state["hops"]),
-        "contexts": [
-            piece
-            for _tc, res, content, _s in calls
-            for piece in agent_tools.context_pieces(res.meta, content)
-        ],
-        "dropped_sources": dropped,
-        "dropped_hits": dropped_hits,
-        "tool_errors": errors_seen,
-    }
-    if announced:
+    if gate.announce and not state["external"] and corpus:
+        update["announced_text"] = _announce(corpus, gate, ctx["template"])
         update["fallback_announced"] = True
-    if verdict and state.get("fallback_reason") == policy.FallbackReason.none:
+    if state.get("fallback_reason") == policy.FallbackReason.none:
         update["fallback_reason"] = verdict
-    if verdict and not state["external"] and ctx["remote"]:
+    if not state["external"] and ctx["remote"]:
         update["external"] = True
         update["fallback_opened"] = True
         log.info("graph.external_opened", hop=state["hops"], reason=verdict)
     return update
 
 
+# llama3.1 renders tool schemas only in the last user message, and a tool answer buries them
+def _restated(ctx, state) -> list:
+    if not ctx.get("restate_tools"):
+        return []
+    lines = "\n".join(
+        f"- {fn['name']}({', '.join(fn.get('parameters', {}).get('required', []))}): "
+        f"{' '.join(fn.get('description', '').split())[:160]}"
+        for fn in (s.get("function", s) for s in _schemas(ctx, state.get("external", False)))
+    )
+    if not lines:
+        return []
+    return [{"role": "user", "content": f"The tools you may still call:\n{lines}"}]
+
+
+# the only node that speaks to the model, and it speaks after the verdict, never before
+def emit_node(state: State, config) -> dict:
+    ctx = _ctx(config)
+    calls, before = state["pending"], state.get("dropped_before_emit") or {}
+    return {
+        "messages": [
+            {"role": "tool", "tool_call_id": tc.id, "content": content}
+            for tc, _res, content, _sources in calls
+        ] + _restated(ctx, state),
+        "sources": chat.stamped([s for c in calls for s in c[3]], state["hops"]),
+        "contexts": [
+            piece
+            for _tc, res, content, _s in calls
+            for piece in agent_tools.context_pieces(res.meta, content)
+        ],
+        "chunks": [
+            piece
+            for _tc, res, content, _s in calls
+            for piece in agent_tools.chunk_pieces(res.meta, content)
+        ],
+        "spans": [
+            {
+                "tool_call_id": tc.id,
+                "tool": tc.function.name,
+                "hop": state["hops"],
+                "pieces": len(agent_tools.context_pieces(res.meta, content)),
+                # named, not counted: `_unique_sources` collapses a file seen on two hops
+                "sources": [s.source for s in sources],
+                **({"dropped": before[tc.id]} if tc.id in before else {}),
+            }
+            for tc, res, content, sources in calls
+        ],
+        # consumed here: it has no reducer, and a later hop reusing a call id took this one's block
+        "dropped_before_emit": {},
+    }
+
+
 def final_node(state: State, config) -> dict:
     ctx = _ctx(config)
     # the loop forces a final turn only when no turn produced text at all
     if state.get("text"):
-        return {}
+        return {"finished_by": policy.FinishedBy.answer}
     messages = list(state["messages"])
     update = {}
     if not state.get("sources"):
         messages = messages + [
-            {"role": "user", "content": prompt_repo.active_template(Purpose.agent_no_evidence)}
+            {"role": "user", "content": ctx["template"](Purpose.agent_no_evidence)}
         ]
         update["messages"] = [messages[-1]]
         update["no_evidence_prompted"] = True
+    # the forced final is reached two ways, and only one of them is the ceiling
+    update["finished_by"] = (
+        policy.FinishedBy.hops_exhausted
+        if state["hops"] >= ctx["max_hops"]
+        else policy.FinishedBy.no_answer
+    )
     log.info("graph.forcing_final", hops=state["hops"], sources=len(state.get("sources", [])))
     started = time.perf_counter()
     try:
@@ -217,6 +300,10 @@ def final_node(state: State, config) -> dict:
         return update
     ctx["result"].took("model", started)
     ctx["result"].note_prompt(final.prompt_tokens)
+    update["messages"] = [
+        *update.get("messages", []),
+        final.message or {"role": "assistant", "content": final.text or ""},
+    ]
     update.update(
         hops=state["hops"] + 1,
         prompt_tokens=final.prompt_tokens,
@@ -233,17 +320,22 @@ def _after_model(state: State, config) -> str:
     if state.get("finished"):
         return "final"
     if state.get("awaiting_tools"):
-        return "tools"
+        return "retrieve"
     # a nudge on the last hop must not buy an extra hop the loop would not take
     return "model" if state["hops"] < _ctx(config)["max_hops"] else "final"
+
+
+# the coverage verdict rides an edge, so a reader of the graph sees the branch the row took
+def _after_retrieve(state: State, config) -> str:
+    return "fallback" if state.get("coverage") else "emit"
 
 
 def _after_tools(state: State, config) -> str:
     return "model" if state["hops"] < _ctx(config)["max_hops"] else "final"
 
 
-# a hop is two super-steps plus the final turn; the slack guards against a loop, not a long run
-STEPS_PER_HOP = 3
+# a hop is up to four super-steps plus the final turn; the slack guards a loop, not a long run
+STEPS_PER_HOP = 5
 GUARD_SLACK = 6
 
 
@@ -254,11 +346,19 @@ def recursion_limit(max_hops: int) -> int:
 def build():
     graph = StateGraph(State)
     graph.add_node("model", model_node)
-    graph.add_node("tools", tools_node)
+    graph.add_node("retrieve", retrieve_node)
+    graph.add_node("fallback", fallback_node)
+    graph.add_node("emit", emit_node)
     graph.add_node("final", final_node)
     graph.set_entry_point("model")
-    graph.add_conditional_edges("model", _after_model, {"tools": "tools", "final": "final", "model": "model"})
-    graph.add_conditional_edges("tools", _after_tools, {"model": "model", "final": "final"})
+    graph.add_conditional_edges(
+        "model", _after_model, {"retrieve": "retrieve", "final": "final", "model": "model"}
+    )
+    graph.add_conditional_edges(
+        "retrieve", _after_retrieve, {"fallback": "fallback", "emit": "emit"}
+    )
+    graph.add_edge("fallback", "emit")
+    graph.add_conditional_edges("emit", _after_tools, {"model": "model", "final": "final"})
     graph.add_edge("final", END)
     return graph.compile()
 
@@ -271,6 +371,8 @@ def _initial_state(question: str, system: str, external: bool) -> State:
         ],
         "sources": [],
         "contexts": [],
+        "chunks": [],
+        "spans": [],
         "dropped_sources": [],
         "dropped_hits": [],
         "prompt_tokens": 0,
@@ -285,7 +387,12 @@ def _initial_state(question: str, system: str, external: bool) -> State:
         "no_evidence_prompted": False,
         "text": "",
         "finished": False,
+        "finished_by": "",
         "awaiting_tools": False,
+        "tools_offered": [],
+        "pending": [],
+        "coverage": "",
+        "dropped_before_emit": {},
         "tool_errors": {},
     }
 
@@ -313,6 +420,9 @@ def invoke(question, system, ctx, result) -> None:
     result.messages.extend(state["messages"])
     result.sources = list(state["sources"])
     result.contexts = list(state["contexts"])
+    result.chunks = list(state["chunks"])
+    result.spans = list(state["spans"])
+    result.tools_offered = list(state.get("tools_offered") or [])
     result.dropped_sources = list(state["dropped_sources"])
     result.dropped_hits = list(state["dropped_hits"])
     result.hops = state["hops"]
@@ -320,9 +430,11 @@ def invoke(question, system, ctx, result) -> None:
     result.completion_tokens = state["completion_tokens"]
     result.max_prompt_tokens = state["max_prompt_tokens"]
     result.text = state.get("text") or ""
+    result.finished_by = str(state.get("finished_by") or policy.FinishedBy.answer)
     result.fallback_reason = state.get("fallback_reason", policy.FallbackReason.none)
     result.fallback_opened = state.get("fallback_opened", False)
     result.fallback_announced = state.get("fallback_announced", False)
+    result.announced_text = state.get("announced_text") or ""
     result.no_evidence_prompted = state.get("no_evidence_prompted", False)
     result.tool_errors.update(state.get("tool_errors") or {})
     result.success = bool(result.text)
@@ -340,6 +452,9 @@ def versions() -> dict:
     return out
 
 
+# every door the graph reaches outside itself, so a replay can hand it the row's own answers
 def context(**kwargs) -> dict:
     kwargs.setdefault("chat", llm.chat)
+    kwargs.setdefault("dispatch", agent_tools.dispatch)
+    kwargs.setdefault("template", prompt_repo.active_template)
     return kwargs

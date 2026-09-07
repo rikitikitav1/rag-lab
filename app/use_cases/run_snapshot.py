@@ -4,8 +4,8 @@ import version
 
 import db
 
-# 1 is every row written before this key existed; 2 writes every key it models, always
-SCHEMA = 2
+# 3 carries the language of the run; 2 wrote every key it models; 1 predates the key
+SCHEMA = 3
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -32,6 +32,10 @@ KEYS = (
     "truncated_hops",
     "mcp",
     "mcp_configured",
+    # the system prompt carries a language directive, and a replay could not rebuild it
+    "language",
+    # an arm that says the tools again after a tool answer must say so, or it is silently a new arm
+    "restate_tools",
 )
 
 
