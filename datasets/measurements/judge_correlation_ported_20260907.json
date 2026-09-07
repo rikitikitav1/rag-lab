@@ -1,0 +1,49 @@
+{
+  "schema": 3,
+  "n": 91,
+  "runs": [
+    "arc3_ported_after_split"
+  ],
+  "counts": {
+    "refused_excluded": 0,
+    "guest_abstained": 0,
+    "refused_and_abstained": 0,
+    "outside_the_declared_population": 47
+  },
+  "rows_off_card": 0,
+  "means": {
+    "ours": 0.7505,
+    "guest": 0.7996,
+    "overlap": 0.1417,
+    "code_share": 0.0708
+  },
+  "correlations": {
+    "ours_vs_guest": 0.3828,
+    "ours_vs_guest_ci95": [
+      0.2074,
+      0.5272
+    ],
+    "guest_vs_overlap": 0.1892,
+    "ours_vs_overlap": 0.2441,
+    "ours_vs_guest_given_overlap": 0.3535
+  },
+  "strata": {
+    "code_contexts": {
+      "n": 7,
+      "guest": 0.6211,
+      "ours": 0.7857
+    },
+    "prose_contexts": {
+      "n": 84,
+      "guest": 0.8145,
+      "ours": 0.7476
+    }
+  },
+  "predictions": {
+    "guest_vs_overlap_below_0_3": true,
+    "partial_within_0_1_of_plain": true,
+    "strata_within_0_1": false,
+    "n_at_least_100": false,
+    "stratum_gap": 0.1934
+  }
+}

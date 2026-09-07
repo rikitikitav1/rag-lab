@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "of": "what the guest axes cost against our own, all three against all three",
+  "run_name": "arc3_ported_after_split",
+  "rows": 300,
+  "axes": {
+    "completeness": {
+      "n": 100,
+      "seconds": 222.4,
+      "seconds_each": 2.22
+    },
+    "faithfulness": {
+      "n": 144,
+      "seconds": 356.4,
+      "seconds_each": 2.48
+    },
+    "ragas_context_precision": {
+      "n": 100,
+      "seconds": 1029.9,
+      "seconds_each": 10.3
+    },
+    "ragas_context_recall": {
+      "n": 94,
+      "seconds": 1541.5,
+      "seconds_each": 16.4
+    },
+    "ragas_faithfulness": {
+      "n": 138,
+      "seconds": 2850.0,
+      "seconds_each": 20.65
+    },
+    "relevance": {
+      "n": 144,
+      "seconds": 240.3,
+      "seconds_each": 1.67
+    }
+  },
+  "seconds_ours": 819.1,
+  "seconds_guests": 5421.4,
+  "multiplier": 6.62,
+  "against": {
+    "smoke_20260906": 9.6,
+    "note": "the smoke was ten rows of another pool; this is three hundred with every axis"
+  }
+}

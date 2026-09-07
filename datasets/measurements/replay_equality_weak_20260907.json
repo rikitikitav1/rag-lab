@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "run_name": "arc3_weak_smoke",
+  "fields": [
+    "transcript",
+    "sources",
+    "chunks",
+    "contexts",
+    "fallback_reason",
+    "outcome",
+    "announced"
+  ],
+  "rows": 10,
+  "replayed": 8,
+  "identical": 8,
+  "differing": {},
+  "branches_walked": {
+    "off_topic": 7,
+    "none": 1
+  },
+  "announced_on": 2,
+  "refused": {
+    "a weak verdict dropped context and the row predates recording it": 2
+  },
+  "code_version": "f2786327855a"
+}

@@ -1,0 +1,274 @@
+{
+  "run_name": "arc3_agent_baseline",
+  "n_rows": 9,
+  "failures": 0,
+  "means": {
+    "copy": {
+      "score": 1.0,
+      "overlap": 1.0,
+      "n": 9
+    },
+    "paraphrase_en": {
+      "score": 0.9815,
+      "overlap": 0.0132,
+      "n": 9
+    },
+    "paraphrase_ru": {
+      "score": 1.0,
+      "overlap": 0.0043,
+      "n": 9
+    }
+  },
+  "score_vs_overlap": {
+    "rho": 0.1802,
+    "p": 0.3683,
+    "n": 27
+  },
+  "paraphrase_below_copy": 1,
+  "paraphrase_pairs": 9,
+  "rows": [
+    {
+      "row": 33440,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 4,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 168
+    },
+    {
+      "row": 33440,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 4,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 243
+    },
+    {
+      "row": 33440,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 5,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 309
+    },
+    {
+      "row": 33441,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 6,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 230
+    },
+    {
+      "row": 33441,
+      "arm": "paraphrase_en",
+      "score": 0.8333333333333334,
+      "n_statements": 6,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 260
+    },
+    {
+      "row": 33441,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 6,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 310
+    },
+    {
+      "row": 33444,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 1,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 98
+    },
+    {
+      "row": 33444,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 1,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 63
+    },
+    {
+      "row": 33444,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 1,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 67
+    },
+    {
+      "row": 33455,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 2,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 126
+    },
+    {
+      "row": 33455,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 1,
+      "error": null,
+      "overlap": 0.0526,
+      "chars": 120
+    },
+    {
+      "row": 33455,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 1,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 130
+    },
+    {
+      "row": 33456,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 2,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 249
+    },
+    {
+      "row": 33456,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 5,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 204
+    },
+    {
+      "row": 33456,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 311
+    },
+    {
+      "row": 33453,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 145
+    },
+    {
+      "row": 33453,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 5,
+      "error": null,
+      "overlap": 0.0357,
+      "chars": 202
+    },
+    {
+      "row": 33453,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 1,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 149
+    },
+    {
+      "row": 33454,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 2,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 158
+    },
+    {
+      "row": 33454,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 269
+    },
+    {
+      "row": 33454,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 176
+    },
+    {
+      "row": 33458,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 114
+    },
+    {
+      "row": 33458,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 108
+    },
+    {
+      "row": 33458,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 1,
+      "error": null,
+      "overlap": 0.0,
+      "chars": 136
+    },
+    {
+      "row": 33460,
+      "arm": "copy",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 1.0,
+      "chars": 194
+    },
+    {
+      "row": 33460,
+      "arm": "paraphrase_en",
+      "score": 1.0,
+      "n_statements": 4,
+      "error": null,
+      "overlap": 0.0303,
+      "chars": 203
+    },
+    {
+      "row": 33460,
+      "arm": "paraphrase_ru",
+      "score": 1.0,
+      "n_statements": 3,
+      "error": null,
+      "overlap": 0.0385,
+      "chars": 195
+    }
+  ]
+}

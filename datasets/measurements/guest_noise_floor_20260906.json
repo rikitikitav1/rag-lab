@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "of": "the same rows scored twice by the guests, one residency apart",
+  "base_run": "arc3_agent_baseline",
+  "copy_run": "arc3_guest_noise",
+  "stopped_early": true,
+  "pairs": 321,
+  "identical": 225,
+  "moved": 96,
+  "mean_abs_delta": 0.0719,
+  "mean_delta": 0.0093,
+  "delta_ci95": [
+    -0.0081,
+    0.0279
+  ],
+  "scored_on_one_side_only": 10,
+  "axes": {
+    "ragas_faithfulness": {
+      "pairs": 133,
+      "identical": 92,
+      "mean_abs_delta": 0.079,
+      "ci95": [
+        -0.009,
+        0.0532
+      ]
+    },
+    "ragas_context_precision": {
+      "pairs": 100,
+      "identical": 79,
+      "mean_abs_delta": 0.0385,
+      "ci95": [
+        -0.0166,
+        0.0276
+      ]
+    },
+    "ragas_context_recall": {
+      "pairs": 88,
+      "identical": 54,
+      "mean_abs_delta": 0.0989,
+      "ci95": [
+        -0.0409,
+        0.0397
+      ]
+    }
+  },
+  "examples": [
+    {
+      "question_id": 74649,
+      "axis": "ragas_faithfulness",
+      "was": 0.0,
+      "now": 0.2
+    },
+    {
+      "question_id": 10617,
+      "axis": "ragas_context_precision",
+      "was": 0.8042,
+      "now": 0.7556
+    },
+    {
+      "question_id": 10727,
+      "axis": "ragas_context_recall",
+      "was": 0.875,
+      "now": 0.1
+    },
+    {
+      "question_id": 10613,
+      "axis": "ragas_context_precision",
+      "was": 0.5833,
+      "now": 0.3333
+    },
+    {
+      "question_id": 10755,
+      "axis": "ragas_context_precision",
+      "was": 0.8667,
+      "now": 0.95
+    },
+    {
+      "question_id": 10755,
+      "axis": "ragas_context_recall",
+      "was": 0.7619,
+      "now": 0.6667
+    },
+    {
+      "question_id": 10649,
+      "axis": "ragas_context_precision",
+      "was": 0.6792,
+      "now": 0.5889
+    },
+    {
+      "question_id": 10677,
+      "axis": "ragas_faithfulness",
+      "was": 1.0,
+      "now": 0.8462
+    },
+    {
+      "question_id": 10743,
+      "axis": "ragas_faithfulness",
+      "was": 0.8,
+      "now": 1.0
+    },
+    {
+      "question_id": 10679,
+      "axis": "ragas_faithfulness",
+      "was": 0.75,
+      "now": 0.7143
+    }
+  ]
+}

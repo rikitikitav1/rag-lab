@@ -36,7 +36,15 @@ curl -s "localhost:8000/v1/job?sort_by=id&sort_order=desc&limit=5" | python3 -m 
 # 4. once demo_run is judged, read the metrics
 docker compose exec rag-lab python -m evals.retrieval_metrics demo_run    # hit@k / MRR
 docker compose exec rag-lab python -m evals.generation_metrics demo_run   # faithfulness / relevance / completeness / refusal
+
+# 5. calibrate our judge against the standard's, on a drawn subsample rather than every row
+curl -sX POST localhost:8000/v1/eval/guest-axes -H 'Content-Type: application/json' \
+  -d '{"run_name":"demo_run","sample":100,"seed":0}'
 ```
+
+The guest pass costs between six and eight times our three axes a row, so `sample` is what makes it a
+calibration rather than an axis. Its two context axes need a reference answer on the question and
+abstain without one; `question_sets` says which sets carry them before a run is spent finding out.
 
 ## Scenario 3: reranking A/B
 
@@ -124,7 +132,7 @@ curl -sX POST localhost:8000/v1/eval/run -H 'Content-Type: application/json' \
 docker compose exec rag-lab python -m evals.retrieval_metrics agent_ru
 docker compose exec rag-lab python -m evals.generation_metrics agent_ru
 ```
-Caveat: retrieval hit@k/MRR are computed the same way for both pipelines, but for the agent the source list is a union across hops (recall-flavoured), so read it as a caveat, not a head-to-head with single-shot precision@k. See [experiments.md](experiments.md) for the measured result.
+Caveat: retrieval hit@k/MRR are computed the same way for both pipelines, and the row now remembers which hop each source came from, so `mrr_in_hop` ranks the gold inside the hop that found it and `found_at_hop` says which hop that was. A row taken before that stamp existed counts in `hop_unknown` rather than being guessed at, and the flat hit@k over all hops still reads recall-flavoured for the agent: it may reach the gold on a later hop where a single shot had one try.
 
 ## Scenario 9: parameter series (measure a retrieval lever)
 

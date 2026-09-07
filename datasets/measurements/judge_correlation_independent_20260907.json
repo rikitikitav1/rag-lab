@@ -1,0 +1,49 @@
+{
+  "schema": 4,
+  "n": 114,
+  "runs": [
+    "arc3_interview_independent"
+  ],
+  "counts": {
+    "refused_excluded": 0,
+    "guest_abstained": 0,
+    "refused_and_abstained": 0,
+    "outside_the_declared_population": 2
+  },
+  "rows_off_card": 0,
+  "means": {
+    "ours": 0.8737,
+    "guest": 0.9664,
+    "overlap": 0.4716,
+    "code_share": 0.0494
+  },
+  "correlations": {
+    "ours_vs_guest": 0.161,
+    "ours_vs_guest_ci95": [
+      -0.0231,
+      0.335
+    ],
+    "guest_vs_overlap": 0.2024,
+    "ours_vs_overlap": 0.2002,
+    "ours_vs_guest_given_overlap": 0.1256
+  },
+  "strata": {
+    "code_contexts": {
+      "n": 9,
+      "guest": 0.9553,
+      "ours": 0.9222
+    },
+    "prose_contexts": {
+      "n": 105,
+      "guest": 0.9674,
+      "ours": 0.8695
+    }
+  },
+  "predictions": {
+    "guest_vs_overlap_below_0_3": true,
+    "partial_within_0_1_of_plain": true,
+    "strata_within_0_1": true,
+    "n_at_least_100": true,
+    "stratum_gap": 0.0121
+  }
+}

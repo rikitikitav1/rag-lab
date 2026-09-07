@@ -3,14 +3,19 @@ direction: down
 
 __start__: "start"
 model: "model\ncall the LLM with the tools this hop is allowed"
-tools: "tools\nour dispatch, then one coverage verdict for the turn"
+retrieve: "retrieve\nour dispatch, raw results into the state,\nno message for the model"
+fallback: "fallback\nthe coverage verdict fired: drop weak,\nannounce, open external"
+emit: "emit\ntool messages for the model, after the verdict"
 final: "final\nlast turn without tools,\nagent.no_evidence when nothing answered"
 __end__: "end"
 
 __start__ -> model
+emit -> final {style.stroke-dash: 3}
+emit -> model {style.stroke-dash: 3}
+fallback -> emit
 model -> final {style.stroke-dash: 3}
 model -> model {style.stroke-dash: 3}
-model -> tools {style.stroke-dash: 3}
-tools -> final {style.stroke-dash: 3}
-tools -> model {style.stroke-dash: 3}
+model -> retrieve {style.stroke-dash: 3}
+retrieve -> emit {style.stroke-dash: 3}
+retrieve -> fallback {style.stroke-dash: 3}
 final -> __end__

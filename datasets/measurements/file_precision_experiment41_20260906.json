@@ -1,0 +1,24 @@
+{
+  "why": "experiment 41 was recorded under schema 3, before file_precision existed",
+  "recomputed_on": "2026-09-06",
+  "experiment": 41,
+  "schema": 4,
+  "arms": {
+    "clean_1024": {
+      "run_name": "paraphrased_single_shot_1788245198_variant_clean_1024",
+      "n": 60,
+      "hit_at_k": 0.983,
+      "mrr": 0.919,
+      "file_precision": 0.658,
+      "n_precision_scored": 60
+    },
+    "baseline": {
+      "run_name": "paraphrased_single_shot_1788245198_variant_baseline",
+      "n": 60,
+      "hit_at_k": 1.0,
+      "mrr": 0.926,
+      "file_precision": 0.58,
+      "n_precision_scored": 60
+    }
+  }
+}

@@ -1,0 +1,440 @@
+{
+  "schema": 4,
+  "of": "which rule our faithfulness prompt applied on a refusal with context",
+  "population": "answered rows whose recorded outcome is refused, judged",
+  "n": 79,
+  "by_rule": {
+    "refusal_rule": 44,
+    "general_rule": 14,
+    "both": 0,
+    "unclassified": 21
+  },
+  "mean_score_by_rule": {
+    "unclassified": 0.0,
+    "general_rule": 0.0,
+    "refusal_rule": 7.0
+  },
+  "rows": [
+    {
+      "row": 33737,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 33860,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 34012,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 34124,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 33798,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 33961,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5574,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5535,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 5938,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 7294,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 6179,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 7497,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 7094,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 7960,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 19183,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18224,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18424,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 7972,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 6461,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 6488,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5234,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 7470,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 4977,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5949,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 5270,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5277,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 4622,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 4917,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 5251,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 5271,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5916,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 7058,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5573,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 7074,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 7921,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 5742,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 5738,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5760,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5778,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5777,
+      "score": 1,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5979,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5977,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 5580,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 5520,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 5779,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 5751,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 5978,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 6123,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 6112,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 6176,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 6178,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 6157,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 6177,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 19082,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 19102,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 6465,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 6472,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 6477,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 6487,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 7064,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 7272,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 7293,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 7492,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 7989,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 7979,
+      "score": 0,
+      "rule": "general_rule"
+    },
+    {
+      "row": 19122,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 19203,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18203,
+      "score": 10,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18230,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18399,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 18403,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18415,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18425,
+      "score": 1,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18430,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18475,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 18199,
+      "score": 0,
+      "rule": "unclassified"
+    },
+    {
+      "row": 18215,
+      "score": 7,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18225,
+      "score": 0,
+      "rule": "refusal_rule"
+    },
+    {
+      "row": 18275,
+      "score": 0,
+      "rule": "unclassified"
+    }
+  ],
+  "headline": {
+    "n": 79,
+    "a_ten": 25,
+    "a_zero": 44,
+    "in_between": 10,
+    "cited_the_rule_and_scored_zero": 9,
+    "cited_the_rule_and_scored_in_between": 10,
+    "note": "nine verdicts contradict themselves: the reason says the response correctly reports that nothing was found and the score is zero. the rule exists in the prompt and is applied unevenly even where the judge quotes it"
+  },
+  "rule_against_score": {
+    "refusal_rule": {
+      "ten": 25,
+      "middle": 10,
+      "zero": 9
+    },
+    "general_rule": {
+      "ten": 0,
+      "middle": 0,
+      "zero": 14
+    },
+    "unclassified": {
+      "ten": 0,
+      "middle": 0,
+      "zero": 21
+    }
+  }
+}

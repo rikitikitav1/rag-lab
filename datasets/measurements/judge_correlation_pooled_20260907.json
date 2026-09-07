@@ -1,0 +1,50 @@
+{
+  "schema": 3,
+  "n": 184,
+  "runs": [
+    "arc3_agent_baseline",
+    "arc3_ported_after_split"
+  ],
+  "counts": {
+    "refused_excluded": 0,
+    "guest_abstained": 0,
+    "refused_and_abstained": 0,
+    "outside_the_declared_population": 92
+  },
+  "rows_off_card": 0,
+  "means": {
+    "ours": 0.7424,
+    "guest": 0.7985,
+    "overlap": 0.1441,
+    "code_share": 0.0767
+  },
+  "correlations": {
+    "ours_vs_guest": 0.4386,
+    "ours_vs_guest_ci95": [
+      0.3359,
+      0.5357
+    ],
+    "guest_vs_overlap": 0.2104,
+    "ours_vs_overlap": 0.2533,
+    "ours_vs_guest_given_overlap": 0.4074
+  },
+  "strata": {
+    "code_contexts": {
+      "n": 18,
+      "guest": 0.7548,
+      "ours": 0.6833
+    },
+    "prose_contexts": {
+      "n": 166,
+      "guest": 0.8033,
+      "ours": 0.7488
+    }
+  },
+  "predictions": {
+    "guest_vs_overlap_below_0_3": true,
+    "partial_within_0_1_of_plain": true,
+    "strata_within_0_1": true,
+    "n_at_least_100": true,
+    "stratum_gap": 0.0485
+  }
+}
