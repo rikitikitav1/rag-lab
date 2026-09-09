@@ -20,6 +20,10 @@ class Guest:
     needs: tuple[str, ...]
     # how many calls one row costs, so a smoke can price a set before it runs
     calls_per_row: str
+    # the only one that measures with vectors, so it borrows our embedder as well as our judge
+    embeds: bool = False
+    # what the metric must be told about us, rather than discover and silently work around
+    options: tuple = ()
 
 
 # every axis is handed `user_input`, so `question_text` is material to all three
@@ -33,6 +37,11 @@ AXES = {
     ),
     f"{PREFIX}context_recall": Guest(
         "LLMContextRecall", ("question_text", "contexts", "reference"), "1"
+    ),
+    # strictness 1, not the default 3: our judge is seeded, and measured at one chat, two embeddings
+    f"{PREFIX}answer_relevancy": Guest(
+        "ResponseRelevancy", ("question_text", "answer"), "1 plus 2 embeddings",
+        embeds=True, options=(("strictness", 1),),
     ),
 }
 
@@ -90,9 +99,13 @@ _METRICS: dict = {}
 def _metric(axis: str):
     if axis not in _METRICS:
         import ragas.metrics as guest_metrics
-        from evals.guest_llm import OurClient
+        from evals.guest_llm import OurClient, OurEmbeddings
 
-        _METRICS[axis] = getattr(guest_metrics, AXES[axis].metric)(llm=OurClient())
+        guest = AXES[axis]
+        extra = {"embeddings": OurEmbeddings()} if guest.embeds else {}
+        _METRICS[axis] = getattr(guest_metrics, guest.metric)(
+            llm=OurClient(), **extra, **dict(guest.options)
+        )
     return _METRICS[axis]
 
 

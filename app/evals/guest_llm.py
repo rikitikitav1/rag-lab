@@ -13,6 +13,7 @@ import llm
 os.environ.setdefault("RAGAS_DO_NOT_TRACK", "true")
 import logging_setup
 from langchain_core.outputs import Generation, LLMResult
+from ragas.embeddings.base import BaseRagasEmbeddings
 from ragas.llms.base import BaseRagasLLM
 
 log = logging_setup.get_logger(__name__)
@@ -49,6 +50,27 @@ class OurClient(BaseRagasLLM):
     # ragas retries while this says no; our client raises instead of returning a half answer
     def is_finished(self, response: LLMResult) -> bool:
         return True
+
+
+# response relevancy is the one guest that measures with vectors, so it borrows our embedder too
+class OurEmbeddings(BaseRagasEmbeddings):
+    def __init__(self, role: str = "embedding"):
+        from ragas.run_config import RunConfig
+
+        self.role = role
+        self.set_run_config(RunConfig(max_retries=1, max_wait=1))
+
+    def embed_query(self, text: str) -> list[float]:
+        return llm.embed(text, role=self.role)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return llm.request_embeddings_batch(texts, self.role)
+
+    async def aembed_query(self, text: str) -> list[float]:
+        return await asyncio.to_thread(self.embed_query, text)
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self.embed_documents, texts)
 
 
 # `ragas` is in neither image, so a guest number that cannot name its process cannot be placed

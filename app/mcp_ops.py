@@ -10,6 +10,7 @@ from evals import (
     question_sets,
     retrieval_metrics,
     run_debts,
+    stats,
 )
 from evals.loaders import load_logs
 from fastmcp import FastMCP
@@ -107,6 +108,33 @@ def judge_correlation_report(
     if not rows:
         raise ToolError("no row carries both our faithfulness and the guest's")
     return {"run_name": name, **judge_correlation.report(rows, counts)}
+
+
+@mcp_ops.tool(
+    name="holm_over",
+    description=(
+        "Correct a family of tests the reader declares, rather than the family one record "
+        "happens to hold. Give the p-values with a name each and say what the family is; "
+        "returns each test with its holm threshold and whether it survives, plus the family "
+        "as written. Use it when the arms being read come from more than one experiment: a "
+        "report corrects over its own record, and a wider reading is a wider family."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def holm_over(
+    tests: Annotated[
+        dict[str, float],
+        Field(description="Each test by name with its p-value.", max_length=limits.MAX_RUNS),
+    ],
+    family: Annotated[
+        str, Field(min_length=1, description="What this family is, in the reader's words.")
+    ],
+    alpha: Annotated[float, Field(default=0.05, gt=0, lt=1)] = 0.05,
+) -> dict:
+    if not tests:
+        raise ToolError("a family of no tests corrects nothing")
+    named = [{"name": name, "p": p} for name, p in tests.items()]
+    return {"tests": named, **stats.annotate_holm(named, family, alpha)}
 
 
 @mcp_ops.tool(

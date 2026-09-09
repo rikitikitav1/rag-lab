@@ -53,7 +53,9 @@ def test_a_row_without_the_material_is_never_owed_the_axis():
     owed = guest_axes.owed(bare, {})
     assert "ragas_faithfulness" in owed
     assert "ragas_context_precision" not in owed and "ragas_context_recall" not in owed
-    assert guest_axes.owed(_row(contexts=None), {}) == ()
+    # relevancy asks whether the answer fits the question, so it is the one guest that needs no context
+    assert guest_axes.owed(_row(contexts=None), {}) == ("ragas_answer_relevancy",)
+    assert guest_axes.owed(_row(answer=None, contexts=None), {}) == ()
 
 
 def test_a_guest_that_throws_records_the_try_and_moves_on(monkeypatch):
