@@ -148,6 +148,43 @@ ALTER SEQUENCE public.data_sources_id_seq OWNED BY public.data_sources.id;
 
 
 --
+-- Name: engines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engines (
+    id integer NOT NULL,
+    name text NOT NULL,
+    kind text NOT NULL,
+    env_prefix text NOT NULL,
+    placement text NOT NULL,
+    budget numeric(12,6),
+    spent numeric(12,6) DEFAULT 0 NOT NULL,
+    reserved numeric(12,6) DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engines_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.engines_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: engines_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.engines_id_seq OWNED BY public.engines.id;
+
+
+--
 -- Name: experiments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -292,7 +329,10 @@ CREATE TABLE public.model_roles (
 CREATE TABLE public.models (
     id integer NOT NULL,
     name text NOT NULL,
-    status text DEFAULT 'available'::text NOT NULL
+    status text DEFAULT 'available'::text NOT NULL,
+    engine_id integer NOT NULL,
+    weights text,
+    quant text
 );
 
 
@@ -465,6 +505,13 @@ ALTER TABLE ONLY public.data_sources ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: engines id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engines ALTER COLUMN id SET DEFAULT nextval('public.engines_id_seq'::regclass);
+
+
+--
 -- Name: experiments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -538,6 +585,22 @@ ALTER TABLE ONLY public.data_sources
 
 
 --
+-- Name: engines engines_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engines
+    ADD CONSTRAINT engines_name_key UNIQUE (name);
+
+
+--
+-- Name: engines engines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engines
+    ADD CONSTRAINT engines_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: experiments experiments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -578,11 +641,11 @@ ALTER TABLE ONLY public.model_roles
 
 
 --
--- Name: models models_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: models models_engine_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.models
-    ADD CONSTRAINT models_name_key UNIQUE (name);
+    ADD CONSTRAINT models_engine_name_key UNIQUE (engine_id, name);
 
 
 --
@@ -728,6 +791,14 @@ ALTER TABLE ONLY public.model_roles
 
 
 --
+-- Name: models models_engine_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.models
+    ADD CONSTRAINT models_engine_id_fkey FOREIGN KEY (engine_id) REFERENCES public.engines(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: question_logs question_logs_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -790,4 +861,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260831000001'),
     ('20260831000002'),
     ('20260906000001'),
-    ('20260906000002');
+    ('20260906000002'),
+    ('20260909000001');
