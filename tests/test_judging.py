@@ -465,8 +465,10 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
 
     from evals.compare import residencies
 
+    # every row that carries a residency carries an engine too: they were stamped together
     def row(rid):
-        return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid}} if rid else {})
+        stamp = {"residency_id": rid, "engine": "ollama:11434"}
+        return SimpleNamespace(metrics={"faithfulness": stamp} if rid else {})
 
     same = residencies({"a": [row(7), row(7)], "b": [row(7)]})
     assert same["one_residency"] is True
@@ -481,7 +483,13 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     # one arm silent and the other not: the union has one id, and that used to read as agreement
     half = residencies({"a": [row(None)], "b": [row(7)]})
     assert half["one_residency"] is None, "an arm that recorded nothing cannot agree with one that did"
-    assert "nothing can be said" in half["read_this_first"]
+    assert "nothing can be said" in half["read_this_first"], "an unknown residency comes first"
+
+    # residency agrees and one arm never recorded an engine: that outranks any residency reading
+    quiet = SimpleNamespace(metrics={"faithfulness": {"residency_id": 7}})
+    mixed = residencies({"a": [quiet], "b": [row(7)]})
+    assert mixed["one_residency"] is True and mixed["one_engine"] is None
+    assert "recorded no engine" in mixed["read_this_first"]
 
     # two backends are not one instrument at all, and that outranks any residency reading
     def on(rid, engine):
@@ -530,10 +538,11 @@ def test_the_judge_settles_the_outcome_it_alone_can_know():
     zero = row("answered", "0")
     assert zero["settled_outcome"] == "answered_ungrounded", "zero means it stood on nothing"
     assert zero["outcome"] == "answered", "what the answer knew never changes, or a replay breaks"
-    assert row("answered", "7")["settled_outcome"] == "answered"
-    assert row("refused", "0")["settled_outcome"] == "refused", "a refusal is not an answer"
 
-    # nothing to settle, and nothing claimed: an unjudged row must not look settled
+    # everything else keeps deriving: the derivation is still wider than what the writer saw
+    assert "settled_outcome" not in row("answered", "7")
+    assert "settled_outcome" not in row("refused", "0"), "a refusal is not ours to freeze"
+    assert "settled_outcome" not in row("error", "0"), "an error may still re-derive as exhausted"
     assert row(None, "7") == {}
     assert "settled_outcome" not in row("answered", None)
 

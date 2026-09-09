@@ -482,11 +482,11 @@ def test_every_kind_of_report_declares_its_schema():
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (4, 4, 2)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (5, 6, 4)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (6, 6, 4)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
-    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (4, 1, 2)
+    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 2)
     # the equality report is a record too: what it compared moved once already
     assert replay.SCHEMA == 1
 
@@ -749,8 +749,9 @@ SCHEMA_4_SHAPE = [
     ".composite.pairwise.tests",
     ".composite.ranking[].rrf",
     ".composite.ranking[].value",
-    ".composite.rows_by_population.<arm>.all_rows",
-    ".composite.rows_by_population.<arm>.paired_in_corpus_and_answered",
+    ".composite.rows_by_population.by_run.<arm>.all_rows",
+    ".composite.rows_by_population.by_run.<arm>.in_corpus_and_answered",
+    ".composite.rows_by_population.in_corpus_and_answered_in_every_arm",
     ".composite.winner",
     ".param",
     ".per_value.<arm>.answer_rate",
@@ -801,7 +802,7 @@ def test_the_generation_report_declares_a_new_schema_when_its_shape_moves(monkey
 
     report = exp.compute_results("run", ["a", "b"], ["a", "b"])
     shape = sorted({
-        re.sub(r"\.(per_value|rows_by_population)\.[ab]\.", r".\1.<arm>.", p)
+        re.sub(r"\.(per_value|by_run)\.[ab]\.", r".\1.<arm>.", p)
         .replace("a_vs_b", "<pair>")
         for p in _shape_of(report)
     })

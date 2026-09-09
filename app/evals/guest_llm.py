@@ -21,6 +21,9 @@ log = logging_setup.get_logger(__name__)
 # the role whose model, sampler and seed the guest borrows: it judges, so it borrows the judge
 ROLE = "judging"
 
+# response relevancy compares vectors, so one guest borrows this role beside the judging one
+EMBEDDING_ROLE = "embedding"
+
 
 def _text_of(prompt) -> str:
     return prompt.to_string() if hasattr(prompt, "to_string") else str(prompt)
@@ -54,7 +57,7 @@ class OurClient(BaseRagasLLM):
 
 # response relevancy is the one guest that measures with vectors, so it borrows our embedder too
 class OurEmbeddings(BaseRagasEmbeddings):
-    def __init__(self, role: str = "embedding"):
+    def __init__(self, role: str = EMBEDDING_ROLE):
         from ragas.run_config import RunConfig
 
         self.role = role

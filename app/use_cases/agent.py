@@ -119,8 +119,9 @@ def run(
     policy = FallbackPolicy(fallback_policy or config.settings.agent.fallback_policy)
     system = prompt_repo.active_template(Purpose.agent_system)
     # the question sits at the head of a transcript the tool answers fill: it needs saying out loud
-    lang = chat._resolve_language(question, language)
-    system += f"\n\n{chat.language_directive(lang)}"
+    lang = chat.resolve_language(question, language)
+    said = chat.language_directive(lang)
+    system += f"\n\n{said}" if said else ""
     messages: list = [
         {"role": "system", "content": system},
         {"role": "user", "content": question},
@@ -366,7 +367,7 @@ def _log_answer(
     *, variant: str,
 ) -> None:
     use_rerank = chat.resolve_rerank(use_rerank)
-    lang = chat._resolve_language(question_text, language)
+    lang = chat.resolve_language(question_text, language)
     with Session() as session:
         question = chat._find_or_create_question(session, question_text, lang)
         log_row = QuestionLog(

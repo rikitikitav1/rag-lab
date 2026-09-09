@@ -200,7 +200,8 @@ def build(on: date | None = None) -> dict:
             " английский ответ во всех разноязычных парах лёг на A, и ты все пять раз выбрал B,"
             " поэтому позицию и язык там не разделить. Узнавание пары тут не мешает: оно работает"
             " против позиционного чтения, а не за него.",
-            kept,
+            # never `kept`: a carried answer would be the very verdict this sheet checks
+            None,
         ),
         encoding="utf-8",
     )

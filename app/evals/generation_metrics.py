@@ -1,6 +1,7 @@
 import sys
 
 import config
+from evals import guest_axes
 from evals.loaders import load_logs
 from evals.pools import ALL_OUTCOMES, settled, split
 from evals.pools import has_remote_evidence as _has_remote_evidence
@@ -43,10 +44,10 @@ def _abstentions() -> dict:
             "why": "on a refusal the axis does not apply, and the judge prompt is left alone",
             "read_from": "metrics.refusal, written by both answering paths from one function",
         },
+        # read off the guests themselves: a fourth axis was added and this table did not notice
         "guests": {
-            "ragas_faithfulness": "abstains where the row carries no answer or no context",
-            "ragas_context_precision": "abstains where the question carries no reference answer",
-            "ragas_context_recall": "abstains where the question carries no reference answer",
+            axis: "abstains where the row carries no " + ", no ".join(guest.needs)
+            for axis, guest in guest_axes.AXES.items()
         },
     }
 
@@ -59,11 +60,12 @@ def _target_language(ql) -> str | None:
 
 def _language_match(logs) -> dict:
     # a narrated tool call is json, and json is not an answer in the wrong language
-    checked = [
-        ql for ql in logs
-        if ql.answer and _target_language(ql) and _outcome(ql) not in _SAID_NOTHING
+    wanted = [
+        (ql, _target_language(ql)) for ql in logs
+        if ql.answer and _outcome(ql) not in _SAID_NOTHING
     ]
-    matched = sum(1 for ql in checked if db.detect_language(ql.answer) == _target_language(ql))
+    checked = [(ql, target) for ql, target in wanted if target]
+    matched = sum(1 for ql, target in checked if db.detect_language(ql.answer) == target)
     return {
         "n": len(checked),
         "matched": matched,
@@ -79,8 +81,8 @@ def _share(logs, outcome) -> str:
     return f"{sum(1 for ql in logs if _outcome(ql) == outcome)}/{len(logs)}"
 
 
-# 1 before `answered_ungrounded`; 2 those three; 3 abstention; 4 who settled; 5 the language
-SCHEMA = 5
+# 1 before `answered_ungrounded`; 2 those three; 3 abstention; 4 settled; 5 language; 6 narrower
+SCHEMA = 6
 
 
 def evaluate(run_name=None, verbose=False) -> dict:
@@ -121,8 +123,8 @@ def evaluate(run_name=None, verbose=False) -> dict:
         # what the silence in an axis means: an abstention is not a low score and not a missing pass
         "axes_abstain_on": _abstentions(),
         "n_logs": len(logs),
-        # a derived outcome is a guess about groundedness, and it must not read as a recorded one
-        "outcomes_settled": sum(1 for ql in logs if settled(ql)),
+        # the judge overrode what the answer wrote: nothing else is settled, the rest still derives
+        "outcomes_overridden_by_the_judge": sum(1 for ql in logs if settled(ql)),
         # no model call and no judge: the same rule that picks the search config reads the answer
         "language_match": _language_match(logs),
         "n_scored": n,

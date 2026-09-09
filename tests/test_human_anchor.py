@@ -77,6 +77,22 @@ def test_an_answer_travels_by_the_pair_of_rows_and_not_by_its_number(anchor, tmp
     assert len(kept) == 3
 
 
+def test_the_repeats_sheet_never_arrives_carrying_the_answer_it_checks(anchor):
+    # it is the same pair of rows flipped, so a carried answer would agree with itself perfectly
+    from types import SimpleNamespace
+
+    def row(log_id, answer):
+        return SimpleNamespace(id=log_id, answer=answer, question_text="q", contexts=["c"])
+
+    left, right = row(1, "ответ по-русски"), row(2, "an answer in english")
+    kept = {frozenset((1, 2)): 1}
+    main = anchor._sheet([(left, right, 1)], "основной", "нота", kept)
+    repeats = anchor._sheet([(right, left, 1)], "повторы", "нота", None)
+
+    assert "**A**" in main, "the main sheet keeps what he already answered"
+    assert "**____**" in repeats and "**A**" not in repeats and "**B**" not in repeats
+
+
 def test_a_pruned_pair_leaves_the_sheet_but_not_the_count(anchor, tmp_path, monkeypatch):
     # the sheet shrinks so the next sitting is only what is left; the answer moves, it does not vanish
     import json

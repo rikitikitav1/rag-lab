@@ -183,6 +183,10 @@ def disturbs_the_judge(job_type: str) -> bool:
     return job_type not in KEEPS_THE_JUDGE
 
 
+# a renamed type would leave a dead entry here and quietly start evicting the judge on paper
+assert set(KEEPS_THE_JUDGE) <= set(SPECS), sorted(set(KEEPS_THE_JUDGE) - set(SPECS))
+
+
 # a type that takes whatever it is given; the universal door made the empty list the safe state
 FREE = ()
 

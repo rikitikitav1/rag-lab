@@ -2,13 +2,12 @@ import statistics
 import sys
 
 import limits
+from evals.judge_correlation import JOINS_BOTH_JUDGES, joins_both_judges
 from evals.loaders import load_logs
 from evals.pools import (
     ALL_OUTCOMES,
-    IN_CORPUS_AND_ANSWERED,
     POOLS,
     has_remote_evidence,
-    in_corpus_and_answered,
     outcome,
     split,
 )
@@ -104,6 +103,10 @@ def paired(left, right, axis) -> dict:
     return result
 
 
+# 1 pools and blend; 2 the residency block; 3 the engine and the correlation's own population
+SCHEMA = 3
+
+
 def compare(runs: dict[str, list]) -> dict:
     by_pool = {name: split(logs) for name, logs in runs.items()}
     names = list(runs)
@@ -138,12 +141,13 @@ def compare(runs: dict[str, list]) -> dict:
     }
     # pools differ in what they should do, so their blend ranks nothing: kept for latency only
     return {
+        "schema": SCHEMA,
         "runs": names,
         "residency": residencies(runs),
-        # the same call the correlation narrows by: two reports of one run must not disagree on n
+        # the correlation's own predicate, called not restated: one label stood over two selections
         "correlation_population": {
-            "predicate": IN_CORPUS_AND_ANSWERED,
-            "n": {name: sum(1 for ql in logs if in_corpus_and_answered(ql))
+            "predicate": JOINS_BOTH_JUDGES,
+            "n": {name: sum(1 for ql in logs if joins_both_judges(ql))
                   for name, logs in runs.items()},
         },
         "pools": pools,
@@ -165,6 +169,11 @@ def _what_to_read_first(one_engine: bool | None, one: bool | None) -> str | None
         )
     if one is None:
         return "rows judged before this was recorded carry no residency, so nothing can be said"
+    if one_engine is None:
+        return (
+            "the residency matches, but at least one arm recorded no engine, so whether both ran "
+            "on one backend cannot be said, and that outranks any reading of the residency"
+        )
     return (
         "one residency is necessary, not sufficient: two arms with identical rows, order and "
         "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
@@ -184,7 +193,7 @@ def _all_agree(by_run: dict) -> bool | None:
 def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
 
-    seen, backends = {}, {}
+    seen, engines_seen = {}, {}
     for name, logs in runs.items():
         ids, engines = set(), set()
         for ql in logs:
@@ -194,14 +203,14 @@ def residencies(runs: dict[str, list]) -> dict:
                     ids.add(stamp["residency_id"])
                 if stamp.get("engine"):
                     engines.add(stamp["engine"])
-        seen[name], backends[name] = sorted(ids), sorted(engines)
+        seen[name], engines_seen[name] = sorted(ids), sorted(engines)
     # an arm that recorded nothing cannot agree with one that did: silence is not a match
     one = _all_agree(seen)
-    one_engine = _all_agree(backends)
+    one_engine = _all_agree(engines_seen)
     return {
         "by_run": seen,
         "one_residency": one,
-        "engines_by_run": backends,
+        "engines_by_run": engines_seen,
         "one_engine": one_engine,
         "read_this_first": _what_to_read_first(one_engine, one),
     }

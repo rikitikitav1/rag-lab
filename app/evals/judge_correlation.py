@@ -8,15 +8,16 @@ import math
 import re
 import statistics
 
-from evals.generation_metrics import _outcome, score_of
 from evals.loaders import load_logs
-from evals.pools import IN_CORPUS_AND_ANSWERED, in_corpus
+from evals.pools import in_corpus, in_corpus_and_answered
+from evals.pools import outcome as _outcome
+from evals.stats import score_of
 from outcomes import Outcome
 from scipy.stats import spearmanr
 from use_cases.ingest_quality import code_fraction
 
 # 3 rho carries its band; 2 was the corpus pool alone; 1 was every row that carried both scores
-SCHEMA = 4
+SCHEMA = 5
 
 WORD = re.compile(r"\w+", re.U)
 
@@ -42,6 +43,22 @@ def overlap(answer: str, contexts: list[str], n: int = 4) -> float:
 # how much of the context is code: `_is_code_only` was false for all 729 contexts of the first run
 def code_share(contexts: list[str]) -> float:
     return statistics.fmean(code_fraction(c) for c in contexts) if contexts else 0.0
+
+
+# narrower than the report's pool, and named apart: the two used to share one label
+JOINS_BOTH_JUDGES = (
+    "the corpus pool, answered, and carrying all three of our faithfulness, a context and the"
+    " guest's faithfulness, since a correlation needs both scores on one row"
+)
+
+
+def joins_both_judges(ql) -> bool:
+    return (
+        in_corpus_and_answered(ql)
+        and score_of(ql.faithfulness) is not None
+        and bool(ql.contexts)
+        and guest_score(ql, "ragas_faithfulness") is not None
+    )
 
 
 def guest_score(ql, axis: str):
@@ -85,7 +102,7 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
             "guest_precision": guest_score(ql, "ragas_context_precision"),
             "guest_recall": guest_score(ql, "ragas_context_recall"),
         })
-    return kept, {"population": IN_CORPUS_AND_ANSWERED,
+    return kept, {"population": JOINS_BOTH_JUDGES,
                   "refused_excluded": refused, "guest_abstained": abstained,
                   "refused_and_abstained": both, "outside_the_declared_population": off_pool}
 

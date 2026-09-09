@@ -312,7 +312,8 @@ def judge_guest_axes(options: dict) -> None:
     if log_ids and not _stop_asked(job_id):
         log.error("judge_guest_axes.sweeps_exhausted", owed=len(log_ids))
     ended_on_card = judge_on_card()
-    if started_on_card != ended_on_card:
+    # a swallowed reading leaves `started_on_card` None, and None against a real bool is not a move
+    if None not in (started_on_card, ended_on_card) and started_on_card != ended_on_card:
         # the rows carry their own reading; this says the pass is not one residency any more
         log.error(
             "judge_guest_axes.residency_moved",
@@ -477,11 +478,11 @@ def _loaded_since(prev: int, job_id) -> bool:
     import job_specs
     from models.jobs import Job, JobStatus
 
+    # `running` and the ones that died after loading evict the judge exactly as `done` ones do
+    ours = {JobStatus.new}
     with Session() as session:
         types = session.scalars(
-            select(Job.type)
-            .where(Job.id > prev, Job.status == JobStatus.done)
-            .where(Job.id != job_id if job_id is not None else True)
+            select(Job.type).where(Job.id > prev, Job.id != job_id, Job.status.notin_(ours))
         )
         return any(job_specs.disturbs_the_judge(t) for t in types)
 
@@ -554,7 +555,7 @@ def _mark_skipped(snapshot, ql, skip) -> None:
 
 # scored outside the lock: three model calls under `FOR UPDATE` closed an axis on the loser's timeout
 def _judge_log(log_id: int, force: bool = False, bench=None, width: int = 1, skip=(),
-               residency: int | None = None) -> bool:
+               residency: Residency | None = None) -> bool:
     bench = bench or judge.ACTIVE
     with Session() as session:
         ql = session.get(QuestionLog, log_id)
@@ -621,11 +622,9 @@ def _settle_outcome(ql, snapshot) -> None:
     said = snapshot.metrics.get("outcome")
     if said is None or ql.faithfulness is None:
         return
-    # a separate key: `outcome` is what the answer knew, and a replay compares row to row on it
-    ungrounded = said == Outcome.answered and score_of(ql.faithfulness) == 0
-    snapshot.metrics["settled_outcome"] = str(
-        Outcome.answered_ungrounded if ungrounded else said
-    )
+    # only the downgrade it alone can make: settling more would freeze a wider derivation
+    if said == Outcome.answered and score_of(ql.faithfulness) == 0:
+        snapshot.metrics["settled_outcome"] = str(Outcome.answered_ungrounded)
 
 
 @dataclass

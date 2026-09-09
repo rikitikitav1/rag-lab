@@ -94,10 +94,16 @@ BLENDED = (
 )
 
 
+# it really pairs now: the deltas are over the intersection, so a per run count named "paired" lied
 def _pool_counts(runs: dict[str, list]) -> dict:
-    return {name: {"paired_in_corpus_and_answered":
-                   sum(1 for ql in logs if in_corpus_and_answered(ql)), "all_rows": len(logs)}
+    kept = {name: {ql.question_id for ql in logs if in_corpus_and_answered(ql)}
             for name, logs in runs.items()}
+    shared = set.intersection(*kept.values()) if kept else set()
+    return {
+        "in_corpus_and_answered_in_every_arm": len(shared),
+        "by_run": {name: {"in_corpus_and_answered": len(kept[name]), "all_rows": len(logs)}
+                   for name, logs in runs.items()},
+    }
 
 
 def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:

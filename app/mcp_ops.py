@@ -124,17 +124,20 @@ def judge_correlation_report(
 def holm_over(
     tests: Annotated[
         dict[str, float],
-        Field(description="Each test by name with its p-value.", max_length=limits.MAX_RUNS),
+        Field(description="Each test by name with its p-value.", max_length=limits.MAX_TESTS),
     ],
     family: Annotated[
         str, Field(min_length=1, description="What this family is, in the reader's words.")
     ],
-    alpha: Annotated[float, Field(default=0.05, gt=0, lt=1)] = 0.05,
+    alpha: Annotated[float, Field(gt=0, lt=1)] = 0.05,
 ) -> dict:
     if not tests:
         raise ToolError("a family of no tests corrects nothing")
     named = [{"name": name, "p": p} for name, p in tests.items()]
-    return {"tests": named, **stats.annotate_holm(named, family, alpha)}
+    # the summary's own `tests` is a count, and spreading it used to overwrite the annotated list
+    summary = stats.annotate_holm(named, family, alpha)
+    return {"tests": named, "family": summary["family"], "method": summary["method"],
+            "alpha": summary["alpha"], "n": summary["tests"]}
 
 
 @mcp_ops.tool(

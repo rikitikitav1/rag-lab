@@ -23,7 +23,7 @@ class Guest:
     # the only one that measures with vectors, so it borrows our embedder as well as our judge
     embeds: bool = False
     # what the metric must be told about us, rather than discover and silently work around
-    options: tuple = ()
+    options: tuple[tuple[str, object], ...] = ()
 
 
 # every axis is handed `user_input`, so `question_text` is material to all three

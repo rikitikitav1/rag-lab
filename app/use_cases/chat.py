@@ -301,7 +301,7 @@ def answer_from_rows(
     variant: str,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
-    lang = _resolve_language(question, language)
+    lang = resolve_language(question, language)
     use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
 
@@ -312,7 +312,8 @@ def answer_from_rows(
     else:
         user = f"{context}\n\nQuestion: {question}"
         # always, not only when a run forced one: without it the model follows whatever it last read
-        user += f"\n\n{language_directive(lang)}"
+        said = language_directive(lang)
+        user += f"\n\n{said}" if said else ""
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
             user=user,
@@ -355,12 +356,14 @@ def _detect_language(text) -> str:
     return db.detect_language(text)
 
 
-def _resolve_language(question: str, language: str | None) -> str:
+def resolve_language(question: str, language: str | None) -> str:
     return language or _detect_language(question)
 
 
+# an unknown code is not a language name, and `replay` reads this out of a snapshot past the doors
 def language_directive(language: str) -> str:
-    return f"Respond in {_LANG_NAMES.get(language, language)}."
+    said = _LANG_NAMES.get(language)
+    return f"Respond in {said}." if said else ""
 
 
 def _retrieval_snapshot(rows, sources) -> dict:
@@ -423,7 +426,7 @@ def _log_answer(
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand
                 "context_chars": len(context) if context else 0,
-                # what this path can know now; groundedness waits for the judge, see `outcome_settled`
+                # what this path can know now; groundedness waits for the judge, see `settled_outcome`
                 "outcome": outcomes.classify(ans.text, bool(ans.sources)),
                 # the one fact both the judge and the report may read: neither re-derives it
                 "refusal": outcomes.reads_as_refusal(ans.text),

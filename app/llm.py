@@ -169,7 +169,9 @@ def server_context_length(model: str) -> int | None:
 def engine() -> str:
     from urllib.parse import urlsplit
 
-    return urlsplit(LLM_BASE).netloc or LLM_BASE
+    # host and port only: `netloc` carries userinfo, and this lands on every judged row
+    seen = urlsplit(LLM_BASE)
+    return f"{seen.hostname}:{seen.port}" if seen.hostname else "unnamed"
 
 
 def list_models():
