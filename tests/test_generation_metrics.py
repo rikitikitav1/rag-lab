@@ -192,3 +192,21 @@ def test_a_refusal_does_not_drag_the_axis_means_of_the_answers(monkeypatch):
     assert m["answered_only"] == {
         "n": 2, "faithfulness": 6.0, "relevance": 8.0, "completeness": None
     }
+
+
+def test_the_guest_axes_are_reported_beside_ours_and_never_blended_into_them():
+    # a fourth guest was scored on 25 rows and its mean lived in no report at all
+    from types import SimpleNamespace
+
+    from evals.generation_metrics import _guests
+
+    def row(score=None, abstained=False):
+        entry = {"score": score} if score is not None else {}
+        if abstained:
+            entry["abstained"] = True
+        return SimpleNamespace(metrics={"ragas_answer_relevancy": entry})
+
+    got = _guests([row(0.5), row(0.9), row(abstained=True), SimpleNamespace(metrics={})])
+    relevancy = got["ragas_answer_relevancy"]
+    assert (relevancy["n"], relevancy["mean"], relevancy["abstained"]) == (2, 0.7, 1)
+    assert got["ragas_faithfulness"]["mean"] is None, "an axis nobody scored says so"

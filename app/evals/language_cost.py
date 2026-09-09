@@ -10,9 +10,8 @@ because it is what was published, not because it is the better cut.
 import config
 from evals.compare import SCHEMA as COMPARE_SCHEMA
 from evals.compare import residencies
-from evals.generation_metrics import answered_in_target
 from evals.human_anchor import Refused
-from evals.pools import in_corpus_and_answered
+from evals.pools import answered_in_target, by_question, in_corpus_and_answered
 from evals.stats import delta_stats, score_of, tally
 from use_cases import rejudge
 
@@ -36,21 +35,9 @@ GROUPS = {
 }
 
 
-def _by_question(logs) -> dict:
-    kept = {}
-    for ql in logs:
-        if not in_corpus_and_answered(ql):
-            continue
-        if ql.question_id in kept:
-            raise Refused(
-                f"question {ql.question_id} appears twice in one arm: a pair would be arbitrary"
-            )
-        kept[ql.question_id] = ql
-    return kept
-
-
 def _pairs(before_logs, after_logs) -> list[tuple]:
-    before, after = _by_question(before_logs), _by_question(after_logs)
+    before = by_question(before_logs, in_corpus_and_answered)
+    after = by_question(after_logs, in_corpus_and_answered)
     return [(before[q], after[q]) for q in sorted(set(before) & set(after))]
 
 

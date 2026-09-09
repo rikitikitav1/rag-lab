@@ -3,21 +3,14 @@ import sys
 import config
 from evals import guest_axes
 from evals.loaders import load_logs
-from evals.pools import ALL_OUTCOMES, settled, split
+from evals.pools import ALL_OUTCOMES, SAID_NOTHING, answered_in_target, settled, split
 from evals.pools import has_remote_evidence as _has_remote_evidence
 from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
 from evals.stats import mean_of, score_of
 from outcomes import Outcome
 from use_cases import rejudge
-from use_cases.chat import resolve_language
 
-import db
-
-# refusals and non-answers: shapes where the model said nothing to score
-_SAID_NOTHING = (
-    Outcome.refused, Outcome.narrated_call, Outcome.exhausted, Outcome.error,
-)
 # an answer standing on nothing the corpus gave it, whichever way it got there
 _UNSUPPORTED = (
     Outcome.unsupported_answer, Outcome.answered_ungrounded, Outcome.narrated_call,
@@ -53,20 +46,6 @@ def _abstentions() -> dict:
     }
 
 
-# the run's own language when it recorded one, else the question's: answering the asker is the default
-def target_language(ql) -> str | None:
-    asked = ((ql.metrics or {}).get("config") or {}).get("language")
-    return resolve_language(ql.question_text, asked) if ql.question_text else asked
-
-
-# None where the question cannot be put: a narrated tool call is json, not an answer in a language
-def answered_in_target(ql) -> bool | None:
-    target = target_language(ql)
-    if not ql.answer or not target or _outcome(ql) in _SAID_NOTHING:
-        return None
-    return db.detect_language(ql.answer) == target
-
-
 def _language_match(logs) -> dict:
     checked = [got for got in (answered_in_target(ql) for ql in logs) if got is not None]
     matched = sum(1 for got in checked if got)
@@ -81,12 +60,26 @@ def _language_match(logs) -> dict:
     }
 
 
+# the guests had no door of their own: a fourth axis was scored and its mean lived in nobody's report
+def _guests(logs) -> dict:
+    out = {}
+    for axis in guest_axes.AXES:
+        seen = [(ql.metrics or {}).get(axis) or {} for ql in logs]
+        scored = [one["score"] for one in seen if one.get("score") is not None]
+        out[axis] = {
+            "n": len(scored),
+            "mean": mean_of(scored, 4),
+            "abstained": sum(1 for one in seen if one.get("abstained")),
+        }
+    return out
+
+
 def _share(logs, outcome) -> str:
     return f"{sum(1 for ql in logs if _outcome(ql) == outcome)}/{len(logs)}"
 
 
-# 1 before `answered_ungrounded`; 2 those three; 3 abstention; 4 settled; 5 language; 6 narrower
-SCHEMA = 6
+# 1 before `answered_ungrounded`; 2 those; 3 abstention; 4 settled; 5 language; 6 narrower; 7 guests
+SCHEMA = 7
 
 
 def evaluate(run_name=None, verbose=False) -> dict:
@@ -100,7 +93,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
     # an ungrounded answer is still an answer, and its low scores belong in this mean
     answered_only = [
         ql for ql in in_corpus
-        if _outcome(ql) not in _SAID_NOTHING
+        if _outcome(ql) not in SAID_NOTHING
     ]
     faith = mean_of(ql.faithfulness for ql in in_corpus)
     relevance = mean_of(ql.relevance for ql in in_corpus)
@@ -131,6 +124,8 @@ def evaluate(run_name=None, verbose=False) -> dict:
         "outcomes_overridden_by_the_judge": sum(1 for ql in logs if settled(ql)),
         # no model call and no judge: the same rule that picks the search config reads the answer
         "language_match": _language_match(logs),
+        # a calibration, not an axis: reported beside ours, never blended into them
+        "guest_axes": _guests(logs),
         "n_scored": n,
         "answered": sum(1 for ql in logs if ql.answered),
         "answer_rate": round(sum(1 for ql in logs if ql.answered) / len(logs), 3) if logs else None,

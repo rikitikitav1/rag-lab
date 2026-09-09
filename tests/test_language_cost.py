@@ -11,14 +11,17 @@ def costs():
 def _row(question_id, faith, answer="text", log_id=1):
     from types import SimpleNamespace
 
-    return SimpleNamespace(id=log_id, question_id=question_id, answer=answer,
+    return SimpleNamespace(id=log_id, question_id=question_id, answer=answer, run_name="r",
                            faithfulness=str(faith), relevance=None, completeness=None)
 
 
 def test_a_question_twice_in_one_arm_refuses_rather_than_pairing_arbitrarily(costs, monkeypatch):
     # a dict would have kept whichever row came last, and the pair would depend on the loader
+    from evals import pools
+
+    monkeypatch.setattr(pools, "in_corpus_and_answered", lambda ql: True)
     monkeypatch.setattr(costs, "in_corpus_and_answered", lambda ql: True)
-    with pytest.raises(ValueError):
+    with pytest.raises(pools.Ambiguous):
         costs._pairs([_row(1, 5), _row(1, 6)], [_row(1, 7)])
 
 
@@ -34,6 +37,7 @@ def test_the_quoted_cut_is_read_off_the_arm_before_the_change(costs, monkeypatch
 
 def test_an_axis_no_pair_carries_says_so_instead_of_averaging_nothing(costs, monkeypatch):
     monkeypatch.setattr(costs, "in_corpus_and_answered", lambda ql: True)
+    monkeypatch.setattr("evals.pools.in_corpus_and_answered", lambda ql: True)
     pairs = costs._pairs([_row(1, 5)], [_row(1, 8)])
     got = costs._over(pairs)
 

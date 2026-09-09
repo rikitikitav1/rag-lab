@@ -166,6 +166,6 @@ the forced final turn without sources ships immediately, the topic axis follows
   questions most tempting to hallucinate on is lower than the description suggests. Next time the
   cut goes through a seeded sample
 - the grid ran on the branch state squashed into "Gate the agent's fallback on retrieval strength"
-  (`0c6d361` before the squash); later work on that branch came after the run
+  («Move the worker cross-encoder off the card by default» before the squash); later work on that branch came after the run
 - n=100 per pool, Wilcoxon paired per pool. With four comparisons per family the out-of-corpus
   faithfulness result survives Bonferroni comfortably; the relevance one (p=0.039) does not

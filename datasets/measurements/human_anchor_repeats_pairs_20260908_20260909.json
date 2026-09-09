@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "population": "the pairs of the main sheet, flipped: cross language first, then the rest",
+  "n": 7,
+  "share_same_row": 0.714,
+  "by_outcome": {
+    "same_row": 5,
+    "one_side_called_it_equal": 2
+  },
+  "reads": "same_row means he follows what is written, same_position means he follows the side"
+}

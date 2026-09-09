@@ -15,14 +15,14 @@ SCHEMA = 2
 
 def _by_question(run_name: str) -> dict:
     from evals.loaders import load_logs
+    from evals.pools import by_question
     from evals.stats import to_unit
 
-    out = {}
-    for ql in load_logs(run_name):
-        got = to_unit(ql.faithfulness)
-        if got is not None and ql.question_id:
-            out[ql.question_id] = {"ours": got, "answer": ql.answer or ""}
-    return out
+    scored = by_question(load_logs(run_name), lambda ql: to_unit(ql.faithfulness) is not None)
+    return {
+        question: {"ours": to_unit(ql.faithfulness), "answer": ql.answer or ""}
+        for question, ql in scored.items()
+    }
 
 
 def _swaps(pairs: list) -> int:

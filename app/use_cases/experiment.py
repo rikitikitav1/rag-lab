@@ -4,7 +4,7 @@ import logging_setup
 import numpy as np
 from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
-from evals.pools import in_corpus_and_answered
+from evals.pools import by_question, in_corpus_and_answered
 from evals.stats import annotate_holm, deltas_over, score_of
 from evals.stats import delta_stats as _delta_stats
 from models.eval import Question, QuestionLog
@@ -66,8 +66,9 @@ def _rrf(per_value: dict) -> dict[str, float]:
 
 
 def _paired_logs(set_a: list, set_b: list) -> list:
-    by_id_b = {ql.question_id: ql for ql in set_b}
-    return [(a, by_id_b[a.question_id]) for a in set_a if a.question_id in by_id_b]
+    by_id_b = by_question(set_b)
+    return [(a, by_id_b[a.question_id]) for a in by_question(set_a).values()
+            if a.question_id in by_id_b]
 
 
 def _axis_deltas(pairs: list, axis: str) -> list:
@@ -96,7 +97,7 @@ BLENDED = (
 
 # it really pairs now: the deltas are over the intersection, so a per run count named "paired" lied
 def _pool_counts(runs: dict[str, list]) -> dict:
-    kept = {name: {ql.question_id for ql in logs if in_corpus_and_answered(ql)}
+    kept = {name: set(by_question(logs, in_corpus_and_answered))
             for name, logs in runs.items()}
     shared = set.intersection(*kept.values()) if kept else set()
     return {

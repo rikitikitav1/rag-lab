@@ -350,13 +350,8 @@ def answer_from_rows(
 _LANG_NAMES = {"ru": "Russian", "en": "English"}
 
 
-def _detect_language(text) -> str:
-    # same rule as the search config: a wrong guess here answers a Russian question in English
-    return db.detect_language(text)
-
-
-def resolve_language(question: str, language: str | None) -> str:
-    return language or _detect_language(question)
+# re-exported: three callers above this layer already say `chat.resolve_language`
+resolve_language = db.resolve_language
 
 
 # an unknown code is not a language name, and `replay` reads this out of a snapshot past the doors

@@ -2,12 +2,14 @@ import statistics
 import sys
 
 import limits
-from evals.judge_correlation import JOINS_BOTH_JUDGES, joins_both_judges
 from evals.loaders import load_logs
 from evals.pools import (
     ALL_OUTCOMES,
+    JOINS_BOTH_JUDGES,
     POOLS,
+    by_question,
     has_remote_evidence,
+    joins_both_judges,
     outcome,
     split,
 )
@@ -73,9 +75,8 @@ def _client(logs) -> str | None:
 def paired(left, right, axis) -> dict:
     def scores(logs):
         return {
-            ql.question_id: None if getattr(ql, axis) is None else float(getattr(ql, axis))
-            for ql in logs
-            if ql.question_id is not None
+            question: None if getattr(ql, axis) is None else float(getattr(ql, axis))
+            for question, ql in by_question(logs).items()
         }
 
     before, after = scores(left), scores(right)

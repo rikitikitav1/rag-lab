@@ -227,3 +227,15 @@ def test_a_rebuild_refuses_when_an_answered_pair_falls_off_the_list(anchor, tmp_
 
     with pytest.raises(anchor.Refused):
         anchor.build("20260908")
+
+
+def test_a_cyrillic_letter_that_looks_like_a_is_read_as_a(anchor, tmp_path):
+    # the sheet is Russian and so is the layout: pair 6 of the repeats came back as U+0410
+    sheet = tmp_path / "human_anchor_20260908.md"
+    sheet.write_text(
+        "## Пара 1\nЛучше подкреплён контекстом (впиши A, B или `=`): **А**\n"
+        "## Пара 2\nЛучше подкреплён контекстом (впиши A, B или `=`): **В**\n"
+        "## Пара 3\nЛучше подкреплён контекстом (впиши A, B или `=`): **Ы**\n",
+        encoding="utf-8",
+    )
+    assert anchor._picked(sheet) == {1: "A", 2: "B", 3: None}

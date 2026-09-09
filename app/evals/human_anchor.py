@@ -15,9 +15,9 @@ from itertools import combinations
 from pathlib import Path
 
 import config
-from evals.judge_correlation import JOINS_BOTH_JUDGES, joins_both_judges
 from evals.loaders import load_logs
 from evals.measurements import hand_back, store_json
+from evals.pools import JOINS_BOTH_JUDGES, joins_both_judges
 from evals.stats import to_unit
 
 import db
@@ -398,6 +398,10 @@ def prune(stamp: str) -> dict:
     return {"moved": len(said), "left": len(kept), "done_file": str(done_path)}
 
 
+# he fills a Russian sheet on a Russian layout, and А is not A: the answer was dropped in silence
+_LOOKS_LIKE = {"А": "A", "В": "B", "С": "C"}
+
+
 def _picked(sheet: Path) -> dict:
     out = {}
     n = None
@@ -406,6 +410,7 @@ def _picked(sheet: Path) -> dict:
             n = int(line.split()[-1])
         if "подкреплён контекстом" in line and n is not None:
             said = line.rsplit("**", 2)[-2].strip().upper().strip("_")
+            said = "".join(_LOOKS_LIKE.get(one, one) for one in said)
             out[n] = said if said in ("A", "B", "=") else None
     return out
 

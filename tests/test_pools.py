@@ -212,3 +212,56 @@ def test_a_settlement_equal_to_what_the_answer_knew_overrode_nothing():
                                  "settled_outcome": "answered_ungrounded"})) is True
     assert settled(_log(metrics={"outcome": "answered", "settled_outcome": "answered"})) is False
     assert settled(_log(metrics={"outcome": "answered"})) is False
+
+
+def test_the_shared_predicates_live_here_and_the_reports_call_them():
+    # three reports held population vocabulary and imported it sideways from each other
+    import evals.compare as compare
+    import evals.human_anchor as anchor
+    import evals.judge_correlation as corr
+    import evals.language_cost as costs
+    from evals import pools
+
+    for holder in (compare, corr, anchor):
+        assert holder.joins_both_judges is pools.joins_both_judges
+        assert holder.JOINS_BOTH_JUDGES is pools.JOINS_BOTH_JUDGES
+    assert costs.answered_in_target is pools.answered_in_target
+
+    from pathlib import Path
+
+    source = Path(compare.__file__).read_text(encoding="utf-8")
+    assert "judge_correlation" not in source, "a comparison importing a report is the wrong way"
+
+
+def test_pairing_by_question_refuses_a_double_instead_of_keeping_whichever_came_last():
+    # four doors paired by question with three rules: two last-wins, one refusal, one set
+    from types import SimpleNamespace
+
+    from evals.pools import Ambiguous, by_question
+
+    def row(question, log_id):
+        return SimpleNamespace(question_id=question, id=log_id, run_name="r")
+
+    assert list(by_question([row(1, 10), row(2, 20)])) == [1, 2]
+    assert list(by_question([row(1, 10), row(None, 11)])) == [1], "a row with no question is out"
+    assert list(by_question([row(1, 10), row(2, 20)], lambda ql: ql.id != 20)) == [1]
+
+    try:
+        by_question([row(1, 10), row(1, 11)])
+        raise AssertionError("a double must refuse, not pick whichever row came last")
+    except Ambiguous:
+        pass
+
+
+def test_an_echo_of_the_recorded_outcome_does_not_short_circuit_the_derivation():
+    # 266 rows in the base carry a settlement equal to what the answer knew, from an earlier pass
+    from evals.pools import outcome, settled
+
+    echo = _log(metrics={"outcome": "answered", "settled_outcome": "answered"},
+                answer="an answer", sources=[{"source": "a.md"}], faithfulness="0")
+    assert settled(echo) is False
+    assert outcome(echo) == "answered_ungrounded", "the wider rule applies, the echo is not a fact"
+
+    real = _log(metrics={"outcome": "answered", "settled_outcome": "answered_ungrounded"},
+                answer="an answer", sources=[{"source": "a.md"}], faithfulness="8")
+    assert settled(real) is True and outcome(real) == "answered_ungrounded"

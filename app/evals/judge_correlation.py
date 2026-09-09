@@ -9,7 +9,12 @@ import re
 import statistics
 
 from evals.loaders import load_logs
-from evals.pools import in_corpus, in_corpus_and_answered
+from evals.pools import (
+    JOINS_BOTH_JUDGES,
+    guest_score,
+    in_corpus,
+    joins_both_judges,
+)
 from evals.pools import outcome as _outcome
 from evals.stats import score_of, to_unit
 from outcomes import Outcome
@@ -43,26 +48,6 @@ def overlap(answer: str, contexts: list[str], n: int = 4) -> float:
 # how much of the context is code: `_is_code_only` was false for all 729 contexts of the first run
 def code_share(contexts: list[str]) -> float:
     return statistics.fmean(code_fraction(c) for c in contexts) if contexts else 0.0
-
-
-# narrower than the report's pool, and named apart: the two used to share one label
-JOINS_BOTH_JUDGES = (
-    "the corpus pool, answered, and carrying all three of our faithfulness, a context and the"
-    " guest's faithfulness, since a correlation needs both scores on one row"
-)
-
-
-def joins_both_judges(ql) -> bool:
-    return (
-        in_corpus_and_answered(ql)
-        and score_of(ql.faithfulness) is not None
-        and bool(ql.contexts)
-        and guest_score(ql, "ragas_faithfulness") is not None
-    )
-
-
-def guest_score(ql, axis: str):
-    return ((ql.metrics or {}).get(axis) or {}).get("score")
 
 
 def rows_of(run_name=None) -> tuple[list[dict], dict]:
