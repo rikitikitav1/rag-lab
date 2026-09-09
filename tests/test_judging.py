@@ -611,3 +611,16 @@ def test_a_rejudge_that_raises_the_score_takes_the_settlement_back():
 
     judging._settle_outcome(SimpleNamespace(faithfulness="0"), snap)
     assert snap.metrics["settled_outcome"] == "answered_ungrounded"
+
+
+def test_the_language_probe_records_what_judged_it():
+    # the control read out of regime twice, and nothing in the file said whether the judge was whole
+    import inspect
+
+    from evals import judge_language
+    from job_handlers import judging
+
+    assert "stamp" in inspect.signature(judge_language.measure).parameters
+    handler = inspect.getsource(judging.judge_language)
+    assert "_residency(job_id)" in handler, "the pass names the residency it ran in"
+    assert "stamp=" in handler
