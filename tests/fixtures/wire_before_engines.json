@@ -1,0 +1,87 @@
+[
+  {
+    "body": {
+      "max_tokens": 1024,
+      "messages": [
+        {
+          "content": "system prompt",
+          "role": "system"
+        },
+        {
+          "content": "user question",
+          "role": "user"
+        }
+      ],
+      "model": "llama3.1:8b",
+      "temperature": 0.1
+    },
+    "url": "http://ollama:11434/v1/chat/completions"
+  },
+  {
+    "body": {
+      "max_tokens": 1024,
+      "messages": [
+        {
+          "content": "judge prompt",
+          "role": "system"
+        },
+        {
+          "content": "judge input",
+          "role": "user"
+        }
+      ],
+      "model": "qwen2.5:7b",
+      "response_format": {
+        "json_schema": {
+          "name": "verdict",
+          "schema": {
+            "properties": {
+              "score": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "json_schema"
+      },
+      "seed": 0,
+      "temperature": 0
+    },
+    "url": "http://ollama:11434/v1/chat/completions"
+  },
+  {
+    "body": {
+      "max_tokens": 1024,
+      "messages": [
+        {
+          "content": "with tools",
+          "role": "user"
+        }
+      ],
+      "model": "llama3.1:8b",
+      "temperature": 0.1,
+      "tools": [
+        {
+          "function": {
+            "name": "search_corpus",
+            "parameters": {}
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "url": "http://ollama:11434/v1/chat/completions"
+  },
+  {
+    "body": {
+      "encoding_format": "base64",
+      "input": [
+        "first",
+        "second"
+      ],
+      "model": "bge-m3"
+    },
+    "url": "http://ollama:11434/v1/embeddings"
+  }
+]
