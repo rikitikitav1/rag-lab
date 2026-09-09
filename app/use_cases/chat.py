@@ -312,8 +312,7 @@ def answer_from_rows(
     else:
         user = f"{context}\n\nQuestion: {question}"
         # always, not only when a run forced one: without it the model follows whatever it last read
-        said = language_directive(lang)
-        user += f"\n\n{said}" if said else ""
+        user = told_to_answer_in(user, lang)
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
             user=user,
@@ -364,6 +363,12 @@ def resolve_language(question: str, language: str | None) -> str:
 def language_directive(language: str) -> str:
     said = _LANG_NAMES.get(language)
     return f"Respond in {said}." if said else ""
+
+
+# the append was written three times with its own empty guard, and replay has to match all of them
+def told_to_answer_in(text: str, language: str) -> str:
+    said = language_directive(language)
+    return f"{text}\n\n{said}" if said else text
 
 
 def _retrieval_snapshot(rows, sources) -> dict:

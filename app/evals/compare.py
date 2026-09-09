@@ -93,18 +93,19 @@ def paired(left, right, axis) -> dict:
         "worse": counted["worse"],
         "mean_delta": None,
         "ci95": None,
-        "p_value": None,
+        "p": None,
     }
     if deltas:
         stats = delta_stats(deltas)
         result["mean_delta"] = stats["mean_delta"]
         result["ci95"] = stats["ci95"]
-        result["p_value"] = stats["p"] if any(d != 0 for d in deltas) else None
+        # `wilcoxon_p` already answers the all-zero case with 1.0, and null cannot enter Holm
+        result["p"] = stats["p"]
     return result
 
 
-# 1 pools and blend; 2 the residency block; 3 the engine and the population; 4 the judge's prompt
-SCHEMA = 4
+# 1 pools and blend; 2 residency; 3 engine and population; 4 the prompt; 5 p never null; 6 `p`
+SCHEMA = 6
 
 
 def compare(runs: dict[str, list]) -> dict:
@@ -157,7 +158,7 @@ def compare(runs: dict[str, list]) -> dict:
 
 # in disqualifying order: a backend, then the ruler, then the reload, then what was not recorded
 def _what_to_read_first(
-    one_engine: bool | None, one_prompt: bool | None, one: bool | None
+    one_engine: bool | None, one_prompt: bool | None, one_residency: bool | None
 ) -> str | None:
     if one_engine is False:
         return (
@@ -169,12 +170,12 @@ def _what_to_read_first(
             "arms scored by different judge prompt versions are two rulers, not one instrument "
             "read twice: unless the prompt is the treatment, this contrast measures the prompt"
         )
-    if one is False:
+    if one_residency is False:
         return (
             "arms judged across a reload are not comparable directly: the same judge moves 14% of "
             "its scores and 58% of its reason texts on byte-identical input"
         )
-    if one is None:
+    if one_residency is None:
         return "rows judged before this was recorded carry no residency, so nothing can be said"
     if one_engine is None:
         return (
@@ -196,11 +197,10 @@ def _what_to_read_first(
 
 # per axis, because three axes carry three versions and their union is three by construction
 def _one_ruler(by_run: dict) -> bool | None:
-    shared = [
-        axis for axis in {axis for versions in by_run.values() for axis in versions}
-        if all(versions.get(axis) for versions in by_run.values())
-    ]
-    if not by_run or not shared:
+    # silence is not a match here either: one arm scored on one axis cannot agree with three
+    seen = {frozenset(versions) for versions in by_run.values()}
+    shared = set.intersection(*(set(v) for v in by_run.values())) if by_run else set()
+    if not by_run or not shared or len(seen) != 1:
         return None
     for axis in shared:
         seen = {v for versions in by_run.values() for v in versions[axis]}

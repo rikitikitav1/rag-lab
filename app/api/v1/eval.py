@@ -68,6 +68,8 @@ class JudgeRequest(BaseModel):
 class LanguageProbeRequest(BaseModel):
     run_name: str = Field(default="arc3_agent_baseline", max_length=limits.MAX_RUN_NAME)
     rows: int = Field(default=40, ge=1, le=limits.MAX_GUEST_ROWS)
+    # a declared cut is named, and `rows` would take the first of the pool instead
+    log_ids: list[int] | None = Field(default=None, max_length=limits.MAX_GUEST_ROWS)
 
 
 class ParaphraseRequest(BaseModel):
@@ -393,7 +395,7 @@ async def enqueue_language_probe(
     return await _enqueue(
         session,
         "judge_language",
-        {"run_name": request.run_name, "rows": request.rows},
+        {"run_name": request.run_name, "rows": request.rows, "log_ids": request.log_ids},
     )
 
 

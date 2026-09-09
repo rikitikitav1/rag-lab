@@ -12,8 +12,8 @@ import llm
 from evals.guest_probes import RESTATE, sentence_of
 from use_cases.judge import faithful_verdict
 
-# 2 the restated subject is the row's own answer: pass 1 restated a context line and judged a non-answer
-SCHEMA = 2
+# 2 the restated subject is the row's own answer; 3 the rows may be named instead of counted
+SCHEMA = 3
 
 # history of this instrument on the 3.2 sets: 96.4% and 95.6% at least 7, and it drifts on a reload
 CONTROL_FLOOR = 0.90
@@ -37,7 +37,7 @@ def score(ql, answer: str) -> tuple[int | None, str]:
 
 
 # the loop lived in the script, so a job would have been a second copy of it
-def measure(run_name: str, rows: int, note=None, stop=None) -> dict:
+def measure(run_name: str, rows: int, note=None, stop=None, log_ids=None) -> dict:
     from evals.loaders import load_logs
     from evals.pools import kind
 
@@ -45,7 +45,9 @@ def measure(run_name: str, rows: int, note=None, stop=None) -> dict:
     pool = [
         q for q in load_logs(run_name)
         if q.answered and q.contexts and q.answer and kind(q) == "in_corpus"
-    ][:rows]
+    ]
+    # a declared group is named, not counted off the top: a cut is not the first rows of a run
+    pool = [q for q in pool if q.id in set(log_ids)] if log_ids else pool[:rows]
     scored, originals = [], []
     for ql in pool:
         # two model calls a row: a cancelled probe that runs to the end is not cancelled
@@ -59,7 +61,10 @@ def measure(run_name: str, rows: int, note=None, stop=None) -> dict:
                            "chars": len(answer), "reason": why})
             if note:
                 note(f"{lang} {ql.id}: {scored[-1]['score']}")
-    return report(scored) | control(originals) | {"run_name": run_name, "rows": scored}
+    population = "the named rows" if log_ids else f"the first {rows} of the corpus pool"
+    return (report(scored) | control(originals)
+            | {"run_name": run_name, "population": population, "n_asked": len(pool),
+               "rows": scored})
 
 
 # pass 1 scored a grounded restatement zero in a fifth of pairs and nothing said the regime was off

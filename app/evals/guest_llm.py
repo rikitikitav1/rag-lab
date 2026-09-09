@@ -25,18 +25,22 @@ ROLE = "judging"
 EMBEDDING_ROLE = "embedding"
 
 
+# ragas reads this off the object rather than taking it in, and both adapters set the same one
+def _one_try():
+    from ragas.run_config import RunConfig
+
+    return RunConfig(max_retries=1, max_wait=1)
+
+
 def _text_of(prompt) -> str:
     return prompt.to_string() if hasattr(prompt, "to_string") else str(prompt)
 
 
 class OurClient(BaseRagasLLM):
     def __init__(self, role: str = ROLE, model: str | None = None):
-        from ragas.run_config import RunConfig
-
         self.role = role
         self.model = model
-        # ragas reads this off the object rather than passing it in, and retries through it
-        self.set_run_config(RunConfig(max_retries=1, max_wait=1))
+        self.set_run_config(_one_try())
 
     # ragas asks for n samples; our judging sampler is seeded, so n>1 would repeat one answer
     def generate_text(self, prompt, n=1, temperature=None, stop=None, callbacks=None) -> LLMResult:
@@ -58,11 +62,9 @@ class OurClient(BaseRagasLLM):
 # response relevancy is the one guest that measures with vectors, so it borrows our embedder too
 class OurEmbeddings(BaseRagasEmbeddings):
     def __init__(self, role: str = EMBEDDING_ROLE):
-        from ragas.run_config import RunConfig
-
         super().__init__()
         self.role = role
-        self.set_run_config(RunConfig(max_retries=1, max_wait=1))
+        self.set_run_config(_one_try())
 
     def embed_query(self, text: str) -> list[float]:
         return llm.embed(text, role=self.role)

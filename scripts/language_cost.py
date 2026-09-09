@@ -12,10 +12,8 @@ if __name__ == "__main__":
     args = p.parse_args()
 
     from evals import language_cost
-    from evals.measurements import record
+    from evals.measurements import say_where
 
     got = language_cost.measure(args.before, args.after, args.floor_against)
     print(json.dumps(got, indent=2, ensure_ascii=False))
-    # a dry read must not leave a number behind: recording is asked for, never a side effect
-    print(f"recorded: {record('language_cost', args.after, got)}" if args.record
-          else "not recorded; add --record to leave the number in datasets/measurements")
+    print(say_where("language_cost", args.after, got, args.record))

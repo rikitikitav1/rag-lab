@@ -46,7 +46,12 @@ def test_a_refusal_is_dropped_by_our_outcome_and_counted_where_a_reader_sees_it(
     ]
     monkeypatch.setattr(corr, "load_logs", lambda run=None: rows)
     outcomes = {3: Outcome.refused, 5: Outcome.narrated_call}
-    monkeypatch.setattr(corr, "_outcome", lambda ql: outcomes.get(ql.id, Outcome.answered))
+    # the counters and the gate share one outcome function, so patch the holder, not the alias
+    def said(ql):
+        return outcomes.get(ql.id, Outcome.answered)
+
+    monkeypatch.setattr(corr, "_outcome", said)
+    monkeypatch.setattr("evals.pools.outcome", said)
     kept, counts = corr.rows_of()
 
     assert [r["id"] for r in kept] == [1]

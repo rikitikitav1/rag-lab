@@ -92,39 +92,70 @@ completeness   -0.323 [-0.717, 0.071]
 No axis rose. None of the bands excludes zero either, so on its own this says only that the fix did
 not buy anything our own metrics can see.
 
-Splitting by whether the row actually changed language is where it becomes a number:
+Splitting is where it becomes a number, and which split is quoted matters more than the number.
+The cut to quote is the one visible in the record **before** the change: rows where the baseline
+answered in a language other than the one asked. That is a covariate of the arm as it stood, not a
+property of the result.
 
 ```
-changed language, 35 rows   faithfulness  -0.971 [-1.600, -0.371]   zero excluded
-                            completeness  -0.714 [-1.429,  0.029]
-                            relevance     -0.086 [-0.857,  0.743]
+answered off language before, 37 rows   faithfulness  -0.838 [-1.459, -0.243]  p 0.015
+                                        completeness  -0.676 [-1.351,  0.054]
+                                        relevance     -0.081 [-0.811,  0.703]
 
-kept its language, 64 rows  faithfulness  +0.141 [-0.438,  0.719]
-                            relevance     -0.312 [-0.812,  0.141]
-                            completeness  -0.109 [-0.562,  0.312]
+changed language, 35 rows               faithfulness  -0.971 [-1.600, -0.371]
+kept its language, 64 rows              faithfulness  +0.141 [-0.438,  0.719]
 ```
 
-The whole of the faithfulness drop sits on the rows that switched into Russian. Where the language
-did not move, the axis did not move.
+The second cut is the one first published, and it was selected by the outcome of the change: you
+can only see which rows switched after the fix worked. Thirty-five of the 37 declared rows are in
+it, so the two nearly coincide, but only the first can be named without seeing the result.
 
-## Minus 0.971 against 0.964
+The whole of the faithfulness drop sits on the rows that were answering in the wrong language.
+Where the language was already right, the axis did not move.
+
+## Minus 0.838 against 0.964, and why that is agreement rather than replication
 
 The day before, a probe measured the same thing by a different construction: it took one answer and
 asked the model to restate it in two languages without changing what it said, then judged both. That
 gave **0.964 [0.645, 1.282]**.
 
-This run did not restate anything. These are different answers from different runs, grouped after
-the fact by whether their language changed. Two constructions, one number: about a point out of ten,
-charged by our faithfulness prompt for an answer arriving in the language it was asked in.
+The first version of this entry called the two a replication. That was wrong, and the correction is
+worth more than the number. This run restated nothing. The two arms hold different answers, and on
+half the pairs different contexts as well: the directive sits in the system prompt, so it changes
+the transcript from the first step and therefore the tool calls too. "Exactly one thing differs" is
+true of the code and false of the pairs. The measured drop is the judge's penalty **plus** the real
+difference between what the model writes in Russian **plus** the difference in what retrieval
+returned, in unknown proportions. Two point estimates landing a tenth apart inside a band a full
+point wide is agreement, not a second instrument confirming the first.
 
-That is a replication rather than a second look at one measurement, with one caveat named here
-because it is not small: the group of 35 was selected by the outcome of the change, not declared in
-advance. The prediction was pre-registered; this split was not.
+## The night after: the judge's penalty does not reproduce, and the reading is now open
+
+The cheap separator the auditor proposed was run on the 37 declared rows: take each row's own
+answer, restate it in both languages without changing what it says, judge both. If the drop is the
+judge charging for Russian, this returns about 0.84.
+
+```
+arc4_lang_after, the 37 declared rows   +0.216 [-0.135, 0.595]   control 0.919, in regime
+arc4_baseline_rejudged, 38 english      +0.184 [-0.395, 0.711]   control 0.974, in regime
+arc4_baseline_rejudged, 38 russian      +0.184 [-0.263, 0.632]   control 0.895, OUT OF REGIME
+arc3_interview_independent (07.09)      +0.964 [0.645, 1.282]    control 0.991, in regime
+```
+
+The third line is not read: the control missed its floor by five thousandths, and the rule that
+threw out a number on 07.09 is the same rule here. Its agreement with the line above it is a
+remark, not evidence.
+
+Two readable probes out of three now say the penalty is around 0.2 with a band across zero, and the
+0.964 stands alone on one population. So the sentence below, written earlier the same day, is no
+longer supported: what the judge charges for Russian looks like a property of the population it was
+measured on. And the -0.838 loses its main explanation. It is at least as well explained by the
+generator writing less grounded answers in Russian, and by the retrieval that changed with the
+transcript.
 
 ## What it means for everything measured before
 
-The defect is in the judge, not in the pipeline, and it sits on the axis this stand uses to mean
-"grounded". Every number taken here on a population mixed by language carries it in an unknown
+The defect was read as the judge's, and that reading is now open (see the section above). It sits on
+the axis this stand uses to mean "grounded". Every number taken here on a population mixed by language carries it in an unknown
 proportion, including the agent against single-shot comparison, because neither arm was instructed
 and both drifted at rates we had not measured.
 
@@ -136,4 +167,6 @@ asked in, and `language_match` reports the share for nothing, with no model call
 
 `datasets/measurements/language_directive_arc4_20260908.json`,
 `datasets/measurements/language_costs_on_our_axes_arc4_20260908.json`,
-`datasets/measurements/language_match_before_arc4_20260908.json`
+`datasets/measurements/language_match_before_arc4_20260908.json`,
+`datasets/measurements/language_cost_arc4_lang_after_20260908.json` (both cuts, and the code that
+produces them: `app/evals/language_cost.py`, which reproduces the hand computation above)

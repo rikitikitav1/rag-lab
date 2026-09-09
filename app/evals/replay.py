@@ -155,8 +155,7 @@ def gate_of(snapshot: dict, remote: dict | None = None):
 def _system_for(system: str, snapshot: dict) -> str:
     from use_cases import chat as chat_uc
 
-    told = chat_uc.language_directive(snapshot.get("language") or "")
-    return f"{system}\n\n{told}" if told else system
+    return chat_uc.told_to_answer_in(system, snapshot.get("language") or "")
 
 
 # the recorded prompt version, not today's: a replay compares graphs, not prompt drift

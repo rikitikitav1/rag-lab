@@ -249,9 +249,11 @@ seed по всем парам, пока рук шесть или меньше, �
       "method": "rrf", "winner": "5",
       "ranking": [{"value": "5", "rrf": 0.0487}, {"value": "10", "rrf": 0.0484}],
       "pairwise": {
-        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.3669, "n": 100, "holm_threshold": null, "significant_raw": false, "significant_holm": false}, "...": "..."}},
-        "method": "holm", "alpha": 0.05, "tests": 15, "family": "every pair of the grid on every axis"
-      }
+        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.36692741, "n": 100, "holm_threshold": null, "significant_raw": false, "significant_holm": false}, "...": "..."}},
+        "method": "holm", "alpha": 0.05, "tests": 15, "family": "every pair of the grid on every axis",
+        "population": "every row of both runs that pairs by question_id, all pools blended: ..."
+      },
+      "rows_by_population": {"in_corpus_and_answered_in_every_arm": 91, "by_run": {"...": "..."}}
     }
   }
 }
@@ -291,6 +293,8 @@ MCP-сервер (Model Context Protocol) примонтирован на `/mcp`
 - `question_sets(set_name?)` - что несёт каждый набор вопросов и по каким осям поэтому можно судить прогон по нему: пулы, языки, у скольких есть размеченные источники (ретривальные оси) и у скольких эталонный ответ (две гостевые контекстные оси).
 - `experiment_results(id, pair?)` - отчёт одного эксперимента любого вида: руки с их n, парные дельты по осям с интервалом и p, и пережила ли каждая поправку на то семейство, которое запись называет.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - управление очередью джоб, cancel снимает и зависимый judge.
+- `holm_over(tests, family, alpha?)` - поправка на то семейство, которое объявляет читатель, а не на то, которое случайно оказалось в одной записи: даёшь p-значения по именам, получаешь каждое с его порогом Холма и признаком, пережило ли оно. Отчёт поправляет по своей записи, а чтение рук из двух экспериментов это семейство шире.
+- `language_cost(before, after, floor_against?)` - во сколько наши оси оценивают ответ на языке вопроса: две руки, спаренные по вопросу на корпусном пуле, в двух разрезах (объявленный из записи «до» и отобранный по исходу), рядом пол дрейфа и блок сравнимости.
 
 ### MCP-клиент: агент потребляет внешние серверы
 
@@ -440,11 +444,12 @@ Auth интеграции описывается как `{"type": "bearer", "tok
 - `app/orchestrators/` - адаптеры к фреймворку: `graph` (StateGraph), `react` (голый `create_agent`). Ни одного импорта langchain в `use_cases`.
 - `app/agent_tools.py` - реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
 - `app/mcp_server.py` - FastMCP-сервер (примонтирован на `/mcp`): тулы `search_corpus` / `answer_question` / `list_categories` поверх примитивов поиска.
-- `app/mcp_ops.py` - ops MCP-сервер (примонтирован на `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` поверх eval-платформы.
+- `app/mcp_ops.py` - ops MCP-сервер (примонтирован на `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `language_cost` поверх eval-платформы.
 - `app/evals/pools.py`, `app/evals/compare.py` - одно место, которое решает, в какой пул попал вопрос и чем закончился прогон: им пользуются метрики, сравнительный отчёт и оба MCP-инструмента.
 - `app/api/` - REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - сид промптов/банка вопросов; REPL-консоль.
-- `app/evals/` - eval-стенд: раннер, ретривальные и генеративные метрики, гостевые оси (`guest_axes`, `guest_llm`, `guest_probes`), отчёт судья против судьи (`judge_correlation`), языковой пробник, реплей (`replay`), что прогон ещё должен (`run_debts`), что несёт набор вопросов (`question_sets`) и куда джоба кладёт своё число (`measurements`).
+- `app/evals/` - eval-стенд: раннер, ретривальные и генеративные метрики, гостевые оси (`guest_axes`, `guest_llm`, `guest_probes`), отчёт судья против судьи (`judge_correlation`), языковой пробник, реплей (`replay`), что прогон ещё должен (`run_debts`), что несёт набор вопросов (`question_sets`), слепые пары для владельца (`human_anchor`), цена ответа на языке вопроса по нашим осям (`language_cost`) и куда джоба кладёт своё число (`measurements`).
+- `app/evals/pools.py` - общий словарь отчётов: население называется здесь один раз и дальше зовётся по имени, а не переписывается на месте.
 - `tests/` - unit-тесты (чистая логика, без DB/Ollama): `docker compose exec rag-lab pytest -q`.
 
 ## Статус

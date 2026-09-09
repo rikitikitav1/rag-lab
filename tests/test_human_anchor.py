@@ -51,7 +51,7 @@ def test_an_answer_travels_by_the_pair_of_rows_and_not_by_its_number(anchor, tmp
     # rebuilt lists renumber and may flip sides; an answer carried by number would land on the wrong pair
     import json
 
-    monkeypatch.setattr(anchor, "HERE", tmp_path)
+    monkeypatch.setattr(anchor, "SHEETS", tmp_path)
     sheet = tmp_path / "human_anchor_20260908.md"
     sheet.write_text(
         "## Пара 1\nЛучше подкреплён контекстом (впиши A, B или `=`): **A**\n"
@@ -99,7 +99,7 @@ def test_a_pruned_pair_leaves_the_sheet_but_not_the_count(anchor, tmp_path, monk
     # the sheet shrinks so the next sitting is only what is left; the answer moves, it does not vanish
     import json
 
-    monkeypatch.setattr(anchor, "HERE", tmp_path)
+    monkeypatch.setattr(anchor, "SHEETS", tmp_path)
     sheet = tmp_path / "human_anchor_20260908.md"
     body = "шапка\n"
     for n, mark in ((1, "A"), (2, "____"), (3, "B")):
@@ -157,7 +157,7 @@ def test_the_covariates_a_pair_carries_are_the_ones_the_reading_buckets_by(ancho
 
 def test_a_missing_key_is_refused_by_name_and_not_by_a_traceback(anchor, tmp_path, monkeypatch):
     # the library is imported by a job now, and `SystemExit` from a library kills the worker
-    monkeypatch.setattr(anchor, "HERE", tmp_path)
+    monkeypatch.setattr(anchor, "SHEETS", tmp_path)
     with pytest.raises(anchor.Refused):
         anchor.read("20260908")
     with pytest.raises(anchor.Refused):
@@ -170,3 +170,60 @@ def test_the_letter_on_the_sheet_and_the_row_it_points_at_are_one_mapping(anchor
     for letter in ("A", "B", "="):
         assert anchor._letter_picked(sides, anchor._row_picked(sides, letter)) == letter
     assert anchor._row_picked(sides, "B") == 22, "B is the right side, and it was once the left"
+
+
+def test_a_pruned_answer_lands_on_its_own_pair_and_not_on_the_pair_that_took_its_number(
+    anchor, tmp_path, monkeypatch
+):
+    # `read` joined the done file by pair number while every other reader joined by the rows
+    import json
+
+    monkeypatch.setattr(anchor, "SHEETS", tmp_path)
+    (tmp_path / "human_anchor_20260908.md").write_text(
+        "## Пара 1\nЛучше подкреплён контекстом (впиши A, B или `=`): **____**\n",
+        encoding="utf-8",
+    )
+    # pair 1 today is a different pair of rows than the pair 1 that was answered and pruned
+    (tmp_path / "human_anchor_key_20260908.json").write_text(json.dumps({
+        "population": "p",
+        "pairs": {"sitting": [
+            {"n": 1, "A": {"log_id": 30}, "B": {"log_id": 40}, "ours": 0.5, "guest": 0.5},
+        ]},
+    }), encoding="utf-8")
+    (tmp_path / "human_anchor_done_20260908.json").write_text(
+        json.dumps({"1": {"answer": "A", "A": 10, "B": 20}}), encoding="utf-8"
+    )
+
+    got = anchor.read("20260908")
+    assert got["pairs_answered"] == 0, "an answer about rows 10 and 20 is not an answer about 30/40"
+    assert got["ours"]["n"] == 0 and got["ours"]["agreed"] == 0
+
+
+def test_a_rebuild_refuses_to_walk_over_a_filled_repeats_sheet(anchor, tmp_path, monkeypatch):
+    # the main sheet carries answers forward and this one must not, so a rebuild can only lose them
+    monkeypatch.setattr(anchor, "SHEETS", tmp_path)
+    monkeypatch.setattr(anchor, "_rows", lambda: [])
+    (tmp_path / "human_anchor_repeats_20260908.md").write_text(
+        "## Пара 1\nЛучше подкреплён контекстом (впиши A, B или `=`): **B**\n", encoding="utf-8"
+    )
+    with pytest.raises(anchor.Refused):
+        anchor.build("20260908")
+
+
+def test_a_rebuild_refuses_when_an_answered_pair_falls_off_the_list(anchor, tmp_path, monkeypatch):
+    # the sheet promises a rebuild keeps answers, and it kept only the pairs that stayed in the top
+    import json
+
+    monkeypatch.setattr(anchor, "SHEETS", tmp_path)
+    (tmp_path / "human_anchor_20260908.md").write_text(
+        "## Пара 1\nЛучше подкреплён контекстом (впиши A, B или `=`): **A**\n", encoding="utf-8"
+    )
+    (tmp_path / "human_anchor_key_20260908.json").write_text(json.dumps({
+        "population": "p",
+        "pairs": {"sitting": [{"n": 1, "A": {"log_id": 10}, "B": {"log_id": 20}}]},
+    }), encoding="utf-8")
+    # the new order holds neither row, so the answer about 10 against 20 has nowhere to land
+    monkeypatch.setattr(anchor, "_rows", lambda: [])
+
+    with pytest.raises(anchor.Refused):
+        anchor.build("20260908")

@@ -202,3 +202,13 @@ def test_both_answering_paths_record_the_refusal_fact():
     for module in (agent, chat):
         source = inspect.getsource(module)
         assert '"refusal": outcomes.reads_as_refusal(' in source, module.__name__
+
+
+def test_a_settlement_equal_to_what_the_answer_knew_overrode_nothing():
+    # 266 rows carry the key from an earlier pass, and counting the key called them overrides
+    from evals.pools import settled
+
+    assert settled(_log(metrics={"outcome": "answered",
+                                 "settled_outcome": "answered_ungrounded"})) is True
+    assert settled(_log(metrics={"outcome": "answered", "settled_outcome": "answered"})) is False
+    assert settled(_log(metrics={"outcome": "answered"})) is False

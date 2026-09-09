@@ -21,8 +21,8 @@ from sqlalchemy import delete, func, insert, literal, select, text
 from use_cases import judge, retrieval_compare
 from use_cases.retrieval_compare import bootstrap_ci, half_of
 
-# 1 means and deltas; 2 pairing and `source_scored`; 3 the source's judge; 4 p and Holm
-SCHEMA = 4
+# 1 means and deltas; 2 pairing and `source_scored`; 3 the source's judge; 4 Holm; 5 p unrounded
+SCHEMA = 5
 
 AXES = ("faithfulness", "relevance", "completeness")
 # a copy is unjudged, so it must not carry the judge the original named

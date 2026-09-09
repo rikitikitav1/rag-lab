@@ -28,6 +28,19 @@ def hand_back(path: Path) -> None:
         pass
 
 
+# the same two lines lived in the anchor, one of the two hands that write a file beside a record
+def store_json(path: Path, payload) -> None:
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    hand_back(path)
+
+
+# a dry read must not leave a number behind, and two scripts wrote this sentence apart
+def say_where(kind: str, run_name: str, payload: dict, asked: bool) -> str:
+    if not asked:
+        return "not recorded; add --record once this is a real reading"
+    return f"recorded: {record(kind, run_name, payload)}"
+
+
 def record(kind: str, run_name: str, payload: dict, on: date | None = None) -> str:
     FOLDER.mkdir(parents=True, exist_ok=True)
     stamp = (on or date.today()).strftime("%Y%m%d")
@@ -37,6 +50,5 @@ def record(kind: str, run_name: str, payload: dict, on: date | None = None) -> s
         if not path.exists():
             break
         path = FOLDER / f"{_slug(kind)}_{_slug(run_name)}_{stamp}_{nth}.json"
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    hand_back(path)
+    store_json(path, payload)
     return str(path)

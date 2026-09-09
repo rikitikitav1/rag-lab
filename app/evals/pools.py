@@ -41,8 +41,11 @@ def _exhausted(metrics: dict, snapshot: dict) -> bool:
     )
 
 
+# an override, not a key: a settlement equal to what the answer knew overrode nothing
 def settled(ql) -> bool:
-    return bool((ql.metrics or {}).get("settled_outcome"))
+    metrics = ql.metrics or {}
+    got = metrics.get("settled_outcome")
+    return bool(got) and got != metrics.get("outcome")
 
 
 def outcome(ql) -> str:

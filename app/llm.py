@@ -171,7 +171,10 @@ def engine() -> str:
 
     # host and port only: `netloc` carries userinfo, and this lands on every judged row
     seen = urlsplit(LLM_BASE)
-    return f"{seen.hostname}:{seen.port}" if seen.hostname else "unnamed"
+    if not seen.hostname:
+        return "unnamed"
+    # a base without an explicit port stamped every row with the string `host:None`
+    return f"{seen.hostname}:{seen.port}" if seen.port else seen.hostname
 
 
 def list_models():

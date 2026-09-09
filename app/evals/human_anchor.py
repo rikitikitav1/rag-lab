@@ -7,18 +7,20 @@ stopping early is not a choice made after seeing the answers.
 """
 
 import hashlib
-import json
 import random
 import re
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from datetime import date
 from itertools import combinations
 from pathlib import Path
 
+import config
+from evals.judge_correlation import JOINS_BOTH_JUDGES, joins_both_judges
 from evals.loaders import load_logs
-from evals.measurements import hand_back
-from evals.pools import in_corpus_and_answered
+from evals.measurements import hand_back, store_json
 from evals.stats import to_unit
+
+import db
 
 # 1 the sheet, its key and the two readings, moved here from a script
 SCHEMA = 1
@@ -27,7 +29,7 @@ GUEST = "ragas_faithfulness"
 SEED = 20260908
 BOTH_SPOKE = 15
 REPEATS = 3
-HERE = Path(__file__).resolve().parents[2] / "temp_files"
+SHEETS = Path(__file__).resolve().parents[2] / "temp_files"
 
 
 # a sheet the owner is filling is worth a refusal, and a library says so without exiting his shell
@@ -39,27 +41,24 @@ def _guest(ql):
     return ((ql.metrics or {}).get(GUEST) or {}).get("score")
 
 
-# one predicate, applied here and named in every file this writes; sorted, because the loader is not
+# the correlation's predicate, called rather than restated: the copy here did not need a context
 def _rows():
-    kept = [
-        ql
-        for ql in load_logs(None)
-        if ql.faithfulness is not None and _guest(ql) is not None and in_corpus_and_answered(ql)
-    ]
-    return sorted(kept, key=lambda ql: ql.id)
+    return sorted((ql for ql in load_logs(None) if joins_both_judges(ql)), key=lambda ql: ql.id)
 
 
 # every covariate of a pair in one place: `build` wrote them and `mark` wrote them again
 def _covariates(left, right) -> dict:
+    langs = {name: _language(ql.answer) for name, ql in (("A", left), ("B", right))}
+    leaks = {name: _leak(ql) for name, ql in (("A", left), ("B", right))}
     return {
-        "A": {"log_id": left.id, "run": left.run_name,
-              "lang": _language(left.answer), "leak": _leak(left)},
-        "B": {"log_id": right.id, "run": right.run_name,
-              "lang": _language(right.answer), "leak": _leak(right)},
-        "cross_language": _language(left.answer) != _language(right.answer),
+        "A": {"log_id": left.id, "run": left.run_name, "lang": langs["A"], "leak": leaks["A"]},
+        "B": {"log_id": right.id, "run": right.run_name, "lang": langs["B"], "leak": leaks["B"]},
+        "cross_language": langs["A"] != langs["B"],
+        # the detector reads a config mode, so the record names the one that produced these
+        "detector": config.settings.retrieval.query_lang,
         # neither side found the gold file: both are ungrounded by construction
         "neither_hit_gold": not _hit_gold(left) and not _hit_gold(right),
-        "template_leak": bool(_leak(left)) or bool(_leak(right)),
+        "template_leak": bool(leaks["A"]) or bool(leaks["B"]),
     }
 
 
@@ -87,16 +86,18 @@ def _leak(ql) -> str:
     return "echoed_the_question" if asked and asked in head else ""
 
 
-# the judge loses 0.964 of a point on Russian at the same meaning, so language is a covariate
+# the judge charges for Russian at the same meaning, so language is a covariate of the pair
 def _language(text: str) -> str:
-    import db
-
     return db.detect_language(text or "")
 
 
-# the letter on the sheet against the row it points at: three copies of this, one inverted
+# the letter on the sheet against the row it points at: four copies of this, one inverted
+def _sides_of(left_id, right_id) -> dict:
+    return {"A": left_id, "B": right_id}
+
+
 def _sides(pair: dict) -> dict:
-    return {"A": pair["A"]["log_id"], "B": pair["B"]["log_id"]}
+    return _sides_of(pair["A"]["log_id"], pair["B"]["log_id"])
 
 
 def _row_picked(sides: dict, letter: str):
@@ -105,6 +106,10 @@ def _row_picked(sides: dict, letter: str):
 
 def _letter_picked(sides: dict, row) -> str:
     return "=" if row == "=" else next(name for name, one in sides.items() if one == row)
+
+
+# read by index in five expressions before it had names
+Scored = namedtuple("Scored", "left right ours guest")
 
 
 def _deltas(a, b) -> tuple[float, float]:
@@ -118,16 +123,21 @@ def _ordered(rows) -> list:
         by_question[ql.question_id].append(ql)
     # the deltas are read four times per pair, and reading them once is what keeps this linear
     scored = [
-        (a, b, *_deltas(a, b))
+        Scored(a, b, *_deltas(a, b))
         for kept in by_question.values()
         for a, b in combinations(sorted(kept, key=lambda x: x.id), 2)
     ]
-    spoke = [one for one in scored if abs(one[2]) > 1e-9 and abs(one[3]) > 1e-9]
-    said_nothing = [one for one in scored if not (abs(one[2]) > 1e-9 and abs(one[3]) > 1e-9)]
-    opposed = [one for one in spoke if one[2] * one[3] < 0]
-    apart = sorted((one for one in spoke if one[2] * one[3] > 0), key=lambda one: -abs(one[2] - one[3]))
-    said_nothing.sort(key=lambda one: -abs(one[2] - one[3]))
-    return [(a, b) for a, b, _, _ in (*opposed, *apart, *said_nothing)]
+
+    def spoke(one) -> bool:
+        return abs(one.ours) > 1e-9 and abs(one.guest) > 1e-9
+
+    def gap(one) -> float:
+        return -abs(one.ours - one.guest)
+
+    opposed = [one for one in scored if spoke(one) and one.ours * one.guest < 0]
+    apart = sorted((one for one in scored if spoke(one) and one.ours * one.guest > 0), key=gap)
+    silent = sorted((one for one in scored if not spoke(one)), key=gap)
+    return [(one.left, one.right) for one in (*opposed, *apart, *silent)]
 
 
 # flipped: on the main sheet every english answer landed on A and he chose B five times out of five
@@ -159,20 +169,21 @@ def _context_block(left, right) -> str:
 
 # answers travel by the pair of rows, never by the pair number: a rebuild renumbers and may flip
 def _already(stamp: str) -> dict:
+    # a pruned answer carries the sides it was given on, so a later rebuild cannot reinterpret it
+    out = {
+        frozenset((got["A"], got["B"])): _row_picked(
+            _sides_of(got["A"], got["B"]), got["answer"]
+        )
+        for got in _load(_done_path(stamp), {}).values()
+    }
     key = _load(_key_path(stamp))
-    if key is None:
-        return {}
-    # a sheet pruned to nothing still has its answers: they moved to the done file
     sheet = _sheet_path(stamp, "sitting")
-    said = _picked(sheet) if sheet.exists() else {}
-    said.update(_answered_earlier(stamp))
-    out = {}
-    for pair in key["pairs"]["sitting"]:
+    said = _picked(sheet) if (key and sheet.exists()) else {}
+    for pair in key["pairs"]["sitting"] if key else ():
         answer = said.get(pair["n"])
-        if not answer:
-            continue
-        sides = _sides(pair)
-        out[frozenset(sides.values())] = _row_picked(sides, answer)
+        if answer:
+            sides = _sides(pair)
+            out[frozenset(sides.values())] = _row_picked(sides, answer)
     return out
 
 
@@ -186,24 +197,38 @@ def _sheet(entries: list, title: str, note: str, kept: dict | None = None) -> st
         out.append(f"**Ответ A**\n\n{left.answer}\n")
         out.append(f"\n**Ответ B**\n\n{right.answer}\n")
         was = kept.get(frozenset((left.id, right.id)))
-        sides = {"A": left.id, "B": right.id}
-        mark = "____" if was is None else _letter_picked(sides, was)
+        mark = "____" if was is None else _letter_picked(_sides_of(left.id, right.id), was)
         out.append(f"\nЛучше подкреплён контекстом (впиши A, B или `=`): **{mark}**\n")
     return "\n".join(out)
 
 
-def build(on: date | None = None) -> dict:
+def build(stamp: str | None = None) -> dict:
     rows = _rows()
     order = _ordered(rows)
     rng = random.Random(SEED)
     sitting = [(*_side(p, rng), n) for n, p in enumerate(order[:BOTH_SPOKE], 1)]
     later = _repeats(sitting)
 
-    stamp = (on or date.today()).strftime("%Y%m%d")
-    HERE.mkdir(parents=True, exist_ok=True)
+    stamp = _dated(stamp) if stamp else date.today().strftime("%Y%m%d")
+    SHEETS.mkdir(parents=True, exist_ok=True)
     kept = _already(stamp)
-    first = HERE / f"human_anchor_{stamp}.md"
-    second = HERE / f"human_anchor_repeats_{stamp}.md"
+    # through the one function that checks the stamp: two more places built these names by hand
+    first, second = _sheet_path(stamp, "sitting"), _sheet_path(stamp, "repeats")
+    # the repeats sheet never carries an answer forward, so a rebuild over a filled one loses it
+    if second.exists() and any(_picked(second).values()):
+        raise Refused(
+            f"{second.name} already carries answers and this sheet cannot carry them forward:"
+            " move it aside first, or the owner's afternoon is gone"
+        )
+    # an answer only survives a rebuild if its pair is still on the list or already pruned away
+    safe = {frozenset((got["A"], got["B"])) for got in _load(_done_path(stamp), {}).values()}
+    staying = {frozenset((left.id, right.id)) for left, right, _ in sitting}
+    at_risk = set(kept) - safe - staying
+    if at_risk:
+        raise Refused(
+            f"{len(at_risk)} answered pairs fall off the new list and would take their answers"
+            " with them: run prune first, which moves them into the done file"
+        )
 
     first.write_text(
         _sheet(
@@ -240,7 +265,7 @@ def build(on: date | None = None) -> dict:
 
     key = {
         "schema": SCHEMA,
-        "population": "corpus pool, answered, both our faithfulness and the guest's on the row",
+        "population": JOINS_BOTH_JUDGES,
         "seed": SEED,
         "ordering": "opposed first, then both judges spoke, then by |ours - guest| descending",
         "sheets": {"sitting": str(first), "repeats": str(second)},
@@ -260,7 +285,7 @@ def build(on: date | None = None) -> dict:
     # the sheet he filled must be the sheet this key describes, or the pairs join to the wrong rows
     key["sheet_fingerprint"] = _fingerprint(first.read_text(encoding="utf-8"))
     where = _key_path(stamp)
-    _store(where, key)
+    store_json(where, key)
     return {"schema": SCHEMA, "sheet": str(first), "repeats": str(second),
             "key": str(where), "pairs": len(sitting)}
 
@@ -289,9 +314,13 @@ def mark(stamp: str) -> dict:
         touched = 0
         for group in key["pairs"].values():
             for pair in group:
+                gone = [side["log_id"] for side in (pair["A"], pair["B"])
+                        if side["log_id"] not in rows]
+                if gone:
+                    raise Refused(f"rows {gone} are gone from the base: the run was deleted")
                 pair.update(_covariates(rows[pair["A"]["log_id"]], rows[pair["B"]["log_id"]]))
                 touched += 1
-    _store(_key_path(stamp), key)
+    store_json(_key_path(stamp), key)
     return {"pairs_marked": touched}
 
 
@@ -302,12 +331,9 @@ def _dated(stamp: str) -> str:
 
 
 def _load(path: Path, default=None):
+    import json
+
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
-
-
-def _store(path: Path, payload) -> None:
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    hand_back(path)
 
 
 def _key(stamp: str) -> dict:
@@ -318,23 +344,23 @@ def _key(stamp: str) -> dict:
 
 
 def _key_path(stamp: str) -> Path:
-    return HERE / f"human_anchor_key_{_dated(stamp)}.json"
+    return SHEETS / f"human_anchor_key_{_dated(stamp)}.json"
 
 
 def _sheet_path(stamp: str, which: str) -> Path:
     tail = "" if which == "sitting" else f"_{which}"
-    return HERE / f"human_anchor{tail}_{_dated(stamp)}.md"
+    return SHEETS / f"human_anchor{tail}_{_dated(stamp)}.md"
 
 
 def _done_path(stamp: str) -> Path:
-    return HERE / f"human_anchor_done_{_dated(stamp)}.json"
+    return SHEETS / f"human_anchor_done_{_dated(stamp)}.json"
 
 
 # the lock guarded `read` alone, while `prune` rewrote both the sheet and the fingerprint
-def _its_own(stamp: str, key: dict, which: str) -> Path:
-    sheet = _sheet_path(stamp, which)
+def _its_own(stamp: str, key: dict) -> Path:
+    sheet = _sheet_path(stamp, "sitting")
     seen = _fingerprint(sheet.read_text(encoding="utf-8"))
-    if which == "sitting" and key.get("sheet_fingerprint") not in (None, seen):
+    if key.get("sheet_fingerprint") not in (None, seen):
         raise Refused(
             "this sheet is not the one the key describes: rebuilt after it was filled, or edited"
             " beyond the answer lines. The pairs would join to the wrong rows"
@@ -342,14 +368,10 @@ def _its_own(stamp: str, key: dict, which: str) -> Path:
     return sheet
 
 
-def _answered_earlier(stamp: str) -> dict:
-    return {int(n): got["answer"] for n, got in (_load(_done_path(stamp), {})).items()}
-
-
 # answered pairs leave the sheet, so the next sitting is only what is left
 def prune(stamp: str) -> dict:
     key = _key(stamp)
-    sheet = _its_own(stamp, key, "sitting")
+    sheet = _its_own(stamp, key)
     said = {n: v for n, v in _picked(sheet).items() if v}
     if not said:
         return {"moved": 0, "left": len(key["pairs"]["sitting"])}
@@ -362,7 +384,7 @@ def prune(stamp: str) -> dict:
                 "answer": said[pair["n"]],
                 "A": pair["A"]["log_id"], "B": pair["B"]["log_id"],
             }
-    _store(done_path, done)
+    store_json(done_path, done)
 
     text = sheet.read_text(encoding="utf-8")
     head, *blocks = re.split(r"(?=\n## Пара )", text)
@@ -372,7 +394,7 @@ def prune(stamp: str) -> dict:
     hand_back(sheet)
 
     key["sheet_fingerprint"] = _fingerprint(sheet.read_text(encoding="utf-8"))
-    _store(_key_path(stamp), key)
+    store_json(_key_path(stamp), key)
     return {"moved": len(said), "left": len(kept), "done_file": str(done_path)}
 
 
@@ -390,59 +412,65 @@ def _picked(sheet: Path) -> dict:
 
 # a judge that called the pair equal where the human did not is a miss, not an abstention
 def _verdict(delta: float, said: str) -> str:
+    # the same epsilon `_ordered` used: the deltas here were rounded to four places by `build`
+    apart = abs(delta) > 1e-9
     if said == "=":
-        return "agreed" if delta == 0 else "missed"
-    if delta == 0:
+        return "missed" if apart else "agreed"
+    if not apart:
         return "did_not_separate"
     return "agreed" if (delta > 0) == (said == "A") else "disagreed"
 
 
 def read(stamp: str) -> dict:
     key = _key(stamp)
-    sheet = _its_own(stamp, key, "sitting")
-    answered = _answered_earlier(stamp)
-    answered.update({n: v for n, v in _picked(sheet).items() if v})
-    tally = {j: defaultdict(int) for j in ("ours", "guest")}
+    _its_own(stamp, key)
+    # by the pair of rows, like every other reader: joining by number scores a pair he never saw
+    answered = _already(stamp)
+    counted = {j: defaultdict(int) for j in ("ours", "guest")}
     buckets = ("same_language", "cross_language", "clean", "template_leak",
                "hit_gold", "neither_hit_gold")
-    split = {j: {b: defaultdict(int) for b in buckets} for j in ("ours", "guest")}
+    by_covariate = {j: {b: defaultdict(int) for b in buckets} for j in ("ours", "guest")}
+    answered_here = 0
     for pair in key["pairs"]["sitting"]:
-        said = answered.get(pair["n"])
-        if not said:
+        sides = _sides(pair)
+        picked = answered.get(frozenset(sides.values()))
+        if picked is None:
             continue
+        said = _letter_picked(sides, picked)
+        answered_here += 1
         where = [
             "cross_language" if pair.get("cross_language") else "same_language",
             "template_leak" if pair.get("template_leak") else "clean",
             "neither_hit_gold" if pair.get("neither_hit_gold") else "hit_gold",
         ]
-        for judge in ("ours", "guest"):
-            got = _verdict(pair[judge], said)
-            tally[judge][got] += 1
+        for instrument in ("ours", "guest"):
+            got = _verdict(pair[instrument], said)
+            counted[instrument][got] += 1
             for bucket in where:
-                split[judge][bucket][got] += 1
+                by_covariate[instrument][bucket][got] += 1
 
     def share(counts) -> dict:
-        counted = sum(counts.values())
+        n = sum(counts.values())
         return {
-            "n": counted,
+            "n": n,
             "agreed": counts["agreed"],
-            "share": round(counts["agreed"] / counted, 4) if counted else None,
+            "share": round(counts["agreed"] / n, 4) if n else None,
             "by_outcome": dict(counts),
         }
 
-    def judged(judge) -> dict:
-        return {**share(tally[judge]),
-                "by_covariate": {k: share(v) for k, v in split[judge].items()}}
+    def judged(instrument) -> dict:
+        return {**share(counted[instrument]),
+                "by_covariate": {k: share(v) for k, v in by_covariate[instrument].items()}}
 
     return {
         "schema": SCHEMA,
         "population": key["population"],
         # declared before the sheet was filled, not carved out of the result
         "subgroups": "declared before the sheet was filled: same against cross language (the judge"
-                     " loses 0.964 of a point on Russian at the same meaning), and clean against a"
-                     " scaffolding leak in the answer body",
+                     " was measured charging for Russian at the same meaning, though how much"
+                     " depends on the population), and clean against a scaffolding leak in the body",
         "pairs_offered": len(key["pairs"]["sitting"]),
-        "pairs_answered": len(answered),
+        "pairs_answered": answered_here,
         "ours": judged("ours"),
         "guest": judged("guest"),
     }
@@ -451,7 +479,7 @@ def read(stamp: str) -> dict:
 # the same row picked twice is content, the same letter picked twice is position
 def repeats(stamp: str) -> dict:
     key = _key(stamp)
-    # the same source `_already` uses: an answer still sitting in the sheet counts too
+    # the same source every reader uses: an answer still sitting in the sheet counts too
     before = _already(stamp)
     said = _picked(_sheet_path(stamp, "repeats"))
 

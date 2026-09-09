@@ -95,6 +95,8 @@ class JudgeGuestAxes(Spec):
 class JudgeLanguage(Spec):
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
     rows: int = Field(default=40, ge=1, le=limits.MAX_GUEST_ROWS)
+    # a declared cut is named: `rows` takes the first of the pool, which is not a group
+    log_ids: list[int] | None = Field(default=None, max_length=limits.MAX_GUEST_ROWS)
 
 
 class CompareRetrieval(Spec):
@@ -182,7 +184,8 @@ def disturbs_the_judge(job_type: str) -> bool:
 
 
 # a renamed type would leave a dead entry here and quietly start evicting the judge on paper
-assert set(KEEPS_THE_JUDGE) <= set(SPECS), sorted(set(KEEPS_THE_JUDGE) - set(SPECS))
+if not set(KEEPS_THE_JUDGE) <= set(SPECS):
+    raise RuntimeError(f"no such job type: {sorted(set(KEEPS_THE_JUDGE) - set(SPECS))}")
 
 
 # a type that takes whatever it is given; the universal door made the empty list the safe state

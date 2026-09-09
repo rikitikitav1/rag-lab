@@ -10,6 +10,7 @@ from evals.pools import outcome as _outcome
 from evals.stats import mean_of, score_of
 from outcomes import Outcome
 from use_cases import rejudge
+from use_cases.chat import resolve_language
 
 import db
 
@@ -54,8 +55,6 @@ def _abstentions() -> dict:
 
 # the run's own language when it recorded one, else the question's: answering the asker is the default
 def target_language(ql) -> str | None:
-    from use_cases.chat import resolve_language
-
     asked = ((ql.metrics or {}).get("config") or {}).get("language")
     return resolve_language(ql.question_text, asked) if ql.question_text else asked
 

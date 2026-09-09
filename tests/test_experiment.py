@@ -480,15 +480,19 @@ def test_every_kind_of_report_declares_its_schema():
     from evals import generation_metrics, judge_correlation, retrieval_metrics
     from use_cases import experiment, rejudge, retrieval_compare, run_snapshot
 
-    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (4, 4, 2)
+    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (4, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
     assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (6, 6, 4)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
-    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 2)
+    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 3)
     # the equality report is a record too: what it compared moved once already
     assert replay.SCHEMA == 1
+    # the reports this arc added or moved here: the guard is why the anchor left `scripts`
+    from evals import compare, human_anchor, language_cost
+
+    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (6, 1, 1)
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():

@@ -89,7 +89,8 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
         if _outcome(ql) != Outcome.answered:
             off_pool += 1
             continue
-        if guest is None:
+        # the gate is the named predicate, and the branches above only say why a row is out
+        if not joins_both_judges(ql):
             continue
         kept.append({
             # the arm copies carry new log ids, so only the question joins a row to its twin
@@ -98,7 +99,8 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
             "ours": to_unit(ql.faithfulness), "guest": guest,
             "overlap": overlap(ql.answer, ql.contexts),
             "code_share": code_share(ql.contexts),
-            "on_card": entry.get("on_card"),
+            # the row's own reading; on rows written before the pass stamp took the key it is it
+            "on_card": entry.get("on_card_at_this_row", entry.get("on_card")),
             "guest_precision": guest_score(ql, "ragas_context_precision"),
             "guest_recall": guest_score(ql, "ragas_context_recall"),
         })

@@ -43,9 +43,9 @@ def _verdict(score=8, **kw):
 
 
 def test_a_written_verdict_names_the_judge_and_its_prompt():
-    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
+    from job_handlers.judging import Snapshot, _apply_axis, _run_axis
 
-    snapshot = _Snapshot({}, {"generate_answer": 3}, {"generation": "gemma3:4b"})
+    snapshot = Snapshot({}, {"generate_answer": 3}, {"generation": "gemma3:4b"})
     v, err = _run_axis(1, "relevance", lambda *a: _verdict())
     wrote = _apply_axis(_Log(), snapshot, "relevance", v, err)
     assert wrote is True
@@ -57,12 +57,12 @@ def test_a_written_verdict_names_the_judge_and_its_prompt():
 
 
 def test_a_failed_axis_leaves_the_snapshot_alone():
-    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
+    from job_handlers.judging import Snapshot, _apply_axis, _run_axis
 
     def boom(*a):
         raise RuntimeError("judge is down")
 
-    snapshot = _Snapshot({}, {}, {})
+    snapshot = Snapshot({}, {}, {})
     v, err = _run_axis(1, "relevance", boom)
     wrote = _apply_axis(_Log(), snapshot, "relevance", v, err)
     assert wrote is False
@@ -71,10 +71,10 @@ def test_a_failed_axis_leaves_the_snapshot_alone():
 
 
 def test_rejudging_replaces_the_prompt_version_it_names():
-    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
+    from job_handlers.judging import Snapshot, _apply_axis, _run_axis
     from models.registry import Purpose
 
-    snapshot = _Snapshot({}, {"judge_relevance": 2}, {})
+    snapshot = Snapshot({}, {"judge_relevance": 2}, {})
     v, err = _run_axis(
         1, "relevance", lambda *a: _verdict(purpose=Purpose.judge_relevance, prompt_version=3)
     )
@@ -559,7 +559,7 @@ def test_the_judge_settles_the_outcome_it_alone_can_know():
     from job_handlers import judging
 
     def row(outcome, faithfulness):
-        snap = judging._Snapshot({"outcome": outcome} if outcome else {}, {}, {})
+        snap = judging.Snapshot({"outcome": outcome} if outcome else {}, {}, {})
         judging._settle_outcome(SimpleNamespace(faithfulness=faithfulness), snap)
         return snap.metrics
 
@@ -596,3 +596,18 @@ def test_a_pass_walks_the_rows_in_the_order_it_was_given():
 
     got = judging._target_log_ids(_Session(), {"log_ids": [2, 3, 1, 99]})
     assert got == [2, 3, 1], "the caller's order, and nothing it did not ask for"
+
+
+def test_a_rejudge_that_raises_the_score_takes_the_settlement_back():
+    # the key was only ever written, so one zero froze the outcome against every later pass
+    from types import SimpleNamespace
+
+    from job_handlers import judging
+
+    metrics = {"outcome": "answered", "settled_outcome": "answered_ungrounded"}
+    snap = judging.Snapshot(metrics, {}, {})
+    judging._settle_outcome(SimpleNamespace(faithfulness="8"), snap)
+    assert "settled_outcome" not in snap.metrics, "the judge said eight, and the freeze must go"
+
+    judging._settle_outcome(SimpleNamespace(faithfulness="0"), snap)
+    assert snap.metrics["settled_outcome"] == "answered_ungrounded"

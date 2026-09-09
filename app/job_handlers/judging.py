@@ -228,7 +228,7 @@ def _count_the_attempt(log_id: int, skip: tuple, error: str) -> None:
             ql = session.get(QuestionLog, log_id, with_for_update=True)
             if ql is None:
                 return
-            snapshot = _Snapshot(dict(ql.metrics or {}), {}, {})
+            snapshot = Snapshot(dict(ql.metrics or {}), {}, {})
             _mark_skipped(snapshot, ql, skip)
             for axis in _owed(ql, skip):
                 snapshot.metrics[axis] = _errored_metric(snapshot.metrics, axis, error)
@@ -253,6 +253,7 @@ def judge_language(options: dict) -> None:
         run_name, rows,
         note=lambda line: log.info("judge_language.pair", pair=line),
         stop=lambda: _stop_asked(job_id),
+        log_ids=options.get("log_ids"),
     )
     # the path is derived, never taken from options: a number with no file cannot be cited
     where = measurements.record("judge_language", run_name, out)
@@ -482,9 +483,9 @@ def _loaded_since(prev: int, job_id) -> bool:
     # `running` and the ones that died after loading evict the judge exactly as `done` ones do
     ours = {JobStatus.new}
     with Session() as session:
-        types = session.scalars(
-            select(Job.type).where(Job.id > prev, Job.id != job_id, Job.status.notin_(ours))
-        )
+        asked = select(Job.type).where(Job.id > prev, Job.status.notin_(ours))
+        # `Job.id != None` renders as a no-op, and an ad hoc pass then never inherits a residency
+        types = session.scalars(asked if job_id is None else asked.where(Job.id != job_id))
         return any(job_specs.disturbs_the_judge(t) for t in types)
 
 
@@ -595,7 +596,7 @@ def _merge_our_scores(log_id: int, taken: dict, skip, stamp: dict, force: bool) 
             ql = session.get(QuestionLog, log_id, with_for_update=True)
             if ql is None:
                 return False
-            snapshot = _Snapshot(dict(ql.metrics), dict(ql.prompts), dict(ql.models))
+            snapshot = Snapshot(dict(ql.metrics), dict(ql.prompts), dict(ql.models))
             _mark_skipped(snapshot, ql, skip)
             still = _owed(ql, skip)
             wrote = False
@@ -626,10 +627,13 @@ def _settle_outcome(ql, snapshot) -> None:
     # only the downgrade it alone can make, by the operator `outcomes.classify` uses
     if said == Outcome.answered and not (score_of(ql.faithfulness) > 0):
         snapshot.metrics["settled_outcome"] = str(Outcome.answered_ungrounded)
+        return
+    # a settlement that only ever writes makes the outcome a fact of the first pass, not of today
+    snapshot.metrics.pop("settled_outcome", None)
 
 
 @dataclass
-class _Snapshot:
+class Snapshot:
     metrics: dict
     prompts: dict
     models: dict
