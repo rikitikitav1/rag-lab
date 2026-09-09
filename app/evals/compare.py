@@ -173,6 +173,13 @@ def _what_to_read_first(one_engine: bool | None, one: bool | None) -> str | None
     )
 
 
+# None where any arm is silent: an empty set used to drop out and read as agreement
+def _all_agree(by_run: dict) -> bool | None:
+    if not by_run or any(not seen for seen in by_run.values()):
+        return None
+    return len({one for seen in by_run.values() for one in seen}) == 1
+
+
 # two arms judged across a reload are two instruments: 14% of scores move on identical input
 def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
@@ -188,10 +195,9 @@ def residencies(runs: dict[str, list]) -> dict:
                 if stamp.get("engine"):
                     engines.add(stamp["engine"])
         seen[name], backends[name] = sorted(ids), sorted(engines)
-    known = [v for v in seen.values() if v]
-    one = len({i for v in known for i in v}) == 1 if known else None
-    told = [v for v in backends.values() if v]
-    one_engine = len({e for v in told for e in v}) == 1 if told else None
+    # an arm that recorded nothing cannot agree with one that did: silence is not a match
+    one = _all_agree(seen)
+    one_engine = _all_agree(backends)
     return {
         "by_run": seen,
         "one_residency": one,

@@ -478,6 +478,11 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     old = residencies({"a": [row(None)], "b": [row(None)]})
     assert old["one_residency"] is None and "nothing can be said" in old["read_this_first"]
 
+    # one arm silent and the other not: the union has one id, and that used to read as agreement
+    half = residencies({"a": [row(None)], "b": [row(7)]})
+    assert half["one_residency"] is None, "an arm that recorded nothing cannot agree with one that did"
+    assert "nothing can be said" in half["read_this_first"]
+
     # two backends are not one instrument at all, and that outranks any residency reading
     def on(rid, engine):
         return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid, "engine": engine}})

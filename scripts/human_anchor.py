@@ -63,9 +63,9 @@ def _leak(ql) -> str:
 
 
 def _language(text: str) -> str:
-    cyrillic = len(re.findall(r"[а-яё]", text or "", re.I))
-    latin = len(re.findall(r"[a-z]", text or "", re.I))
-    return "ru" if cyrillic > latin else "en"
+    import db
+
+    return db.detect_language(text or "")
 
 
 def _deltas(a, b) -> tuple[float, float]:
@@ -91,6 +91,18 @@ def _ordered(rows) -> list:
     )
     rest.sort(key=lambda p: -abs(_deltas(*p)[0] - _deltas(*p)[1]))
     return [*opposed, *agreed, *rest]
+
+
+# flipped: on the main sheet every english answer landed on A and he chose B five times out of five
+def _repeats(sitting: list) -> list:
+    crossed = [
+        (left, right, n) for left, right, n in sitting
+        if _language(left.answer) != _language(right.answer)
+    ]
+    rest = [t for t in sitting[:REPEATS] if t not in crossed]
+    flipped = [(right, left) for left, right, _ in (*crossed, *rest)]
+    random.Random(SEED + 1).shuffle(flipped)
+    return [(left, right, n) for n, (left, right) in enumerate(flipped, 1)]
 
 
 def _side(pair, rng) -> tuple:
@@ -155,8 +167,7 @@ def build(on: date | None = None) -> dict:
     order = _ordered(rows)
     rng = random.Random(SEED)
     sitting = [(*_side(p, rng), n) for n, p in enumerate(order[:BOTH_SPOKE], 1)]
-    # flipped, not re-tossed: a repeat in the same orientation cannot show a side bias
-    later = [(right, left, n) for left, right, n in sitting[:REPEATS]]
+    later = _repeats(sitting)
 
     stamp = (on or date.today()).strftime("%Y%m%d")
     HERE.mkdir(parents=True, exist_ok=True)
@@ -184,9 +195,11 @@ def build(on: date | None = None) -> dict:
         _sheet(
             later,
             f"Человеческий якорь: {len(later)} повторов, брать в другой день",
-            "Это те же пары, что первые три в основном листе, перевёрнутые. Они меряют **твой**"
-            " пол шума, а не судей, поэтому берутся не сегодня: иначе меряется память, а не"
-            " суждение.",
+            "Это пары из основного листа, **перевёрнутые**: то, что стояло справа, теперь слева."
+            " Читается ровно одно: идёшь ты за стороной или за содержанием. На основном листе"
+            " английский ответ во всех разноязычных парах лёг на A, и ты все пять раз выбрал B,"
+            " поэтому позицию и язык там не разделить. Узнавание пары тут не мешает: оно работает"
+            " против позиционного чтения, а не за него.",
             kept,
         ),
         encoding="utf-8",
@@ -379,10 +392,49 @@ def read(stamp: str) -> dict:
     }
 
 
+# the same row picked twice is content, the same letter picked twice is position
+def repeats(stamp: str) -> dict:
+    key = json.loads((HERE / f"human_anchor_key_{stamp}.json").read_text(encoding="utf-8"))
+    before = {}
+    done_path = _done_path(stamp)
+    if done_path.exists():
+        for got in json.loads(done_path.read_text(encoding="utf-8")).values():
+            sides = {"A": got["A"], "B": got["B"]}
+            before[frozenset(sides.values())] = "=" if got["answer"] == "=" else sides[got["answer"]]
+    said = _picked(Path(key["sheets"]["repeats"]))
+
+    tally = defaultdict(int)
+    for pair in key["pairs"]["repeats"]:
+        now = said.get(pair["n"])
+        was = before.get(frozenset((pair["A"]["log_id"], pair["B"]["log_id"])))
+        if not now or was is None:
+            continue
+        picked = "=" if now == "=" else pair[now]["log_id"]
+        if picked == was:
+            tally["same_row"] += 1
+        elif was == "=" or picked == "=":
+            tally["one_side_called_it_equal"] += 1
+        else:
+            tally["same_position"] += 1
+    counted = sum(tally.values())
+    return {
+        "population": "the pairs of the main sheet, flipped: cross language first, then the rest",
+        "n": counted,
+        "share_same_row": round(tally["same_row"] / counted, 3) if counted else None,
+        "by_outcome": dict(tally),
+        "reads": "same_row means he follows what is written, same_position means he follows the side",
+    }
+
+
 if __name__ == "__main__":
     action = sys.argv[1] if len(sys.argv) > 1 else "build"
     if action == "build":
         print(json.dumps(build(), indent=2, ensure_ascii=False))
+    elif action == "repeats":
+        got = repeats(sys.argv[2] if len(sys.argv) > 2 else date.today().strftime("%Y%m%d"))
+        print(json.dumps(got, indent=2, ensure_ascii=False))
+        if "--record" in sys.argv:
+            print("записано:", record("human_anchor_repeats", "arc4", got))
     elif action == "mark":
         print(json.dumps(mark(sys.argv[2] if len(sys.argv) > 2
                               else date.today().strftime("%Y%m%d")), ensure_ascii=False))

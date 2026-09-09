@@ -1,5 +1,6 @@
 import sys
 
+import config
 from evals.loaders import load_logs
 from evals.pools import ALL_OUTCOMES, settled, split
 from evals.pools import has_remote_evidence as _has_remote_evidence
@@ -69,6 +70,8 @@ def _language_match(logs) -> dict:
         "share": round(matched / len(checked), 3) if checked else None,
         "target": "the run's recorded language, or the question's where the run recorded none",
         "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
+        # the detector reads a config mode, so a run and a rerun can disagree without the code moving
+        "detector": config.settings.retrieval.query_lang,
     }
 
 
