@@ -20,8 +20,8 @@ from evals.stats import deltas_over, tally
 
 import db
 
-# 1 was the shape before the halves and the per-arm procedure; a reader compares this
-SCHEMA = 2
+# 1 before the halves and the per-arm procedure; 2 those; 3 p unrounded, the way Holm reads it
+SCHEMA = 3
 
 CANDIDATES = 100
 DEPTH = 20

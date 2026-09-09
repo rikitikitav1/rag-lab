@@ -3,7 +3,16 @@ import sys
 
 import limits
 from evals.loaders import load_logs
-from evals.pools import ALL_OUTCOMES, POOLS, has_remote_evidence, outcome, split
+from evals.pools import (
+    ALL_OUTCOMES,
+    JOINS_BOTH_JUDGES,
+    POOLS,
+    by_question,
+    has_remote_evidence,
+    joins_both_judges,
+    outcome,
+    split,
+)
 from evals.stats import delta_stats, deltas_over, mean_of, tally
 from use_cases import rejudge
 
@@ -66,9 +75,8 @@ def _client(logs) -> str | None:
 def paired(left, right, axis) -> dict:
     def scores(logs):
         return {
-            ql.question_id: None if getattr(ql, axis) is None else float(getattr(ql, axis))
-            for ql in logs
-            if ql.question_id is not None
+            question: None if getattr(ql, axis) is None else float(getattr(ql, axis))
+            for question, ql in by_question(logs).items()
         }
 
     before, after = scores(left), scores(right)
@@ -86,14 +94,19 @@ def paired(left, right, axis) -> dict:
         "worse": counted["worse"],
         "mean_delta": None,
         "ci95": None,
-        "p_value": None,
+        "p": None,
     }
     if deltas:
         stats = delta_stats(deltas)
         result["mean_delta"] = stats["mean_delta"]
         result["ci95"] = stats["ci95"]
-        result["p_value"] = stats["p"] if any(d != 0 for d in deltas) else None
+        # `wilcoxon_p` already answers the all-zero case with 1.0, and null cannot enter Holm
+        result["p"] = stats["p"]
     return result
+
+
+# 1 pools and blend; 2 residency; 3 engine and population; 4 the prompt; 5 p never null; 6 `p`
+SCHEMA = 6
 
 
 def compare(runs: dict[str, list]) -> dict:
@@ -130,42 +143,113 @@ def compare(runs: dict[str, list]) -> dict:
     }
     # pools differ in what they should do, so their blend ranks nothing: kept for latency only
     return {
+        "schema": SCHEMA,
         "runs": names,
         "residency": residencies(runs),
+        # the correlation's own predicate, called not restated: one label stood over two selections
+        "correlation_population": {
+            "predicate": JOINS_BOTH_JUDGES,
+            "n": {name: sum(1 for ql in logs if joins_both_judges(ql))
+                  for name, logs in runs.items()},
+        },
         "pools": pools,
         "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
     }
+
+
+# in disqualifying order: a backend, then the ruler, then the reload, then what was not recorded
+def _what_to_read_first(
+    one_engine: bool | None, one_prompt: bool | None, one_residency: bool | None
+) -> str | None:
+    if one_engine is False:
+        return (
+            "arms judged on different engines are not comparable: batching, kernels and "
+            "quantisation all differ, and residency does not even mean the same thing on both"
+        )
+    if one_prompt is False:
+        return (
+            "arms scored by different judge prompt versions are two rulers, not one instrument "
+            "read twice: unless the prompt is the treatment, this contrast measures the prompt"
+        )
+    if one_residency is False:
+        return (
+            "arms judged across a reload are not comparable directly: the same judge moves 14% of "
+            "its scores and 58% of its reason texts on byte-identical input"
+        )
+    if one_residency is None:
+        return "rows judged before this was recorded carry no residency, so nothing can be said"
+    if one_engine is None:
+        return (
+            "the residency matches, but at least one arm recorded no engine, so whether both ran "
+            "on one backend cannot be said, and that outranks any reading of the residency"
+        )
+    if one_prompt is None:
+        return (
+            "rows judged before the prompt version reached the row carry none, so whether both "
+            "arms were scored by one ruler cannot be said"
+        )
+    return (
+        "one residency is necessary, not sufficient: two arms with identical rows, order and "
+        "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
+        "than inheriting a zero. A reading that rests on the reason text holds only here, and "
+        "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
+    )
+
+
+# per axis, because three axes carry three versions and their union is three by construction
+def _one_ruler(by_run: dict) -> bool | None:
+    # silence is not a match here either: one arm scored on one axis cannot agree with three
+    seen = {frozenset(versions) for versions in by_run.values()}
+    shared = set.intersection(*(set(v) for v in by_run.values())) if by_run else set()
+    if not by_run or not shared or len(seen) != 1:
+        return None
+    for axis in shared:
+        seen = {v for versions in by_run.values() for v in versions[axis]}
+        if len(seen) != 1:
+            return False
+    return True
+
+
+# None where any arm is silent: an empty set used to drop out and read as agreement
+def _all_agree(by_run: dict) -> bool | None:
+    if not by_run or any(not seen for seen in by_run.values()):
+        return None
+    return len({one for seen in by_run.values() for one in seen}) == 1
 
 
 # two arms judged across a reload are two instruments: 14% of scores move on identical input
 def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
 
-    seen = {}
+    seen, engines_seen, prompts_seen = {}, {}, {}
     for name, logs in runs.items():
-        ids = set()
+        ids, engines = set(), set()
+        versions = {axis: set() for axis in rejudge.AXES}
         for ql in logs:
             for axis in rejudge.AXES:
-                got = ((ql.metrics or {}).get(axis) or {}).get("residency_id")
-                if got is not None:
-                    ids.add(got)
+                stamp = ((ql.metrics or {}).get(axis) or {})
+                if stamp.get("residency_id") is not None:
+                    ids.add(stamp["residency_id"])
+                if stamp.get("engine"):
+                    engines.add(stamp["engine"])
+                # the version sits beside the model, in `prompts`, and never reached the stamp
+                version = (ql.prompts or {}).get(f"judge_{axis}")
+                if version is not None:
+                    versions[axis].add(version)
         seen[name] = sorted(ids)
-    known = [v for v in seen.values() if v]
-    one = len({i for v in known for i in v}) == 1 if known else None
+        engines_seen[name] = sorted(engines)
+        prompts_seen[name] = {axis: sorted(v) for axis, v in versions.items() if v}
+    # an arm that recorded nothing cannot agree with one that did: silence is not a match
+    one = _all_agree(seen)
+    one_engine, one_prompt = _all_agree(engines_seen), _one_ruler(prompts_seen)
     return {
         "by_run": seen,
         "one_residency": one,
-        "read_this_first": (
-            "arms judged across a reload are not comparable directly: the same judge moves 14% of "
-            "its scores and 58% of its reason texts on byte-identical input"
-            if one is False else
-            "rows judged before this was recorded carry no residency, so nothing can be said"
-            if one is None else
-            "one residency is necessary, not sufficient: two arms with identical rows, order and "
-            "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
-            "than inheriting a zero. A reading that rests on the reason text holds only here, and "
-            "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
-        ),
+        "engines_by_run": engines_seen,
+        "one_engine": one_engine,
+        "judge_prompts_by_run": prompts_seen,
+        "one_judge_prompt": one_prompt,
+        "read_this_first": _what_to_read_first(one_engine, one_prompt, one),
     }
 
 

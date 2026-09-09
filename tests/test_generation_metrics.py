@@ -14,6 +14,7 @@ _TEXT = {
 def _log(marked=None, answered=True, faith=None, rel=None, compl=None, sources=(), outcome=None):
     return SimpleNamespace(
         question=SimpleNamespace(original_text="q", marked_sources=marked or [], kind=None),
+        question_text="the corpus says what",
         metrics={},
         answered=answered,
         answer=_TEXT.get(outcome, "the corpus says hello"),
@@ -22,6 +23,22 @@ def _log(marked=None, answered=True, faith=None, rel=None, compl=None, sources=(
         completeness=compl,
         sources=[{"source": s} for s in sources],
     )
+
+
+def test_an_answer_that_left_the_language_of_the_question_is_counted_without_a_judge(monkeypatch):
+    # a run can be measured on this for nothing: the rule that picks the search config reads it
+    ru, en = _log(marked=["a.md"]), _log(marked=["a.md"])
+    ru.question_text = "Что такое индекс и зачем он нужен в базе данных"
+    ru.answer = "Индекс это структура, которая ускоряет поиск по таблице базы данных"
+    en.question_text = "Что такое индекс и зачем он нужен в базе данных"
+    en.answer = "An index is a structure that speeds up lookups over a table in the database"
+
+    got = _evaluate(monkeypatch, [ru, en])["language_match"]
+    assert got["n"] == 2 and got["matched"] == 1 and got["share"] == 0.5
+
+    # a run that declared its own language is measured against that, not against the asker
+    en.metrics = {"config": {"language": "en"}}
+    assert _evaluate(monkeypatch, [ru, en])["language_match"]["matched"] == 2
 
 
 def _evaluate(monkeypatch, logs):
@@ -175,3 +192,21 @@ def test_a_refusal_does_not_drag_the_axis_means_of_the_answers(monkeypatch):
     assert m["answered_only"] == {
         "n": 2, "faithfulness": 6.0, "relevance": 8.0, "completeness": None
     }
+
+
+def test_the_guest_axes_are_reported_beside_ours_and_never_blended_into_them():
+    # a fourth guest was scored on 25 rows and its mean lived in no report at all
+    from types import SimpleNamespace
+
+    from evals.generation_metrics import _guests
+
+    def row(score=None, abstained=False):
+        entry = {"score": score} if score is not None else {}
+        if abstained:
+            entry["abstained"] = True
+        return SimpleNamespace(metrics={"ragas_answer_relevancy": entry})
+
+    got = _guests([row(0.5), row(0.9), row(abstained=True), SimpleNamespace(metrics={})])
+    relevancy = got["ragas_answer_relevancy"]
+    assert (relevancy["n"], relevancy["mean"], relevancy["abstained"]) == (2, 0.7, 1)
+    assert got["ragas_faithfulness"]["mean"] is None, "an axis nobody scored says so"

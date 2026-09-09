@@ -4,8 +4,8 @@ import version
 
 import db
 
-# 3 carries the language of the run; 2 wrote every key it models; 1 predates the key
-SCHEMA = 3
+# 4 fills the language, so empty means no directive was given; 3 added the key; 2 every key
+SCHEMA = 4
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (

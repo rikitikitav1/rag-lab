@@ -4,7 +4,7 @@ import re
 
 import prompt_repo
 from evals import guest_axes, sampling
-from evals.stats import annotate_holm, deltas_over, mean_of, tally
+from evals.stats import annotate_holm, deltas_over, mean_of, tally, wilcoxon_p
 from models.eval import QuestionLog
 from models.registry import (
     MAX_MODEL_NAME,
@@ -17,13 +17,12 @@ from models.registry import (
     Status,
 )
 from orm.sync_db import Session
-from scipy.stats import wilcoxon
 from sqlalchemy import delete, func, insert, literal, select, text
 from use_cases import judge, retrieval_compare
 from use_cases.retrieval_compare import bootstrap_ci, half_of
 
-# 1 means and deltas; 2 pairing and `source_scored`; 3 the source's judge; 4 p and Holm
-SCHEMA = 4
+# 1 means and deltas; 2 pairing and `source_scored`; 3 the source's judge; 4 Holm; 5 p unrounded
+SCHEMA = 5
 
 AXES = ("faithfulness", "relevance", "completeness")
 # a copy is unjudged, so it must not carry the judge the original named
@@ -432,8 +431,8 @@ def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> d
         ),
         "better": tally(deltas)["better"],
         "worse": tally(deltas)["worse"],
-        # the interval says how big, this says whether a family of them survives together
-        "p": 1.0 if all(d == 0 for d in deltas) else round(float(wilcoxon(deltas).pvalue), 6),
+        # raw, or two precisions meet in one family: this says whether a family survives together
+        "p": wilcoxon_p(deltas),
     }
 
 

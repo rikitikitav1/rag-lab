@@ -10,6 +10,7 @@ from evals import (
     question_sets,
     retrieval_metrics,
     run_debts,
+    stats,
 )
 from evals.loaders import load_logs
 from fastmcp import FastMCP
@@ -110,6 +111,37 @@ def judge_correlation_report(
 
 
 @mcp_ops.tool(
+    name="holm_over",
+    description=(
+        "Correct a family of tests the reader declares, rather than the family one record "
+        "happens to hold. Give the p-values with a name each and say what the family is; "
+        "returns each test with its holm threshold and whether it survives, plus the family "
+        "as written. Use it when the arms being read come from more than one experiment: a "
+        "report corrects over its own record, and a wider reading is a wider family."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def holm_over(
+    tests: Annotated[
+        # a p that is not a number walks the step-down and comes back `significant_holm: true`
+        dict[str, Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]],
+        Field(description="Each test by name with its p-value.", max_length=limits.MAX_TESTS),
+    ],
+    family: Annotated[
+        str, Field(min_length=1, description="What this family is, in the reader's words.")
+    ],
+    alpha: Annotated[float, Field(gt=0, lt=1)] = 0.05,
+) -> dict:
+    if not tests:
+        raise ToolError("a family of no tests corrects nothing")
+    named = [{"name": name, "p": p} for name, p in tests.items()]
+    # the summary's own `tests` is a count, and spreading it used to overwrite the annotated list
+    summary = stats.annotate_holm(named, family, alpha)
+    return {"tests": named, "family": summary["family"], "method": summary["method"],
+            "alpha": summary["alpha"], "n": summary["tests"]}
+
+
+@mcp_ops.tool(
     name="compare_runs",
     description=(
         "Compare several runs side by side. Returns per_value metrics keyed by "
@@ -127,6 +159,33 @@ def compare_runs(
 ) -> dict:
     names = _named_runs(run_names)
     return experiment_uc.compute_results("run", names, names)
+
+
+@mcp_ops.tool(
+    name="language_cost",
+    description=(
+        "What our own axes charge when the answer comes back in the language it was asked in. "
+        "Two arms of one experiment, paired by question over the corpus pool, cut two ways: the "
+        "cut declared from the record before the change (rows whose earlier answer was in another "
+        "language, the one to quote) and the cut the outcome selected (rows whose language moved). "
+        "Give floor_against to add the same arm judged across a reload, which is what the contrast "
+        "cannot go below. Carries the comparability block, so a reader sees whether one engine, "
+        "one judge prompt and one residency stand behind both arms."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def language_cost(
+    before: Annotated[str, Field(description="The arm as it stood before the change.")],
+    after: Annotated[str, Field(description="The arm after it.")],
+    floor_against: Annotated[
+        str | None,
+        Field(description="A third run holding the same answers judged in another residency."),
+    ] = None,
+) -> dict:
+    from evals import language_cost as costs
+
+    _named_runs([before, after] + ([floor_against] if floor_against else []))
+    return costs.measure(before, after, floor_against)
 
 
 @mcp_ops.tool(

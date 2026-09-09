@@ -165,6 +165,18 @@ def server_context_length(model: str) -> int | None:
     return window
 
 
+# until an engine layer exists (arc 5), the backend is named by where it is served from
+def engine() -> str:
+    from urllib.parse import urlsplit
+
+    # host and port only: `netloc` carries userinfo, and this lands on every judged row
+    seen = urlsplit(LLM_BASE)
+    if not seen.hostname:
+        return "unnamed"
+    # a base without an explicit port stamped every row with the string `host:None`
+    return f"{seen.hostname}:{seen.port}" if seen.port else seen.hostname
+
+
 def list_models():
     return [m["name"] for m in _get_request("/api/tags")["models"]]
 

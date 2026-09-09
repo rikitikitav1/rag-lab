@@ -301,7 +301,7 @@ def answer_from_rows(
     variant: str,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
-    lang = _resolve_language(question, language)
+    lang = resolve_language(question, language)
     use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
 
@@ -311,8 +311,8 @@ def answer_from_rows(
         ans = Answer(text=NO_RESULTS)
     else:
         user = f"{context}\n\nQuestion: {question}"
-        if language:
-            user += f"\n\n{_language_directive(language)}"
+        # always, not only when a run forced one: without it the model follows whatever it last read
+        user = told_to_answer_in(user, lang)
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
             user=user,
@@ -350,17 +350,20 @@ def answer_from_rows(
 _LANG_NAMES = {"ru": "Russian", "en": "English"}
 
 
-def _detect_language(text) -> str:
-    # same rule as the search config: a wrong guess here answers a Russian question in English
-    return db.detect_language(text)
+# re-exported: three callers above this layer already say `chat.resolve_language`
+resolve_language = db.resolve_language
 
 
-def _resolve_language(question: str, language: str | None) -> str:
-    return language or _detect_language(question)
+# an unknown code is not a language name, and `replay` reads this out of a snapshot past the doors
+def language_directive(language: str) -> str:
+    said = _LANG_NAMES.get(language)
+    return f"Respond in {said}." if said else ""
 
 
-def _language_directive(language: str) -> str:
-    return f"Respond in {_LANG_NAMES.get(language, language)}."
+# the append was written three times with its own empty guard, and replay has to match all of them
+def told_to_answer_in(text: str, language: str) -> str:
+    said = language_directive(language)
+    return f"{text}\n\n{said}" if said else text
 
 
 def _retrieval_snapshot(rows, sources) -> dict:
@@ -374,8 +377,10 @@ def _retrieval_snapshot(rows, sources) -> dict:
 
 
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
-                     ef_search: int | None = None, model: str | None = None) -> dict:
+                     ef_search: int | None = None, model: str | None = None,
+                     language: str | None = None) -> dict:
     return run_snapshot.of_run(
+        language=language,
         variant=variant,
         use_rerank=use_rerank,
         k=k,
@@ -416,11 +421,13 @@ def _log_answer(
             metrics={
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
-                    rerank_device, variant, ef_search, ans.metrics.model,
+                    rerank_device, variant, ef_search, ans.metrics.model, lang,
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand
                 "context_chars": len(context) if context else 0,
+                # what this path can know now; groundedness waits for the judge, see `settled_outcome`
+                "outcome": outcomes.classify(ans.text, bool(ans.sources)),
                 # the one fact both the judge and the report may read: neither re-derives it
                 "refusal": outcomes.reads_as_refusal(ans.text),
             },

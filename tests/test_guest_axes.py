@@ -53,7 +53,9 @@ def test_a_row_without_the_material_is_never_owed_the_axis():
     owed = guest_axes.owed(bare, {})
     assert "ragas_faithfulness" in owed
     assert "ragas_context_precision" not in owed and "ragas_context_recall" not in owed
-    assert guest_axes.owed(_row(contexts=None), {}) == ()
+    # relevancy asks whether the answer fits the question, so it is the one guest that needs no context
+    assert guest_axes.owed(_row(contexts=None), {}) == ("ragas_answer_relevancy",)
+    assert guest_axes.owed(_row(answer=None, contexts=None), {}) == ()
 
 
 def test_a_guest_that_throws_records_the_try_and_moves_on(monkeypatch):
@@ -118,7 +120,7 @@ def test_a_guest_number_says_at_which_width_and_on_what_card_it_was_taken(monkey
     judging._score_guests(1, {"seed": 0, "width": 4})
     written = ql.metrics["ragas_faithfulness"]
     assert written["width"] == 4 and written["seed"] == 0 and written["score"] == 1.0
-    assert written["on_card"] is False
+    assert written["on_card_at_this_row"] is False, "the row's own reading, beside the pass's"
 
 
 def test_a_guest_number_names_the_process_that_took_it(monkeypatch):

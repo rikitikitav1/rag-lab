@@ -7,6 +7,7 @@ def _log(kind=None, marked=None, answer="the corpus says hello", sources=(), met
          faithfulness=None):
     return SimpleNamespace(
         question=SimpleNamespace(kind=kind, marked_sources=marked or []),
+        question_text="the corpus says what",
         answer=answer,
         sources=[{"source": s} for s in sources],
         metrics=metrics or {},
@@ -49,6 +50,29 @@ def test_an_error_at_the_hop_cap_is_exhaustion_not_a_crash():
     assert pools.outcome(crashed) == "error"
 
 
+def test_a_settled_outcome_is_trusted_and_an_unsettled_one_is_still_derived():
+    # the judge settles it, because groundedness is unknowable when the answer is written
+    settled = _log(metrics={"outcome": "answered", "settled_outcome": "answered_ungrounded"},
+                   sources=["a.md"], faithfulness="7")
+    assert pools.outcome(settled) == "answered_ungrounded", "the record wins over the derivation"
+    assert pools.settled(settled) is True
+
+    # no stamp means a row written before this existed, and it keeps being read exactly as before
+    stale = _log(metrics={"outcome": "answered"}, sources=["a.md"], faithfulness="0")
+    assert pools.outcome(stale) == "answered_ungrounded", "derived, so no recorded verdict moves"
+    assert pools.settled(stale) is False
+
+
+def test_a_row_without_its_own_ceiling_is_not_judged_by_todays_config(monkeypatch):
+    # the ceiling has only ever been 4; pinning it means moving the config never rewrites history
+    import config
+
+    old = _log(answer="", metrics={"outcome": "error", "hops": 4})
+    assert pools.outcome(old) == "exhausted"
+    monkeypatch.setattr(config.settings.agent, "max_hops", 9)
+    assert pools.outcome(old) == "exhausted", "history keeps the ceiling it actually ran under"
+
+
 def test_a_guard_that_fired_stays_an_error_at_the_same_hop_count():
     guarded = _log(
         answer="",
@@ -77,7 +101,8 @@ def test_the_report_carries_a_bucket_for_every_outcome_the_enum_knows(monkeypatc
 
     log = SimpleNamespace(
         question=SimpleNamespace(original_text="q", marked_sources=["a.md"], kind=None),
-        metrics={}, answered=True, answer="the corpus says hello",
+        question_text="the corpus says what", metrics={}, answered=True,
+        answer="the corpus says hello",
         faithfulness=8, relevance=9, completeness=7, sources=[{"source": "a.md"}],
     )
     monkeypatch.setattr(generation_metrics, "load_logs", lambda run_name: [log])
@@ -177,3 +202,66 @@ def test_both_answering_paths_record_the_refusal_fact():
     for module in (agent, chat):
         source = inspect.getsource(module)
         assert '"refusal": outcomes.reads_as_refusal(' in source, module.__name__
+
+
+def test_a_settlement_equal_to_what_the_answer_knew_overrode_nothing():
+    # 266 rows carry the key from an earlier pass, and counting the key called them overrides
+    from evals.pools import settled
+
+    assert settled(_log(metrics={"outcome": "answered",
+                                 "settled_outcome": "answered_ungrounded"})) is True
+    assert settled(_log(metrics={"outcome": "answered", "settled_outcome": "answered"})) is False
+    assert settled(_log(metrics={"outcome": "answered"})) is False
+
+
+def test_the_shared_predicates_live_here_and_the_reports_call_them():
+    # three reports held population vocabulary and imported it sideways from each other
+    import evals.compare as compare
+    import evals.human_anchor as anchor
+    import evals.judge_correlation as corr
+    import evals.language_cost as costs
+    from evals import pools
+
+    for holder in (compare, corr, anchor):
+        assert holder.joins_both_judges is pools.joins_both_judges
+        assert holder.JOINS_BOTH_JUDGES is pools.JOINS_BOTH_JUDGES
+    assert costs.answered_in_target is pools.answered_in_target
+
+    from pathlib import Path
+
+    source = Path(compare.__file__).read_text(encoding="utf-8")
+    assert "judge_correlation" not in source, "a comparison importing a report is the wrong way"
+
+
+def test_pairing_by_question_refuses_a_double_instead_of_keeping_whichever_came_last():
+    # four doors paired by question with three rules: two last-wins, one refusal, one set
+    from types import SimpleNamespace
+
+    from evals.pools import Ambiguous, by_question
+
+    def row(question, log_id):
+        return SimpleNamespace(question_id=question, id=log_id, run_name="r")
+
+    assert list(by_question([row(1, 10), row(2, 20)])) == [1, 2]
+    assert list(by_question([row(1, 10), row(None, 11)])) == [1], "a row with no question is out"
+    assert list(by_question([row(1, 10), row(2, 20)], lambda ql: ql.id != 20)) == [1]
+
+    try:
+        by_question([row(1, 10), row(1, 11)])
+        raise AssertionError("a double must refuse, not pick whichever row came last")
+    except Ambiguous:
+        pass
+
+
+def test_an_echo_of_the_recorded_outcome_does_not_short_circuit_the_derivation():
+    # 266 rows in the base carry a settlement equal to what the answer knew, from an earlier pass
+    from evals.pools import outcome, settled
+
+    echo = _log(metrics={"outcome": "answered", "settled_outcome": "answered"},
+                answer="an answer", sources=[{"source": "a.md"}], faithfulness="0")
+    assert settled(echo) is False
+    assert outcome(echo) == "answered_ungrounded", "the wider rule applies, the echo is not a fact"
+
+    real = _log(metrics={"outcome": "answered", "settled_outcome": "answered_ungrounded"},
+                answer="an answer", sources=[{"source": "a.md"}], faithfulness="8")
+    assert settled(real) is True and outcome(real) == "answered_ungrounded"

@@ -30,6 +30,8 @@ def _log(
         question_id=question_id,
         question=SimpleNamespace(original_text="q", marked_sources=marked or [], kind=kind),
         metrics=metrics,
+        # a real row always has it, and the comparison reads it to say whether one ruler scored both
+        prompts={},
         answered=outcome == "answered",
         answer=_TEXT.get(outcome, _TEXT["answered"]),
         faithfulness=faith,
@@ -122,10 +124,11 @@ def test_paired_test_only_keeps_questions_judged_on_both_sides():
     assert (result["better"], result["worse"]) == (1, 0)
 
 
-def test_identical_arms_get_no_p_value():
+def test_identical_arms_report_a_p_of_one_rather_than_nothing():
+    # null cannot enter a Holm family, and `stats.wilcoxon_p` already answers this case with 1.0
     logs = [_log(question_id=i, faith=6) for i in range(3)]
     result = compare.paired(logs, logs, "faithfulness")
-    assert result["p_value"] is None
+    assert result["p"] == 1.0
     assert (result["better"], result["worse"]) == (0, 0)
     assert result["ci95"] == [0.0, 0.0]
 
@@ -143,7 +146,7 @@ def test_a_shifted_arm_gets_a_significant_p_value():
     left = [_log(question_id=i, faith=3) for i in range(12)]
     right = [_log(question_id=i, faith=8) for i in range(12)]
     result = compare.paired(left, right, "faithfulness")
-    assert result["p_value"] is not None and result["p_value"] < 0.01
+    assert result["p"] is not None and result["p"] < 0.01
 
 
 def test_pairs_cover_every_combination_of_arms():
@@ -154,3 +157,21 @@ def test_pairs_cover_every_combination_of_arms():
     pairs = result["pools"]["in_corpus"]["pairs"]
     assert [(p["left"], p["right"]) for p in pairs] == [("a", "b"), ("a", "c"), ("b", "c")]
     assert pairs[0]["faithfulness"]["right"] == 6
+
+
+def test_one_arm_scored_on_one_axis_cannot_agree_with_an_arm_scored_on_three():
+    # the ruler check narrowed to shared axes while its neighbour called partial silence unknown
+    from types import SimpleNamespace
+
+    from evals.compare import residencies
+
+    def row(prompts):
+        return SimpleNamespace(
+            metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}},
+            prompts=prompts,
+        )
+
+    narrow = row({"judge_faithfulness": 2})
+    wide = row({f"judge_{axis}": 2 for axis in ("faithfulness", "relevance", "completeness")})
+    assert residencies({"a": [narrow], "b": [wide]})["one_judge_prompt"] is None
+    assert residencies({"a": [wide], "b": [wide]})["one_judge_prompt"] is True

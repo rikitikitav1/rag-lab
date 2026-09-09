@@ -98,7 +98,7 @@ alongside the reformulation, and judge the agent against a deduped context.
   caveat cuts the agent's way: it barely multi-hops and its searches often came back empty, so the
   number is deflated, not inflated
 - three numbers shifted meaning across the rounds and are not comparable between them: agent MRR
-  reflects cross-hop source dedup added in `24fae88` (membership, and so hit@k, is unaffected); `hops`
+  reflects cross-hop source dedup added in «fix(agent): tie answered to evidence, harden the forced turn, enforce the tool schema» (membership, and so hit@k, is unaffected); `hops`
   now includes the forced synthesis turn, so a run capped at N can report N+1; faithfulness and
   relevance are counted over in-corpus logs while completeness is counted over all logs, so the
   three axes do not share a denominator

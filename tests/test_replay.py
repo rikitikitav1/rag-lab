@@ -24,6 +24,21 @@ def _row(**over):
     return SimpleNamespace(**{**base, **over})
 
 
+def test_the_judge_settling_an_outcome_does_not_break_a_replay():
+    # `outcome` is what the answer knew; the judge writes `settled_outcome` beside it, never over it
+    from types import SimpleNamespace
+
+    from evals import replay
+
+    row = SimpleNamespace(
+        transcript=[], sources=[], chunks=[], contexts=[],
+        metrics={"outcome": "answered", "settled_outcome": "answered_ungrounded",
+                 "fallback_reason": "none"},
+        prompts={},
+    )
+    assert replay._recorded(row)["outcome"] == "answered", "the judge must not move what is compared"
+
+
 def test_only_the_model_turns_come_back_as_turns():
     # a replay must ask the model nothing, or it compares two samplings instead of two graphs
     turns = replay.turns_of(_row().transcript)
@@ -196,7 +211,8 @@ def test_a_recorded_run_replays_field_for_field_through_the_graph_it_was_not_rec
         sources=[{"source": s.source, "hop": getattr(s, "hop", None)} for s in recorded.sources],
         metrics={
             "spans": list(recorded.spans),
-            "config": {"max_hops": 2, "k": None, "mcp": [], "fallback_policy": "corpus_first"},
+            "config": {"max_hops": 2, "k": None, "mcp": [], "fallback_policy": "corpus_first",
+                       "language": "en"},
             "fallback_reason": str(recorded.fallback_reason),
             "outcome": str(recorded.outcome),
         },
@@ -205,6 +221,15 @@ def test_a_recorded_run_replays_field_for_field_through_the_graph_it_was_not_rec
 
     assert problems == []
     assert replay.differences(row, result) == []
+
+
+def test_a_row_recorded_before_the_language_directive_replays_without_one():
+    # the snapshot says which code took the row: an empty language means nobody was told anything
+    from evals import replay
+
+    assert replay._system_for("SYSTEM", {"max_hops": 2}) == "SYSTEM"
+    assert replay._system_for("SYSTEM", {"language": None}) == "SYSTEM"
+    assert replay._system_for("SYSTEM", {"language": "ru"}) == "SYSTEM\n\nRespond in Russian."
 
 
 def test_a_row_naming_a_prompt_version_that_is_gone_is_refused_not_replayed(monkeypatch):
@@ -253,7 +278,7 @@ def test_a_row_whose_gate_dropped_context_replays_into_the_same_drop(monkeypatch
             "config": {"max_hops": 2, "mcp": [], "fallback_policy": "corpus_first_weak",
                        "gate": {"signal": "cross_encoder", "top": None, "threshold": 0.35,
                                 "distance_threshold": None},
-                       "drop_weak_context": True},
+                       "drop_weak_context": True, "language": "en"},
             "retrieval": {"dropped_sources": list(recorded.dropped_sources)},
             "fallback_reason": str(recorded.fallback_reason),
             "outcome": str(recorded.outcome),

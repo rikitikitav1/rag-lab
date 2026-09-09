@@ -304,3 +304,8 @@ def hybrid_search(
             conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
         rows = conn.execute(text(query), params).mappings().all()
     return [Hit(**row) for row in rows]
+
+
+# which language an answer belongs in: asked for, else the one the question is written in
+def resolve_language(question: str, language: str | None) -> str:
+    return language or detect_language(question)

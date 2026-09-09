@@ -231,7 +231,7 @@ warm-up. The window is not free in VRAM, but on this hardware it is free in time
 
 ## Which code the grid actually ran
 
-`33c9a5b`, and not the head of the branch: the worker started an hour before the later commits
+«Tell a guard that fired apart from a run that used up its hops», and not the head of the branch: the worker started an hour before the later commits
 landed, and a worker holds its code in memory. That is worth recording rather than glossing, because
 the arms were fixed while the grid ran and the fixes did not reach it. What the grid's code lacks:
 the failure flag in the loop and the graph, the graph's own error path, a timeout on the standard
@@ -240,8 +240,8 @@ comparing them to each other stays honest; the middleware arm, which runs later,
 
 The commit itself is a reconstruction from container start times, not a reading from the rows: the
 four grid runs predate the field that records our commit, so their `code_version` is null. The later
-runs do carry it, and the middleware arm carries two, one per pool: its corpus half ran on `5232911`
-and its external half on `cc0dc44`, thirty minutes and a worker restart apart. The difference
+runs do carry it, and the middleware arm carries two, one per pool: its corpus half ran on «Stop a run that is measuring the CPU»
+and its external half on «Read a stream that died after a 503 as a connection failure», thirty minutes and a worker restart apart. The difference
 between those commits is ten lines in the MCP error classifier and touches nothing on the routing
 path, but the honest record names it rather than rounding it to one commit. All three are tagged
 (`run/lg-grid`, `run/lg-middleware-corpus`, `run/lg-middleware-external`), because the branch was
@@ -300,7 +300,7 @@ a regression.
   a judge point on the external pool
 - the idiomatic arm also swaps the model client, so on its own it cannot separate the policies from
   the transport
-- the four grid runs predate the field recording our commit, so `33c9a5b` is reconstructed from
+- the four grid runs predate the field recording our commit, so «Tell a guard that fired apart from a run that used up its hops» is reconstructed from
   container start times rather than read from the rows
 - the external service is part of the setup and drifts: the middleware arm's night numbers were
   never separated from a DeepWiki that answered 294 characters shorter that hour

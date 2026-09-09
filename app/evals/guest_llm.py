@@ -13,12 +13,23 @@ import llm
 os.environ.setdefault("RAGAS_DO_NOT_TRACK", "true")
 import logging_setup
 from langchain_core.outputs import Generation, LLMResult
+from ragas.embeddings.base import BaseRagasEmbeddings
 from ragas.llms.base import BaseRagasLLM
 
 log = logging_setup.get_logger(__name__)
 
 # the role whose model, sampler and seed the guest borrows: it judges, so it borrows the judge
 ROLE = "judging"
+
+# response relevancy compares vectors, so one guest borrows this role beside the judging one
+EMBEDDING_ROLE = "embedding"
+
+
+# ragas reads this off the object rather than taking it in, and both adapters set the same one
+def _one_try():
+    from ragas.run_config import RunConfig
+
+    return RunConfig(max_retries=1, max_wait=1)
 
 
 def _text_of(prompt) -> str:
@@ -27,12 +38,9 @@ def _text_of(prompt) -> str:
 
 class OurClient(BaseRagasLLM):
     def __init__(self, role: str = ROLE, model: str | None = None):
-        from ragas.run_config import RunConfig
-
         self.role = role
         self.model = model
-        # ragas reads this off the object rather than passing it in, and retries through it
-        self.set_run_config(RunConfig(max_retries=1, max_wait=1))
+        self.set_run_config(_one_try())
 
     # ragas asks for n samples; our judging sampler is seeded, so n>1 would repeat one answer
     def generate_text(self, prompt, n=1, temperature=None, stop=None, callbacks=None) -> LLMResult:
@@ -51,6 +59,26 @@ class OurClient(BaseRagasLLM):
         return True
 
 
+# response relevancy is the one guest that measures with vectors, so it borrows our embedder too
+class OurEmbeddings(BaseRagasEmbeddings):
+    def __init__(self, role: str = EMBEDDING_ROLE):
+        super().__init__()
+        self.role = role
+        self.set_run_config(_one_try())
+
+    def embed_query(self, text: str) -> list[float]:
+        return llm.embed(text, role=self.role)
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return llm.request_embeddings_batch(texts, self.role)
+
+    async def aembed_query(self, text: str) -> list[float]:
+        return await asyncio.to_thread(self.embed_query, text)
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self.embed_documents, texts)
+
+
 # `ragas` is in neither image, so a guest number that cannot name its process cannot be placed
 def _runtime() -> str:
     from pathlib import Path
@@ -65,5 +93,7 @@ def stamp() -> dict:
         "ragas": version("ragas"),
         "model": llm.resolve_name(ROLE),
         "role": ROLE,
+        # one guest measures with vectors, and its embedder never reached the record
+        "embedding_model": llm.resolve_name(EMBEDDING_ROLE),
         "runtime": _runtime(),
     }

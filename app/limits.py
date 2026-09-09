@@ -7,3 +7,6 @@ MAX_QUESTION_IDS = 10000
 MAX_K = 100
 # how many rows one guest pass may take: its axes cost several model calls per row each
 MAX_GUEST_ROWS = 2000
+
+# a family a reader declares by hand: six arms on three axes is 45 tests, and MAX_RUNS is 32
+MAX_TESTS = 200

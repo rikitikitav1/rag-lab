@@ -249,9 +249,11 @@ When the series is judged, `GET /v1/experiment/{id}` returns per-value metrics a
       "method": "rrf", "winner": "5",
       "ranking": [{"value": "5", "rrf": 0.0487}, {"value": "10", "rrf": 0.0484}],
       "pairwise": {
-        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.3669, "n": 100, "holm_threshold": null, "significant_raw": false, "significant_holm": false}, "...": "..."}},
-        "method": "holm", "alpha": 0.05, "tests": 15, "family": "every pair of the grid on every axis"
-      }
+        "comparisons": {"5_vs_10": {"faithfulness": {"mean_delta": 0.19, "ci95": [-0.17, 0.57], "p": 0.36692741, "n": 100, "holm_threshold": null, "significant_raw": false, "significant_holm": false}, "...": "..."}},
+        "method": "holm", "alpha": 0.05, "tests": 15, "family": "every pair of the grid on every axis",
+        "population": "every row of both runs that pairs by question_id, all pools blended: ..."
+      },
+      "rows_by_population": {"in_corpus_and_answered_in_every_arm": 91, "by_run": {"...": "..."}}
     }
   }
 }
@@ -291,6 +293,8 @@ A second, separate ops server is mounted at `/mcp-ops` - an eval control plane k
 - `question_sets(set_name?)` - what each question set holds and therefore which axes a run over it can be scored on: pools, languages, how many carry marked sources (the retrieval axes) and how many carry a reference answer (the two guest context axes).
 - `experiment_results(id, pair?)` - one experiment's report, whatever its kind: the arms with their n, the paired deltas per axis with interval and p, and whether each survives the correction over the family the record names.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - job queue control, cancel takes the dependent judge down with the run.
+- `holm_over(tests, family, alpha?)` - correct a family the reader declares rather than the one a single record happens to hold: give the p-values by name, get each with its Holm threshold and whether it survives. A report corrects over its own record, and reading arms from two experiments is a wider family.
+- `language_cost(before, after, floor_against?)` - what our own axes charge when the answer comes back in the language it was asked in: two arms paired by question over the corpus pool, cut two ways (the cut declared from the record before the change, and the cut the outcome selected), with the drift floor and the comparability block beside them.
 
 ### MCP client: the agent consumes external servers
 
@@ -440,11 +444,12 @@ One implementation note worth stealing: under `corpus_first` the withheld extern
 - `app/orchestrators/` - adapters to the framework: `graph` (StateGraph), `react` (bare `create_agent`). No langchain import reaches `use_cases`.
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
-- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` over the eval platform.
+- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `language_cost` over the eval platform.
 - `app/evals/pools.py`, `app/evals/compare.py` - one place that decides which pool a question belongs to and what the run's outcome was, shared by the metrics, the comparison report and both MCP tools.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
-- `app/evals/` - eval bench: the runner, retrieval and generation metrics, the guest axes (`guest_axes`, `guest_llm`, `guest_probes`), the judge-against-judge report (`judge_correlation`), the language probe, the replay (`replay`), what a run still owes (`run_debts`), what a question set holds (`question_sets`) and where a job leaves its number (`measurements`).
+- `app/evals/` - eval bench: the runner, retrieval and generation metrics, the guest axes (`guest_axes`, `guest_llm`, `guest_probes`), the judge-against-judge report (`judge_correlation`), the language probe, the replay (`replay`), what a run still owes (`run_debts`), what a question set holds (`question_sets`), the blind pairs the owner ranks (`human_anchor`), what the axes charge for answering in the language asked (`language_cost`) and where a job leaves its number (`measurements`).
+- `app/evals/pools.py` - the vocabulary the reports share: a population is named once here and called by name, never restated where it is used.
 - `tests/` - unit tests (pure logic, no DB/Ollama): `docker compose exec rag-lab pytest -q`.
 
 ## Status

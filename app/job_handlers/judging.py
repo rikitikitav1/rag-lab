@@ -181,7 +181,7 @@ def judge_answers(options: dict) -> None:
     force = bool(options.get("log_ids"))
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
-    residency = _residency_id(job_id)
+    residency = _residency(job_id)
     judged = 0
 
     def one(log_id):
@@ -228,7 +228,7 @@ def _count_the_attempt(log_id: int, skip: tuple, error: str) -> None:
             ql = session.get(QuestionLog, log_id, with_for_update=True)
             if ql is None:
                 return
-            snapshot = _Snapshot(dict(ql.metrics or {}), {}, {})
+            snapshot = Snapshot(dict(ql.metrics or {}), {}, {})
             _mark_skipped(snapshot, ql, skip)
             for axis in _owed(ql, skip):
                 snapshot.metrics[axis] = _errored_metric(snapshot.metrics, axis, error)
@@ -253,6 +253,7 @@ def judge_language(options: dict) -> None:
         run_name, rows,
         note=lambda line: log.info("judge_language.pair", pair=line),
         stop=lambda: _stop_asked(job_id),
+        log_ids=options.get("log_ids"),
     )
     # the path is derived, never taken from options: a number with no file cannot be cited
     where = measurements.record("judge_language", run_name, out)
@@ -277,8 +278,9 @@ def judge_guest_axes(options: dict) -> None:
     budget = set(log_ids)
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
-    stamp = _stamp(width, _residency_id(job_id))
-    started_on_card = judge_on_card()
+    seen = _residency(job_id)
+    stamp = _stamp(width, seen)
+    started_on_card = seen.on_card
 
     def one(log_id):
         if _stop_asked(job_id):
@@ -311,7 +313,8 @@ def judge_guest_axes(options: dict) -> None:
     if log_ids and not _stop_asked(job_id):
         log.error("judge_guest_axes.sweeps_exhausted", owed=len(log_ids))
     ended_on_card = judge_on_card()
-    if started_on_card != ended_on_card:
+    # a swallowed reading leaves `started_on_card` None, and None against a real bool is not a move
+    if None not in (started_on_card, ended_on_card) and started_on_card != ended_on_card:
         # the rows carry their own reading; this says the pass is not one residency any more
         log.error(
             "judge_guest_axes.residency_moved",
@@ -375,8 +378,9 @@ def _score_guests(log_id: int, stamp: dict) -> bool:
         if _errored(metrics, axis):
             continue
         try:
-            # the same stamp our axes carry, plus the card: a number says how it was taken
-            scored[axis] = {**stamp, **guest_axes.score(axis, row), "on_card": judge_on_card()}
+            # our stamp plus the card read here: the stamp's `on_card` is about the pass
+            scored[axis] = {**stamp, **guest_axes.score(axis, row),
+                            "on_card_at_this_row": judge_on_card()}
             wrote = True
         except Exception as e:
             log.error("guest_axes.failed", axis=axis, log_id=log_id, error=str(e))
@@ -448,16 +452,41 @@ def _bench_from(options: dict) -> judge.Bench:
     )
 
 
+@dataclass(frozen=True)
+class Residency:
+    id: int | None
+    on_card: bool | None
+
+
 # `/api/ps` carries no load moment, so a residency is named by the pass that caused the load
-def _residency_id(job_id) -> int | None:
+def _residency(job_id) -> Residency:
     try:
-        if judge_on_card() is None:
-            return job_id
-        return _last_residency() or job_id
+        on_card = judge_on_card()
+        # partly on the card is a different instrument: layers on the cpu answer with other kernels
+        if on_card is not True:
+            return Residency(job_id, on_card)
+        prev = _last_residency()
+        # `/api/ps` cannot say who loaded what between two passes, but the queue can
+        if prev is None or _loaded_since(prev, job_id):
+            return Residency(job_id, on_card)
+        return Residency(prev, on_card)
     except Exception as e:
         # a reading about the card must not take down the pass that only wanted to stamp itself
         log.warning("judge.residency_unknown", error=str(e))
-        return None
+        return Residency(None, None)
+
+
+def _loaded_since(prev: int, job_id) -> bool:
+    import job_specs
+    from models.jobs import Job, JobStatus
+
+    # `running` and the ones that died after loading evict the judge exactly as `done` ones do
+    ours = {JobStatus.new}
+    with Session() as session:
+        asked = select(Job.type).where(Job.id > prev, Job.status.notin_(ours))
+        # `Job.id != None` renders as a no-op, and an ad hoc pass then never inherits a residency
+        types = session.scalars(asked if job_id is None else asked.where(Job.id != job_id))
+        return any(job_specs.disturbs_the_judge(t) for t in types)
 
 
 def _last_residency() -> int | None:
@@ -477,16 +506,21 @@ def _last_residency() -> int | None:
 
 
 # once per row, not per axis: the width belongs to the pass and the sampler to the role
-def _stamp(width: int, residency: int | None = None) -> dict:
+def _stamp(width: int, residency: Residency | None = None) -> dict:
     from datetime import datetime, timezone
 
+    seen = residency or Residency(None, None)
     sampler = llm.sampler_of("judging")
     return {
         # at temperature zero this says the sampler took no part, not that the pass repeats
         "seed": sampler.get("seed"),
         "width": width,
         # two arms are comparable only inside one residency, and this is how a reader checks
-        "residency_id": residency,
+        "residency_id": seen.id,
+        # a pass that found the judge half on the cpu is not the pass that found it whole
+        "on_card": seen.on_card,
+        # numbers from two backends must not add up silently, so the record names its own
+        "engine": llm.engine(),
         "judged_at": datetime.now(timezone.utc).isoformat(),
         # `/api/ps` does not report slots, so the record names the mirror it was capped by
         "slots_believed": _parallel_slots(),
@@ -523,7 +557,7 @@ def _mark_skipped(snapshot, ql, skip) -> None:
 
 # scored outside the lock: three model calls under `FOR UPDATE` closed an axis on the loser's timeout
 def _judge_log(log_id: int, force: bool = False, bench=None, width: int = 1, skip=(),
-               residency: int | None = None) -> bool:
+               residency: Residency | None = None) -> bool:
     bench = bench or judge.ACTIVE
     with Session() as session:
         ql = session.get(QuestionLog, log_id)
@@ -562,7 +596,7 @@ def _merge_our_scores(log_id: int, taken: dict, skip, stamp: dict, force: bool) 
             ql = session.get(QuestionLog, log_id, with_for_update=True)
             if ql is None:
                 return False
-            snapshot = _Snapshot(dict(ql.metrics), dict(ql.prompts), dict(ql.models))
+            snapshot = Snapshot(dict(ql.metrics), dict(ql.prompts), dict(ql.models))
             _mark_skipped(snapshot, ql, skip)
             still = _owed(ql, skip)
             wrote = False
@@ -570,6 +604,7 @@ def _merge_our_scores(log_id: int, taken: dict, skip, stamp: dict, force: bool) 
                 if axis not in still and not force:
                     continue
                 wrote |= _apply_axis(ql, snapshot, axis, v, err, stamp)
+            _settle_outcome(ql, snapshot)
             ql.metrics = snapshot.metrics
             ql.prompts = snapshot.prompts
             ql.models = snapshot.models
@@ -581,8 +616,24 @@ def _merge_our_scores(log_id: int, taken: dict, skip, stamp: dict, force: bool) 
         return False
 
 
+# groundedness is unknowable when the answer is written, so the judge is what settles the outcome
+def _settle_outcome(ql, snapshot) -> None:
+    from evals.stats import score_of
+    from outcomes import Outcome
+
+    said = snapshot.metrics.get("outcome")
+    if said is None or ql.faithfulness is None:
+        return
+    # only the downgrade it alone can make, by the operator `outcomes.classify` uses
+    if said == Outcome.answered and not (score_of(ql.faithfulness) > 0):
+        snapshot.metrics["settled_outcome"] = str(Outcome.answered_ungrounded)
+        return
+    # a settlement that only ever writes makes the outcome a fact of the first pass, not of today
+    snapshot.metrics.pop("settled_outcome", None)
+
+
 @dataclass
-class _Snapshot:
+class Snapshot:
     metrics: dict
     prompts: dict
     models: dict

@@ -151,6 +151,13 @@ def gate_of(snapshot: dict, remote: dict | None = None):
     return gate
 
 
+# the live run appends it to the same prompt; an empty language means nobody was told anything
+def _system_for(system: str, snapshot: dict) -> str:
+    from use_cases import chat as chat_uc
+
+    return chat_uc.told_to_answer_in(system, snapshot.get("language") or "")
+
+
 # the recorded prompt version, not today's: a replay compares graphs, not prompt drift
 def _pinned_templates(versions: dict, problems: list):
     import prompt_repo
@@ -221,11 +228,7 @@ def rerun(row) -> tuple:
         system = template(Purpose.agent_system)
     except RuntimeError:
         return None, problems
-    # the live run appends it to the same prompt, and the transcript keeps the system message
-    if snapshot.get("language"):
-        from use_cases import chat as chat_uc
-
-        system += f"\n\n{chat_uc._language_directive(snapshot['language'])}"
+    system = _system_for(system, snapshot)
     graph.invoke(
         row.question_text or "",
         system,

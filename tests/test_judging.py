@@ -43,9 +43,9 @@ def _verdict(score=8, **kw):
 
 
 def test_a_written_verdict_names_the_judge_and_its_prompt():
-    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
+    from job_handlers.judging import Snapshot, _apply_axis, _run_axis
 
-    snapshot = _Snapshot({}, {"generate_answer": 3}, {"generation": "gemma3:4b"})
+    snapshot = Snapshot({}, {"generate_answer": 3}, {"generation": "gemma3:4b"})
     v, err = _run_axis(1, "relevance", lambda *a: _verdict())
     wrote = _apply_axis(_Log(), snapshot, "relevance", v, err)
     assert wrote is True
@@ -57,12 +57,12 @@ def test_a_written_verdict_names_the_judge_and_its_prompt():
 
 
 def test_a_failed_axis_leaves_the_snapshot_alone():
-    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
+    from job_handlers.judging import Snapshot, _apply_axis, _run_axis
 
     def boom(*a):
         raise RuntimeError("judge is down")
 
-    snapshot = _Snapshot({}, {}, {})
+    snapshot = Snapshot({}, {}, {})
     v, err = _run_axis(1, "relevance", boom)
     wrote = _apply_axis(_Log(), snapshot, "relevance", v, err)
     assert wrote is False
@@ -71,10 +71,10 @@ def test_a_failed_axis_leaves_the_snapshot_alone():
 
 
 def test_rejudging_replaces_the_prompt_version_it_names():
-    from job_handlers.judging import _apply_axis, _run_axis, _Snapshot
+    from job_handlers.judging import Snapshot, _apply_axis, _run_axis
     from models.registry import Purpose
 
-    snapshot = _Snapshot({}, {"judge_relevance": 2}, {})
+    snapshot = Snapshot({}, {"judge_relevance": 2}, {})
     v, err = _run_axis(
         1, "relevance", lambda *a: _verdict(purpose=Purpose.judge_relevance, prompt_version=3)
     )
@@ -158,6 +158,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     from job_handlers import judging
 
     monkeypatch.setattr(judging.llm, "sampler_of", lambda role: {"temperature": 0, "seed": 0})
+    monkeypatch.setattr(judging.llm, "engine", lambda: "ollama:11434")
     verdict = SimpleNamespace(reason="because", elapsed=1.5, model="qwen2.5:7b")
 
     monkeypatch.setenv("OLLAMA_NUM_PARALLEL", "4")
@@ -167,7 +168,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     assert written.pop("residency_id") is None, "no pass named it, so the stamp says so"
     assert written == {
         "reason": "because", "elapsed": 1.5, "model": "qwen2.5:7b", "seed": 0, "width": 4,
-        "slots_believed": 4,
+        "slots_believed": 4, "on_card": None, "engine": "ollama:11434",
     }
     assert when.endswith("+00:00"), "the stamp must say when in utc, or two arms cannot be paired"
 
@@ -176,7 +177,10 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     bare = judging._stamp(1)
     bare.pop("judged_at")
     bare.pop("residency_id")
-    assert bare == {"seed": None, "width": 1, "slots_believed": 4}
+    assert bare == {
+        "seed": None, "width": 1, "slots_believed": 4, "on_card": None,
+        "engine": "ollama:11434",
+    }
 
 
 def test_a_row_the_judge_failed_on_is_swept_again_instead_of_stranding_the_series(monkeypatch):
@@ -461,8 +465,11 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
 
     from evals.compare import residencies
 
-    def row(rid):
-        return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid}} if rid else {})
+    # every row that carries a residency carries an engine too: they were stamped together
+    def row(rid, version=2):
+        stamp = {"residency_id": rid, "engine": "ollama:11434"}
+        return SimpleNamespace(metrics={"faithfulness": stamp} if rid else {},
+                               prompts={"judge_faithfulness": version})
 
     same = residencies({"a": [row(7), row(7)], "b": [row(7)]})
     assert same["one_residency"] is True
@@ -474,22 +481,109 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     old = residencies({"a": [row(None)], "b": [row(None)]})
     assert old["one_residency"] is None and "nothing can be said" in old["read_this_first"]
 
+    # one arm silent and the other not: the union has one id, and that used to read as agreement
+    half = residencies({"a": [row(None)], "b": [row(7)]})
+    assert half["one_residency"] is None, "an arm that recorded nothing cannot agree with one that did"
+    assert "nothing can be said" in half["read_this_first"], "an unknown residency comes first"
 
-def test_a_pass_names_the_residency_it_caused_or_inherits_the_last():
+    # residency agrees and one arm never recorded an engine: that outranks any residency reading
+    quiet = SimpleNamespace(metrics={"faithfulness": {"residency_id": 7}},
+                            prompts={"judge_faithfulness": 2})
+    mixed = residencies({"a": [quiet], "b": [row(7)]})
+    assert mixed["one_residency"] is True and mixed["one_engine"] is None
+    assert "recorded no engine" in mixed["read_this_first"]
+
+    # two backends are not one instrument at all, and that outranks any residency reading
+    def on(rid, engine):
+        return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid, "engine": engine}},
+                               prompts={"judge_faithfulness": 2})
+
+    split = residencies({"a": [on(7, "ollama:11434")], "b": [on(7, "api.example:443")]})
+    assert split["one_engine"] is False
+    assert "different engines" in split["read_this_first"], "the engine speaks before residency"
+    assert split["one_residency"] is True, "the ids match, and that is exactly why it misleads"
+
+    # one residency, one engine, two rulers: the prompt version is the difference nobody read
+    rulers = residencies({"a": [row(7, version=2)], "b": [row(7, version=5)]})
+    assert rulers["one_judge_prompt"] is False and rulers["one_residency"] is True
+    assert "two rulers" in rulers["read_this_first"], "the ruler speaks before the reload"
+    assert rulers["judge_prompts_by_run"] == {"a": {"faithfulness": [2]}, "b": {"faithfulness": [5]}}
+
+    # three axes carry three versions, and their union is three even when both arms agree
+    def all_axes(version):
+        return SimpleNamespace(
+            metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}},
+            prompts={f"judge_{axis}": version
+                     for axis in ("faithfulness", "relevance", "completeness")},
+        )
+
+    wide = residencies({"a": [all_axes(2)], "b": [all_axes(2)]})
+    assert wide["one_judge_prompt"] is True, "one version per axis is one ruler, not three"
+
+    # a version nobody recorded cannot be compared, and that is not the same as a match
+    blank = SimpleNamespace(
+        metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}}, prompts={}
+    )
+    unknown = residencies({"a": [blank], "b": [row(7)]})
+    assert unknown["one_judge_prompt"] is None
+    assert "cannot be said" in unknown["read_this_first"]
+
+
+def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     # `/api/ps` has no load moment, so the pass that found the card empty is the one that names it
     import job_handlers.judging as j
 
-    on_card, last = [None], [None]
-    real_card, real_last = j.judge_on_card, j._last_residency
-    j.judge_on_card, j._last_residency = lambda: on_card[0], lambda: last[0]
-    try:
-        assert j._residency_id(42) == 42, "the card was empty, so this pass loads it"
-        on_card[0], last[0] = True, 7
-        assert j._residency_id(42) == 7, "it was resident, so the residency is the older one"
-        last[0] = None
-        assert j._residency_id(42) == 42
-    finally:
-        j.judge_on_card, j._last_residency = real_card, real_last
+    on_card, last, disturbed = [None], [None], [False]
+    monkeypatch.setattr(j, "judge_on_card", lambda: on_card[0])
+    monkeypatch.setattr(j, "_last_residency", lambda: last[0])
+    monkeypatch.setattr(j, "_loaded_since", lambda prev, job_id: disturbed[0])
+
+    assert j._residency(42) == j.Residency(42, None), "the card was empty, so this pass loads it"
+    on_card[0], last[0] = True, 7
+    assert j._residency(42) == j.Residency(7, True), "it was resident, so the older one holds"
+    last[0] = None
+    assert j._residency(42) == j.Residency(42, True)
+
+    # half on the card is another instrument: the cpu layers answer with other kernels
+    on_card[0], last[0] = False, 7
+    assert j._residency(42) == j.Residency(42, False), "a partial load never inherits"
+
+    # `/api/ps` cannot see a neighbour loaded between two passes, but the queue can
+    on_card[0], disturbed[0] = True, True
+    assert j._residency(42) == j.Residency(42, True), "something loaded since, so this is new"
+
+
+def test_the_judge_settles_the_outcome_it_alone_can_know():
+    from types import SimpleNamespace
+
+    from job_handlers import judging
+
+    def row(outcome, faithfulness):
+        snap = judging.Snapshot({"outcome": outcome} if outcome else {}, {}, {})
+        judging._settle_outcome(SimpleNamespace(faithfulness=faithfulness), snap)
+        return snap.metrics
+
+    zero = row("answered", "0")
+    assert zero["settled_outcome"] == "answered_ungrounded", "zero means it stood on nothing"
+    assert zero["outcome"] == "answered", "what the answer knew never changes, or a replay breaks"
+
+    # everything else keeps deriving: the derivation is still wider than what the writer saw
+    assert "settled_outcome" not in row("answered", "7")
+    assert "settled_outcome" not in row("refused", "0"), "a refusal is not ours to freeze"
+    assert "settled_outcome" not in row("error", "0"), "an error may still re-derive as exhausted"
+    assert row(None, "7") == {}
+    assert "settled_outcome" not in row("answered", None)
+
+
+def test_a_job_type_nobody_classified_is_assumed_to_evict_the_judge():
+    # the safe way round: a new type is a stranger, and a stranger is assumed to take the card
+    import job_specs
+
+    assert not job_specs.disturbs_the_judge("judge_answers")
+    assert job_specs.disturbs_the_judge("judge_guest_axes"), "relevancy loads the embedder too"
+    assert job_specs.disturbs_the_judge("eval_run")
+    assert job_specs.disturbs_the_judge("judge_language"), "the probe answers on the generator"
+    assert job_specs.disturbs_the_judge("a_type_invented_next_year")
 
 
 def test_a_pass_walks_the_rows_in_the_order_it_was_given():
@@ -502,3 +596,18 @@ def test_a_pass_walks_the_rows_in_the_order_it_was_given():
 
     got = judging._target_log_ids(_Session(), {"log_ids": [2, 3, 1, 99]})
     assert got == [2, 3, 1], "the caller's order, and nothing it did not ask for"
+
+
+def test_a_rejudge_that_raises_the_score_takes_the_settlement_back():
+    # the key was only ever written, so one zero froze the outcome against every later pass
+    from types import SimpleNamespace
+
+    from job_handlers import judging
+
+    metrics = {"outcome": "answered", "settled_outcome": "answered_ungrounded"}
+    snap = judging.Snapshot(metrics, {}, {})
+    judging._settle_outcome(SimpleNamespace(faithfulness="8"), snap)
+    assert "settled_outcome" not in snap.metrics, "the judge said eight, and the freeze must go"
+
+    judging._settle_outcome(SimpleNamespace(faithfulness="0"), snap)
+    assert snap.metrics["settled_outcome"] == "answered_ungrounded"

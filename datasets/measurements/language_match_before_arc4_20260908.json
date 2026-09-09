@@ -1,0 +1,49 @@
+{
+  "what": "share of answered rows whose language matches the target",
+  "population": "rows that answered; refusals, narrated calls, errors and exhaustion are out",
+  "target": "the run recorded language, or the question language where the run recorded none",
+  "detector": "function_words",
+  "cut": "every run here was taken BEFORE the language directive became unconditional (59e1794); each carries config.language null, which is what separates them from later runs",
+  "by_run": {
+    "grid_llama31_8b_ru_plain": {
+      "n": 823,
+      "matched": 823,
+      "share": 1.0,
+      "target": "the run's recorded language, or the question's where the run recorded none",
+      "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
+      "detector": "function_words"
+    },
+    "grid_gemma3_4b_ru_rerank": {
+      "n": 822,
+      "matched": 803,
+      "share": 0.977,
+      "target": "the run's recorded language, or the question's where the run recorded none",
+      "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
+      "detector": "function_words"
+    },
+    "arc3_agent_baseline": {
+      "n": 154,
+      "matched": 112,
+      "share": 0.727,
+      "target": "the run's recorded language, or the question's where the run recorded none",
+      "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
+      "detector": "function_words"
+    },
+    "arc3_ported_after_split": {
+      "n": 154,
+      "matched": 114,
+      "share": 0.74,
+      "target": "the run's recorded language, or the question's where the run recorded none",
+      "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
+      "detector": "function_words"
+    },
+    "arc3_restate_tools": {
+      "n": 12,
+      "matched": 10,
+      "share": 0.833,
+      "target": "the run's recorded language, or the question's where the run recorded none",
+      "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
+      "detector": "function_words"
+    }
+  }
+}

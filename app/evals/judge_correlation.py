@@ -8,14 +8,21 @@ import math
 import re
 import statistics
 
-from evals.generation_metrics import _outcome, score_of
 from evals.loaders import load_logs
+from evals.pools import (
+    JOINS_BOTH_JUDGES,
+    guest_score,
+    in_corpus,
+    joins_both_judges,
+)
+from evals.pools import outcome as _outcome
+from evals.stats import score_of, to_unit
 from outcomes import Outcome
 from scipy.stats import spearmanr
 from use_cases.ingest_quality import code_fraction
 
 # 3 rho carries its band; 2 was the corpus pool alone; 1 was every row that carried both scores
-SCHEMA = 4
+SCHEMA = 5
 
 WORD = re.compile(r"\w+", re.U)
 
@@ -43,10 +50,6 @@ def code_share(contexts: list[str]) -> float:
     return statistics.fmean(code_fraction(c) for c in contexts) if contexts else 0.0
 
 
-def guest_score(ql, axis: str):
-    return ((ql.metrics or {}).get(axis) or {}).get("score")
-
-
 def rows_of(run_name=None) -> tuple[list[dict], dict]:
     kept, refused, abstained, both, off_pool = [], 0, 0, 0, 0
     for ql in load_logs(run_name):
@@ -57,8 +60,8 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
             abstained += 1
         if ours is None or not ql.contexts:
             continue
-        # the corpus pool alone: three pools sit at three heights and their gap propped up rho
-        if not (ql.question and ql.question.marked_sources):
+        # half of one named predicate: three pools sit at three heights and their gap propped up rho
+        if not in_corpus(ql):
             off_pool += 1
             continue
         # our own outcome decides, not the standard's `nan`: the owner's rule of 06.09
@@ -71,20 +74,23 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
         if _outcome(ql) != Outcome.answered:
             off_pool += 1
             continue
-        if guest is None:
+        # the gate is the named predicate, and the branches above only say why a row is out
+        if not joins_both_judges(ql):
             continue
         kept.append({
             # the arm copies carry new log ids, so only the question joins a row to its twin
             "id": ql.id, "question_id": getattr(ql, "question_id", None),
             "run_name": ql.run_name, "pipeline": str(ql.pipeline),
-            "ours": ours / 10, "guest": guest,
+            "ours": to_unit(ql.faithfulness), "guest": guest,
             "overlap": overlap(ql.answer, ql.contexts),
             "code_share": code_share(ql.contexts),
-            "on_card": entry.get("on_card"),
+            # the row's own reading; on rows written before the pass stamp took the key it is it
+            "on_card": entry.get("on_card_at_this_row", entry.get("on_card")),
             "guest_precision": guest_score(ql, "ragas_context_precision"),
             "guest_recall": guest_score(ql, "ragas_context_recall"),
         })
-    return kept, {"refused_excluded": refused, "guest_abstained": abstained,
+    return kept, {"population": JOINS_BOTH_JUDGES,
+                  "refused_excluded": refused, "guest_abstained": abstained,
                   "refused_and_abstained": both, "outside_the_declared_population": off_pool}
 
 

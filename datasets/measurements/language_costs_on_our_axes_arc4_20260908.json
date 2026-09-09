@@ -1,0 +1,140 @@
+{
+  "what": "what our axes charge for an answer coming back in the language it was asked in",
+  "arms": {
+    "before": "arc4_baseline_rejudged (a copy of arc3_agent_baseline, judged now)",
+    "after": "arc4_lang_after"
+  },
+  "population": "the corpus pool, answered, paired by question_id; one predicate applied by this code",
+  "residency": "both arms judged in residency 2516, one engine; checked through evals.compare.residencies",
+  "drift_floor": {
+    "what": "the same arm judged across a reload, so the contrast measures its own floor",
+    "source": "arc3_agent_baseline against arc4_baseline_rejudged",
+    "by_axis": {
+      "faithfulness": {
+        "mean_delta": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "p": 1.0,
+        "n": 99,
+        "rows_that_moved": 0
+      },
+      "relevance": {
+        "mean_delta": -0.01,
+        "ci95": [
+          -0.131,
+          0.121
+        ],
+        "p": 0.8570818600685511,
+        "n": 99,
+        "rows_that_moved": 9
+      },
+      "completeness": {
+        "mean_delta": -0.061,
+        "ci95": [
+          -0.152,
+          0.0
+        ],
+        "p": 0.15729920705028502,
+        "n": 99,
+        "rows_that_moved": 2
+      }
+    }
+  },
+  "by_group": {
+    "switched_language": {
+      "faithfulness": {
+        "mean_delta": -0.971,
+        "ci95": [
+          -1.6,
+          -0.371
+        ],
+        "p": 0.005494341453402834,
+        "n": 35
+      },
+      "relevance": {
+        "mean_delta": -0.086,
+        "ci95": [
+          -0.857,
+          0.743
+        ],
+        "p": 0.5261838518051734,
+        "n": 35
+      },
+      "completeness": {
+        "mean_delta": -0.714,
+        "ci95": [
+          -1.429,
+          0.029
+        ],
+        "p": 0.05074784009629891,
+        "n": 35
+      }
+    },
+    "kept_language": {
+      "faithfulness": {
+        "mean_delta": 0.141,
+        "ci95": [
+          -0.438,
+          0.719
+        ],
+        "p": 0.7856023107003648,
+        "n": 64
+      },
+      "relevance": {
+        "mean_delta": -0.312,
+        "ci95": [
+          -0.812,
+          0.141
+        ],
+        "p": 0.26338749694670993,
+        "n": 64
+      },
+      "completeness": {
+        "mean_delta": -0.109,
+        "ci95": [
+          -0.562,
+          0.312
+        ],
+        "p": 0.551867456781661,
+        "n": 64
+      }
+    },
+    "all": {
+      "faithfulness": {
+        "mean_delta": -0.253,
+        "ci95": [
+          -0.687,
+          0.192
+        ],
+        "p": 0.18617306376096043,
+        "n": 99
+      },
+      "relevance": {
+        "mean_delta": -0.232,
+        "ci95": [
+          -0.646,
+          0.192
+        ],
+        "p": 0.2052054902504149,
+        "n": 99
+      },
+      "completeness": {
+        "mean_delta": -0.323,
+        "ci95": [
+          -0.717,
+          0.071
+        ],
+        "p": 0.09057757938022584,
+        "n": 99
+      }
+    }
+  },
+  "group_sizes": {
+    "switched_language": 35,
+    "kept_language": 64,
+    "all": 99
+  },
+  "reads": "the faithfulness drop sits entirely on the rows that changed language: -0.971 there, +0.141 where the language did not move. The language probe of 07.09 measured 0.964 by a different design, so this is a replication, not a second look at the same number"
+}
