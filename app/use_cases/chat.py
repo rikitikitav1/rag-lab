@@ -311,8 +311,8 @@ def answer_from_rows(
         ans = Answer(text=NO_RESULTS)
     else:
         user = f"{context}\n\nQuestion: {question}"
-        if language:
-            user += f"\n\n{_language_directive(language)}"
+        # always, not only when a run forced one: without it the model follows whatever it last read
+        user += f"\n\n{_language_directive(lang)}"
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
             user=user,
@@ -374,8 +374,10 @@ def _retrieval_snapshot(rows, sources) -> dict:
 
 
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
-                     ef_search: int | None = None, model: str | None = None) -> dict:
+                     ef_search: int | None = None, model: str | None = None,
+                     language: str | None = None) -> dict:
     return run_snapshot.of_run(
+        language=language,
         variant=variant,
         use_rerank=use_rerank,
         k=k,
@@ -416,7 +418,7 @@ def _log_answer(
             metrics={
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
-                    rerank_device, variant, ef_search, ans.metrics.model,
+                    rerank_device, variant, ef_search, ans.metrics.model, lang,
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand

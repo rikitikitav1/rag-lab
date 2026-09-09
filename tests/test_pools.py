@@ -7,6 +7,7 @@ def _log(kind=None, marked=None, answer="the corpus says hello", sources=(), met
          faithfulness=None):
     return SimpleNamespace(
         question=SimpleNamespace(kind=kind, marked_sources=marked or []),
+        question_text="the corpus says what",
         answer=answer,
         sources=[{"source": s} for s in sources],
         metrics=metrics or {},
@@ -100,7 +101,8 @@ def test_the_report_carries_a_bucket_for_every_outcome_the_enum_knows(monkeypatc
 
     log = SimpleNamespace(
         question=SimpleNamespace(original_text="q", marked_sources=["a.md"], kind=None),
-        metrics={}, answered=True, answer="the corpus says hello",
+        question_text="the corpus says what", metrics={}, answered=True,
+        answer="the corpus says hello",
         faithfulness=8, relevance=9, completeness=7, sources=[{"source": "a.md"}],
     )
     monkeypatch.setattr(generation_metrics, "load_logs", lambda run_name: [log])

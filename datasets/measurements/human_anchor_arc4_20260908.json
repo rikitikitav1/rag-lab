@@ -1,0 +1,108 @@
+{
+  "population": "corpus pool, answered, both our faithfulness and the guest's on the row",
+  "subgroups": "declared before the sheet was filled: same against cross language (the judge loses 0.964 of a point on Russian at the same meaning), and clean against a scaffolding leak in the answer body",
+  "pairs_offered": 15,
+  "pairs_answered": 15,
+  "ours": {
+    "n": 15,
+    "agreed": 4,
+    "share": 0.2667,
+    "by_outcome": {
+      "agreed": 4,
+      "missed": 5,
+      "disagreed": 6
+    },
+    "by_covariate": {
+      "same_language": {
+        "n": 10,
+        "agreed": 3,
+        "share": 0.3,
+        "by_outcome": {
+          "agreed": 3,
+          "missed": 5,
+          "disagreed": 2
+        }
+      },
+      "cross_language": {
+        "n": 5,
+        "agreed": 1,
+        "share": 0.2,
+        "by_outcome": {
+          "disagreed": 4,
+          "agreed": 1
+        }
+      },
+      "clean": {
+        "n": 10,
+        "agreed": 3,
+        "share": 0.3,
+        "by_outcome": {
+          "agreed": 3,
+          "disagreed": 3,
+          "missed": 4
+        }
+      },
+      "template_leak": {
+        "n": 5,
+        "agreed": 1,
+        "share": 0.2,
+        "by_outcome": {
+          "missed": 1,
+          "disagreed": 3,
+          "agreed": 1
+        }
+      }
+    }
+  },
+  "guest": {
+    "n": 15,
+    "agreed": 4,
+    "share": 0.2667,
+    "by_outcome": {
+      "disagreed": 6,
+      "missed": 5,
+      "agreed": 4
+    },
+    "by_covariate": {
+      "same_language": {
+        "n": 10,
+        "agreed": 2,
+        "share": 0.2,
+        "by_outcome": {
+          "disagreed": 3,
+          "missed": 5,
+          "agreed": 2
+        }
+      },
+      "cross_language": {
+        "n": 5,
+        "agreed": 2,
+        "share": 0.4,
+        "by_outcome": {
+          "agreed": 2,
+          "disagreed": 3
+        }
+      },
+      "clean": {
+        "n": 10,
+        "agreed": 3,
+        "share": 0.3,
+        "by_outcome": {
+          "disagreed": 3,
+          "agreed": 3,
+          "missed": 4
+        }
+      },
+      "template_leak": {
+        "n": 5,
+        "agreed": 1,
+        "share": 0.2,
+        "by_outcome": {
+          "missed": 1,
+          "disagreed": 3,
+          "agreed": 1
+        }
+      }
+    }
+  }
+}

@@ -118,8 +118,9 @@ def run(
     use_rerank = chat.resolve_rerank(use_rerank)
     policy = FallbackPolicy(fallback_policy or config.settings.agent.fallback_policy)
     system = prompt_repo.active_template(Purpose.agent_system)
-    if language:
-        system += f"\n\n{chat._language_directive(language)}"
+    # the question sits at the head of a transcript the tool answers fill: it needs saying out loud
+    lang = chat._resolve_language(question, language)
+    system += f"\n\n{chat._language_directive(lang)}"
     messages: list = [
         {"role": "system", "content": system},
         {"role": "user", "content": question},
@@ -129,9 +130,7 @@ def run(
     threshold = (
         topic_threshold
         if topic_threshold is not None
-        else config.settings.agent.topic_threshold_for(
-            chat._resolve_language(question, language)
-        )
+        else config.settings.agent.topic_threshold_for(lang)
     )
     # zero is how a run switches the axis off now that the config carries a default
     topic = Topic(threshold=threshold if threshold else None)
@@ -455,7 +454,7 @@ def _log_answer(
                     ),
                     mcp=mcp_names or [],
                     mcp_configured=mcp_configured or [],
-                    language=language,
+                    language=lang,
                 ),
             },
             prompt_tokens=result.prompt_tokens,

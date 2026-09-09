@@ -9,6 +9,8 @@ from evals.stats import mean_of, score_of
 from outcomes import Outcome
 from use_cases import rejudge
 
+import db
+
 # refusals and non-answers: shapes where the model said nothing to score
 _SAID_NOTHING = (
     Outcome.refused, Outcome.narrated_call, Outcome.exhausted, Outcome.error,
@@ -48,12 +50,34 @@ def _abstentions() -> dict:
     }
 
 
+# the run's own language when it recorded one, else the question's: answering the asker is the default
+def _target_language(ql) -> str | None:
+    asked = ((ql.metrics or {}).get("config") or {}).get("language")
+    return asked or (db.detect_language(ql.question_text) if ql.question_text else None)
+
+
+def _language_match(logs) -> dict:
+    # a narrated tool call is json, and json is not an answer in the wrong language
+    checked = [
+        ql for ql in logs
+        if ql.answer and _target_language(ql) and _outcome(ql) not in _SAID_NOTHING
+    ]
+    matched = sum(1 for ql in checked if db.detect_language(ql.answer) == _target_language(ql))
+    return {
+        "n": len(checked),
+        "matched": matched,
+        "share": round(matched / len(checked), 3) if checked else None,
+        "target": "the run's recorded language, or the question's where the run recorded none",
+        "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
+    }
+
+
 def _share(logs, outcome) -> str:
     return f"{sum(1 for ql in logs if _outcome(ql) == outcome)}/{len(logs)}"
 
 
-# 1 before `answered_ungrounded`; 2 adds those three; 3 where the axes abstain; 4 who settled
-SCHEMA = 4
+# 1 before `answered_ungrounded`; 2 those three; 3 abstention; 4 who settled; 5 the language
+SCHEMA = 5
 
 
 def evaluate(run_name=None, verbose=False) -> dict:
@@ -96,6 +120,8 @@ def evaluate(run_name=None, verbose=False) -> dict:
         "n_logs": len(logs),
         # a derived outcome is a guess about groundedness, and it must not read as a recorded one
         "outcomes_settled": sum(1 for ql in logs if settled(ql)),
+        # no model call and no judge: the same rule that picks the search config reads the answer
+        "language_match": _language_match(logs),
         "n_scored": n,
         "answered": sum(1 for ql in logs if ql.answered),
         "answer_rate": round(sum(1 for ql in logs if ql.answered) / len(logs), 3) if logs else None,
