@@ -486,7 +486,7 @@ def test_every_kind_of_report_declares_its_schema():
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
-    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 3)
+    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 4)
     # the equality report is a record too: what it compared moved once already
     assert replay.SCHEMA == 1
     # the reports this arc added or moved here: the guard is why the anchor left `scripts`

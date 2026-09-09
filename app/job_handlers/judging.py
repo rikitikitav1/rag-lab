@@ -249,11 +249,13 @@ def judge_language(options: dict) -> None:
     run_name = options.get("run_name") or "arc3_agent_baseline"
     rows = int(options.get("rows") or 40)
     job_id = options.get("_job_id")
+    # the control read out of regime twice, and nothing said whether the judge was whole on the card
     out = probe.measure(
         run_name, rows,
         note=lambda line: log.info("judge_language.pair", pair=line),
         stop=lambda: _stop_asked(job_id),
         log_ids=options.get("log_ids"),
+        stamp=_stamp(judge_width(options.get("judge_width")), _residency(job_id)),
     )
     # the path is derived, never taken from options: a number with no file cannot be cited
     where = measurements.record("judge_language", run_name, out)
