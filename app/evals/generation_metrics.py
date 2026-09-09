@@ -53,21 +53,24 @@ def _abstentions() -> dict:
 
 
 # the run's own language when it recorded one, else the question's: answering the asker is the default
-def _target_language(ql) -> str | None:
+def target_language(ql) -> str | None:
     from use_cases.chat import resolve_language
 
     asked = ((ql.metrics or {}).get("config") or {}).get("language")
     return resolve_language(ql.question_text, asked) if ql.question_text else asked
 
 
+# None where the question cannot be put: a narrated tool call is json, not an answer in a language
+def answered_in_target(ql) -> bool | None:
+    target = target_language(ql)
+    if not ql.answer or not target or _outcome(ql) in _SAID_NOTHING:
+        return None
+    return db.detect_language(ql.answer) == target
+
+
 def _language_match(logs) -> dict:
-    # a narrated tool call is json, and json is not an answer in the wrong language
-    wanted = [
-        (ql, _target_language(ql)) for ql in logs
-        if ql.answer and _outcome(ql) not in _SAID_NOTHING
-    ]
-    checked = [(ql, target) for ql, target in wanted if target]
-    matched = sum(1 for ql, target in checked if db.detect_language(ql.answer) == target)
+    checked = [got for got in (answered_in_target(ql) for ql in logs) if got is not None]
+    matched = sum(1 for got in checked if got)
     return {
         "n": len(checked),
         "matched": matched,

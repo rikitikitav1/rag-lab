@@ -466,9 +466,10 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     from evals.compare import residencies
 
     # every row that carries a residency carries an engine too: they were stamped together
-    def row(rid):
+    def row(rid, version=2):
         stamp = {"residency_id": rid, "engine": "ollama:11434"}
-        return SimpleNamespace(metrics={"faithfulness": stamp} if rid else {})
+        return SimpleNamespace(metrics={"faithfulness": stamp} if rid else {},
+                               prompts={"judge_faithfulness": version})
 
     same = residencies({"a": [row(7), row(7)], "b": [row(7)]})
     assert same["one_residency"] is True
@@ -486,19 +487,46 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     assert "nothing can be said" in half["read_this_first"], "an unknown residency comes first"
 
     # residency agrees and one arm never recorded an engine: that outranks any residency reading
-    quiet = SimpleNamespace(metrics={"faithfulness": {"residency_id": 7}})
+    quiet = SimpleNamespace(metrics={"faithfulness": {"residency_id": 7}},
+                            prompts={"judge_faithfulness": 2})
     mixed = residencies({"a": [quiet], "b": [row(7)]})
     assert mixed["one_residency"] is True and mixed["one_engine"] is None
     assert "recorded no engine" in mixed["read_this_first"]
 
     # two backends are not one instrument at all, and that outranks any residency reading
     def on(rid, engine):
-        return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid, "engine": engine}})
+        return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid, "engine": engine}},
+                               prompts={"judge_faithfulness": 2})
 
     split = residencies({"a": [on(7, "ollama:11434")], "b": [on(7, "api.example:443")]})
     assert split["one_engine"] is False
     assert "different engines" in split["read_this_first"], "the engine speaks before residency"
     assert split["one_residency"] is True, "the ids match, and that is exactly why it misleads"
+
+    # one residency, one engine, two rulers: the prompt version is the difference nobody read
+    rulers = residencies({"a": [row(7, version=2)], "b": [row(7, version=5)]})
+    assert rulers["one_judge_prompt"] is False and rulers["one_residency"] is True
+    assert "two rulers" in rulers["read_this_first"], "the ruler speaks before the reload"
+    assert rulers["judge_prompts_by_run"] == {"a": {"faithfulness": [2]}, "b": {"faithfulness": [5]}}
+
+    # three axes carry three versions, and their union is three even when both arms agree
+    def all_axes(version):
+        return SimpleNamespace(
+            metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}},
+            prompts={f"judge_{axis}": version
+                     for axis in ("faithfulness", "relevance", "completeness")},
+        )
+
+    wide = residencies({"a": [all_axes(2)], "b": [all_axes(2)]})
+    assert wide["one_judge_prompt"] is True, "one version per axis is one ruler, not three"
+
+    # a version nobody recorded cannot be compared, and that is not the same as a match
+    blank = SimpleNamespace(
+        metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}}, prompts={}
+    )
+    unknown = residencies({"a": [blank], "b": [row(7)]})
+    assert unknown["one_judge_prompt"] is None
+    assert "cannot be said" in unknown["read_this_first"]
 
 
 def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):

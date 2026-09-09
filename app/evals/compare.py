@@ -103,8 +103,8 @@ def paired(left, right, axis) -> dict:
     return result
 
 
-# 1 pools and blend; 2 the residency block; 3 the engine and the correlation's own population
-SCHEMA = 3
+# 1 pools and blend; 2 the residency block; 3 the engine and the population; 4 the judge's prompt
+SCHEMA = 4
 
 
 def compare(runs: dict[str, list]) -> dict:
@@ -155,12 +155,19 @@ def compare(runs: dict[str, list]) -> dict:
     }
 
 
-# an engine mismatch outranks a residency one: two backends are not one instrument at all
-def _what_to_read_first(one_engine: bool | None, one: bool | None) -> str | None:
+# in disqualifying order: a backend, then the ruler, then the reload, then what was not recorded
+def _what_to_read_first(
+    one_engine: bool | None, one_prompt: bool | None, one: bool | None
+) -> str | None:
     if one_engine is False:
         return (
             "arms judged on different engines are not comparable: batching, kernels and "
             "quantisation all differ, and residency does not even mean the same thing on both"
+        )
+    if one_prompt is False:
+        return (
+            "arms scored by different judge prompt versions are two rulers, not one instrument "
+            "read twice: unless the prompt is the treatment, this contrast measures the prompt"
         )
     if one is False:
         return (
@@ -174,12 +181,32 @@ def _what_to_read_first(one_engine: bool | None, one: bool | None) -> str | None
             "the residency matches, but at least one arm recorded no engine, so whether both ran "
             "on one backend cannot be said, and that outranks any reading of the residency"
         )
+    if one_prompt is None:
+        return (
+            "rows judged before the prompt version reached the row carry none, so whether both "
+            "arms were scored by one ruler cannot be said"
+        )
     return (
         "one residency is necessary, not sufficient: two arms with identical rows, order and "
         "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
         "than inheriting a zero. A reading that rests on the reason text holds only here, and "
         "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
     )
+
+
+# per axis, because three axes carry three versions and their union is three by construction
+def _one_ruler(by_run: dict) -> bool | None:
+    shared = [
+        axis for axis in {axis for versions in by_run.values() for axis in versions}
+        if all(versions.get(axis) for versions in by_run.values())
+    ]
+    if not by_run or not shared:
+        return None
+    for axis in shared:
+        seen = {v for versions in by_run.values() for v in versions[axis]}
+        if len(seen) != 1:
+            return False
+    return True
 
 
 # None where any arm is silent: an empty set used to drop out and read as agreement
@@ -193,9 +220,10 @@ def _all_agree(by_run: dict) -> bool | None:
 def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
 
-    seen, engines_seen = {}, {}
+    seen, engines_seen, prompts_seen = {}, {}, {}
     for name, logs in runs.items():
         ids, engines = set(), set()
+        versions = {axis: set() for axis in rejudge.AXES}
         for ql in logs:
             for axis in rejudge.AXES:
                 stamp = ((ql.metrics or {}).get(axis) or {})
@@ -203,16 +231,24 @@ def residencies(runs: dict[str, list]) -> dict:
                     ids.add(stamp["residency_id"])
                 if stamp.get("engine"):
                     engines.add(stamp["engine"])
-        seen[name], engines_seen[name] = sorted(ids), sorted(engines)
+                # the version sits beside the model, in `prompts`, and never reached the stamp
+                version = (ql.prompts or {}).get(f"judge_{axis}")
+                if version is not None:
+                    versions[axis].add(version)
+        seen[name] = sorted(ids)
+        engines_seen[name] = sorted(engines)
+        prompts_seen[name] = {axis: sorted(v) for axis, v in versions.items() if v}
     # an arm that recorded nothing cannot agree with one that did: silence is not a match
     one = _all_agree(seen)
-    one_engine = _all_agree(engines_seen)
+    one_engine, one_prompt = _all_agree(engines_seen), _one_ruler(prompts_seen)
     return {
         "by_run": seen,
         "one_residency": one,
         "engines_by_run": engines_seen,
         "one_engine": one_engine,
-        "read_this_first": _what_to_read_first(one_engine, one),
+        "judge_prompts_by_run": prompts_seen,
+        "one_judge_prompt": one_prompt,
+        "read_this_first": _what_to_read_first(one_engine, one_prompt, one),
     }
 
 

@@ -2,8 +2,10 @@ import pytest
 
 
 @pytest.fixture(scope="module")
-def anchor(script):
-    return script("human_anchor")
+def anchor():
+    from evals import human_anchor
+
+    return human_anchor
 
 
 def test_a_judge_that_called_the_pair_equal_where_a_human_did_not_has_missed(anchor):
@@ -137,3 +139,34 @@ def test_the_order_of_the_list_does_not_depend_on_the_answers(anchor):
     ]
     order = anchor._ordered(rows)
     assert [(a.question_id) for a, _ in order] == ["q1", "q2", "q3"]
+
+
+def test_the_covariates_a_pair_carries_are_the_ones_the_reading_buckets_by(anchor, monkeypatch):
+    # `build` wrote them and `mark` wrote them again, and only one of the two copies got fixed
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(anchor, "_language", lambda text: "ru" if text == "по-русски" else "en")
+    monkeypatch.setattr(anchor, "_hit_gold", lambda ql: False)
+    left = SimpleNamespace(id=1, run_name="a", answer="по-русски", question_text="q")
+    right = SimpleNamespace(id=2, run_name="b", answer="in english", question_text="q")
+
+    got = anchor._covariates(left, right)
+    assert got["cross_language"] is True
+    assert set(got) >= {"cross_language", "template_leak", "neither_hit_gold", "A", "B"}
+
+
+def test_a_missing_key_is_refused_by_name_and_not_by_a_traceback(anchor, tmp_path, monkeypatch):
+    # the library is imported by a job now, and `SystemExit` from a library kills the worker
+    monkeypatch.setattr(anchor, "HERE", tmp_path)
+    with pytest.raises(anchor.Refused):
+        anchor.read("20260908")
+    with pytest.raises(anchor.Refused):
+        anchor.read("nonsense")
+
+
+def test_the_letter_on_the_sheet_and_the_row_it_points_at_are_one_mapping(anchor):
+    # three copies of this lived in the module, and one of them was written inverted
+    sides = {"A": 11, "B": 22}
+    for letter in ("A", "B", "="):
+        assert anchor._letter_picked(sides, anchor._row_picked(sides, letter)) == letter
+    assert anchor._row_picked(sides, "B") == 22, "B is the right side, and it was once the left"

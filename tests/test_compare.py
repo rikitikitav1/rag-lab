@@ -30,6 +30,8 @@ def _log(
         question_id=question_id,
         question=SimpleNamespace(original_text="q", marked_sources=marked or [], kind=kind),
         metrics=metrics,
+        # a real row always has it, and the comparison reads it to say whether one ruler scored both
+        prompts={},
         answered=outcome == "answered",
         answer=_TEXT.get(outcome, _TEXT["answered"]),
         faithfulness=faith,
