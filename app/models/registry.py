@@ -1,9 +1,10 @@
 import re
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from orm import Base
-from sqlalchemy import Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Enum, ForeignKey, Numeric, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -59,17 +60,57 @@ class Pipeline(StrEnum):
     agent = "agent"
 
 
-class Model(Base):
-    __tablename__ = "models"
+class EngineKind(StrEnum):
+    ollama = "ollama"
+    vllm = "vllm"
+    openai_compatible = "openai_compatible"
+
+
+# what the engine takes from the machine; `remote` is an answer, not a missing value
+class Placement(StrEnum):
+    gpu = "gpu"
+    cpu = "cpu"
+    gpu_and_cpu = "gpu+cpu"
+    remote = "remote"
+
+
+class Engine(Base):
+    __tablename__ = "engines"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(unique=True)
+    kind: Mapped[EngineKind] = mapped_column(Enum(EngineKind, native_enum=False))
+    # the address and the key live in the environment; a row you can read a key out of leaks
+    env_prefix: Mapped[str]
+    placement: Mapped[Placement] = mapped_column(Enum(Placement, native_enum=False))
+    budget: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+    spent: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
+    # taken at the door and released at the end: two jobs pass the same check at once otherwise
+    reserved: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"Engine(id={self.id!r}, name={self.name!r}, kind={self.kind!r})"
+
+
+class Model(Base):
+    __tablename__ = "models"
+    # one name on two engines is two rows, and the same weights under two quantisations are two too
+    __table_args__ = (UniqueConstraint("engine_id", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+    engine_id: Mapped[int] = mapped_column(ForeignKey("engines.id", ondelete="RESTRICT"))
+    engine: Mapped[Engine] = relationship()
+    # null is not "the same weights": a comparison reads it as unknown and refuses
+    weights: Mapped[str | None] = mapped_column(default=None)
+    quant: Mapped[str | None] = mapped_column(default=None)
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )
 
     def __repr__(self) -> str:
-        return f"Model(id={self.id!r}, name={self.name!r}, status={self.status!r})"
+        return f"Model(id={self.id!r}, name={self.name!r}, engine_id={self.engine_id!r})"
 
 
 class ModelRole(Base):
