@@ -3,7 +3,15 @@ import sys
 
 import limits
 from evals.loaders import load_logs
-from evals.pools import ALL_OUTCOMES, POOLS, has_remote_evidence, outcome, split
+from evals.pools import (
+    ALL_OUTCOMES,
+    IN_CORPUS_AND_ANSWERED,
+    POOLS,
+    has_remote_evidence,
+    in_corpus_and_answered,
+    outcome,
+    split,
+)
 from evals.stats import delta_stats, deltas_over, mean_of, tally
 from use_cases import rejudge
 
@@ -132,40 +140,64 @@ def compare(runs: dict[str, list]) -> dict:
     return {
         "runs": names,
         "residency": residencies(runs),
+        # the same call the correlation narrows by: two reports of one run must not disagree on n
+        "correlation_population": {
+            "predicate": IN_CORPUS_AND_ANSWERED,
+            "n": {name: sum(1 for ql in logs if in_corpus_and_answered(ql))
+                  for name, logs in runs.items()},
+        },
         "pools": pools,
         "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
     }
+
+
+# an engine mismatch outranks a residency one: two backends are not one instrument at all
+def _what_to_read_first(one_engine: bool | None, one: bool | None) -> str | None:
+    if one_engine is False:
+        return (
+            "arms judged on different engines are not comparable: batching, kernels and "
+            "quantisation all differ, and residency does not even mean the same thing on both"
+        )
+    if one is False:
+        return (
+            "arms judged across a reload are not comparable directly: the same judge moves 14% of "
+            "its scores and 58% of its reason texts on byte-identical input"
+        )
+    if one is None:
+        return "rows judged before this was recorded carry no residency, so nothing can be said"
+    return (
+        "one residency is necessary, not sufficient: two arms with identical rows, order and "
+        "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
+        "than inheriting a zero. A reading that rests on the reason text holds only here, and "
+        "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
+    )
 
 
 # two arms judged across a reload are two instruments: 14% of scores move on identical input
 def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
 
-    seen = {}
+    seen, backends = {}, {}
     for name, logs in runs.items():
-        ids = set()
+        ids, engines = set(), set()
         for ql in logs:
             for axis in rejudge.AXES:
-                got = ((ql.metrics or {}).get(axis) or {}).get("residency_id")
-                if got is not None:
-                    ids.add(got)
-        seen[name] = sorted(ids)
+                stamp = ((ql.metrics or {}).get(axis) or {})
+                if stamp.get("residency_id") is not None:
+                    ids.add(stamp["residency_id"])
+                if stamp.get("engine"):
+                    engines.add(stamp["engine"])
+        seen[name], backends[name] = sorted(ids), sorted(engines)
     known = [v for v in seen.values() if v]
     one = len({i for v in known for i in v}) == 1 if known else None
+    told = [v for v in backends.values() if v]
+    one_engine = len({e for v in told for e in v}) == 1 if told else None
     return {
         "by_run": seen,
         "one_residency": one,
-        "read_this_first": (
-            "arms judged across a reload are not comparable directly: the same judge moves 14% of "
-            "its scores and 58% of its reason texts on byte-identical input"
-            if one is False else
-            "rows judged before this was recorded carry no residency, so nothing can be said"
-            if one is None else
-            "one residency is necessary, not sufficient: two arms with identical rows, order and "
-            "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
-            "than inheriting a zero. A reading that rests on the reason text holds only here, and "
-            "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
-        ),
+        "engines_by_run": backends,
+        "one_engine": one_engine,
+        "read_this_first": _what_to_read_first(one_engine, one),
     }
 
 

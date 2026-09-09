@@ -165,6 +165,13 @@ def server_context_length(model: str) -> int | None:
     return window
 
 
+# until an engine layer exists (arc 5), the backend is named by where it is served from
+def engine() -> str:
+    from urllib.parse import urlsplit
+
+    return urlsplit(LLM_BASE).netloc or LLM_BASE
+
+
 def list_models():
     return [m["name"] for m in _get_request("/api/tags")["models"]]
 

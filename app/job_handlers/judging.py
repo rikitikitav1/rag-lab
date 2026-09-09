@@ -181,7 +181,7 @@ def judge_answers(options: dict) -> None:
     force = bool(options.get("log_ids"))
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
-    residency = _residency_id(job_id)
+    residency = _residency(job_id)
     judged = 0
 
     def one(log_id):
@@ -277,8 +277,9 @@ def judge_guest_axes(options: dict) -> None:
     budget = set(log_ids)
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
-    stamp = _stamp(width, _residency_id(job_id))
-    started_on_card = judge_on_card()
+    seen = _residency(job_id)
+    stamp = _stamp(width, seen)
+    started_on_card = seen.on_card
 
     def one(log_id):
         if _stop_asked(job_id):
@@ -448,16 +449,41 @@ def _bench_from(options: dict) -> judge.Bench:
     )
 
 
+@dataclass(frozen=True)
+class Residency:
+    id: int | None
+    on_card: bool | None
+
+
 # `/api/ps` carries no load moment, so a residency is named by the pass that caused the load
-def _residency_id(job_id) -> int | None:
+def _residency(job_id) -> Residency:
     try:
-        if judge_on_card() is None:
-            return job_id
-        return _last_residency() or job_id
+        on_card = judge_on_card()
+        # partly on the card is a different instrument: layers on the cpu answer with other kernels
+        if on_card is not True:
+            return Residency(job_id, on_card)
+        prev = _last_residency()
+        # `/api/ps` cannot say who loaded what between two passes, but the queue can
+        if prev is None or _loaded_since(prev, job_id):
+            return Residency(job_id, on_card)
+        return Residency(prev, on_card)
     except Exception as e:
         # a reading about the card must not take down the pass that only wanted to stamp itself
         log.warning("judge.residency_unknown", error=str(e))
-        return None
+        return Residency(None, None)
+
+
+def _loaded_since(prev: int, job_id) -> bool:
+    import job_specs
+    from models.jobs import Job, JobStatus
+
+    with Session() as session:
+        types = session.scalars(
+            select(Job.type)
+            .where(Job.id > prev, Job.status == JobStatus.done)
+            .where(Job.id != job_id if job_id is not None else True)
+        )
+        return any(job_specs.disturbs_the_judge(t) for t in types)
 
 
 def _last_residency() -> int | None:
@@ -477,16 +503,21 @@ def _last_residency() -> int | None:
 
 
 # once per row, not per axis: the width belongs to the pass and the sampler to the role
-def _stamp(width: int, residency: int | None = None) -> dict:
+def _stamp(width: int, residency: Residency | None = None) -> dict:
     from datetime import datetime, timezone
 
+    seen = residency or Residency(None, None)
     sampler = llm.sampler_of("judging")
     return {
         # at temperature zero this says the sampler took no part, not that the pass repeats
         "seed": sampler.get("seed"),
         "width": width,
         # two arms are comparable only inside one residency, and this is how a reader checks
-        "residency_id": residency,
+        "residency_id": seen.id,
+        # a pass that found the judge half on the cpu is not the pass that found it whole
+        "on_card": seen.on_card,
+        # numbers from two backends must not add up silently, so the record names its own
+        "engine": llm.engine(),
         "judged_at": datetime.now(timezone.utc).isoformat(),
         # `/api/ps` does not report slots, so the record names the mirror it was capped by
         "slots_believed": _parallel_slots(),

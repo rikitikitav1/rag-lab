@@ -49,6 +49,16 @@ def test_an_error_at_the_hop_cap_is_exhaustion_not_a_crash():
     assert pools.outcome(crashed) == "error"
 
 
+def test_a_row_without_its_own_ceiling_is_not_judged_by_todays_config(monkeypatch):
+    # the ceiling has only ever been 4; pinning it means moving the config never rewrites history
+    import config
+
+    old = _log(answer="", metrics={"outcome": "error", "hops": 4})
+    assert pools.outcome(old) == "exhausted"
+    monkeypatch.setattr(config.settings.agent, "max_hops", 9)
+    assert pools.outcome(old) == "exhausted", "history keeps the ceiling it actually ran under"
+
+
 def test_a_guard_that_fired_stays_an_error_at_the_same_hop_count():
     guarded = _log(
         answer="",

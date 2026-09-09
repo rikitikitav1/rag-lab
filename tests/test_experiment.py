@@ -480,7 +480,7 @@ def test_every_kind_of_report_declares_its_schema():
     from evals import generation_metrics, judge_correlation, retrieval_metrics
     from use_cases import experiment, rejudge, retrieval_compare, run_snapshot
 
-    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (3, 4, 2)
+    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (4, 4, 2)
     # the summaries the report is computed from, and the row snapshot they are computed over
     assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (3, 6, 3)
     # the judge-against-judge report is a record of its own, and its predictions were declared
@@ -734,8 +734,8 @@ def test_a_retrieval_report_reads_back_with_the_arms_it_has():
     assert read["deltas"] == {"b": {"against": "a"}}
 
 
-# every key the generation report carries under schema 3
-SCHEMA_3_SHAPE = [
+# every key the generation report carries under schema 4
+SCHEMA_4_SHAPE = [
     ".composite.axes[]",
     ".composite.k",
     ".composite.method",
@@ -745,9 +745,12 @@ SCHEMA_3_SHAPE = [
     ".composite.pairwise.comparisons.<pair>.relevance",
     ".composite.pairwise.family",
     ".composite.pairwise.method",
+    ".composite.pairwise.population",
     ".composite.pairwise.tests",
     ".composite.ranking[].rrf",
     ".composite.ranking[].value",
+    ".composite.rows_by_population.<arm>.all_rows",
+    ".composite.rows_by_population.<arm>.paired_in_corpus_and_answered",
     ".composite.winner",
     ".param",
     ".per_value.<arm>.answer_rate",
@@ -798,12 +801,13 @@ def test_the_generation_report_declares_a_new_schema_when_its_shape_moves(monkey
 
     report = exp.compute_results("run", ["a", "b"], ["a", "b"])
     shape = sorted({
-        re.sub(r"\.per_value\.[ab]\.", ".per_value.<arm>.", p).replace("a_vs_b", "<pair>")
+        re.sub(r"\.(per_value|rows_by_population)\.[ab]\.", r".\1.<arm>.", p)
+        .replace("a_vs_b", "<pair>")
         for p in _shape_of(report)
     })
 
-    # every key the record carries under schema 3
-    assert (exp.SCHEMA, shape) == (3, SCHEMA_3_SHAPE)
+    # every key the record carries under schema 4
+    assert (exp.SCHEMA, shape) == (4, SCHEMA_4_SHAPE)
 
 
 def test_a_hop_budget_is_bounded_at_every_door_that_takes_one(client):

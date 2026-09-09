@@ -1,4 +1,3 @@
-import config
 import outcomes
 from evals.stats import score_of
 from outcomes import Outcome
@@ -21,6 +20,10 @@ def kind(ql) -> str:
     return kind_of_question(ql.question if ql else None)
 
 
+# pinned, not live: max_hops has only ever been 4, so a row keeps the ceiling it ran under
+_CEILING_BEFORE_ROWS_RECORDED_IT = 4
+
+
 # the row says which edge ended it; the ceiling is re-derived only for rows written before it did
 def _exhausted(metrics: dict, snapshot: dict) -> bool:
     from use_cases.agent_policy import FinishedBy
@@ -30,7 +33,7 @@ def _exhausted(metrics: dict, snapshot: dict) -> bool:
     if said and said != FinishedBy.unrecorded:
         return said == FinishedBy.hops_exhausted and not metrics.get("failed")
     its_ceiling = snapshot.get("max_hops")
-    ceiling = config.settings.agent.max_hops if its_ceiling is None else its_ceiling
+    ceiling = _CEILING_BEFORE_ROWS_RECORDED_IT if its_ceiling is None else its_ceiling
     return (
         metrics.get("hops") is not None
         and metrics["hops"] >= ceiling
@@ -54,6 +57,18 @@ def outcome(ql) -> str:
         exhausted=exhausted,
         grounded=None if ql.faithfulness is None else score_of(ql.faithfulness) > 0,
     )
+
+
+# named once so a report and a correlation cannot narrow differently and be read side by side
+IN_CORPUS_AND_ANSWERED = "the corpus pool, answered: marked sources, and our own outcome `answered`"
+
+
+def in_corpus(ql) -> bool:
+    return bool(ql.question and ql.question.marked_sources)
+
+
+def in_corpus_and_answered(ql) -> bool:
+    return in_corpus(ql) and outcome(ql) == Outcome.answered
 
 
 def has_remote_evidence(ql) -> bool:

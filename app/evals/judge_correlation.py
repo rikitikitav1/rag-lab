@@ -10,6 +10,7 @@ import statistics
 
 from evals.generation_metrics import _outcome, score_of
 from evals.loaders import load_logs
+from evals.pools import IN_CORPUS_AND_ANSWERED, in_corpus
 from outcomes import Outcome
 from scipy.stats import spearmanr
 from use_cases.ingest_quality import code_fraction
@@ -57,8 +58,8 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
             abstained += 1
         if ours is None or not ql.contexts:
             continue
-        # the corpus pool alone: three pools sit at three heights and their gap propped up rho
-        if not (ql.question and ql.question.marked_sources):
+        # half of one named predicate: three pools sit at three heights and their gap propped up rho
+        if not in_corpus(ql):
             off_pool += 1
             continue
         # our own outcome decides, not the standard's `nan`: the owner's rule of 06.09
@@ -84,7 +85,8 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
             "guest_precision": guest_score(ql, "ragas_context_precision"),
             "guest_recall": guest_score(ql, "ragas_context_recall"),
         })
-    return kept, {"refused_excluded": refused, "guest_abstained": abstained,
+    return kept, {"population": IN_CORPUS_AND_ANSWERED,
+                  "refused_excluded": refused, "guest_abstained": abstained,
                   "refused_and_abstained": both, "outside_the_declared_population": off_pool}
 
 

@@ -4,6 +4,7 @@ import logging_setup
 import numpy as np
 from evals import generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
+from evals.pools import in_corpus_and_answered
 from evals.stats import annotate_holm, deltas_over, score_of
 from evals.stats import delta_stats as _delta_stats
 from models.eval import Question, QuestionLog
@@ -85,15 +86,29 @@ def _compare_question_sets(set_a: list, set_b: list) -> dict:
     return out
 
 
+# the population this report actually walks, said in the report so a reader never has to derive it
+BLENDED = (
+    "every row of both runs that pairs by question_id, all pools blended: a delta here mixes"
+    " pools that sit at different heights, and on 07.09 that read +1.507 where the corpus pool"
+    " alone read +0.19 [-0.25, 0.62]"
+)
+
+
+def _pool_counts(runs: dict[str, list]) -> dict:
+    return {name: {"paired_in_corpus_and_answered":
+                   sum(1 for ql in logs if in_corpus_and_answered(ql)), "all_rows": len(logs)}
+            for name, logs in runs.items()}
+
+
 def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
     tests = [s for axes in comparisons.values() for s in axes.values() if s is not None]
     # a reader who declared a narrower family before the run corrects over that one, and says so
     family = annotate_holm(tests, "every pair of the grid on every axis", alpha)
-    return {"comparisons": comparisons, **family}
+    return {"comparisons": comparisons, "population": BLENDED, **family}
 
 
-# 1 before the field; 2 Bonferroni; 3 Holm, the family named, `answered_ungrounded` read
-SCHEMA = 3
+# 1 before the field; 2 Bonferroni; 3 Holm and the family named; 4 the population named and counted
+SCHEMA = 4
 
 
 def compute_results(param: str, param_values: list, run_names: list[str]) -> dict:
@@ -152,6 +167,10 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
             "ranking": [{"value": v, "rrf": round(s, 5)} for v, s in ranking],
             "winner": winner,
             "pairwise": _annotate_significance(comparisons),
+            # counted by the report, not by the reader: the gap to `all_rows` is the blend
+            "rows_by_population": _pool_counts(
+                {v: load_logs(rn) for v, rn in run_by_value.items()}
+            ),
         },
     }
 

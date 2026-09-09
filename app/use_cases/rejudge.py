@@ -432,8 +432,8 @@ def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> d
         ),
         "better": tally(deltas)["better"],
         "worse": tally(deltas)["worse"],
-        # the interval says how big, this says whether a family of them survives together
-        "p": 1.0 if all(d == 0 for d in deltas) else round(float(wilcoxon(deltas).pvalue), 6),
+        # raw, or two precisions meet in one family: this says whether a family survives together
+        "p": 1.0 if all(d == 0 for d in deltas) else float(wilcoxon(deltas).pvalue),
     }
 
 

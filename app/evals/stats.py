@@ -17,7 +17,8 @@ def delta_stats(deltas: list, rng=None) -> dict:
             round(float(np.percentile(boot_means, 2.5)), 3),
             round(float(np.percentile(boot_means, 97.5)), 3),
         ],
-        "p": round(p, 4),
+        # raw: `annotate_holm` decides on this, and rounding only ever lets a test past the bar
+        "p": p,
         "n": int(arr.size),
     }
 
