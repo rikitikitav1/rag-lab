@@ -1,7 +1,7 @@
 import sys
 
 from evals.loaders import load_logs
-from evals.pools import ALL_OUTCOMES, split
+from evals.pools import ALL_OUTCOMES, settled, split
 from evals.pools import has_remote_evidence as _has_remote_evidence
 from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
@@ -52,8 +52,8 @@ def _share(logs, outcome) -> str:
     return f"{sum(1 for ql in logs if _outcome(ql) == outcome)}/{len(logs)}"
 
 
-# 1 before `answered_ungrounded`; 2 adds those three; 3 says where the axes abstain
-SCHEMA = 3
+# 1 before `answered_ungrounded`; 2 adds those three; 3 where the axes abstain; 4 who settled
+SCHEMA = 4
 
 
 def evaluate(run_name=None, verbose=False) -> dict:
@@ -94,6 +94,8 @@ def evaluate(run_name=None, verbose=False) -> dict:
         # what the silence in an axis means: an abstention is not a low score and not a missing pass
         "axes_abstain_on": _abstentions(),
         "n_logs": len(logs),
+        # a derived outcome is a guess about groundedness, and it must not read as a recorded one
+        "outcomes_settled": sum(1 for ql in logs if settled(ql)),
         "n_scored": n,
         "answered": sum(1 for ql in logs if ql.answered),
         "answer_rate": round(sum(1 for ql in logs if ql.answered) / len(logs), 3) if logs else None,

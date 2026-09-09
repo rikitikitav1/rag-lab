@@ -41,8 +41,15 @@ def _exhausted(metrics: dict, snapshot: dict) -> bool:
     )
 
 
+def settled(ql) -> bool:
+    return bool((ql.metrics or {}).get("settled_outcome"))
+
+
 def outcome(ql) -> str:
     metrics = ql.metrics or {}
+    # only the judge can settle groundedness, so only its key is trusted whole
+    if metrics.get("settled_outcome"):
+        return metrics["settled_outcome"]
     recorded = metrics.get("outcome")
     if recorded in (Outcome.narrated_call, Outcome.exhausted):
         return recorded

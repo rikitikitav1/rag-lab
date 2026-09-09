@@ -421,6 +421,8 @@ def _log_answer(
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand
                 "context_chars": len(context) if context else 0,
+                # what this path can know now; groundedness waits for the judge, see `outcome_settled`
+                "outcome": outcomes.classify(ans.text, bool(ans.sources)),
                 # the one fact both the judge and the report may read: neither re-derives it
                 "refusal": outcomes.reads_as_refusal(ans.text),
             },

@@ -24,6 +24,21 @@ def _row(**over):
     return SimpleNamespace(**{**base, **over})
 
 
+def test_the_judge_settling_an_outcome_does_not_break_a_replay():
+    # `outcome` is what the answer knew; the judge writes `settled_outcome` beside it, never over it
+    from types import SimpleNamespace
+
+    from evals import replay
+
+    row = SimpleNamespace(
+        transcript=[], sources=[], chunks=[], contexts=[],
+        metrics={"outcome": "answered", "settled_outcome": "answered_ungrounded",
+                 "fallback_reason": "none"},
+        prompts={},
+    )
+    assert replay._recorded(row)["outcome"] == "answered", "the judge must not move what is compared"
+
+
 def test_only_the_model_turns_come_back_as_turns():
     # a replay must ask the model nothing, or it compares two samplings instead of two graphs
     turns = replay.turns_of(_row().transcript)

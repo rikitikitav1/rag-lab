@@ -512,6 +512,27 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     assert j._residency(42) == j.Residency(42, True), "something loaded since, so this is new"
 
 
+def test_the_judge_settles_the_outcome_it_alone_can_know():
+    from types import SimpleNamespace
+
+    from job_handlers import judging
+
+    def row(outcome, faithfulness):
+        snap = judging._Snapshot({"outcome": outcome} if outcome else {}, {}, {})
+        judging._settle_outcome(SimpleNamespace(faithfulness=faithfulness), snap)
+        return snap.metrics
+
+    zero = row("answered", "0")
+    assert zero["settled_outcome"] == "answered_ungrounded", "zero means it stood on nothing"
+    assert zero["outcome"] == "answered", "what the answer knew never changes, or a replay breaks"
+    assert row("answered", "7")["settled_outcome"] == "answered"
+    assert row("refused", "0")["settled_outcome"] == "refused", "a refusal is not an answer"
+
+    # nothing to settle, and nothing claimed: an unjudged row must not look settled
+    assert row(None, "7") == {}
+    assert "settled_outcome" not in row("answered", None)
+
+
 def test_a_job_type_nobody_classified_is_assumed_to_evict_the_judge():
     # the safe way round: a new type is a stranger, and a stranger is assumed to take the card
     import job_specs

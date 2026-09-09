@@ -601,6 +601,7 @@ def _merge_our_scores(log_id: int, taken: dict, skip, stamp: dict, force: bool) 
                 if axis not in still and not force:
                     continue
                 wrote |= _apply_axis(ql, snapshot, axis, v, err, stamp)
+            _settle_outcome(ql, snapshot)
             ql.metrics = snapshot.metrics
             ql.prompts = snapshot.prompts
             ql.models = snapshot.models
@@ -610,6 +611,21 @@ def _merge_our_scores(log_id: int, taken: dict, skip, stamp: dict, force: bool) 
         # a verdict nobody could write is a verdict nobody took: the row stays owed
         log.error("judge.not_written", log_id=log_id, error=str(e))
         return False
+
+
+# groundedness is unknowable when the answer is written, so the judge is what settles the outcome
+def _settle_outcome(ql, snapshot) -> None:
+    from evals.stats import score_of
+    from outcomes import Outcome
+
+    said = snapshot.metrics.get("outcome")
+    if said is None or ql.faithfulness is None:
+        return
+    # a separate key: `outcome` is what the answer knew, and a replay compares row to row on it
+    ungrounded = said == Outcome.answered and score_of(ql.faithfulness) == 0
+    snapshot.metrics["settled_outcome"] = str(
+        Outcome.answered_ungrounded if ungrounded else said
+    )
 
 
 @dataclass
