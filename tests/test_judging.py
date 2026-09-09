@@ -552,7 +552,7 @@ def test_a_job_type_nobody_classified_is_assumed_to_evict_the_judge():
     import job_specs
 
     assert not job_specs.disturbs_the_judge("judge_answers")
-    assert not job_specs.disturbs_the_judge("judge_guest_axes"), "guests ride the judge's model"
+    assert job_specs.disturbs_the_judge("judge_guest_axes"), "relevancy loads the embedder too"
     assert job_specs.disturbs_the_judge("eval_run")
     assert job_specs.disturbs_the_judge("judge_language"), "the probe answers on the generator"
     assert job_specs.disturbs_the_judge("a_type_invented_next_year")

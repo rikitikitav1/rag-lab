@@ -60,6 +60,7 @@ class OurEmbeddings(BaseRagasEmbeddings):
     def __init__(self, role: str = EMBEDDING_ROLE):
         from ragas.run_config import RunConfig
 
+        super().__init__()
         self.role = role
         self.set_run_config(RunConfig(max_retries=1, max_wait=1))
 
@@ -90,5 +91,7 @@ def stamp() -> dict:
         "ragas": version("ragas"),
         "model": llm.resolve_name(ROLE),
         "role": ROLE,
+        # one guest measures with vectors, and its embedder never reached the record
+        "embedding_model": llm.resolve_name(EMBEDDING_ROLE),
         "runtime": _runtime(),
     }

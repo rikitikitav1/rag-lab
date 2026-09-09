@@ -811,6 +811,22 @@ def test_the_generation_report_declares_a_new_schema_when_its_shape_moves(monkey
     assert (exp.SCHEMA, shape) == (4, SCHEMA_4_SHAPE)
 
 
+def test_the_holm_door_returns_the_tests_it_promises_not_their_count():
+    # the summary carries its own `tests` as a count, and spreading it used to eat the list
+    import mcp_ops
+    import pytest
+    from fastmcp.exceptions import ToolError
+
+    got = mcp_ops.holm_over({"a": 0.001, "b": 0.04, "c": 0.3}, "three arms from two experiments")
+    assert got["n"] == 3 and got["family"] == "three arms from two experiments"
+    assert [t["name"] for t in got["tests"]] == ["a", "b", "c"]
+    assert [t["significant_holm"] for t in got["tests"]] == [True, False, False]
+    assert got["tests"][0]["holm_threshold"] == 0.01667
+
+    with pytest.raises(ToolError):
+        mcp_ops.holm_over({}, "a family of nothing")
+
+
 def test_a_hop_budget_is_bounded_at_every_door_that_takes_one(client):
     from use_cases.agent_policy import MAX_HOPS
 

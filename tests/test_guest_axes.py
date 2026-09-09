@@ -120,7 +120,7 @@ def test_a_guest_number_says_at_which_width_and_on_what_card_it_was_taken(monkey
     judging._score_guests(1, {"seed": 0, "width": 4})
     written = ql.metrics["ragas_faithfulness"]
     assert written["width"] == 4 and written["seed"] == 0 and written["score"] == 1.0
-    assert written["on_card"] is False
+    assert written["on_card_at_this_row"] is False, "the row's own reading, beside the pass's"
 
 
 def test_a_guest_number_names_the_process_that_took_it(monkeypatch):

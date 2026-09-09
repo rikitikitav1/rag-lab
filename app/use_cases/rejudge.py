@@ -4,7 +4,7 @@ import re
 
 import prompt_repo
 from evals import guest_axes, sampling
-from evals.stats import annotate_holm, deltas_over, mean_of, tally
+from evals.stats import annotate_holm, deltas_over, mean_of, tally, wilcoxon_p
 from models.eval import QuestionLog
 from models.registry import (
     MAX_MODEL_NAME,
@@ -17,7 +17,6 @@ from models.registry import (
     Status,
 )
 from orm.sync_db import Session
-from scipy.stats import wilcoxon
 from sqlalchemy import delete, func, insert, literal, select, text
 from use_cases import judge, retrieval_compare
 from use_cases.retrieval_compare import bootstrap_ci, half_of
@@ -433,7 +432,7 @@ def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> d
         "better": tally(deltas)["better"],
         "worse": tally(deltas)["worse"],
         # raw, or two precisions meet in one family: this says whether a family survives together
-        "p": 1.0 if all(d == 0 for d in deltas) else float(wilcoxon(deltas).pvalue),
+        "p": wilcoxon_p(deltas),
     }
 
 

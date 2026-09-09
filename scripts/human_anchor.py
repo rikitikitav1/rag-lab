@@ -19,6 +19,7 @@ from pathlib import Path
 from evals.loaders import load_logs
 from evals.measurements import hand_back, record
 from evals.pools import in_corpus_and_answered
+from evals.stats import to_unit
 
 GUEST = "ragas_faithfulness"
 SEED = 20260908
@@ -41,10 +42,13 @@ def _rows():
     return sorted(kept, key=lambda ql: ql.id)
 
 
-# the judge loses 0.964 of a point on Russian at the same meaning, so language is a covariate here
+# the project's own rule, not a second one: containment over what retrieval actually returned
 def _hit_gold(ql) -> bool:
-    gold = set((ql.question.marked_sources if ql.question else None) or [])
-    return bool(gold & {x.get("source") for x in (ql.sources or [])})
+    from evals import retrieval_metrics
+
+    gold = (ql.question.marked_sources if ql.question else None) or []
+    _, _, names = retrieval_metrics.retrieved_sources(ql)
+    return any(retrieval_metrics.is_gold(one, gold) for one in names)
 
 
 LEAKS = (
@@ -62,6 +66,7 @@ def _leak(ql) -> str:
     return "echoed_the_question" if asked and asked in head else ""
 
 
+# the judge loses 0.964 of a point on Russian at the same meaning, so language is a covariate
 def _language(text: str) -> str:
     import db
 
@@ -69,7 +74,7 @@ def _language(text: str) -> str:
 
 
 def _deltas(a, b) -> tuple[float, float]:
-    return int(a.faithfulness) / 10 - int(b.faithfulness) / 10, _guest(a) - _guest(b)
+    return to_unit(a.faithfulness) - to_unit(b.faithfulness), _guest(a) - _guest(b)
 
 
 # declared before the owner sees a single answer: contested first, then whatever separates most
@@ -122,15 +127,13 @@ def _context_block(left, right) -> str:
 
 # answers travel by the pair of rows, never by the pair number: a rebuild renumbers and may flip
 def _already(stamp: str) -> dict:
-    key_path = HERE / f"human_anchor_key_{stamp}.json"
+    key_path = _key_path(stamp)
     if not key_path.exists():
         return {}
     key = json.loads(key_path.read_text(encoding="utf-8"))
-    sheet = Path(key["sheets"]["sitting"])
-    if not sheet.exists():
-        return {}
-    said = _picked(sheet)
-    # pruned answers live in the done file, and a rebuild that forgot them would ask them again
+    # a sheet pruned to nothing still has its answers: they moved to the done file
+    sheet = _sheet_path(stamp, "sitting")
+    said = _picked(sheet) if sheet.exists() else {}
     done_path = _done_path(stamp)
     if done_path.exists():
         earlier = json.loads(done_path.read_text(encoding="utf-8"))
@@ -234,8 +237,8 @@ def build(on: date | None = None) -> dict:
         },
     }
     # the sheet he filled must be the sheet this key describes, or the pairs join to the wrong rows
-    key["sheet_md5"] = _fingerprint(first.read_text(encoding="utf-8"))
-    where = HERE / f"human_anchor_key_{stamp}.json"
+    key["sheet_fingerprint"] = _fingerprint(first.read_text(encoding="utf-8"))
+    where = _key_path(stamp)
     where.write_text(json.dumps(key, indent=2, ensure_ascii=False), encoding="utf-8")
     hand_back(where)
     return {"sheet": str(first), "repeats": str(second), "key": str(where), "pairs": len(sitting)}
@@ -247,7 +250,7 @@ def _fingerprint(text: str) -> str:
         "ANSWER LINE" if "подкреплён контекстом" in line else line
         for line in text.splitlines()
     )
-    return hashlib.md5(body.encode("utf-8")).hexdigest()
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 # covariates onto an existing key, without regenerating a sheet somebody is in the middle of
@@ -256,7 +259,7 @@ def mark(stamp: str) -> dict:
     from orm.sync_db import Session
     from sqlalchemy import select
 
-    key_path = HERE / f"human_anchor_key_{stamp}.json"
+    key_path = _key_path(stamp)
     key = json.loads(key_path.read_text(encoding="utf-8"))
     wanted = {side["log_id"] for group in key["pairs"].values() for p in group
               for side in (p["A"], p["B"])}
@@ -279,15 +282,42 @@ def mark(stamp: str) -> dict:
     return {"pairs_marked": touched}
 
 
+def _dated(stamp: str) -> str:
+    if not re.fullmatch(r"\d{8}", stamp):
+        raise SystemExit(f"a stamp is a date like 20260908, not {stamp!r}")
+    return stamp
+
+
+def _key_path(stamp: str) -> Path:
+    return HERE / f"human_anchor_key_{_dated(stamp)}.json"
+
+
+def _sheet_path(stamp: str, which: str) -> Path:
+    tail = "" if which == "sitting" else f"_{which}"
+    return HERE / f"human_anchor{tail}_{_dated(stamp)}.md"
+
+
 def _done_path(stamp: str) -> Path:
-    return HERE / f"human_anchor_done_{stamp}.json"
+    return HERE / f"human_anchor_done_{_dated(stamp)}.json"
 
 
-# answered pairs leave the sheet so the next sitting is only what is left, and land here instead
+# the lock guarded `read` alone, while `prune` rewrote both the sheet and the fingerprint
+def _its_own(stamp: str, key: dict, which: str) -> Path:
+    sheet = _sheet_path(stamp, which)
+    seen = _fingerprint(sheet.read_text(encoding="utf-8"))
+    if which == "sitting" and key.get("sheet_fingerprint") not in (None, seen):
+        raise SystemExit(
+            "this sheet is not the one the key describes: rebuilt after it was filled, or edited"
+            " beyond the answer lines. The pairs would join to the wrong rows"
+        )
+    return sheet
+
+
+# answered pairs leave the sheet, so the next sitting is only what is left
 def prune(stamp: str) -> dict:
-    key_path = HERE / f"human_anchor_key_{stamp}.json"
+    key_path = _key_path(stamp)
     key = json.loads(key_path.read_text(encoding="utf-8"))
-    sheet = Path(key["sheets"]["sitting"])
+    sheet = _its_own(stamp, key, "sitting")
     said = {n: v for n, v in _picked(sheet).items() if v}
     if not said:
         return {"moved": 0, "left": len(key["pairs"]["sitting"])}
@@ -310,7 +340,7 @@ def prune(stamp: str) -> dict:
     sheet.write_text(head + "".join(kept), encoding="utf-8")
     hand_back(sheet)
 
-    key["sheet_md5"] = _fingerprint(sheet.read_text(encoding="utf-8"))
+    key["sheet_fingerprint"] = _fingerprint(sheet.read_text(encoding="utf-8"))
     key_path.write_text(json.dumps(key, indent=2, ensure_ascii=False), encoding="utf-8")
     hand_back(key_path)
     return {"moved": len(said), "left": len(kept), "done_file": str(done_path)}
@@ -338,20 +368,15 @@ def _verdict(delta: float, said: str) -> str:
 
 
 def read(stamp: str) -> dict:
-    key = json.loads((HERE / f"human_anchor_key_{stamp}.json").read_text(encoding="utf-8"))
-    sheet = Path(key["sheets"]["sitting"])
-    seen = _fingerprint(sheet.read_text(encoding="utf-8"))
-    if key.get("sheet_md5") and seen != key["sheet_md5"]:
-        raise SystemExit(
-            "this sheet is not the one the key describes: rebuilt after it was filled, or edited"
-            " beyond the answer lines. The pairs would join to the wrong rows"
-        )
+    key = json.loads((_key_path(stamp)).read_text(encoding="utf-8"))
+    sheet = _its_own(stamp, key, "sitting")
     done_path = _done_path(stamp)
     earlier = json.loads(done_path.read_text(encoding="utf-8")) if done_path.exists() else {}
     answered = {int(n): got["answer"] for n, got in earlier.items()}
     answered.update({n: v for n, v in _picked(sheet).items() if v})
     tally = {j: defaultdict(int) for j in ("ours", "guest")}
-    buckets = ("same_language", "cross_language", "clean", "template_leak")
+    buckets = ("same_language", "cross_language", "clean", "template_leak",
+               "hit_gold", "neither_hit_gold")
     split = {j: {b: defaultdict(int) for b in buckets} for j in ("ours", "guest")}
     for pair in key["pairs"]["sitting"]:
         said = answered.get(pair["n"])
@@ -360,6 +385,7 @@ def read(stamp: str) -> dict:
         where = [
             "cross_language" if pair.get("cross_language") else "same_language",
             "template_leak" if pair.get("template_leak") else "clean",
+            "neither_hit_gold" if pair.get("neither_hit_gold") else "hit_gold",
         ]
         for judge in ("ours", "guest"):
             got = _verdict(pair[judge], said)
@@ -395,14 +421,10 @@ def read(stamp: str) -> dict:
 
 # the same row picked twice is content, the same letter picked twice is position
 def repeats(stamp: str) -> dict:
-    key = json.loads((HERE / f"human_anchor_key_{stamp}.json").read_text(encoding="utf-8"))
-    before = {}
-    done_path = _done_path(stamp)
-    if done_path.exists():
-        for got in json.loads(done_path.read_text(encoding="utf-8")).values():
-            sides = {"A": got["A"], "B": got["B"]}
-            before[frozenset(sides.values())] = "=" if got["answer"] == "=" else sides[got["answer"]]
-    said = _picked(Path(key["sheets"]["repeats"]))
+    key = json.loads((_key_path(stamp)).read_text(encoding="utf-8"))
+    # the same source `_already` uses: an answer still sitting in the sheet counts too
+    before = _already(stamp)
+    said = _picked(_sheet_path(stamp, "repeats"))
 
     tally = defaultdict(int)
     for pair in key["pairs"]["repeats"]:
@@ -427,26 +449,26 @@ def repeats(stamp: str) -> dict:
     }
 
 
+ACTIONS = ("build", "mark", "prune", "read", "repeats")
+
 if __name__ == "__main__":
     action = sys.argv[1] if len(sys.argv) > 1 else "build"
+    if action not in ACTIONS:
+        raise SystemExit(f"{action!r} is not one of {', '.join(ACTIONS)}")
+    stamp = next((a for a in sys.argv[2:] if not a.startswith("-")),
+                 date.today().strftime("%Y%m%d"))
+    wanted = "--record" in sys.argv
+
     if action == "build":
         print(json.dumps(build(), indent=2, ensure_ascii=False))
-    elif action == "repeats":
-        got = repeats(sys.argv[2] if len(sys.argv) > 2 else date.today().strftime("%Y%m%d"))
-        print(json.dumps(got, indent=2, ensure_ascii=False))
-        if "--record" in sys.argv:
-            print("записано:", record("human_anchor_repeats", "arc4", got))
     elif action == "mark":
-        print(json.dumps(mark(sys.argv[2] if len(sys.argv) > 2
-                              else date.today().strftime("%Y%m%d")), ensure_ascii=False))
+        print(json.dumps(mark(stamp), ensure_ascii=False))
     elif action == "prune":
-        stamp = sys.argv[2] if len(sys.argv) > 2 else date.today().strftime("%Y%m%d")
         print(json.dumps(prune(stamp), indent=2, ensure_ascii=False))
     else:
-        got = read(sys.argv[2] if len(sys.argv) > 2 else date.today().strftime("%Y%m%d"))
+        got = read(stamp) if action == "read" else repeats(stamp)
         print(json.dumps(got, indent=2, ensure_ascii=False))
         # a dry read must not leave a number behind: `record` is asked for, never a side effect
-        if "--record" in sys.argv:
-            print("записано:", record("human_anchor", "arc4", got))
-        else:
-            print("не записано; добавь --record, когда лист заполнен по-настоящему")
+        kind = "human_anchor" if action == "read" else "human_anchor_repeats"
+        print(f"записано: {record(kind, f'pairs_{stamp}', got)}" if wanted
+              else "не записано; добавь --record, когда лист заполнен по-настоящему")

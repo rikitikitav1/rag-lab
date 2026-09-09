@@ -14,14 +14,14 @@ SCHEMA = 2
 
 
 def _by_question(run_name: str) -> dict:
-    from evals.judge_correlation import score_of
     from evals.loaders import load_logs
+    from evals.stats import to_unit
 
     out = {}
     for ql in load_logs(run_name):
-        got = score_of(ql.faithfulness)
+        got = to_unit(ql.faithfulness)
         if got is not None and ql.question_id:
-            out[ql.question_id] = {"ours": got / 10, "answer": ql.answer or ""}
+            out[ql.question_id] = {"ours": got, "answer": ql.answer or ""}
     return out
 
 

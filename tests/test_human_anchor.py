@@ -23,7 +23,7 @@ def test_agreement_reads_the_sign_and_not_the_size(anchor):
 
 
 def test_an_unfilled_pair_is_not_read_as_an_answer(anchor, tmp_path):
-    sheet = tmp_path / "sheet.md"
+    sheet = tmp_path / "human_anchor_20260908.md"
     sheet.write_text(
         "## Пара 1\nЛучше подкреплён контекстом (впиши A, B или `=`): **A**\n"
         "## Пара 2\nЛучше подкреплён контекстом (впиши A, B или `=`): **____**\n"
@@ -50,7 +50,7 @@ def test_an_answer_travels_by_the_pair_of_rows_and_not_by_its_number(anchor, tmp
     import json
 
     monkeypatch.setattr(anchor, "HERE", tmp_path)
-    sheet = tmp_path / "sheet.md"
+    sheet = tmp_path / "human_anchor_20260908.md"
     sheet.write_text(
         "## Пара 1\nЛучше подкреплён контекстом (впиши A, B или `=`): **A**\n"
         "## Пара 2\nЛучше подкреплён контекстом (впиши A, B или `=`): **=**\n"
@@ -98,7 +98,7 @@ def test_a_pruned_pair_leaves_the_sheet_but_not_the_count(anchor, tmp_path, monk
     import json
 
     monkeypatch.setattr(anchor, "HERE", tmp_path)
-    sheet = tmp_path / "sheet.md"
+    sheet = tmp_path / "human_anchor_20260908.md"
     body = "шапка\n"
     for n, mark in ((1, "A"), (2, "____"), (3, "B")):
         body += f"\n## Пара {n}\nтекст\nЛучше подкреплён контекстом (впиши A, B или `=`): **{mark}**\n"

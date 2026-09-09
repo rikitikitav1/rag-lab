@@ -11,7 +11,7 @@ import statistics
 from evals.loaders import load_logs
 from evals.pools import in_corpus, in_corpus_and_answered
 from evals.pools import outcome as _outcome
-from evals.stats import score_of
+from evals.stats import score_of, to_unit
 from outcomes import Outcome
 from scipy.stats import spearmanr
 from use_cases.ingest_quality import code_fraction
@@ -95,7 +95,7 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
             # the arm copies carry new log ids, so only the question joins a row to its twin
             "id": ql.id, "question_id": getattr(ql, "question_id", None),
             "run_name": ql.run_name, "pipeline": str(ql.pipeline),
-            "ours": ours / 10, "guest": guest,
+            "ours": to_unit(ql.faithfulness), "guest": guest,
             "overlap": overlap(ql.answer, ql.contexts),
             "code_share": code_share(ql.contexts),
             "on_card": entry.get("on_card"),

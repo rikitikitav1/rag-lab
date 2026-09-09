@@ -173,10 +173,8 @@ SPECS: dict[str, type[Spec]] = {
 
 LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io"}
 
-# named the safe way round: a type nobody classified is assumed to evict, never assumed harmless
-KEEPS_THE_JUDGE = (
-    "judge_answers", "judge_guest_axes", "check_mcp_health", "build_vector_index",
-)
+# the safe way round: an unclassified type evicts. `judge_guest_axes` left when relevancy arrived
+KEEPS_THE_JUDGE = ("judge_answers", "check_mcp_health", "build_vector_index")
 
 
 def disturbs_the_judge(job_type: str) -> bool:

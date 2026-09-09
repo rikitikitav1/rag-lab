@@ -377,8 +377,9 @@ def _score_guests(log_id: int, stamp: dict) -> bool:
         if _errored(metrics, axis):
             continue
         try:
-            # the same stamp our axes carry, plus the card: a number says how it was taken
-            scored[axis] = {**stamp, **guest_axes.score(axis, row), "on_card": judge_on_card()}
+            # our stamp plus the card read here: the stamp's `on_card` is about the pass
+            scored[axis] = {**stamp, **guest_axes.score(axis, row),
+                            "on_card_at_this_row": judge_on_card()}
             wrote = True
         except Exception as e:
             log.error("guest_axes.failed", axis=axis, log_id=log_id, error=str(e))
@@ -622,8 +623,8 @@ def _settle_outcome(ql, snapshot) -> None:
     said = snapshot.metrics.get("outcome")
     if said is None or ql.faithfulness is None:
         return
-    # only the downgrade it alone can make: settling more would freeze a wider derivation
-    if said == Outcome.answered and score_of(ql.faithfulness) == 0:
+    # only the downgrade it alone can make, by the operator `outcomes.classify` uses
+    if said == Outcome.answered and not (score_of(ql.faithfulness) > 0):
         snapshot.metrics["settled_outcome"] = str(Outcome.answered_ungrounded)
 
 

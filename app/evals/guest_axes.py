@@ -18,7 +18,7 @@ class Guest:
     metric: str
     # what the row must carry, named once: the sweep's query and the row's check read this
     needs: tuple[str, ...]
-    # how many calls one row costs, so a smoke can price a set before it runs
+    # what one row costs, read by nobody yet: a smoke that prices a set is still to be written
     calls_per_row: str
     # the only one that measures with vectors, so it borrows our embedder as well as our judge
     embeds: bool = False

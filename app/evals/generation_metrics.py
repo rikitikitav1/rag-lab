@@ -54,8 +54,10 @@ def _abstentions() -> dict:
 
 # the run's own language when it recorded one, else the question's: answering the asker is the default
 def _target_language(ql) -> str | None:
+    from use_cases.chat import resolve_language
+
     asked = ((ql.metrics or {}).get("config") or {}).get("language")
-    return asked or (db.detect_language(ql.question_text) if ql.question_text else None)
+    return resolve_language(ql.question_text, asked) if ql.question_text else asked
 
 
 def _language_match(logs) -> dict:
