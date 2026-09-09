@@ -94,3 +94,4 @@ Rules that decide whether an entry is worth keeping:
 - [2026-09-06 - Our judge against the standard's, and the ruler that had to come first](experiments/2026-09-06_our-judge-against-the-standards.md)
 - [2026-09-07 - The phases split, and the replay that checked it without asking a model twice](experiments/2026-09-07_the-phases-split-and-the-replay-that-checked-it.md)
 - [2026-09-07 - What moving onto the standard was worth, and what it cost](experiments/2026-09-07_what-the-standard-was-worth.md)
+- [2026-09-08 - The directive nobody gave, and what our judge charges for Russian](experiments/2026-09-08_the-directive-nobody-gave.md)

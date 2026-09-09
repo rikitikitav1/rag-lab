@@ -312,7 +312,7 @@ def answer_from_rows(
     else:
         user = f"{context}\n\nQuestion: {question}"
         # always, not only when a run forced one: without it the model follows whatever it last read
-        user += f"\n\n{_language_directive(lang)}"
+        user += f"\n\n{language_directive(lang)}"
         response = llm.ask(
             system=prompt_repo.active_template(Purpose.generate_answer),
             user=user,
@@ -359,7 +359,7 @@ def _resolve_language(question: str, language: str | None) -> str:
     return language or _detect_language(question)
 
 
-def _language_directive(language: str) -> str:
+def language_directive(language: str) -> str:
     return f"Respond in {_LANG_NAMES.get(language, language)}."
 
 

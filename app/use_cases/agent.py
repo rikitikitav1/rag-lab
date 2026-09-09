@@ -120,7 +120,7 @@ def run(
     system = prompt_repo.active_template(Purpose.agent_system)
     # the question sits at the head of a transcript the tool answers fill: it needs saying out loud
     lang = chat._resolve_language(question, language)
-    system += f"\n\n{chat._language_directive(lang)}"
+    system += f"\n\n{chat.language_directive(lang)}"
     messages: list = [
         {"role": "system", "content": system},
         {"role": "user", "content": question},

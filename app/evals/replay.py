@@ -156,7 +156,7 @@ def _system_for(system: str, snapshot: dict) -> str:
     from use_cases import chat as chat_uc
 
     said = snapshot.get("language")
-    return f"{system}\n\n{chat_uc._language_directive(said)}" if said else system
+    return f"{system}\n\n{chat_uc.language_directive(said)}" if said else system
 
 
 # the recorded prompt version, not today's: a replay compares graphs, not prompt drift
