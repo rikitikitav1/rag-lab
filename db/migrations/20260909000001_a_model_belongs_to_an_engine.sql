@@ -28,6 +28,7 @@ ALTER TABLE models DROP CONSTRAINT models_name_key;
 ALTER TABLE models ADD CONSTRAINT models_engine_name_key UNIQUE (engine_id, name);
 
 -- migrate:down
+-- one-way in practice: `UNIQUE (name)` cannot come back once two engines hold one name
 ALTER TABLE models DROP CONSTRAINT models_engine_name_key;
 ALTER TABLE models ADD CONSTRAINT models_name_key UNIQUE (name);
 ALTER TABLE models DROP COLUMN quant;

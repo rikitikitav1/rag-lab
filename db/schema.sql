@@ -160,7 +160,8 @@ CREATE TABLE public.engines (
     budget numeric(12,6),
     spent numeric(12,6) DEFAULT 0 NOT NULL,
     reserved numeric(12,6) DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engines_env_prefix_shape CHECK ((env_prefix ~ '^[A-Z][A-Z0-9_]{0,31}$'::text))
 );
 
 
@@ -331,8 +332,9 @@ CREATE TABLE public.models (
     name text NOT NULL,
     status text DEFAULT 'available'::text NOT NULL,
     engine_id integer NOT NULL,
-    weights text,
-    quant text
+    quant text,
+    weights_id integer,
+    size_bytes bigint
 );
 
 
@@ -491,6 +493,38 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: weights; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.weights (
+    id integer NOT NULL,
+    name text NOT NULL,
+    params text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: weights_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.weights_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: weights_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.weights_id_seq OWNED BY public.weights.id;
+
+
+--
 -- Name: data_chunks id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -558,6 +592,13 @@ ALTER TABLE ONLY public.question_logs ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.questions ALTER COLUMN id SET DEFAULT nextval('public.questions_id_seq'::regclass);
+
+
+--
+-- Name: weights id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.weights ALTER COLUMN id SET DEFAULT nextval('public.weights_id_seq'::regclass);
 
 
 --
@@ -705,6 +746,22 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: weights weights_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.weights
+    ADD CONSTRAINT weights_name_key UNIQUE (name);
+
+
+--
+-- Name: weights weights_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.weights
+    ADD CONSTRAINT weights_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: data_chunks_category_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -799,6 +856,14 @@ ALTER TABLE ONLY public.models
 
 
 --
+-- Name: models models_weights_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.models
+    ADD CONSTRAINT models_weights_id_fkey FOREIGN KEY (weights_id) REFERENCES public.weights(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: question_logs question_logs_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -862,4 +927,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260831000002'),
     ('20260906000001'),
     ('20260906000002'),
-    ('20260909000001');
+    ('20260909000001'),
+    ('20260909000002'),
+    ('20260909000003');
