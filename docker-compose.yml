@@ -9,10 +9,21 @@ services:
       ["uvicorn", "server:app",
        "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
-      RERANK_DEVICE: cuda
+      # settable since a second engine can own the card, which used to be free by default
+      RERANK_DEVICE: ${API_RERANK_DEVICE:-cuda}
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      # per `engines.env_prefix`; these hosts are containers step 0 starts outside compose
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm-step0:8000}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      VLLM_CPU_BASE_URL: ${VLLM_CPU_BASE_URL:-http://vllm-cpu:8000}
+      VLLM_CPU_API_KEY: ${VLLM_CPU_API_KEY:-}
+      OLLAMA_CPU_BASE_URL: ${OLLAMA_CPU_BASE_URL:-http://ollama-cpu:11434}
+      CLOUD_BASE_URL: ${CLOUD_BASE_URL:-}
+      CLOUD_API_KEY: ${CLOUD_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8000:8000"
     deploy:
@@ -99,6 +110,16 @@ services:
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      # per `engines.env_prefix`; these hosts are containers step 0 starts outside compose
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm-step0:8000}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      VLLM_CPU_BASE_URL: ${VLLM_CPU_BASE_URL:-http://vllm-cpu:8000}
+      VLLM_CPU_API_KEY: ${VLLM_CPU_API_KEY:-}
+      OLLAMA_CPU_BASE_URL: ${OLLAMA_CPU_BASE_URL:-http://ollama-cpu:11434}
+      CLOUD_BASE_URL: ${CLOUD_BASE_URL:-}
+      CLOUD_API_KEY: ${CLOUD_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       bootstrap:
         condition: service_completed_successfully
