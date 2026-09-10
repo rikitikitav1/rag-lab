@@ -115,6 +115,8 @@ class CheckMcpHealth(Spec):
 
 class ModelByName(Spec):
     name: str = Field(min_length=1, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
+    # absent on jobs queued before engines existed, and then the one engine there is answers
+    engine_id: int | None = Field(default=None, ge=1)
 
     # the typed door refused a three-segment name pointing anywhere else; the universal one did not
     @model_validator(mode="after")
@@ -196,8 +198,8 @@ def lane(job_type: str) -> str:
     return LANES.get(job_type, "default")
 
 
-# the stand's own bookkeeping on a job: `_job_id` carries a prefix and this one never did
-WORKER_KEYS = ("deferred_seconds",)
+# the stand's own bookkeeping on a job: `_job_id` carries a prefix and these two never did
+WORKER_KEYS = ("deferred_seconds", "attempts")
 
 
 class Refused(ValueError):
@@ -205,14 +207,16 @@ class Refused(ValueError):
 
 
 # its own type: a handler on pydantic's base read a bug in our own model as the caller's mistake
-def check(job_type: str, options: dict | None) -> None:
+def check(job_type: str, options: dict | None, *, from_the_worker: bool = False) -> None:
+    given = {k: v for k, v in (options or {}).items() if not k.startswith("_")}
+    theirs = sorted(set(given) & set(WORKER_KEYS))
+    # a caller sending `attempts` past the cap buys a job that never retries, and says nothing
+    if theirs and not from_the_worker:
+        raise Refused(f"{theirs[0]}: the stand writes this on a retry, a caller does not")
     spec = SPECS.get(job_type)
     if spec is None:
         return
-    asked = {
-        k: v for k, v in (options or {}).items()
-        if not k.startswith("_") and k not in WORKER_KEYS
-    }
+    asked = {k: v for k, v in given.items() if k not in WORKER_KEYS}
     try:
         spec.model_validate(asked)
     except ValidationError as bad:

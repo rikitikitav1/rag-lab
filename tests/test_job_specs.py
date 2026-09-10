@@ -76,7 +76,9 @@ def test_the_dictionaries_the_stand_actually_builds_all_pass():
 
     job_specs.check("judge_answers", rejudge.arm_options({"judge_model": "q"}, "a1", 50, 3))
     job_specs.check("judge_answers", {"run_name": "r", "sweep": 2, "judge_prompts": {}})
-    job_specs.check("judge_answers", {"run_name": "r", "deferred_seconds": 90})
+    # the deferral is the worker's own bookkeeping, and it validates on the worker's side
+    job_specs.check("judge_answers", {"run_name": "r", "deferred_seconds": 90},
+                    from_the_worker=True)
     job_specs.check("judge_guest_axes", {"run_name": "r", "judge_width": None})
 
 
@@ -126,3 +128,20 @@ def test_the_guest_cap_counts_the_rows_the_pass_will_walk():
     door = inspect.getsource(eval_mod.enqueue_guest_axes)
     assert "min(owed, request.sample)" in door, "the door still caps the whole debt"
     assert "MAX_GUEST_ROWS" in inspect.getsource(judging.judge_guest_axes)
+
+
+def test_a_retried_job_still_validates_with_the_counter_the_worker_wrote():
+    # the worker writes `attempts` into options on every retry, and the second end refused it
+    import job_specs
+
+    job_specs.check("pull_llm_model", {"name": "qwen2.5:7b", "engine_id": 1, "attempts": 2},
+                    from_the_worker=True)
+
+
+def test_the_bookkeeping_of_a_retry_is_not_accepted_from_a_caller():
+    # `attempts` past the cap makes a job give up on its first error, and nothing would say why
+    import job_specs
+    import pytest
+
+    with pytest.raises(job_specs.Refused, match="attempts"):
+        job_specs.check("pull_llm_model", {"name": "qwen2.5:7b", "attempts": 99})

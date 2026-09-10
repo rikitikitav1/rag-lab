@@ -10,7 +10,7 @@ import config
 import logging_setup
 from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
-from models.registry import Prompt, Purpose
+from models.registry import Engine, EngineKind, Placement, Prompt, Purpose
 from orm.sync_db import Session
 from sqlalchemy import exists, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -224,6 +224,24 @@ def seed_questions() -> None:
     log.info("seed.questions", total=len(rows), exported=len(exported))
 
 
+# the migration seeded this row too, but a database built from `schema.sql` carries no data
+SEEDED_ENGINE = {
+    "name": "ollama",
+    "kind": EngineKind.ollama,
+    "env_prefix": "OLLAMA",
+    "placement": Placement.gpu,
+}
+
+
+def seed_engines() -> None:
+    with Session() as session:
+        if session.scalar(select(exists().where(Engine.name == SEEDED_ENGINE["name"]))):
+            return
+        session.add(Engine(**SEEDED_ENGINE))
+        session.commit()
+    log.info("seed.engine", name=SEEDED_ENGINE["name"])
+
+
 MCP_INTEGRATIONS = [
     {
         "name": "deepwiki",
@@ -271,6 +289,7 @@ def seed_mcp_integrations() -> None:
 
 def main() -> None:
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
+    seed_engines()
     seed_prompts()
     seed_questions()
     seed_mcp_integrations()
