@@ -4,7 +4,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from orm import Base
-from sqlalchemy import Enum, ForeignKey, Numeric, UniqueConstraint, func
+from sqlalchemy import BigInteger, Enum, ForeignKey, Numeric, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -85,12 +85,25 @@ class Engine(Base):
     placement: Mapped[Placement] = mapped_column(Enum(Placement, native_enum=False))
     budget: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
     spent: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
-    # taken at the door and released at the end: two jobs pass the same check at once otherwise
+    # the second MR reserves at the door and releases at the end; today nothing writes these
     reserved: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     def __repr__(self) -> str:
         return f"Engine(id={self.id!r}, name={self.name!r}, kind={self.kind!r})"
+
+
+# a row, not a string on the model: the closing comparison joins on this and a typo splits it silently
+class Weights(Base):
+    __tablename__ = "weights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(unique=True)
+    params: Mapped[str | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"Weights(id={self.id!r}, name={self.name!r})"
 
 
 class Model(Base):
@@ -101,10 +114,15 @@ class Model(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str]
     engine_id: Mapped[int] = mapped_column(ForeignKey("engines.id", ondelete="RESTRICT"))
-    engine: Mapped[Engine] = relationship()
+    # `raise`, because a lazy load on an async session fails at runtime and no test could see it
+    engine: Mapped[Engine] = relationship(lazy="raise")
     # null is not "the same weights": a comparison reads it as unknown and refuses
-    weights: Mapped[str | None] = mapped_column(default=None)
+    weights_id: Mapped[int | None] = mapped_column(
+        ForeignKey("weights.id", ondelete="RESTRICT"), default=None
+    )
     quant: Mapped[str | None] = mapped_column(default=None)
+    # what this artifact takes on disk, so a pull can refuse before it starts, not halfway
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, default=None)
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )

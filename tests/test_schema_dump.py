@@ -46,9 +46,11 @@ def test_a_model_belongs_to_an_engine_and_says_which_weights_it_is():
               for c in Model.__table__.constraints
               if c.__class__.__name__ == "UniqueConstraint"}
     assert ("engine_id", "name") in unique, "one name on two engines is two rows"
-    assert Model.__table__.c.weights.nullable and Model.__table__.c.quant.nullable, (
+    assert Model.__table__.c.weights_id.nullable and Model.__table__.c.quant.nullable, (
         "not recorded is a state of its own, and a comparison must refuse on it"
     )
+    # a join key spelled by hand drifts, so the weights are a row and the model points at it
+    assert "weights" not in Model.__table__.c, "the free-text column was replaced by the table"
     assert Engine.__table__.c.env_prefix.nullable is False
     assert "base_url" not in Engine.__table__.c, "the address lives in the environment"
     assert Placement.remote.value == "remote", "cloud is an answer, not a missing value"
