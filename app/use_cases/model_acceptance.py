@@ -1,6 +1,6 @@
-import llm
 import logging_setup
-from models.registry import Role
+from engines import ollama
+from models.registry import EngineKind, Role
 
 # what each role needs of a model, in the terms the server answers in
 REQUIRED_CAPABILITY = {Role.generation: "tools"}
@@ -42,13 +42,28 @@ def complaints(role: Role, shown: dict) -> list[str]:
 
 
 def refuse_unfit_model(role: Role, model_name: str) -> None:
+    spec = _engine_of(model_name)
+    # only ollama describes its models, so an engine that cannot be asked is not a failed probe
+    if spec is not None and spec.kind is not EngineKind.ollama:
+        log.info("model.acceptance_not_probed", role=role.value, model=model_name, engine=spec.name)
+        return None
     try:
-        shown = llm.shown(model_name)
+        shown = ollama.shown(model_name, spec)
     except Exception as e:  # a probe must not become the reason a role cannot be assigned
         return _unknown(role, model_name, e)
     found = complaints(role, shown)
     if found:
         raise ValueError(f"{model_name} does not fit {role.value}: " + "; ".join(found))
+
+
+def _engine_of(model_name: str):
+    import engines
+
+    try:
+        found = engines.find_model(model_name)
+    except Exception:
+        return None
+    return found.engine if found else None
 
 
 def _unknown(role: Role, model_name: str, error: Exception) -> None:

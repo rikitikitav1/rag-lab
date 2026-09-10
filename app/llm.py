@@ -1,27 +1,15 @@
 import os
-import time
 from dataclasses import dataclass
 from typing import Any
 
 import config
+import engines
 import logging_setup
-import requests
-from models.registry import Model, ModelRole
-from openai import OpenAI, OpenAIError
-from orm.sync_db import Session
-from sqlalchemy import select
+from engines.lookup import Resolved
+from openai import APIStatusError, OpenAIError
 
-# the compose hostname resolves inside the network only; a script on the host says where
+# where the seeded engine answers; every other engine says so through its own `env_prefix`
 LLM_BASE = os.getenv("OLLAMA_BASE_URL") or config.settings.llm.base_url
-
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
-
-_client = OpenAI(
-    base_url=f"{LLM_BASE}/v1",
-    api_key="ollama",
-    timeout=LLM_TIMEOUT,
-    max_retries=1,
-)
 
 log = logging_setup.get_logger(__name__)
 
@@ -43,42 +31,67 @@ class ChatTurn:
     finish_reason: str | None = None
 
 
+def resolve(role: str) -> Resolved:
+    return engines.spec_of_role(role)
+
+
 def resolve_name(role: str) -> str:
-    with Session() as session:
-        name = session.scalar(
-            select(Model.name)
-            .join(ModelRole, ModelRole.model_id == Model.id)
-            .where(ModelRole.role == role)
-        )
-    if name is None:
-        raise RuntimeError(f"no model assigned to role {role}")
-    return name
+    return resolve(role).name
+
+
+# a bare name was unambiguous while one engine held every model; two engines make it a question
+def resolve_for(role: str, model: str | None = None) -> Resolved:
+    if model is None:
+        return resolve(role)
+    mine = resolve(role)
+    try:
+        found = engines.find_model(model)
+    except engines.Ambiguous:
+        # the override names a model, not an engine: the role's own engine answers if it has it
+        found = engines.find_model(model, mine.engine.id)
+        if found is None:
+            raise
+    # a name the registry never saw still runs, on the engine the role would have used
+    return found or Resolved(model, mine.engine)
+
+
+# the upstream body can carry a fragment of the key we kept out of the database on purpose
+def _without_the_body(e: Exception) -> str:
+    if isinstance(e, APIStatusError):
+        return f"http {e.status_code}"
+    return type(e).__name__
 
 
 # one contract for a failed completion: the same log event and error text, written twice
-def _complete(name: str, messages, params):
+def _complete(spec, name: str, messages, params):
     try:
-        return _client.chat.completions.create(model=name, messages=messages, **params)
+        return engines.client_for(spec).chat.completions.create(
+            model=name, messages=messages, **params
+        )
     except OpenAIError as e:
-        log.error("llm.chat_failed", model=name, error=str(e))
-        raise RuntimeError(f"LLM chat failed ({name}): {e}") from e
+        said = _without_the_body(e)
+        log.error("llm.chat_failed", model=name, engine=spec.name, error=said)
+        raise RuntimeError(f"LLM chat failed ({name} on {spec.name}): {said}") from e
 
 
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:
-    name = model or resolve_name(role)
+    picked = resolve_for(role, model)
+    name = picked.name
     resp = _complete(
+        picked.engine,
         name,
         [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        _params(role, schema),
+        _params(role, schema, picked.engine),
     )
 
     usage = resp.usage
     log.info(
         "llm.chat",
         model=name,
+        engine=picked.engine.name,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
     )
@@ -90,11 +103,12 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
 
 
 def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
-    name = model or resolve_name(role)
-    params = _params(role, None)
+    picked = resolve_for(role, model)
+    name = picked.name
+    params = _params(role, None, picked.engine)
     if tools:
         params["tools"] = tools
-    resp = _complete(name, messages, params)
+    resp = _complete(picked.engine, name, messages, params)
 
     choice = resp.choices[0]
     message = choice.message
@@ -102,6 +116,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     log.info(
         "llm.chat_tools",
         model=name,
+        engine=picked.engine.name,
         tool_calls=len(message.tool_calls or []),
         finish_reason=choice.finish_reason,
         prompt_tokens=usage.prompt_tokens,
@@ -118,14 +133,21 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
 
 
 # the same dict the call is made with, so a stamp cannot drift from what was sent
-def sampler_of(role) -> dict:
-    return _params(role, None)
+def sampler_of(role, spec=None) -> dict:
+    return sampler(role, spec).sent
 
 
-def _params(role, schema) -> dict:
+# both halves in one read: what went out, and what the role asked for and the engine refused
+def sampler(role, spec=None) -> engines.Sampler:
     opts = config.settings.llm.roles[role].options
     # at temperature 0 the sampler does not roll, but a batching server needs the run to say
-    params = {k: opts[k] for k in ("temperature", "max_tokens", "seed") if k in opts}
+    wanted = {k: opts[k] for k in engines.SAMPLER_KEYS if k in opts}
+    return engines.translate(spec or resolve(role).engine, wanted)
+
+
+# `response_format` and `tools` bypass `translate`: an engine that cannot do them refuses loudly
+def _params(role, schema, spec) -> dict:
+    params = sampler(role, spec).sent
     if schema:
         params["response_format"] = {
             "type": "json_schema",
@@ -138,179 +160,14 @@ def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
 
 
-# what the server says is loaded right now, or nothing: a probe must not break a run
-def _loaded_models() -> list:
-    try:
-        return _get_request("/api/ps").get("models") or []
-    except Exception as e:
-        log.warning("llm.ps_failed", error=str(e))
-        return []
-
-
-# one row of a run asks, the other 822 read this: the snapshot is written per answer
-_WINDOW_SECONDS = 60
-_windows: dict[str, tuple[float, int | None]] = {}
-
-
-def server_context_length(model: str) -> int | None:
-    seen_at, window = _windows.get(model, (0.0, None))
-    if time.monotonic() - seen_at < _WINDOW_SECONDS:
-        return window
-    # the full tag, or llama3.1:8b would read the window of a loaded llama3.1:70b
-    wanted = {model, f"{model}:latest"}
-    window = next(
-        (e.get("context_length") for e in _loaded_models() if e.get("name") in wanted), None
-    )
-    _windows[model] = (time.monotonic(), window)
-    return window
-
-
-# until an engine layer exists (arc 5), the backend is named by where it is served from
-def engine() -> str:
-    from urllib.parse import urlsplit
-
-    # host and port only: `netloc` carries userinfo, and this lands on every judged row
-    seen = urlsplit(LLM_BASE)
-    if not seen.hostname:
-        return "unnamed"
-    # a base without an explicit port stamped every row with the string `host:None`
-    return f"{seen.hostname}:{seen.port}" if seen.port else seen.hostname
-
-
-def list_models():
-    return [m["name"] for m in _get_request("/api/tags")["models"]]
-
-
-def residency() -> list[dict]:
-    return [
-        {
-            "model": m.get("name", "?"),
-            "size_mb": round((m.get("size") or 0) / 2**20),
-            "vram_mb": round((m.get("size_vram") or 0) / 2**20),
-        }
-        for m in _loaded_models()
-        if m.get("size")
-    ]
-
-
-# who serves the window: the configured generator when it is up, else whoever else is
-def window_model(loaded: list[dict] | None = None) -> str | None:
-    names = [m["model"] for m in (residency() if loaded is None else loaded)]
-    configured = resolve_name("generation")
-    if configured in names:
-        return configured
-    return next((n for n in names if "embed" not in n and "bge" not in n), None)
-
-
-# nothing in vram at all: the model answers from the processor
-def off_the_card(entry: dict) -> bool:
-    return entry["vram_mb"] == 0
-
-
-def warn_if_models_do_not_fit() -> list[str]:
-    spilled, off_card = [], []
-    for entry in residency():
-        if entry["vram_mb"] >= entry["size_mb"]:
-            continue
-        spilled.append(entry["model"])
-        if off_the_card(entry):
-            off_card.append(entry["model"])
-        log.warning(
-            "llm.model_spilled_to_cpu",
-            **entry,
-            context=config.settings.llm.context_length,
-        )
-    if off_card:
-        log.error("llm.gpu_unavailable", models=off_card)
-    return spilled
-
-
-def models_off_the_card() -> list[str]:
-    return [e["model"] for e in residency() if off_the_card(e)]
-
-
 def request_embeddings_batch(texts, role="embedding"):
-    name = resolve_name(role)
+    picked = resolve(role)
+    name = picked.name
     try:
-        resp = _client.embeddings.create(model=name, input=texts)
+        resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
     except OpenAIError as e:
-        log.error("llm.embed_failed", model=name, error=str(e))
-        raise RuntimeError(f"LLM embed failed ({name}): {e}") from e
-    log.info("llm.embed", model=name, count=len(texts))
+        said = _without_the_body(e)
+        log.error("llm.embed_failed", model=name, engine=picked.engine.name, error=said)
+        raise RuntimeError(f"LLM embed failed ({name} on {picked.engine.name}): {said}") from e
+    log.info("llm.embed", model=name, engine=picked.engine.name, count=len(texts))
     return [d.embedding for d in resp.data]
-
-
-_HTTP_TIMEOUT = 60
-_PULL_TIMEOUT = 3600
-
-
-def pull_model(model):
-    return _post_request("/api/pull", {"model": model, "stream": False}, timeout=_PULL_TIMEOUT)
-
-
-def unload(role="embedding", model=None):
-    # keep_alive 0 overrides the default; the lookup is inside the guard, teardown raises
-    name = model
-    try:
-        name = name or resolve_name(role)
-        _windows.pop(name, None)
-        _post_request("/api/generate", {"model": name, "keep_alive": 0})
-    except Exception as e:
-        log.warning("llm.unload_failed", model=name or role, error=str(e))
-
-
-# an empty generate loads the weights and answers nothing
-def load_into_memory(role="generation", model=None) -> dict:
-    name = model or resolve_name(role)
-    _post_request("/api/generate", {"model": name})
-    log.info("llm.loaded", model=name)
-    return {"model": name, "context_length": server_context_length(name)}
-
-
-def delete_model(model):
-    response = requests.delete(
-        f"{LLM_BASE}/api/delete", json={"model": model}, timeout=_HTTP_TIMEOUT
-    )
-    if response.status_code == 404:
-        log.info("llm.model_already_absent", model=model)
-        return None
-    return _check(response, "/api/delete")
-
-
-def add_tags(models) -> list:
-    return [m if ":" in m else f"{m}:latest" for m in models]
-
-
-def ensure_models() -> None:
-    for model in set(add_tags(config.settings.llm.pull_models)) - set(
-        add_tags(list_models())
-    ):
-        pull_model(model)
-
-
-def _check(response, path) -> Any:
-    if not response.ok:
-        try:
-            error = response.json().get("error", response.text)
-        except ValueError:
-            error = response.text
-
-        raise RuntimeError(f"Ollama {response.status_code} on {path}: {error}")
-
-    if not response.text:
-        return None
-
-    return response.json()
-
-
-# what the server says about a model before it is given a role, read rather than assumed
-def shown(model: str) -> dict:
-    return _post_request("/api/show", {"model": model}) or {}
-
-
-def _post_request(path, payload, timeout=_HTTP_TIMEOUT):
-    return _check(requests.post(f"{LLM_BASE}{path}", json=payload, timeout=timeout), path)
-
-
-def _get_request(path) -> dict:
-    return _check(requests.get(f"{LLM_BASE}{path}", timeout=_HTTP_TIMEOUT), path)
