@@ -8,6 +8,7 @@ from api.v1 import (
     agent,
     categories,
     chat,
+    engine,
     eval,
     experiment,
     job,
@@ -77,6 +78,7 @@ app.include_router(health.v1, prefix="/v1")
 app.include_router(chat.router, prefix="/v1")
 app.include_router(agent.router, prefix="/v1")
 app.include_router(categories.router, prefix="/v1")
+app.include_router(engine.router, prefix="/v1")
 app.include_router(llm_model.router, prefix="/v1")
 app.include_router(model_role.router, prefix="/v1")
 app.include_router(prompt.router, prefix="/v1")

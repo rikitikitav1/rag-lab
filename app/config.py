@@ -9,6 +9,8 @@ CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
 
 class RoleCfg(BaseModel):
     model: str
+    # unnamed means the seeded ollama, which is a default only while every config model is pulled
+    engine: str | None = None
     options: dict = {}
 
 
@@ -171,9 +173,11 @@ class LlmCfg(BaseModel):
     context_length: int = 8192
     candidates: list[str] = []
 
+    # a role on another engine is registered through `/v1/model`, not pulled through `/api/pull`
     @property
     def pull_models(self) -> list[str]:
-        return list({r.model for r in self.roles.values()} | set(self.candidates))
+        ours = {r.model for r in self.roles.values() if r.engine is None}
+        return list(ours | set(self.candidates))
 
 
 class PostgresCfg(BaseModel):

@@ -40,7 +40,7 @@ def run_once(queues: list[str]) -> bool:
 
     # a row written straight into the table never passed the door, so the check runs here too
     try:
-        job_specs.check(claimed.type, claimed.options)
+        job_specs.check(claimed.type, claimed.options, from_the_worker=True)
     except Exception as bad:
         job_queue.fail(claimed.id, {"error": str(bad)})
         return True
