@@ -84,3 +84,11 @@ def stub_engines(monkeypatch, module):
         module.llm, "resolve_for", lambda role, model=None: engines.Resolved(model or "stub", spec)
     )
     monkeypatch.setattr(module.llm, "resolve", lambda role: engines.Resolved("stub", spec))
+
+
+# requested only by the modules that carry `real_db.pytestmark`, so no postgres means a skip
+@pytest.fixture(scope="module")
+def db():
+    import real_db
+
+    yield from real_db.scratch()

@@ -10,10 +10,10 @@ import logging_setup
 from engines import ollama
 from evals import guest_axes, measurements, sampling
 from models.eval import Question, QuestionLog
-from models.registry import EngineKind, Purpose, Role
+from models.registry import Engine, EngineKind, Placement, Purpose, Role
 from orm import dsn
 from orm.sync_db import Session
-from sqlalchemy import and_, cast, func, or_, select, text
+from sqlalchemy import DateTime, and_, cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from use_cases import experiment, judge, rejudge
 
@@ -471,6 +471,8 @@ def _bench_from(options: dict) -> judge.Bench:
 class Residency:
     id: int | None
     on_card: bool | None
+    # which instrument minted the id: a reader cannot tell a queue guess from a server's own clock
+    source: str | None = None
 
 
 # taken once per pass, but only after the first judged call has put the judge back on the card
@@ -487,18 +489,24 @@ class LateResidency:
         return self.seen
 
 
-# `/api/ps` carries no load moment, so a residency is named by the pass that caused the load
+# a residency is read by the instrument its own engine has, and the engines have different ones
 def _residency(job_id, model: str | None = None) -> Residency:
     try:
+        engine = llm.resolve_for("judging", model).engine
+        if engine.kind is EngineKind.vllm:
+            return _by_process_start(job_id, engine)
         on_card = judge_on_card(model)
         # partly on the card is a different instrument: layers on the cpu answer with other kernels
         if on_card is not True:
-            return Residency(job_id, on_card)
-        prev = _last_residency()
-        # `/api/ps` cannot say who loaded what between two passes, but the queue can
-        if prev is None or _loaded_since(prev, job_id):
-            return Residency(job_id, on_card)
-        return Residency(prev, on_card)
+            return Residency(job_id, on_card, residency_instrument(engine))
+        # `/api/ps` carries no load moment, so a residency is named by the pass that caused the load
+        source = f"{residency_instrument(engine)} and the queue"
+        last = _last_residency(engine.name)
+        # `/api/ps` cannot say who loaded what between two passes, but the queue and the card can
+        fresh = last is None or _loaded_since(last[0], job_id)
+        if fresh or _card_changed_hands(last[1], engine.name):
+            return Residency(job_id, on_card, source)
+        return Residency(last[0], on_card, source)
     except Exception as e:
         # a reading about the card must not take down the pass that only wanted to stamp itself
         log.warning("judge.residency_unknown", error=str(e))
@@ -518,20 +526,55 @@ def _loaded_since(prev: int, job_id) -> bool:
         return any(job_specs.disturbs_the_judge(t) for t in types)
 
 
-def _last_residency() -> int | None:
+# one process holds one model, so passes under the same start share a residency whatever ran beside
+def _by_process_start(job_id, engine) -> Residency:
+    started = engines.started_at(engine)
+    if started is None:
+        return Residency(job_id, None)
+    last = _last_residency(engine.name, started)
+    return Residency(job_id if last is None else last[0], None, "vllm /metrics process start")
+
+
+# only this engine's rows: a vLLM pass once lent its number to the ollama pass that followed it
+def _last_residency(engine_name: str, started_at: str | None = None) -> tuple[int, str] | None:
     from sqlalchemy import desc
 
     with Session() as session:
         for axis in rejudge.AXES:
-            got = session.scalar(
-                select(QuestionLog.metrics[(axis, "residency_id")].as_integer())
-                .where(QuestionLog.metrics[(axis, "residency_id")].as_integer().isnot(None))
-                .order_by(desc(QuestionLog.id))
-                .limit(1)
+            residency = QuestionLog.metrics[(axis, "residency_id")].as_integer()
+            asked = select(residency, QuestionLog.metrics[(axis, "judged_at")].as_string()).where(
+                residency.isnot(None),
+                QuestionLog.metrics[(axis, "engine_name")].as_string() == engine_name,
             )
+            if started_at is not None:
+                started = QuestionLog.metrics[(axis, "engine_added", "started_at")].as_string()
+                asked = asked.where(started == started_at)
+            else:
+                # a pass that found the judge on the cpu minted a number the card must not inherit
+                asked = asked.where(QuestionLog.metrics[(axis, "on_card")].as_boolean().is_(True))
+            got = session.execute(asked.order_by(desc(QuestionLog.id)).limit(1)).first()
             if got is not None:
-                return got
+                return got[0], got[1]
     return None
+
+
+# one gpu engine holds the card at a time: a verdict from another since then means it changed hands
+def _card_changed_hands(since: str | None, engine_name: str) -> bool:
+    if since is None:
+        # a row too old to say when it was judged cannot vouch that nothing came between
+        return True
+    holders = select(Engine.name).where(
+        Engine.name != engine_name, Engine.placement.in_((Placement.gpu, Placement.gpu_and_cpu))
+    )
+    when = DateTime(timezone=True)
+    with Session() as session:
+        for axis in rejudge.AXES:
+            judged = cast(QuestionLog.metrics[(axis, "judged_at")].as_string(), when)
+            other = QuestionLog.metrics[(axis, "engine_name")].as_string().in_(holders)
+            later = select(QuestionLog.id).where(other, judged > cast(since, when)).limit(1)
+            if session.scalar(later):
+                return True
+    return False
 
 
 # once per row, not per axis: the width belongs to the pass and the sampler to the engine that answered
@@ -552,6 +595,7 @@ def stamp_of(width: int, residency: Residency | None = None, model: str | None =
         "width": width,
         # two arms are comparable only inside one residency, and this is how a reader checks
         "residency_id": seen.id,
+        "residency_source": seen.source,
         # a pass that found the judge half on the cpu is not the pass that found it whole
         "on_card": seen.on_card,
         # null with no instrument named is "nowhere to ask", not "asked and did not see it"

@@ -15,6 +15,7 @@ from .core import (
     base_url,
     client_for,
     forget_clients,
+    started_at,
     translate,
 )
 from .disk import NotEnoughDisk, free_bytes, refuse_if_tight
@@ -35,5 +36,5 @@ __all__ = [
     "Stamped", "Unconfigured", "Unnamed",
     "added_by", "address_of", "api_key", "base_url", "client_for", "engine_of", "find_model",
     "forget_clients", "free_bytes", "refuse_if_tight", "registered_names", "seeded_ollama",
-    "spec_of_id", "spec_of_name", "spec_of_role", "translate",
+    "spec_of_id", "spec_of_name", "spec_of_role", "started_at", "translate",
 ]

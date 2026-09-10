@@ -179,8 +179,12 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
         "judge_prompt_tokens": 2317,
         # the address and the entity together: one survives the migration, the other names it
         "engine_name": "ollama", "engine_refused": {}, "engine_added": {},
+        # no pass named a residency, so no instrument minted one either
+        "residency_source": None,
     }
     assert when.endswith("+00:00"), "the stamp must say when in utc, or two arms cannot be paired"
+    named = judging.stamp_of(4, judging.Residency(7, True, "ollama /api/ps and the queue"))
+    assert named["residency_source"] == "ollama /api/ps and the queue", "what minted it, verbatim"
 
     # a role with no seed says so rather than implying one: the passes before 31.08 had none
     monkeypatch.setattr(
@@ -193,7 +197,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     assert bare == {
         "seed": None, "width": 1, "slots_believed": 4, "on_card": None,
         "engine": "ollama:11434", "engine_name": "ollama", "engine_refused": {},
-        "engine_added": {}, "on_card_read_from": "ollama /api/ps",
+        "engine_added": {}, "on_card_read_from": "ollama /api/ps", "residency_source": None,
     }
 
 
@@ -559,24 +563,87 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     # `/api/ps` has no load moment, so the pass that found the card empty is the one that names it
     import job_handlers.judging as j
 
-    on_card, last, disturbed = [None], [None], [False]
+    _judged_on(monkeypatch, "ollama")
+    on_card, last, disturbed, handed = [None], [None], [False], [False]
+    asked = []
     monkeypatch.setattr(j, "judge_on_card", lambda _model=None: on_card[0])
-    monkeypatch.setattr(j, "_last_residency", lambda: last[0])
+    monkeypatch.setattr(
+        j, "_last_residency", lambda name, started=None: asked.append(name) or last[0]
+    )
     monkeypatch.setattr(j, "_loaded_since", lambda prev, job_id: disturbed[0])
+    monkeypatch.setattr(j, "_card_changed_hands", lambda since, name: handed[0])
+    queue = "ollama /api/ps and the queue"
 
-    assert j._residency(42) == j.Residency(42, None), "the card was empty, so this pass loads it"
-    on_card[0], last[0] = True, 7
-    assert j._residency(42) == j.Residency(7, True), "it was resident, so the older one holds"
+    assert j._residency(42) == j.Residency(42, None, "ollama /api/ps"), "the card was empty"
+    on_card[0], last[0] = True, (7, "2026-09-10T00:00:00+00:00")
+    assert j._residency(42) == j.Residency(7, True, queue), "it was resident, the older one holds"
+    assert asked[-1] == "ollama", "only this engine's rows may lend it a number"
     last[0] = None
-    assert j._residency(42) == j.Residency(42, True)
+    assert j._residency(42) == j.Residency(42, True, queue)
 
     # half on the card is another instrument: the cpu layers answer with other kernels
-    on_card[0], last[0] = False, 7
-    assert j._residency(42) == j.Residency(42, False), "a partial load never inherits"
+    on_card[0], last[0] = False, (7, "2026-09-10T00:00:00+00:00")
+    assert j._residency(42) == j.Residency(42, False, "ollama /api/ps"), "partial never inherits"
 
     # `/api/ps` cannot see a neighbour loaded between two passes, but the queue can
     on_card[0], disturbed[0] = True, True
-    assert j._residency(42) == j.Residency(42, True), "something loaded since, so this is new"
+    assert j._residency(42) == j.Residency(42, True, queue), "something loaded since, this is new"
+
+    # a shell handed the card to vLLM and back, which the queue never saw but the verdicts did
+    disturbed[0], handed[0] = False, True
+    assert j._residency(42) == j.Residency(42, True, queue), "the card changed hands in between"
+
+
+def test_a_vllm_pass_is_named_by_the_process_that_holds_the_judge(monkeypatch):
+    # `created` in `/v1/models` is the reply's clock, so the process start is what opens a residency
+    import engines
+    import job_handlers.judging as j
+    from models.registry import EngineKind, Placement
+
+    spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: engines.Resolved("q", spec))
+    monkeypatch.setattr(j, "judge_on_card", lambda _model=None: pytest.fail("vLLM has no /api/ps"))
+    monkeypatch.setattr(j, "_loaded_since", lambda *a: pytest.fail("one process, whatever queued"))
+    started, last, asked = ["2026-09-10T15:26:53.970000+00:00"], [None], []
+    monkeypatch.setattr(j.engines, "started_at", lambda _spec: started[0])
+    monkeypatch.setattr(j, "_last_residency",
+                        lambda name, at=None: asked.append((name, at)) or last[0])
+    source = "vllm /metrics process start"
+
+    assert j._residency(42) == j.Residency(42, None, source), "the first pass on a process names it"
+    assert asked[-1] == ("vllm", started[0]), "only rows judged under this very start may lend"
+    last[0] = (30, started[0])
+    assert j._residency(42) == j.Residency(30, None, source), "same process, so the older one holds"
+
+    # a server that cannot say when it started names nothing, and the pass stands alone
+    started[0] = None
+    assert j._residency(42) == j.Residency(42, None, None)
+
+
+def test_the_process_start_is_read_from_metrics_and_not_from_created(monkeypatch):
+    import engines
+    from engines import core
+    from models.registry import EngineKind, Placement
+
+    spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm:8000")
+    body = ["# HELP process_start_time_seconds Start time\n"
+            "process_start_time_seconds 1.78905401397e+09\n"]
+    seen = []
+
+    class _R:
+        def __init__(self, url):
+            seen.append(url)
+            self.text = body[0]
+
+    import requests
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout=None: _R(url))
+    assert core.started_at(spec) == "2026-09-10T15:26:53.970000+00:00"
+    assert seen == ["http://vllm:8000/metrics"]
+
+    body[0] = "vllm:num_requests_running 0\n"
+    assert core.started_at(spec) is None, "a server that does not say must not be given a start"
 
 
 def test_the_judge_settles_the_outcome_it_alone_can_know():
