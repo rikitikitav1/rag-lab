@@ -8,6 +8,7 @@ import job_queue
 import llm
 import logging_setup
 import rerank
+from engines import ollama
 from models.eval import Question
 from models.registry import Pipeline
 from orm.sync_db import Session
@@ -86,10 +87,21 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> None:
         raise ValueError(f"unknown pipeline: {spec.pipeline}")
 
 
+# the role names a model and the model names its engine: releasing the card asks that engine
+def _release(role: str, model: str | None = None) -> None:
+    try:
+        picked = llm.resolve_for(role, model)
+    except Exception as e:
+        log.warning("eval_run.release_skipped", role=role, error=str(e))
+        return
+    ollama.unload(picked.name, picked.engine)
+
+
 def _refuse_a_cpu_run(allow_cpu: bool, use_rerank: bool = False) -> None:
     # ollama drops the card and keeps answering: same numbers, four times the hours
-    llm.warn_if_models_do_not_fit()
-    off_card = llm.models_off_the_card()
+    ollama.warn_if_models_do_not_fit()
+    # asked of the generator's own engine: a vllm run used to pass this gate by asking ollama
+    off_card = ollama.models_off_the_card(llm.resolve("generation").engine)
     # ollama cannot see the cross-encoder: it is torch in this process and is loaded here
     if use_rerank:
         rerank.warm()
@@ -230,8 +242,8 @@ def run_phased(
 
 def _free_the_card(model: str | None) -> None:
     rerank.unload()
-    llm.unload("embedding")
-    llm.unload("generation", model=model)
+    _release("embedding")
+    _release("generation", model)
 
 
 def _phased(
@@ -247,13 +259,13 @@ def _phased(
     _refuse_a_cpu_run(allow_cpu, spec.use_rerank)
 
     # retrieval is over, and its model is 1.2 GiB the generator wants on a card that holds 8
-    llm.unload("embedding")
+    _release("embedding")
 
     if job_id is not None and job_queue.is_cancelled(job_id):
         return 0, True
 
     if spec.use_rerank:
-        llm.unload("generation", model=spec.model)
+        _release("generation", spec.model)
         started = time.perf_counter()
         retrieved = _phase_rerank(retrieved, spec.k)
         log.info("eval_run.phase", name="rerank", n=len(retrieved),

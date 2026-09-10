@@ -2,6 +2,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from conftest import stub_engines
 from use_cases import chat
 
 
@@ -76,8 +77,8 @@ def _offline_snapshot(monkeypatch, device=None):
 
     monkeypatch.setattr(run_snapshot, "_rerank_device", lambda: device)
     monkeypatch.setattr(run_snapshot.db, "fingerprint_or_none", lambda *, variant: None)
-    monkeypatch.setattr(run_snapshot.llm, "server_context_length", lambda model: 8192)
-    monkeypatch.setattr(run_snapshot.llm, "resolve_name", lambda role: "stub")
+    monkeypatch.setattr(run_snapshot.ollama, "context_length", lambda model, spec=None: 8192)
+    stub_engines(monkeypatch, run_snapshot)
 
 def test_config_snapshot_records_device_only_when_reranking(monkeypatch):
     _offline_snapshot(monkeypatch, device="cuda")
@@ -290,3 +291,4 @@ def test_a_piece_that_is_not_a_corpus_chunk_still_holds_its_place():
         {"contexts": ["one", "two"], "chunks": [{"source": "a.md"}]}, "one\n\ntwo"
     )
     assert mismatched == [None, None]
+

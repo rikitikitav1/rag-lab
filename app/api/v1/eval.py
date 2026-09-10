@@ -10,6 +10,7 @@ import limits
 import logging_setup
 from evals import compare as compare_uc
 from evals import retrieval_metrics
+from evals.pools import Ambiguous
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.eval import QuestionLog
@@ -208,6 +209,12 @@ class CompareResponse(BaseModel):
     runs: list[str]
     pools: dict
     blended_do_not_rank: dict
+    # the door used to drop these: a caller read two arms the code itself calls incomparable
+    schema_version: int = Field(alias="schema")
+    residency: dict
+    correlation_population: dict
+
+    model_config = {"populate_by_name": True}
 
 
 @router.get("/compare", response_model=CompareResponse)
@@ -231,7 +238,11 @@ async def eval_compare(
     empty = [name for name, logs in loaded.items() if not logs]
     if empty:
         raise HTTPException(status_code=404, detail=f"no logs for runs: {empty}")
-    return compare_uc.compare(loaded)
+    try:
+        return compare_uc.compare(loaded)
+    except Ambiguous as e:
+        # the run cannot be paired at all, and the reason names the question: a 500 hid it
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 # rules live beside `measure`, so AXES and the rules cannot name different sets

@@ -2,6 +2,7 @@ import statistics
 import sys
 
 import limits
+from engines import DANGLING, engine_of, registered_names
 from evals.loaders import load_logs
 from evals.pools import (
     ALL_OUTCOMES,
@@ -105,8 +106,8 @@ def paired(left, right, axis) -> dict:
     return result
 
 
-# 1 pools and blend; 2 residency; 3 engine and population; 4 the prompt; 5 p never null; 6 `p`
-SCHEMA = 6
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 p never null; 6 `p`; 7 engine name; 8 determinism
+SCHEMA = 8
 
 
 def compare(runs: dict[str, list]) -> dict:
@@ -157,14 +158,29 @@ def compare(runs: dict[str, list]) -> dict:
     }
 
 
-# in disqualifying order: a backend, then the ruler, then the reload, then what was not recorded
+# in disqualifying order: a backend, then the arms themselves, then the ruler, then the reload
 def _what_to_read_first(
-    one_engine: bool | None, one_prompt: bool | None, one_residency: bool | None
+    one_engine: bool | None,
+    one_prompt: bool | None,
+    one_residency: bool | None,
+    one_engine_name: bool | None,
+    one_deterministic: bool | None,
 ) -> str | None:
+    if one_engine_name is False:
+        return (
+            "arms judged on differently named engines are not comparable, and the address cannot "
+            "show it: two engines take the same host and port in turn"
+        )
     if one_engine is False:
         return (
             "arms judged on different engines are not comparable: batching, kernels and "
             "quantisation all differ, and residency does not even mean the same thing on both"
+        )
+    if one_deterministic is False:
+        return (
+            "the arms retrieved different sources or ranked them differently on the same questions, "
+            "so they are not one arm read twice: unless retrieval is the treatment, this contrast "
+            "measures a pipeline that changed underneath it"
         )
     if one_prompt is False:
         return (
@@ -173,11 +189,17 @@ def _what_to_read_first(
         )
     if one_residency is False:
         return (
-            "arms judged across a reload are not comparable directly: the same judge moves 14% of "
-            "its scores and 58% of its reason texts on byte-identical input"
+            "arms judged across a reload are not comparable directly: measured on ollama, the same "
+            "judge moves 14% of its scores and 58% of its reason texts on byte-identical input, and "
+            "a pair whose own floor was never measured cannot borrow that one"
         )
     if one_residency is None:
         return "rows judged before this was recorded carry no residency, so nothing can be said"
+    if one_engine_name is None:
+        return (
+            "at least one arm recorded no engine name, so which engine stood behind it cannot be "
+            "said, and the address alone does not tell two engines apart"
+        )
     if one_engine is None:
         return (
             "the residency matches, but at least one arm recorded no engine, so whether both ran "
@@ -187,6 +209,11 @@ def _what_to_read_first(
         return (
             "rows judged before the prompt version reached the row carry none, so whether both "
             "arms were scored by one ruler cannot be said"
+        )
+    if one_deterministic is None:
+        return (
+            "no question was retrieved by both arms with its sources recorded, so whether the "
+            "deterministic half of the pipeline held still cannot be said"
         )
     return (
         "one residency is necessary, not sufficient: two arms with identical rows, order and "
@@ -217,39 +244,87 @@ def _all_agree(by_run: dict) -> bool | None:
     return len({one for seen in by_run.values() for one in seen}) == 1
 
 
+# the floats beside the ranks are not read: a distance that moved is the embedder's own story
+def _footprint(ql) -> tuple | None:
+    seen = ql.sources
+    if not seen:
+        return None
+    return tuple(
+        (one.get("source"), one.get("hop"), one.get("vector_rank"), one.get("keyword_rank"))
+        for one in seen
+    )
+
+
+# the deterministic half must be equal, not close: two arms that retrieved differently are two arms
+def _one_retrieval(runs: dict[str, list]) -> bool | None:
+    by_run = {name: by_question(logs) for name, logs in runs.items()}
+    if len(by_run) < 2:
+        return None
+    shared = set.intersection(*(set(seen) for seen in by_run.values()))
+    compared = 0
+    for question in shared:
+        prints = [_footprint(by_run[name][question]) for name in by_run]
+        # a row that recorded no source says nothing about the pipeline, and silence is not a clash
+        if any(one is None for one in prints):
+            continue
+        compared += 1
+        if len(set(prints)) != 1:
+            return False
+    return True if compared else None
+
+
 # two arms judged across a reload are two instruments: 14% of scores move on identical input
 def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
 
-    seen, engines_seen, prompts_seen = {}, {}, {}
+    live = registered_names()
+    seen, engines_seen, names_seen, prompts_seen = {}, {}, {}, {}
+    gone = set()
     for name, logs in runs.items():
-        ids, engines = set(), set()
+        ids, addresses, named = set(), set(), set()
         versions = {axis: set() for axis in rejudge.AXES}
         for ql in logs:
             for axis in rejudge.AXES:
                 stamp = ((ql.metrics or {}).get(axis) or {})
                 if stamp.get("residency_id") is not None:
                     ids.add(stamp["residency_id"])
-                if stamp.get("engine"):
-                    engines.add(stamp["engine"])
+                read = engine_of(stamp, live)
+                if read.address:
+                    addresses.add(read.address)
+                if read.name:
+                    named.add(read.name)
+                if read.state == DANGLING:
+                    gone.add(read.name)
                 # the version sits beside the model, in `prompts`, and never reached the stamp
                 version = (ql.prompts or {}).get(f"judge_{axis}")
                 if version is not None:
                     versions[axis].add(version)
         seen[name] = sorted(ids)
-        engines_seen[name] = sorted(engines)
+        # the address, because it is the one field every era of this record carries
+        engines_seen[name] = sorted(addresses)
+        names_seen[name] = sorted(named)
         prompts_seen[name] = {axis: sorted(v) for axis, v in versions.items() if v}
     # an arm that recorded nothing cannot agree with one that did: silence is not a match
     one = _all_agree(seen)
     one_engine, one_prompt = _all_agree(engines_seen), _one_ruler(prompts_seen)
+    one_name = _all_agree(names_seen)
+    one_retrieval = _one_retrieval(runs)
     return {
         "by_run": seen,
         "one_residency": one,
         "engines_by_run": engines_seen,
         "one_engine": one_engine,
+        "engine_names_by_run": names_seen,
+        "one_engine_name": one_name,
+        # absent, not empty, when the table could not be read: silence is not "all were deleted"
+        **({} if live is None else {"engines_gone": sorted(gone)}),
         "judge_prompts_by_run": prompts_seen,
         "one_judge_prompt": one_prompt,
-        "read_this_first": _what_to_read_first(one_engine, one_prompt, one),
+        # the sources and their ranks on the questions both arms answered, equal or not at all
+        "one_deterministic": one_retrieval,
+        "read_this_first": _what_to_read_first(
+            one_engine, one_prompt, one, one_name, one_retrieval
+        ),
     }
 
 

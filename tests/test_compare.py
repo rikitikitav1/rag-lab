@@ -168,10 +168,200 @@ def test_one_arm_scored_on_one_axis_cannot_agree_with_an_arm_scored_on_three():
     def row(prompts):
         return SimpleNamespace(
             metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}},
-            prompts=prompts,
+            prompts=prompts, question_id=1, run_name="arm", sources=_sources("a.md"),
         )
 
     narrow = row({"judge_faithfulness": 2})
     wide = row({f"judge_{axis}": 2 for axis in ("faithfulness", "relevance", "completeness")})
     assert residencies({"a": [narrow], "b": [wide]})["one_judge_prompt"] is None
     assert residencies({"a": [wide], "b": [wide]})["one_judge_prompt"] is True
+
+
+def _sources(*names):
+    return [{"source": n, "hop": None, "vector_rank": i + 1, "keyword_rank": None}
+            for i, n in enumerate(names)]
+
+
+def _judged(engine=None, name=None, rid=7, qid=1, sources=("a.md",)):
+    from types import SimpleNamespace
+
+    stamp = {"residency_id": rid, "engine": engine}
+    if name:
+        stamp["engine_name"] = name
+    return SimpleNamespace(
+        metrics={"faithfulness": stamp}, prompts={"judge_faithfulness": 1},
+        question_id=qid, run_name="arm", sources=_sources(*sources) if sources else None,
+    )
+
+
+def test_the_migration_pair_still_joins(monkeypatch):
+    # one arm judged before the engines table, one after, same server: this must stay comparable
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"ollama"})
+    got = compare.residencies({
+        "before": [_judged(engine="ollama:11434")],
+        "after": [_judged(engine="ollama:11434", name="ollama")],
+    })
+    assert got["one_engine"] is True, "both eras carry the address, so the pair joins"
+    assert got["one_engine_name"] is None, "one arm predates the name, and silence is not a match"
+    assert "no engine name" in got["read_this_first"], "the reader is told what cannot be said"
+
+
+def test_two_engines_taking_the_same_port_in_turn_are_told_apart(monkeypatch):
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"ollama", "vllm"})
+    got = compare.residencies({
+        "left": [_judged(engine="localhost:8000", name="ollama")],
+        "right": [_judged(engine="localhost:8000", name="vllm")],
+    })
+    # the address agrees and the entity does not, which is the case the address cannot show
+    assert got["one_engine"] is True and got["one_engine_name"] is False
+    assert "same host and port" in got["read_this_first"]
+
+
+def test_an_engine_deleted_since_the_run_is_named_as_gone(monkeypatch):
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: set())
+    got = compare.residencies({"one": [_judged(engine="localhost:8000", name="vllm")]})
+    assert got["engines_gone"] == ["vllm"]
+
+
+def test_arms_that_retrieved_different_sources_are_not_one_arm_read_twice(monkeypatch):
+    # the deterministic half must be equal, not close: the judge's floor covers only the judge
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"ollama"})
+    got = compare.residencies({
+        "left": [_judged(engine="o:1", name="ollama", sources=("a.md", "b.md"))],
+        "right": [_judged(engine="o:1", name="ollama", sources=("b.md", "a.md"))],
+    })
+
+    assert got["one_deterministic"] is False, "the same two files in a different order is a change"
+    assert "ranked them differently" in got["read_this_first"]
+    # a rerank A/B changes retrieval on purpose, and the ruler must not call that arm invalid
+    assert "unless retrieval is the treatment" in got["read_this_first"]
+
+
+def test_the_same_sources_in_the_same_order_leave_the_contrast_readable(monkeypatch):
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"ollama"})
+    got = compare.residencies({
+        "left": [_judged(engine="o:1", name="ollama", sources=("a.md", "b.md"))],
+        "right": [_judged(engine="o:1", name="ollama", sources=("a.md", "b.md"))],
+    })
+
+    assert got["one_deterministic"] is True
+    assert "one residency is necessary" in got["read_this_first"]
+
+
+def test_rows_that_recorded_no_sources_say_so_rather_than_agreeing(monkeypatch):
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"ollama"})
+    got = compare.residencies({
+        "left": [_judged(engine="o:1", name="ollama", sources=None)],
+        "right": [_judged(engine="o:1", name="ollama", sources=("a.md",))],
+    })
+
+    assert got["one_deterministic"] is None, "silence on one side is not a match"
+    assert "cannot be said" in got["read_this_first"]
+
+
+def test_a_differing_engine_is_read_before_the_sources_that_differ_with_it(monkeypatch):
+    # the order matters: a different engine explains different sources, and not the other way round
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"ollama", "vllm"})
+    got = compare.residencies({
+        "left": [_judged(engine="o:1", name="ollama", sources=("a.md",))],
+        "right": [_judged(engine="v:1", name="vllm", sources=("b.md",))],
+    })
+
+    assert (got["one_engine"], got["one_deterministic"]) == (False, False)
+    assert "differently named engines" in got["read_this_first"]
+
+
+def test_the_door_carries_the_disqualification_and_not_only_the_means(monkeypatch):
+    # the response model listed three fields, so the route dropped the residency without a word
+    import bootstrap
+
+    monkeypatch.setattr(bootstrap, "bootstrap_models", lambda: None)
+
+    import server
+    from api.v1 import eval as eval_route
+    from fastapi.testclient import TestClient
+
+    full = {
+        "schema": 8, "runs": ["a", "b"], "pools": {}, "blended_do_not_rank": {},
+        "correlation_population": {"predicate": "p", "n": {}},
+        "residency": {"one_residency": False, "read_this_first": "not comparable"},
+    }
+    monkeypatch.setattr(eval_route.compare_uc, "compare", lambda runs: full)
+
+    from orm.async_db import get_session
+
+    class _Session:
+        async def scalars(self, _stmt):
+            class _R:
+                def all(self):
+                    return [object()]
+
+            return _R()
+
+    async def _yield():
+        yield _Session()
+
+    server.app.dependency_overrides[get_session] = _yield
+    try:
+        with TestClient(server.app) as client:
+            got = client.get("/v1/eval/compare", params={"runs": ["a", "b"]})
+    finally:
+        server.app.dependency_overrides.clear()
+
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert body["residency"]["read_this_first"] == "not comparable"
+    assert body["schema"] == 8, "a reader cannot tell two eras of this record apart without it"
+
+
+def test_a_run_that_cannot_be_paired_is_refused_by_name_not_by_a_bare_500(monkeypatch):
+    # `tok_probe` holds one question three times; the reason names it and the door swallowed it
+    import bootstrap
+
+    monkeypatch.setattr(bootstrap, "bootstrap_models", lambda: None)
+
+    import server
+    from api.v1 import eval as eval_route
+    from evals.pools import Ambiguous
+    from fastapi.testclient import TestClient
+    from orm.async_db import get_session
+
+    def boom(_runs):
+        raise Ambiguous("question 77529 appears twice in run 'tok_probe'")
+
+    monkeypatch.setattr(eval_route.compare_uc, "compare", boom)
+
+    class _Session:
+        async def scalars(self, _stmt):
+            class _R:
+                def all(self):
+                    return [object()]
+
+            return _R()
+
+    async def _yield():
+        yield _Session()
+
+    server.app.dependency_overrides[get_session] = _yield
+    try:
+        with TestClient(server.app) as client:
+            got = client.get("/v1/eval/compare", params={"runs": ["a", "b"]})
+    finally:
+        server.app.dependency_overrides.clear()
+
+    assert got.status_code == 409, got.text
+    assert "77529" in got.json()["detail"], "the caller is told which question, not just that it failed"

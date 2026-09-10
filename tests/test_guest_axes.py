@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import engines
+from conftest import stub_engine
 from evals import guest_axes
 
 
@@ -137,18 +139,18 @@ def test_the_card_is_read_from_the_one_holder_that_already_answers_it(monkeypatc
     # a pass 9.6x as long as ours can lose the judge to a neighbour halfway
     from job_handlers import judging
 
-    monkeypatch.setattr(judging.llm, "resolve_name", lambda role: "q:7b")
+    monkeypatch.setattr(judging.llm, "resolve", lambda role: engines.Resolved("q:7b", stub_engine()))
     monkeypatch.setattr(
-        judging.llm, "residency", lambda: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
+        judging.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
     )
     assert judging.judge_on_card() is True
 
     monkeypatch.setattr(
-        judging.llm, "residency", lambda: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
+        judging.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
     )
     assert judging.judge_on_card() is False
 
-    monkeypatch.setattr(judging.llm, "residency", list)
+    monkeypatch.setattr(judging.ollama, "residency", lambda spec=None: [])
     assert judging.judge_on_card() is None
 
 
