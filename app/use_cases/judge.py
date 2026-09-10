@@ -61,6 +61,8 @@ class Verdict:
     # two verdicts differ by model or by prompt, and without both the difference is unrecorded
     purpose: Purpose | None = None
     prompt_version: int | None = None
+    # ollama drops whole messages to fit its window and says nothing: this count is the only witness
+    prompt_tokens: int | None = None
 
     def __str__(self) -> str:
         return f"score: {self.score}, reason: {self.reason}, model: {self.model}, elapsed: {self.elapsed}"
@@ -113,6 +115,7 @@ def judge(system_prompt, user_prompt, purpose=None, prompt_version=None, model=N
         model=model or llm.resolve_name("judging"),
         purpose=purpose,
         prompt_version=prompt_version,
+        prompt_tokens=completion.prompt_tokens,
     )
 
 

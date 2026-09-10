@@ -157,29 +157,43 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     # five passes over the same fifty rows agreed byte for byte with a seed pinned
     from job_handlers import judging
 
-    monkeypatch.setattr(judging.llm, "sampler_of", lambda role: {"temperature": 0, "seed": 0})
-    monkeypatch.setattr(judging.llm, "engine", lambda: "ollama:11434")
-    verdict = SimpleNamespace(reason="because", elapsed=1.5, model="qwen2.5:7b")
+    monkeypatch.setattr(
+        judging.llm, "sampler",
+        lambda role, spec=None: judging.engines.Sampler({"temperature": 0, "seed": 0}, {}),
+    )
+    _judged_on(monkeypatch, "ollama")
+    verdict = SimpleNamespace(reason="because", elapsed=1.5, model="qwen2.5:7b",
+                              prompt_tokens=2317)
 
     monkeypatch.setenv("OLLAMA_NUM_PARALLEL", "4")
-    written = judging._axis_metric(verdict, judging._stamp(4))
+    written = judging._axis_metric(verdict, judging.stamp_of(4))
     # the time, because a pair of arms is comparable only inside one residency
     when = written.pop("judged_at")
     assert written.pop("residency_id") is None, "no pass named it, so the stamp says so"
     assert written == {
         "reason": "because", "elapsed": 1.5, "model": "qwen2.5:7b", "seed": 0, "width": 4,
         "slots_believed": 4, "on_card": None, "engine": "ollama:11434",
+        # null with no instrument named would mean nowhere to ask, and ollama is where we ask
+        "on_card_read_from": "ollama /api/ps",
+        # ollama trims to its window silently, so the count is the only witness that it did not
+        "judge_prompt_tokens": 2317,
+        # the address and the entity together: one survives the migration, the other names it
+        "engine_name": "ollama", "engine_refused": {}, "engine_added": {},
     }
     assert when.endswith("+00:00"), "the stamp must say when in utc, or two arms cannot be paired"
 
     # a role with no seed says so rather than implying one: the passes before 31.08 had none
-    monkeypatch.setattr(judging.llm, "sampler_of", lambda role: {"temperature": 0})
-    bare = judging._stamp(1)
+    monkeypatch.setattr(
+        judging.llm, "sampler",
+        lambda role, spec=None: judging.engines.Sampler({"temperature": 0}, {}),
+    )
+    bare = judging.stamp_of(1)
     bare.pop("judged_at")
     bare.pop("residency_id")
     assert bare == {
         "seed": None, "width": 1, "slots_believed": 4, "on_card": None,
-        "engine": "ollama:11434",
+        "engine": "ollama:11434", "engine_name": "ollama", "engine_refused": {},
+        "engine_added": {}, "on_card_read_from": "ollama /api/ps",
     }
 
 
@@ -367,7 +381,10 @@ def test_a_skipped_axis_does_not_erase_a_verdict_the_row_already_carries(monkeyp
 
     monkeypatch.setattr(judging, "Session", _Session)
     monkeypatch.setattr(judging, "_apply_axis", lambda *a, **kw: False)
-    monkeypatch.setattr(judging, "_stamp", lambda width, residency=None: {"seed": 0, "width": width})
+    monkeypatch.setattr(
+        judging, "stamp_of",
+        lambda width, residency=None, model=None: {"seed": 0, "width": width},
+    )
 
     judging._judge_log(5, skip=("relevance", "completeness"))
 
@@ -466,12 +483,15 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     from evals.compare import residencies
 
     # every row that carries a residency carries an engine too: they were stamped together
-    def row(rid, version=2):
-        stamp = {"residency_id": rid, "engine": "ollama:11434"}
-        return SimpleNamespace(metrics={"faithfulness": stamp} if rid else {},
-                               prompts={"judge_faithfulness": version})
+    def row(rid, version=2, qid=1):
+        stamp = {"residency_id": rid, "engine": "ollama:11434", "engine_name": "ollama"}
+        return SimpleNamespace(
+            metrics={"faithfulness": stamp} if rid else {},
+            prompts={"judge_faithfulness": version}, question_id=qid, run_name="arm",
+            sources=[{"source": "a.md", "hop": None, "vector_rank": 1, "keyword_rank": None}],
+        )
 
-    same = residencies({"a": [row(7), row(7)], "b": [row(7)]})
+    same = residencies({"a": [row(7), row(7, qid=2)], "b": [row(7)]})
     assert same["one_residency"] is True
     assert "necessary, not sufficient" in same["read_this_first"]
 
@@ -483,12 +503,13 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
 
     # one arm silent and the other not: the union has one id, and that used to read as agreement
     half = residencies({"a": [row(None)], "b": [row(7)]})
-    assert half["one_residency"] is None, "an arm that recorded nothing cannot agree with one that did"
+    assert half["one_residency"] is None, "silence cannot agree with an arm that recorded"
     assert "nothing can be said" in half["read_this_first"], "an unknown residency comes first"
 
     # residency agrees and one arm never recorded an engine: that outranks any residency reading
     quiet = SimpleNamespace(metrics={"faithfulness": {"residency_id": 7}},
-                            prompts={"judge_faithfulness": 2})
+                            prompts={"judge_faithfulness": 2}, question_id=1, run_name="arm",
+                            sources=row(7).sources)
     mixed = residencies({"a": [quiet], "b": [row(7)]})
     assert mixed["one_residency"] is True and mixed["one_engine"] is None
     assert "recorded no engine" in mixed["read_this_first"]
@@ -496,7 +517,8 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     # two backends are not one instrument at all, and that outranks any residency reading
     def on(rid, engine):
         return SimpleNamespace(metrics={"faithfulness": {"residency_id": rid, "engine": engine}},
-                               prompts={"judge_faithfulness": 2})
+                               prompts={"judge_faithfulness": 2}, question_id=1, run_name="arm",
+                               sources=row(rid).sources)
 
     split = residencies({"a": [on(7, "ollama:11434")], "b": [on(7, "api.example:443")]})
     assert split["one_engine"] is False
@@ -507,7 +529,9 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
     rulers = residencies({"a": [row(7, version=2)], "b": [row(7, version=5)]})
     assert rulers["one_judge_prompt"] is False and rulers["one_residency"] is True
     assert "two rulers" in rulers["read_this_first"], "the ruler speaks before the reload"
-    assert rulers["judge_prompts_by_run"] == {"a": {"faithfulness": [2]}, "b": {"faithfulness": [5]}}
+    assert rulers["judge_prompts_by_run"] == {
+        "a": {"faithfulness": [2]}, "b": {"faithfulness": [5]},
+    }
 
     # three axes carry three versions, and their union is three even when both arms agree
     def all_axes(version):
@@ -515,6 +539,7 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
             metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}},
             prompts={f"judge_{axis}": version
                      for axis in ("faithfulness", "relevance", "completeness")},
+            question_id=1, run_name="arm", sources=row(7).sources,
         )
 
     wide = residencies({"a": [all_axes(2)], "b": [all_axes(2)]})
@@ -522,7 +547,8 @@ def test_a_comparison_says_when_two_arms_were_judged_across_a_reload():
 
     # a version nobody recorded cannot be compared, and that is not the same as a match
     blank = SimpleNamespace(
-        metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}}, prompts={}
+        metrics={"faithfulness": {"residency_id": 7, "engine": "ollama:11434"}}, prompts={},
+        question_id=1, run_name="arm", sources=row(7).sources,
     )
     unknown = residencies({"a": [blank], "b": [row(7)]})
     assert unknown["one_judge_prompt"] is None
@@ -534,7 +560,7 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     import job_handlers.judging as j
 
     on_card, last, disturbed = [None], [None], [False]
-    monkeypatch.setattr(j, "judge_on_card", lambda: on_card[0])
+    monkeypatch.setattr(j, "judge_on_card", lambda _model=None: on_card[0])
     monkeypatch.setattr(j, "_last_residency", lambda: last[0])
     monkeypatch.setattr(j, "_loaded_since", lambda prev, job_id: disturbed[0])
 
@@ -613,14 +639,148 @@ def test_a_rejudge_that_raises_the_score_takes_the_settlement_back():
     assert snap.metrics["settled_outcome"] == "answered_ungrounded"
 
 
-def test_the_language_probe_records_what_judged_it():
+def test_the_language_probe_records_what_judged_it(monkeypatch):
     # the control read out of regime twice, and nothing in the file said whether the judge was whole
-    import inspect
-
     from evals import judge_language
     from job_handlers import judging
 
-    assert "stamp" in inspect.signature(judge_language.measure).parameters
-    handler = inspect.getsource(judging.judge_language)
-    assert "_residency(job_id)" in handler, "the pass names the residency it ran in"
-    assert "stamp=" in handler
+    seen = {}
+    monkeypatch.setattr(judging, "_residency", lambda job_id: judging.Residency(77, True))
+    _judged_on(monkeypatch, "ollama")
+    monkeypatch.setattr(
+        judging.llm, "sampler",
+        lambda role, spec=None: judging.engines.Sampler({"seed": 0}, {}),
+    )
+    monkeypatch.setattr(judging, "_parallel_slots", lambda: 1)
+    monkeypatch.setattr(judging, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(judge_language, "measure", lambda *a, **kw: seen.update(kw) or {})
+    monkeypatch.setattr(judging.measurements, "record", lambda *a, **kw: "nowhere")
+    judging.judge_language({"run_name": "r", "_job_id": 1})
+
+    stamp = seen.get("stamp") or {}
+    # the record, not the source text: the old assertion passed on an empty stamp
+    assert stamp.get("residency_id") == 77, "the pass names the residency it ran in"
+    assert stamp.get("on_card") is True and stamp.get("engine_name") == "ollama"
+
+
+def _judged_on(monkeypatch, name):
+    import engines
+    from job_handlers import judging
+    from models.registry import EngineKind, Placement
+
+    spec = engines.EngineSpec(1, name, EngineKind.ollama, name.upper(), Placement.gpu)
+    monkeypatch.setattr(
+        judging.llm, "resolve_for", lambda role, model=None: engines.Resolved("qwen2.5:7b", spec)
+    )
+    monkeypatch.setattr(judging.engines, "address_of", lambda _spec: "ollama:11434")
+
+
+def test_the_card_is_read_after_the_judge_answered_and_not_before(monkeypatch):
+    # the generator evicts the judge, so a probe taken first sees an empty card and splits the pass
+    from types import SimpleNamespace
+
+    from job_handlers import judging
+
+    order = []
+    monkeypatch.setattr(judging, "_residency", lambda job_id, model=None: order.append("probe")
+                        or judging.Residency(job_id, True))
+
+    late = judging.LateResidency(7)
+    assert order == [], "building the holder must not touch the card"
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def get(self, _model, _id):
+            return SimpleNamespace(
+                answered=True, metrics={}, relevance=None, faithfulness=None,
+                completeness=None, context="ctx",
+                question=SimpleNamespace(original_text="q", reference_answer="ref"),
+                answer="a",
+            )
+
+    monkeypatch.setattr(judging, "Session", _Session)
+    monkeypatch.setattr(judging, "_run_axis",
+                        lambda *a, **kw: order.append("call") or SimpleNamespace(score=1))
+    monkeypatch.setattr(judging, "stamp_of", lambda *a, **kw: {})
+    monkeypatch.setattr(judging, "_merge_our_scores", lambda *a, **kw: True)
+
+    judging._judge_log(1, residency=late)
+
+    assert order and order[-1] == "probe", f"the probe must come last, got {order}"
+    assert order.count("probe") == 1, "one probe per pass, not per row"
+
+
+def test_an_engine_without_that_instrument_names_none_and_is_not_asked(monkeypatch):
+    # `/api/ps` is ollama's door; on vllm it 404s, the error is swallowed, and null read as "unknown"
+    import engines
+    from job_handlers import judging
+    from models.registry import EngineKind, Placement
+
+    spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    asked = []
+    monkeypatch.setattr(judging.ollama, "residency", lambda s: asked.append(s) or [])
+    monkeypatch.setattr(
+        judging.llm, "resolve", lambda role: engines.Resolved("Qwen/Qwen2.5-7B-Instruct-AWQ", spec)
+    )
+
+    assert judging.residency_instrument(spec) is None
+    assert judging.judge_on_card() is None
+    assert asked == [], "asking an engine that has no such door records not-applicable as unknown"
+
+
+def test_the_next_sweep_does_not_inherit_the_retry_counter(monkeypatch):
+    # a pass that was ever deferred carries `attempts`, and the door refuses it from a caller
+    import job_specs
+    from job_handlers import judging
+
+    seen = {}
+    monkeypatch.setattr(judging.job_queue, "enqueue",
+                        lambda t, o, **kw: seen.update(type=t, options=o) or 1)
+    monkeypatch.setattr(judging, "Session", _session_yielding(None))
+    monkeypatch.setattr(judging, "_target_log_ids", lambda _s, _o: [1, 2])
+
+    judging._sweep_again_if_rows_are_still_owed(
+        {"run_name": "r", "attempts": 2, "deferred_seconds": 90, "_job_id": 7}, "r"
+    )
+
+    assert seen["options"] == {"run_name": "r", "sweep": 1}
+    # the real refusal, run against what the real function built
+    job_specs.check("judge_answers", seen["options"])
+
+
+def _session_yielding(value):
+    class _S:
+        def __enter__(self):
+            return value
+
+        def __exit__(self, *_):
+            return False
+
+    return _S
+
+
+def test_the_card_is_read_for_the_engine_that_judges_not_the_one_the_role_names(monkeypatch):
+    # a bench override put `on_card` from ollama's /api/ps next to a vllm engine name
+    import engines
+    from job_handlers import judging
+    from models.registry import EngineKind, Placement
+
+    asked = []
+    monkeypatch.setattr(
+        judging.llm, "resolve_for",
+        lambda role, model=None: asked.append(model) or engines.Resolved(
+            model or "qwen2.5:7b",
+            engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+            if model else engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA",
+                                             Placement.gpu),
+        ),
+    )
+    monkeypatch.setattr(judging.ollama, "residency", lambda _spec: [])
+
+    assert judging.judge_on_card("Qwen/Qwen2.5-7B-Instruct-AWQ") is None
+    assert asked == ["Qwen/Qwen2.5-7B-Instruct-AWQ"], "the override must reach the card probe"

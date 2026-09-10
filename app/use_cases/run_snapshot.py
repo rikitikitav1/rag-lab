@@ -1,11 +1,16 @@
 import config
 import llm
+import logging_setup
 import version
+from engines import ollama
+from models.registry import Role
 
 import db
 
-# 4 fills the language, so empty means no directive was given; 3 added the key; 2 every key
-SCHEMA = 4
+log = logging_setup.get_logger(__name__)
+
+# 5 engine per role; 6 what the engine refused; 7 that field renamed `engine_refused`
+SCHEMA = 7
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -36,7 +41,39 @@ KEYS = (
     "language",
     # an arm that says the tools again after a tool answer must say so, or it is silently a new arm
     "restate_tools",
+    # per role, and read by the role keys: a bare {} means no role was read, not "one engine"
+    "engines",
+    # what a role asked of its engine and the engine would not carry: never read as applied
+    "engine_refused",
 )
+
+
+# the two roles a run answers with; judging is stamped per row, where the bench can override it
+ANSWERING = (Role.generation, Role.embedding)
+
+
+# a report must not die on an unreachable registry: the engine is extra, the run is the record
+def _by_role(picked) -> tuple[dict, dict]:
+    named, dropped = {}, {}
+    for role in ANSWERING:
+        try:
+            spec = picked.engine if role is Role.generation else llm.resolve(role).engine
+            if spec is None:
+                continue
+            named[role] = spec.name
+            dropped[role] = llm.sampler(role, spec).dropped
+        except Exception as e:
+            log.warning("run_snapshot.engine_unread", role=role, error=str(e))
+    return named, dropped
+
+
+# the comment below promises the report survives an unreadable registry, so this one does too
+def _generator(model: str | None):
+    try:
+        return llm.resolve_for(Role.generation, model)
+    except Exception as e:
+        log.warning("run_snapshot.generator_unread", model=model, error=str(e))
+        return llm.Resolved(model or "?", None)
 
 
 def _rerank_device() -> str | None:
@@ -63,6 +100,8 @@ def of_run(
     unknown = sorted(set(filled) - set(KEYS))
     if unknown:
         raise ValueError(f"the run snapshot has no place for {unknown}")
+    picked = _generator(model)
+    named, dropped = _by_role(picked)
     common = {
         "schema": SCHEMA,
         "rerank": use_rerank,
@@ -78,7 +117,9 @@ def of_run(
         "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
         # the commit both pipelines ran, so two arms can be shown to have run the same code
         "code_version": version.CODE_VERSION,
-        "context_length": llm.server_context_length(model or llm.resolve_name("generation")),
+        "context_length": ollama.context_length(picked.name, picked.engine),
+        "engines": named,
+        "engine_refused": dropped,
     }
     return {key: None for key in KEYS} | common | filled
 

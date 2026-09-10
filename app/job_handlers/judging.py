@@ -2,13 +2,15 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+import engines
 import job_queue
 import limits
 import llm
 import logging_setup
-from evals import guest_axes, sampling
+from engines import ollama
+from evals import guest_axes, measurements, sampling
 from models.eval import Question, QuestionLog
-from models.registry import Purpose, Role
+from models.registry import EngineKind, Purpose, Role
 from orm import dsn
 from orm.sync_db import Session
 from sqlalchemy import and_, cast, func, or_, select, text
@@ -32,9 +34,17 @@ _LOCK_WAIT_MS = 5000
 def _bounded_wait(session) -> None:
     session.execute(text(f"SET LOCAL lock_timeout = '{_LOCK_WAIT_MS}ms'"))
 
+# only ollama splits a model between vram and ram without saying so, so only it needs this reading
+def residency_instrument(spec) -> str | None:
+    return "ollama /api/ps" if spec.kind is EngineKind.ollama else None
+
+
 # a pass whose guests cost several times our own can lose the judge to a neighbour halfway
-def judge_on_card() -> bool | None:
-    seen = [m for m in llm.residency() if m["model"] == llm.resolve_name("judging")]
+def judge_on_card(model: str | None = None) -> bool | None:
+    judged_by = llm.resolve_for("judging", model)
+    if residency_instrument(judged_by.engine) is None:
+        return None
+    seen = [m for m in ollama.residency(judged_by.engine) if m["model"] == judged_by.name]
     return seen[0]["vram_mb"] >= seen[0]["size_mb"] if seen else None
 
 
@@ -181,7 +191,7 @@ def judge_answers(options: dict) -> None:
     force = bool(options.get("log_ids"))
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
-    residency = _residency(job_id)
+    residency = LateResidency(job_id, bench.model if bench else None)
     judged = 0
 
     def one(log_id):
@@ -243,7 +253,6 @@ def _count_the_attempt(log_id: int, skip: tuple, error: str) -> None:
 @register("judge_language")
 def judge_language(options: dict) -> None:
     from evals import judge_language as probe
-    from evals import measurements
 
     require_role_ready(Role.judging)
     run_name = options.get("run_name") or "arc3_agent_baseline"
@@ -255,7 +264,7 @@ def judge_language(options: dict) -> None:
         note=lambda line: log.info("judge_language.pair", pair=line),
         stop=lambda: _stop_asked(job_id),
         log_ids=options.get("log_ids"),
-        stamp=_stamp(judge_width(options.get("judge_width")), _residency(job_id)),
+        stamp=stamp_of(judge_width(options.get("judge_width")), _residency(job_id)),
     )
     # the path is derived, never taken from options: a number with no file cannot be cited
     where = measurements.record("judge_language", run_name, out)
@@ -281,7 +290,7 @@ def judge_guest_axes(options: dict) -> None:
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
     seen = _residency(job_id)
-    stamp = _stamp(width, seen)
+    stamp = stamp_of(width, seen)
     started_on_card = seen.on_card
 
     def one(log_id):
@@ -424,7 +433,11 @@ def _sweep_again_if_rows_are_still_owed(options: dict, run_name: str) -> None:
         experiment.mark_failed_for_run(run_name)
         return
     log.warning("judge_answers.sweeping_again", run_name=run_name, owed=len(owed), sweep=sweep)
-    carried = {k: v for k, v in options.items() if not k.startswith("_")}
+    import job_specs
+
+    # the next sweep is a new job: the previous one's retry counter is not its business
+    carried = {k: v for k, v in options.items()
+               if not k.startswith("_") and k not in job_specs.WORKER_KEYS}
     job_queue.enqueue("judge_answers", {**carried, "sweep": sweep})
 
 
@@ -460,10 +473,24 @@ class Residency:
     on_card: bool | None
 
 
+# taken once per pass, but only after the first judged call has put the judge back on the card
+class LateResidency:
+    # the bench can override the judge, and the card to read is that judge's, not the role's
+    def __init__(self, job_id, model: str | None = None):
+        self.job_id = job_id
+        self.model = model
+        self.seen = None
+
+    def get(self) -> Residency:
+        if self.seen is None:
+            self.seen = _residency(self.job_id, self.model)
+        return self.seen
+
+
 # `/api/ps` carries no load moment, so a residency is named by the pass that caused the load
-def _residency(job_id) -> Residency:
+def _residency(job_id, model: str | None = None) -> Residency:
     try:
-        on_card = judge_on_card()
+        on_card = judge_on_card(model)
         # partly on the card is a different instrument: layers on the cpu answer with other kernels
         if on_card is not True:
             return Residency(job_id, on_card)
@@ -507,22 +534,32 @@ def _last_residency() -> int | None:
     return None
 
 
-# once per row, not per axis: the width belongs to the pass and the sampler to the role
-def _stamp(width: int, residency: Residency | None = None) -> dict:
+# once per row, not per axis: the width belongs to the pass and the sampler to the engine that answered
+def stamp_of(width: int, residency: Residency | None = None, model: str | None = None) -> dict:
     from datetime import datetime, timezone
 
     seen = residency or Residency(None, None)
-    sampler = llm.sampler_of("judging")
+    # the bench can override the judge, and then the row was answered by that model's engine
+    judged_by = llm.resolve_for("judging", model)
+    sampler = llm.sampler(role="judging", spec=judged_by.engine)
     return {
         # at temperature zero this says the sampler took no part, not that the pass repeats
-        "seed": sampler.get("seed"),
+        "seed": sampler.sent.get("seed"),
+        # what the role asked for and the engine would not carry: never read as applied
+        "engine_refused": sampler.dropped,
+        # and what the engine added on its own, read from the server: our vLLM start is not default
+        "engine_added": engines.added_by(judged_by.engine, judged_by.name),
         "width": width,
         # two arms are comparable only inside one residency, and this is how a reader checks
         "residency_id": seen.id,
         # a pass that found the judge half on the cpu is not the pass that found it whole
         "on_card": seen.on_card,
-        # numbers from two backends must not add up silently, so the record names its own
-        "engine": llm.engine(),
+        # null with no instrument named is "nowhere to ask", not "asked and did not see it"
+        "on_card_read_from": residency_instrument(judged_by.engine),
+        # the address of the engine that answered, not of the process: they differed and it lied
+        "engine": engines.address_of(judged_by.engine),
+        # the address alone cannot say which engine: two of them can share a host and a port
+        "engine_name": judged_by.engine.name,
         "judged_at": datetime.now(timezone.utc).isoformat(),
         # `/api/ps` does not report slots, so the record names the mirror it was capped by
         "slots_believed": _parallel_slots(),
@@ -579,13 +616,18 @@ def _judge_log(log_id: int, force: bool = False, bench=None, width: int = 1, ski
             ),
         }
 
-    stamp = _stamp(width, residency)
     taken = {}
     for axis, (verdict_fn, args) in calls.items():
         if axis not in owed or (not force and _errored(metrics, axis)):
             continue
         taken[axis] = _run_axis(log_id, axis, verdict_fn, *args)
+    # after the calls: probing before them read the card the generator had just taken
+    stamp = stamp_of(width, _seen(residency), bench.model if bench else None)
     return _merge_our_scores(log_id, taken, skip, stamp, force)
+
+
+def _seen(residency) -> Residency | None:
+    return residency.get() if isinstance(residency, LateResidency) else residency
 
 
 # the lock is held for one statement: a verdict taken meanwhile wins unless this pass was forced
@@ -685,5 +727,7 @@ def _axis_metric(verdict, stamp: dict | None = None) -> dict:
         "reason": verdict.reason,
         "elapsed": verdict.elapsed,
         "model": verdict.model,
+        # named for the judge, because the row already carries the answering call's count
+        "judge_prompt_tokens": verdict.prompt_tokens,
         **(stamp or {}),
     }

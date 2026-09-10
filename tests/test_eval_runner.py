@@ -16,8 +16,11 @@ def _rows(marker, n=3):
 
 
 def _stub_phases(monkeypatch, use_rerank_expected=None):
+    from conftest import stub_engines
     from use_cases import search_depth
 
+    # the card gate now asks the generator's own engine, and resolving one needs a database
+    stub_engines(monkeypatch, runner)
     calls = []
     # the phase resolves the depth once and carries it; asking the planner needs a database
     monkeypatch.setattr(search_depth, "resolve", lambda *a, **kw: 200)
@@ -35,13 +38,13 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
         lambda pairs: calls.append(("rerank", len(pairs))) or [1.0] * len(pairs),
     )
     monkeypatch.setattr(
-        runner.llm, "unload",
+        runner, "_release",
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
     monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
     # the card check is a network call; the tests that care about it override these
-    monkeypatch.setattr(runner.llm, "warn_if_models_do_not_fit", lambda: [])
-    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: [])
+    monkeypatch.setattr(runner.ollama, "warn_if_models_do_not_fit", lambda spec=None: [])
+    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda spec=None: [])
     monkeypatch.setattr(
         runner.chat, "answer_from_rows",
         lambda text, rows, **kw: calls.append(("generate", text, kw.get("phased"))),
@@ -160,7 +163,7 @@ def test_unload_targets_the_overridden_generator(monkeypatch):
     calls = _stub_phases(monkeypatch)
     unloaded = []
     monkeypatch.setattr(
-        runner.llm, "unload",
+        runner, "_release",
         lambda role="embedding", model=None: unloaded.append((role, model)),
     )
     runner.run_phased(["q"], "run", _spec(use_rerank=True, k=2, model="hf.co/some/model:Q4"))
@@ -271,7 +274,7 @@ def test_the_card_is_asked_about_before_the_generator_is_paid_for(monkeypatch):
     import pytest
 
     calls = _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["bge-m3"])
+    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda _spec=None: ["bge-m3"])
     with pytest.raises(RuntimeError, match="not on the GPU"):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
     assert [c[0] for c in calls] == ["search", "search", "unload", "unload", "unload"], (
@@ -286,14 +289,14 @@ def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
     import pytest
 
     _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["llama3.1:8b"])
+    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda _spec=None: ["llama3.1:8b"])
     with pytest.raises(RuntimeError, match="not on the GPU"):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2))
 
 
 def test_a_phased_run_measuring_the_cpu_says_so_and_proceeds(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.llm, "models_off_the_card", lambda: ["llama3.1:8b"])
+    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda _spec=None: ["llama3.1:8b"])
     answered, cancelled = runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2), allow_cpu=True)
     assert (answered, cancelled) == (2, False)
     assert [c[0] for c in calls].count("generate") == 2
@@ -318,7 +321,7 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
     # a sweep over `model` on the agent pipeline runs several of these back to back
     calls = []
     monkeypatch.setattr(
-        runner.llm, "unload",
+        runner, "_release",
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
     monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))

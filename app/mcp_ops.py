@@ -7,6 +7,7 @@ from evals import (
     compare,
     generation_metrics,
     judge_correlation,
+    pools,
     question_sets,
     retrieval_metrics,
     run_debts,
@@ -210,7 +211,10 @@ def compare_pools(
     empty = [name for name, logs in runs.items() if not logs]
     if empty:
         raise ToolError(f"no logs for runs: {empty}")
-    return compare.compare(runs)
+    try:
+        return compare.compare(runs)
+    except pools.Ambiguous as e:
+        raise ToolError(str(e)) from e
 
 
 READING = {

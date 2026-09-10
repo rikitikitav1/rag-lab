@@ -81,9 +81,11 @@ def window_matches_config() -> tuple[bool, str]:
     )
     # whichever generator is loaded: an override left the configured name unloaded
     out = _in_worker(
-        "import json, llm;"
-        " print(json.dumps({'loaded': [e['model'] for e in llm.residency()],"
-        " 'asked': llm.window_model()}))"
+        "import json, llm; from engines import ollama;"
+        # the role names its engine, and with a second ollama a bare ask reads as no residency
+        " picked = llm.resolve('generation');"
+        " print(json.dumps({'loaded': [e['model'] for e in ollama.residency(picked.engine)],"
+        " 'asked': ollama.window_model(picked.name, spec=picked.engine)}))"
     )
     if not out.startswith("{"):
         return False, f"context window: cannot read the residency ({out[:40] or 'no answer'})"
@@ -95,7 +97,7 @@ def window_matches_config() -> tuple[bool, str]:
             f"context window: config {configured or 'unknown'}, no generator loaded"
             " (descriptive: nothing to compare, ask one a question first)"
         )
-    live = _in_worker(f"import llm; print(llm.server_context_length({asked!r}))")
+    live = _in_worker(f"from engines import ollama; print(ollama.context_length({asked!r}))")
     # the server is the authority: a stray env var in a running container beat the config once
     ok = bool(configured) and live == configured
     return ok, f"context window: config {configured or 'unknown'}, {asked} says {live or 'unknown'}"
@@ -105,12 +107,14 @@ def window_matches_config() -> tuple[bool, str]:
 def models_are_on_the_card() -> tuple[bool, str]:
     out = sh(
         "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import json, llm;"
-        " roles = {r: llm.resolve_name(r) for r in"
+        "import json, llm; from engines import ollama;"
+        " picked = {r: llm.resolve(r) for r in"
         " ('generation', 'embedding', 'judging', 'paraphrasing')};"
-        " loaded = llm.residency();"
+        " roles = {r: p.name for r, p in picked.items()};"
+        # the card of the generator's engine: two ollama rows make a bare ask ambiguous
+        " loaded = ollama.residency(picked['generation'].engine);"
         " print(json.dumps({'roles': roles, 'loaded': loaded,"
-        " 'off_the_card': [e['model'] for e in loaded if llm.off_the_card(e)]}))",
+        " 'off_the_card': [e['model'] for e in loaded if ollama.off_the_card(e)]}))",
     )
     if not out.startswith("{"):
         return False, f"residency: cannot read ({out[:60] or 'no answer'})"

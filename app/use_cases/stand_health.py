@@ -3,6 +3,7 @@ import gpu
 import job_queue
 import llm
 import logging_setup
+from engines import ollama
 from models.jobs import Job
 from models.registry import Model, ModelRole
 from orm.sync_db import Session
@@ -102,16 +103,17 @@ def depth() -> dict:
 
 
 def stand() -> dict:
-    # one rule with the preflight and the record: the route used to name another model
-    loaded = llm.residency()
-    asked = llm.window_model(loaded)
+    # the card of the generator's engine: with a second ollama a bare ask reads as no residency
+    picked = llm.resolve("generation")
+    loaded = ollama.residency(picked.engine)
+    asked = ollama.window_model(picked.name, loaded)
     return {
         "card": card(),
         "residency": loaded,
         "window": {
             "declared": config.settings.llm.context_length,
             "asked": asked,
-            "served": llm.server_context_length(asked) if asked else None,
+            "served": ollama.context_length(asked, picked.engine) if asked else None,
         },
         "queue": _or_error("queue", queue),
         "roles": _or_error("roles", roles),

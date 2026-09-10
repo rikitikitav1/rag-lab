@@ -12,8 +12,8 @@ import llm
 from evals.guest_probes import RESTATE, sentence_of
 from use_cases.judge import faithful_verdict
 
-# 2 the subject is the row's own answer; 3 named rows; 4 the pass stamps the instrument
-SCHEMA = 4
+# 2 the row's own answer; 3 named rows; 4 the pass stamps the instrument; 5 the engine named
+SCHEMA = 5
 
 # history of this instrument on the 3.2 sets: 96.4% and 95.6% at least 7, and it drifts on a reload
 CONTROL_FLOOR = 0.90
@@ -65,7 +65,7 @@ def measure(run_name: str, rows: int, note=None, stop=None, log_ids=None, stamp=
     return (report(scored) | control(originals)
             | {"run_name": run_name, "population": population, "n_asked": len(pool),
                # a control out of regime is unreadable without knowing what judged it
-               "judged_by": stamp or {}, "rows": scored})
+               "instrument": stamp or {}, "rows": scored})
 
 
 # pass 1 scored a grounded restatement zero in a fifth of pairs and nothing said the regime was off

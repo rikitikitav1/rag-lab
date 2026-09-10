@@ -2,6 +2,7 @@ import inspect
 from types import SimpleNamespace
 
 import pytest
+from conftest import stub_engines
 from evals import runner
 from use_cases import agent, chat
 
@@ -38,8 +39,8 @@ def test_the_single_shot_snapshot_names_the_variant_it_read(monkeypatch):
     from use_cases import run_snapshot
 
     monkeypatch.setattr(run_snapshot.db, "corpus_fingerprint", lambda *, variant: {"chunks": 7})
-    monkeypatch.setattr(run_snapshot.llm, "server_context_length", lambda model: None)
-    monkeypatch.setattr(run_snapshot.llm, "resolve_name", lambda role: "stub")
+    monkeypatch.setattr(run_snapshot.ollama, "context_length", lambda model, spec=None: None)
+    stub_engines(monkeypatch, run_snapshot)
     snapshot = chat._config_snapshot(False, 5, True, 0.55, None, "baseline")
     assert snapshot["variant"] == "baseline"
     assert snapshot["corpus_fingerprint"] == {"chunks": 7}
@@ -201,3 +202,4 @@ def test_a_variant_name_with_a_trailing_newline_is_refused():
     for bad in ("clean_1024\n", "clean 1024", "Clean_1024", "", "x" * 37):
         with pytest.raises(ValueError, match="must match"):
             check_variant(bad)
+
