@@ -94,16 +94,26 @@ curl -s "localhost:8000/v1/eval/compare?runs=arm_a&runs=arm_b" | python3 -m json
 curl -s "localhost:8000/v1/job?type=eval_run&sort_by=elapsed&sort_order=desc" | python3 -m json.tool
 ```
 
-## Scenario 6: model lifecycle
+## Scenario 6: engines, models and roles
 
 ```bash
-# register a new model (enqueues an Ollama pull)
+# register a second engine; the address comes from VLLM_BASE_URL, never from the row
+curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
+  -d '{"name":"vllm","kind":"vllm","env_prefix":"VLLM","placement":"gpu"}'
+# ask the engine itself whether it answers
+curl -s localhost:8000/v1/engine/2/live | python3 -m json.tool
+# register a model: an engine that pulls gets a pull job, one that does not is asked whether it serves the name
 curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' -d '{"name":"qwen2.5:14b"}'
-# list models / roles
+curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' \
+  -d '{"name":"Qwen/Qwen2.5-7B-Instruct-AWQ","engine":"vllm"}'
+# list models / roles; one name may live on two engines, so the list names the engine
 curl -s localhost:8000/v1/model | python3 -m json.tool
 curl -s localhost:8000/v1/role  | python3 -m json.tool
-# assign a model to a role (switches at runtime)
+# assign a model to a role (switches at runtime, and moves the role to that model's engine)
 curl -sX PUT localhost:8000/v1/role/generation -H 'Content-Type: application/json' -d '{"model_id": 1}'
+# judge one run on another engine without moving the default judge
+curl -sX POST localhost:8000/v1/job -H 'Content-Type: application/json' \
+  -d '{"type":"judge_answers","options":{"run_name":"smoke","judge_model":"Qwen/Qwen2.5-7B-Instruct-AWQ"}}'
 ```
 
 ## Scenario 7: prompt versioning

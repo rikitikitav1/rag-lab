@@ -95,3 +95,5 @@ Rules that decide whether an entry is worth keeping:
 - [2026-09-07 - The phases split, and the replay that checked it without asking a model twice](experiments/2026-09-07_the-phases-split-and-the-replay-that-checked-it.md)
 - [2026-09-07 - What moving onto the standard was worth, and what it cost](experiments/2026-09-07_what-the-standard-was-worth.md)
 - [2026-09-08 - The directive nobody gave, and what our judge charges for Russian](experiments/2026-09-08_the-directive-nobody-gave.md)
+- [2026-09-09 - What batch invariance costs on an AWQ judge, and what it buys](experiments/2026-09-09_what-batch-invariance-costs-on-an-awq-judge.md)
+- [2026-09-09 - The same rows judged by two engines, and what that comparison cannot say](experiments/2026-09-09_the-same-rows-judged-by-two-engines.md)
