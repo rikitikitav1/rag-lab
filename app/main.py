@@ -2,10 +2,10 @@ import argparse
 import os
 
 import config
-import llm
 import logging_setup
 import sources.factory
 import use_cases.index
+from engines import ollama
 
 import db
 
@@ -44,7 +44,7 @@ def main():
         console.start()
 
     if args.pull_models:
-        llm.ensure_models()
+        ollama.ensure_models()
 
 
 if __name__ == "__main__":

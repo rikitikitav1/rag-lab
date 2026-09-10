@@ -2,7 +2,8 @@ import json
 import time
 
 import agent_tools
-import config
+import engines
+import engines.ollama
 import llm
 import logging_setup
 from langchain_core.tools import StructuredTool
@@ -17,17 +18,21 @@ def truncated(message) -> bool:
     return meta.get("finish_reason") == "length" or meta.get("done_reason") == "length"
 
 
+# the third client in the tree, and the only one that used to read the address out of the config
 def chat_model(role: str = "generation", model: str | None = None):
     from langchain_ollama import ChatOllama
 
-    opts = config.settings.llm.roles[role].options
+    picked = llm.resolve_for(role, model)
+    engines.ollama.refuse_unless_ollama(picked.engine, "the idiomatic orchestrator")
+    sent = llm.sampler(role, picked.engine).sent
     return ChatOllama(
-        base_url=config.settings.llm.base_url,
-        model=model or llm.resolve_name(role),
-        temperature=opts.get("temperature"),
-        num_predict=opts.get("max_tokens"),
+        base_url=engines.base_url(picked.engine),
+        model=picked.name,
+        temperature=sent.get("temperature"),
+        num_predict=sent.get("max_tokens"),
+        seed=sent.get("seed"),
         # ChatOllama has no retry of its own, so this is one attempt where our client takes two
-        client_kwargs={"timeout": llm.LLM_TIMEOUT},
+        client_kwargs={"timeout": engines.LLM_TIMEOUT},
     )
 
 

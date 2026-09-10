@@ -1,4 +1,4 @@
-import llm
+from engines import ollama
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from orm.async_db import get_session
@@ -27,7 +27,7 @@ async def readiness(session: AsyncSession = Depends(get_session)):
         checks["postgres"] = "down"
 
     try:
-        await run_in_threadpool(llm.list_models)
+        await run_in_threadpool(ollama.list_models)
         checks["ollama"] = "ok"
     except Exception:
         checks["ollama"] = "down"
