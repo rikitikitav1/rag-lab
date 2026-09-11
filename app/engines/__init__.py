@@ -4,6 +4,7 @@ from .core import (
     SAMPLER_KEYS,
     SEEDED_PREFIX,
     Ambiguous,
+    CardState,
     EngineSpec,
     NotSupported,
     Sampler,
@@ -37,7 +38,7 @@ from .vllm import WakeFailed, started_at
 __all__ = [
     "ACCEPTS", "CARD", "DANGLING", "LLM_TIMEOUT", "NAMED", "SAMPLER_KEYS", "SEEDED_PREFIX",
     "UNNAMED",
-    "Ambiguous", "EngineSpec", "NotEnoughDisk", "NotSupported", "Resolved", "Sampler",
+    "Ambiguous", "CardState", "EngineSpec", "NotEnoughDisk", "NotSupported", "Resolved", "Sampler",
     "Stamped", "Unconfigured", "Unnamed", "WakeFailed",
     "added_by", "address_of", "api_key", "base_url", "card_engines", "client_for", "engine_of",
     "find_model", "forget_clients", "free_bytes", "label", "refuse_if_tight", "registered",

@@ -58,9 +58,12 @@ class RetrievalResponse(BaseModel):
 def wait_for_the_card(*roles) -> None:
     try:
         card_wait.wait_for_the_card(*roles)
-    except card_wait.CardBusy as e:
-        headers = {"Retry-After": str(e.retry_after)} if e.retry_after else None
-        raise HTTPException(status_code=e.status, detail=e.detail, headers=headers) from e
+    except card_wait.CardHeld as e:
+        raise HTTPException(
+            status_code=503, detail=e.detail, headers={"Retry-After": str(e.retry_after)}
+        ) from e
+    except card_wait.CannotAnswer as e:
+        raise HTTPException(status_code=409, detail=e.detail) from e
 
 
 @router.post("/question", response_model=QuestionResponse)

@@ -186,7 +186,7 @@ def test_the_mcp_tools_wait_for_the_card_like_the_rest_chat(monkeypatch):
 
     def busy(*roles):
         asked.append(roles)
-        raise mcp_server.card_wait.CardBusy(503, "the card is held by the judge on vllm", 5)
+        raise mcp_server.card_wait.CardHeld("the card is held by the judge on vllm", 5)
 
     monkeypatch.setattr(mcp_server.card_wait, "wait_for_the_card", busy)
     with pytest.raises(ToolError, match="held by the judge"):

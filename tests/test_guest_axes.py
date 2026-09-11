@@ -385,6 +385,7 @@ def test_a_cancelled_judging_job_stops_instead_of_running_to_the_end(monkeypatch
         model=None, template=lambda p: "t"))
     monkeypatch.setattr(judging, "require_role_ready", lambda role, **kw: None)
     monkeypatch.setattr(judging, "require_card", lambda role, model=None, asked_by=None: None)
+    monkeypatch.setattr(judging, "_refuse_a_second_judge", lambda run_name, model: None)
     monkeypatch.setattr(judging, "_target_log_ids", lambda s, o: [1, 2, 3, 4, 5])
     monkeypatch.setattr(judging.experiment, "revive_for_run", lambda r: None)
     monkeypatch.setattr(judging, "_sweep_again_if_rows_are_still_owed",

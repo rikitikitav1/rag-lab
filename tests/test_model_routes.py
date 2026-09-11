@@ -312,7 +312,7 @@ def test_a_vllm_that_does_not_serve_the_name_is_refused_before_the_row(door, mon
         serves[0] = True
         taken = client.post("/v1/model", json={"name": "Qwen/Q", "engine_id": 2})
 
-    assert refused.status_code == 400 and "does not serve" in refused.json()["detail"]
+    assert refused.status_code == 422 and "does not serve" in refused.json()["detail"]
     rows = [m for m in session.added if isinstance(m, Model)]
     assert len(rows) == 1, "the refusal comes before the row, not after it"
     assert taken.status_code == 200
@@ -324,7 +324,7 @@ def test_a_model_takes_a_quant_by_hand_and_a_weights_key_only_the_hub_knows(door
     from api.v1 import llm_model
 
     known = [False]
-    monkeypatch.setattr(llm_model, "_repo_exists", lambda repo: known[0])
+    monkeypatch.setattr(llm_model.vllm, "repo_exists", lambda repo: known[0])
     session = FakeAsyncSession(
         engines=[_engine(2, "vllm", EngineKind.vllm)],
         model=Model(id=5, name="Qwen/Q", engine_id=2, status=Status.ready),
@@ -410,14 +410,15 @@ def test_a_vllm_model_is_deleted_through_the_door_unless_a_server_reads_it(door,
 def test_only_a_404_from_the_hub_means_the_repository_is_not_there(monkeypatch):
     # a 401, 429 or 5xx read as "not on the hub" and answered 422
     import requests
-    from api.v1 import llm_model
+    from engines import vllm
 
     codes = [200]
-    monkeypatch.setattr(requests, "get", lambda url, timeout: SimpleNamespace(status_code=codes[0]))
+    monkeypatch.setattr(requests, "get",
+                        lambda url, params=None, timeout=None: SimpleNamespace(status_code=codes[0]))
     seen = []
     for code in (200, 404, 401, 429, 503):
         codes[0] = code
-        seen.append(llm_model._repo_exists("Qwen/Q"))
+        seen.append(vllm.repo_exists("Qwen/Q"))
     assert seen == [True, False, None, None, None]
 
 

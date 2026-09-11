@@ -5,6 +5,21 @@ from models.registry import Role
 from use_cases import stand_health
 
 
+def test_the_card_is_read_from_the_driver_and_no_cuda_context_is_left_behind(monkeypatch):
+    # a torch read opened a context that held 128 MiB, and bge-m3 then spilled beside llama
+    import sys
+
+    import gpu
+
+    monkeypatch.setitem(sys.modules, "torch", None)
+    monkeypatch.setattr(gpu.subprocess, "run",
+                        lambda *a, **kw: SimpleNamespace(returncode=0, stdout="7426, 8188\n"))
+    assert gpu.memory_mb() == (7426, 8188)
+    monkeypatch.setattr(gpu.subprocess, "run",
+                        lambda *a, **kw: SimpleNamespace(returncode=9, stdout=""))
+    assert gpu.memory_mb() is None, "no driver, no number"
+
+
 def test_the_roles_block_shows_both_sides_because_they_drift_in_silence(monkeypatch):
     # the file declares and the database serves, and bootstrap leaves an assigned role alone
     class _Session:
@@ -37,16 +52,10 @@ def test_the_roles_block_shows_both_sides_because_they_drift_in_silence(monkeypa
 
 def test_a_card_that_cannot_be_read_is_reported_rather_than_raised(monkeypatch):
     # read while a run is going: a probe that raises turns the one window into it into an error
-    import builtins
+    def no_driver():
+        raise RuntimeError("no driver")
 
-    real = builtins.__import__
-
-    def no_torch(name, *a, **kw):
-        if name == "torch":
-            raise RuntimeError("no driver")
-        return real(name, *a, **kw)
-
-    monkeypatch.setattr(builtins, "__import__", no_torch)
+    monkeypatch.setattr(stand_health.gpu, "memory_mb", no_driver)
     out = stand_health.card()
 
     assert out["cuda"] is None and "no driver" in out["error"]
