@@ -161,8 +161,9 @@ async def create_model(
         if serves is None:
             raise HTTPException(status_code=503, detail=f"{engine.name} does not answer")
         if not serves:
+            # the same code as `/load`: the ask is well formed, and the server has no such model
             raise HTTPException(
-                status_code=400, detail=f"{engine.name} does not serve {request.name}"
+                status_code=422, detail=f"{engine.name} does not serve {request.name}"
             )
         status = Status.ready
 
@@ -258,7 +259,7 @@ async def patch_model(
     weights = await session.scalar(select(Weights.name).where(Weights.id == model.weights_id))
     if request.weights is not None:
         # a key spelled by hand is free text again unless the hub knows the repository
-        known = await run_in_threadpool(_repo_exists, request.weights)
+        known = await run_in_threadpool(vllm.repo_exists, request.weights)
         if known is None:
             raise HTTPException(status_code=502, detail="the hub did not answer; try again")
         if not known:
@@ -280,18 +281,6 @@ async def patch_model(
 
 
 # only a 404 says "not on the hub": a 401, a 429 or a 5xx is a hub that did not answer the question
-def _repo_exists(repo: str) -> bool | None:
-    import requests
-
-    try:
-        seen = requests.get(f"{vllm.HUB}/api/models/{repo}", timeout=10)
-    except Exception:
-        return None
-    if seen.status_code == 200:
-        return True
-    return False if seen.status_code == 404 else None
-
-
 @router.delete("/{id}", response_model=ModelResponse)
 async def delete_model(id: int, session: AsyncSession = Depends(get_session)):
     model = await get_or_404(Model, id, session)

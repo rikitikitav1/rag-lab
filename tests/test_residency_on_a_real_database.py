@@ -45,6 +45,27 @@ def _judged(db, engine, residency, at, started=None, on_card=True):
         )
 
 
+def test_a_run_is_not_finished_by_a_judge_on_another_engine(db, judging, monkeypatch):
+    # three verdicts of a `vllm-cpu` run were once given by the judge on the card
+    import engines
+    from job_handlers.base import Final
+    from models.registry import EngineKind, Placement
+
+    with db.connect() as c:
+        for run, engine in (("cpu_run", "vllm-cpu"), ("cpu_run", None), ("fresh_run", None)):
+            stamp = {"relevance": {"engine_name": engine}} if engine else {}
+            c.execute(text("INSERT INTO question_logs (run_name, answered, metrics)"
+                           " VALUES (:r, true, CAST(:m AS jsonb))"), {"r": run, "m": json.dumps(stamp)})
+    judge = {"name": "vllm"}
+    monkeypatch.setattr(judging.llm, "resolve_for", lambda role, model=None: engines.Resolved(
+        "Qwen/Q", engines.EngineSpec(3, judge["name"], EngineKind.vllm, "VLLM", Placement.gpu)))
+    with pytest.raises(Final, match="judged on vllm-cpu and the judge now sits on vllm"):
+        judging._refuse_a_second_judge("cpu_run", None)
+    judging._refuse_a_second_judge("fresh_run", None)
+    judge["name"] = "vllm-cpu"
+    judging._refuse_a_second_judge("cpu_run", None)
+
+
 def test_a_residency_is_lent_only_by_the_engine_that_holds_it(db, judging):
     # `arc5_floor_d_ollama` carries 2533, which is the number of a vLLM pass
     _judged(db, "ollama", 2526, T1)

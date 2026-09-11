@@ -122,7 +122,7 @@ def test_every_answering_door_waits_for_the_card(monkeypatch):
     from use_cases import card_wait
 
     def busy(*roles):
-        raise card_wait.CardBusy(503, "the card is held by the judge on vllm", 5)
+        raise card_wait.CardHeld("the card is held by the judge on vllm", 5)
 
     monkeypatch.setattr(card_wait, "wait_for_the_card", busy)
     with pytest.raises(HTTPException) as refused:
@@ -131,6 +131,17 @@ def test_every_answering_door_waits_for_the_card(monkeypatch):
     with pytest.raises(HTTPException):
         chat_door.ask(chat_door.QuestionRequest(text="what is redis"))
     with pytest.raises(mcp_server.ToolError):
+        mcp_server.answer_question("what is redis")
+
+    # the stand says what went wrong; each door says it its own way
+    def split(*roles):
+        raise card_wait.CannotAnswer("this answer needs two engines of the card (ollama, vllm)")
+
+    monkeypatch.setattr(card_wait, "wait_for_the_card", split)
+    with pytest.raises(HTTPException) as refused:
+        chat_door.ask(chat_door.QuestionRequest(text="what is redis"))
+    assert refused.value.status_code == 409 and not refused.value.headers
+    with pytest.raises(mcp_server.ToolError, match="two engines"):
         mcp_server.answer_question("what is redis")
 
 

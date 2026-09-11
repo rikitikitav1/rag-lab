@@ -18,7 +18,7 @@ import db
 log = logging_setup.get_logger(__name__)
 
 
-# from inside the process that owns the card: a probe in a new process sees none of it
+# the driver's reading of the whole card, every process on it counted
 def card() -> dict:
     try:
         seen = gpu.memory_mb()

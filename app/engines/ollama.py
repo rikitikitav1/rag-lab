@@ -6,7 +6,7 @@ import logging_setup
 import requests
 from models.registry import EngineKind
 
-from .core import EngineSpec, NotSupported, Unconfigured, base_url
+from .core import CardState, EngineSpec, NotSupported, Unconfigured, base_url
 from .lookup import seeded_ollama
 
 log = logging_setup.get_logger(__name__)
@@ -90,19 +90,20 @@ def residency(spec=None) -> list[dict]:
 
 
 # the readings a vLLM gives: a refused connection holds no card, a silence may hold it
-def card_reading(spec=None) -> tuple[str, list[dict]]:
+def card_reading(spec=None) -> tuple[CardState, list[dict]]:
     try:
         answer = requests.get(f"{_at(spec)}/api/ps", timeout=CARD_READ_TIMEOUT)
         seen = _shaped((_check(answer, "/api/ps") or {}).get("models") or [])
     except requests.Timeout as e:
         log.warning("ollama.ps_unanswered", error=str(e))
-        return "unknown", []
+        return CardState.UNKNOWN, []
     except (requests.ConnectionError, Unconfigured):
-        return "down", []
+        return CardState.DOWN, []
     except Exception as e:
         log.warning("ollama.ps_unanswered", error=str(e))
-        return "unknown", []
-    return ("holds" if any(m["vram_mb"] > 0 for m in seen) else "free"), seen
+        return CardState.UNKNOWN, []
+    holds = any(m["vram_mb"] > 0 for m in seen)
+    return (CardState.HOLDS if holds else CardState.FREE), seen
 
 
 def _shaped(models: list) -> list[dict]:

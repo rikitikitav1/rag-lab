@@ -18,7 +18,7 @@ from sqlalchemy import DateTime, and_, cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from use_cases import experiment, judge, rejudge
 
-from .base import register, require_card, require_model_ready, require_role_ready
+from .base import Final, register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
 
@@ -154,6 +154,20 @@ def _stop_asked(job_id) -> bool:
     return job_id is not None and job_queue.is_cancelled(job_id)
 
 
+# a run finished on another engine than the one that began it is two rulers in one record
+def _refuse_a_second_judge(run_name: str, model: str | None) -> None:
+    judge = llm.resolve_for("judging", model).engine.name
+    stamps = [QuestionLog.metrics[(axis, "engine_name")].as_string() for axis in rejudge.AXES]
+    with Session() as session:
+        rows = session.execute(select(*stamps).where(QuestionLog.run_name == run_name)).all()
+    earlier = sorted({name for row in rows for name in row if name} - {judge})
+    if earlier:
+        raise Final(
+            f"run {run_name} was judged on {', '.join(earlier)} and the judge now sits on {judge};"
+            f" seat it back there, or rejudge the whole run into a copy through /v1/eval/rejudge"
+        )
+
+
 @register("judge_answers")
 def judge_answers(options: dict) -> None:
     bench = _bench_from(options)
@@ -162,6 +176,8 @@ def judge_answers(options: dict) -> None:
         require_model_ready(bench.model)
     else:
         require_role_ready(Role.judging, take_card=False)
+    if options.get("run_name") and not options.get("log_ids"):
+        _refuse_a_second_judge(options["run_name"], bench.model)
     # once, with the bench's model when it names one: the role gate asked for the card a second time
     require_card("judging", bench.model)
     # resolved before any log: inside the loop it was swallowed per axis

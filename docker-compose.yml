@@ -11,6 +11,7 @@ x-engine-env: &engine-env
   OLLAMA_CPU_BASE_URL: ${OLLAMA_CPU_BASE_URL:-http://ollama-cpu:11434}
   CLOUD_BASE_URL: ${CLOUD_BASE_URL:-}
   CLOUD_API_KEY: ${CLOUD_API_KEY:-}
+  ENGINE_HF_CACHE: /engine_weights
 
 # pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
 x-vllm-image: &vllm-image vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
@@ -34,7 +35,6 @@ services:
       ["uvicorn", "server:app",
        "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
-      ENGINE_HF_CACHE: /engine_weights
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
@@ -92,7 +92,6 @@ services:
     environment:
       <<: *engine-env
       HF_TOKEN: ${HF_TOKEN:-}
-      ENGINE_HF_CACHE: /engine_weights
     depends_on:
       seed:
         condition: service_completed_successfully
@@ -124,15 +123,17 @@ services:
     build:
       dockerfile: Dockerfile
     command: ["python", "app/worker.py"]
+    # the worker writes pulled weights into the host's cache, and as root they were not the host's
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
+      HOME: /tmp
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
       WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
       # read by the judge and capped by the slots ollama was started with
       JUDGE_WIDTH: ${JUDGE_WIDTH:-1}
-      ENGINE_HF_CACHE: /engine_weights
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      # nothing here asks the hub on its own; a weights pull opens it for its own subprocess
+      # the hub library stays offline; a pull opens it for its subprocess, and sizes are asked by http
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}

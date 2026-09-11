@@ -10,10 +10,23 @@ BUSY_RETRY_SECONDS = 60
 FREE_RETRY_SECONDS = 5
 
 
+# why an answer cannot start now, in the stand's terms; each door picks its own way to say it
 class CardBusy(Exception):
-    def __init__(self, status: int, detail: str, retry_after: int | None = None):
+    def __init__(self, detail: str):
         super().__init__(detail)
-        self.status, self.detail, self.retry_after = status, detail, retry_after
+        self.detail = detail
+
+
+# another engine holds the card: asked again after `retry_after` seconds it may be free
+class CardHeld(CardBusy):
+    def __init__(self, detail: str, retry_after: int):
+        super().__init__(detail)
+        self.retry_after = retry_after
+
+
+# this layout cannot put the answer together, however long one waits
+class CannotAnswer(CardBusy):
+    pass
 
 
 # every door asks this one: four copies of the gate rule had already parted over `either`
@@ -37,14 +50,14 @@ def wait_for_the_card(*roles) -> None:
         picked = [llm.resolve(role).engine for role in roles]
     except engines.Unnamed as e:
         # the reranker without its weights on a clean machine: a layout fact, not a server error
-        raise CardBusy(409, f"{e}; seat it through PUT /v1/role before asking") from e
+        raise CannotAnswer(f"{e}; seat it through PUT /v1/role before asking") from e
     on_card = {spec.id: spec for spec in picked if spec.placement in engines.CARD}
     if len(on_card) > 1:
         names = ", ".join(sorted(spec.name for spec in on_card.values()))
-        raise CardBusy(409, (
+        raise CannotAnswer(
             f"this answer needs two engines of the card ({names}), and the chat does not hand the"
             " card between them: ask it through a run, which does"
-        ))
+        )
     for spec in on_card.values():
         if card.holds_for(spec):
             continue
@@ -52,8 +65,7 @@ def wait_for_the_card(*roles) -> None:
             job_queue.enqueue("hand_card", {"engine_id": spec.id, "asked_by": "chat"})
         # running, not waiting: the live batch waits five minutes after every answer and read as busy
         judging = job_queue.running_of_type("judge_answers")
-        raise CardBusy(
-            503,
+        raise CardHeld(
             f"the card is held by {_holder()}; it is handed to {spec.name} through the queue",
             BUSY_RETRY_SECONDS if judging else FREE_RETRY_SECONDS,
         )

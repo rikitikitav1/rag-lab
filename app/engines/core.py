@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from enum import StrEnum
 from urllib.parse import urlsplit
 
 import config
@@ -27,6 +28,16 @@ class Unnamed(ValueError):
 
 class Ambiguous(ValueError):
     pass
+
+
+# what a server says about the card: a refused connection is down, a silence is unknown
+class CardState(StrEnum):
+    AWAKE = "awake"
+    ASLEEP = "asleep"
+    HOLDS = "holds"
+    FREE = "free"
+    DOWN = "down"
+    UNKNOWN = "unknown"
 
 
 class Unconfigured(RuntimeError):

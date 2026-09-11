@@ -402,6 +402,12 @@ def _log_answer(
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
     placed_during: dict | None = None,
 ) -> None:
+    # read before the session: each registry read inside it took a second connection from the pool
+    models = {
+        "generation": ans.metrics.model,
+        "embedding": llm.resolve_name("embedding"),
+        **({"reranking": llm.resolve_name("reranking")} if use_rerank else {}),
+    }
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
         log_row = QuestionLog(
@@ -415,12 +421,7 @@ def _log_answer(
             contexts=contexts,
             chunks=chunks,
             sources=[asdict(s) for s in ans.sources],
-            models={
-                "generation": ans.metrics.model,
-                "embedding": llm.resolve_name("embedding"),
-                # the cross-encoder left the config for a role, and a run that reranked names its model
-                **({"reranking": llm.resolve_name("reranking")} if use_rerank else {}),
-            },
+            models=models,
             prompts={
                 "generate_answer": prompt_repo.active_version(Purpose.generate_answer)
             },

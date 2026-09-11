@@ -10,7 +10,7 @@ from pathlib import Path
 import logging_setup
 import requests
 
-from .core import EngineSpec, Unconfigured, api_key, base_url
+from .core import CardState, EngineSpec, Unconfigured, api_key, base_url
 
 log = logging_setup.get_logger(__name__)
 
@@ -91,20 +91,20 @@ def max_model_len(spec: EngineSpec, model: str) -> int | None:
 
 
 # a refused connection is a process that holds no card; a timeout is a server that may still hold it
-def card_state(spec: EngineSpec) -> str:
+def card_state(spec: EngineSpec) -> CardState:
     try:
         seen = requests.get(_url(spec, "/is_sleeping"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
         seen.raise_for_status()
-        return "asleep" if seen.json()["is_sleeping"] else "awake"
+        return CardState.ASLEEP if seen.json()["is_sleeping"] else CardState.AWAKE
     except requests.Timeout as e:
         # a ConnectTimeout is a ConnectionError too, and a host that did not answer may hold the card
         log.warning("vllm.card_state_unknown", engine=spec.name, error=str(e))
-        return "unknown"
+        return CardState.UNKNOWN
     except (requests.ConnectionError, Unconfigured):
-        return "down"
+        return CardState.DOWN
     except Exception as e:
         log.warning("vllm.card_state_unknown", engine=spec.name, error=str(e))
-        return "unknown"
+        return CardState.UNKNOWN
 
 
 # None when the server cannot say: the sleep routes exist only under VLLM_SERVER_DEV_MODE
@@ -247,10 +247,24 @@ def _snapshot(repo: str) -> Path | None:
 HUB = "https://huggingface.co"
 
 
+def _hub_model(repo: str, **params):
+    return requests.get(f"{HUB}/api/models/{repo}", params=params or None, timeout=10)
+
+
+# a 404 is the hub saying no; any other failure says nothing either way
+def repo_exists(repo: str) -> bool | None:
+    try:
+        seen = _hub_model(repo)
+    except Exception:
+        return None
+    if seen.status_code == 200:
+        return True
+    return False if seen.status_code == 404 else None
+
+
 def _siblings(repo: str) -> list[dict] | None:
     try:
-        seen = requests.get(f"{HUB}/api/models/{repo}", params={"blobs": "true"}, timeout=10).json()
-        return seen["siblings"]
+        return _hub_model(repo, blobs="true").json()["siblings"]
     except Exception as e:
         log.warning("vllm.hub_unanswered", repo=repo, error=str(e))
         return None
@@ -279,7 +293,8 @@ def _intact(blob: Path) -> bool:
     if len(name) == 64:
         seen = hashlib.sha256()
     elif len(name) == 40:
-        seen = hashlib.sha1(b"blob %d\0" % blob.stat().st_size)
+        # the git blob id the hub names small files by, an integrity check and not a secret
+        seen = hashlib.sha1(b"blob %d\0" % blob.stat().st_size, usedforsecurity=False)
     else:
         # a partial download is not broken, it is unfinished: `unfinished_weights` holds it against the row
         return True

@@ -184,7 +184,6 @@ class ForeignVectors(StandFault):
 
 # a vector meets only vectors of its own embedder: nothing else refused a search across two of them
 def refuse_foreign_vectors(conn, variant: str, embedded_by: str) -> None:
-    mine = embedded_by
     # an unmarked vector is refused; marks come off the index, a filter on `embedding` cost 26 ms
     seen = conn.execute(
         text("SELECT DISTINCT embedded_by FROM data_chunks"
@@ -193,11 +192,11 @@ def refuse_foreign_vectors(conn, variant: str, embedded_by: str) -> None:
              " AND embedded_by IS NULL AND embedding IS NOT NULL)"),
         {"variant": variant},
     ).scalars().all()
-    foreign = sorted(label or "no recorded embedder" for label in set(seen) - {mine})
+    foreign = sorted(label or "no recorded embedder" for label in set(seen) - {embedded_by})
     if foreign:
         raise ForeignVectors(
             f"variant {variant!r} holds vectors of {', '.join(foreign)} and this search embeds"
-            f" with {mine}: reindex the variant, or give the embedding role back"
+            f" with {embedded_by}: reindex the variant, or give the embedding role back"
         )
 
 

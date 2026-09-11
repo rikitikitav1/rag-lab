@@ -499,27 +499,26 @@ def test_the_busy_card_names_its_real_holder_and_a_split_layout_is_a_409(monkeyp
     monkeypatch.setattr(card_wait.job_queue, "running_of_type", lambda t: True)
     other = engines.EngineSpec(6, "vllm-2", EngineKind.vllm, "VLLM_2", Placement.gpu)
     monkeypatch.setattr(card_wait.card, "on_card", lambda: [card.Holding(other, ("x",))])
-    with pytest.raises(card_wait.CardBusy) as held:
+    with pytest.raises(card_wait.CardHeld) as held:
         card_wait.wait_for_the_card("embedding")
-    assert held.value.status == 503 and "held by vllm-2;" in held.value.detail, "not the judge"
+    assert "held by vllm-2;" in held.value.detail, "not the judge"
 
-    # no judge seated: still a 503, not a 500
+    # no judge seated: the holder is still named, not a 500
     def unseated(role):
         if role == "judging":
             raise engines.Unnamed("no model assigned to role judging")
         return engines.Resolved("m", roles[role])
 
     monkeypatch.setattr(card_wait.llm, "resolve", unseated)
-    with pytest.raises(card_wait.CardBusy) as held:
+    with pytest.raises(card_wait.CardHeld) as held:
         card_wait.wait_for_the_card("embedding")
-    assert held.value.status == 503 and "held by vllm-2;" in held.value.detail
+    assert "held by vllm-2;" in held.value.detail
     monkeypatch.setattr(card_wait.llm, "resolve", lambda role: engines.Resolved("m", roles[role]))
 
     # the embedder and the generator on two card engines: the chat would hand the card per call
     roles["embedding"] = VLLM
-    with pytest.raises(card_wait.CardBusy) as split:
+    with pytest.raises(card_wait.CannotAnswer) as split:
         card_wait.wait_for_the_card("embedding", "generation")
-    assert split.value.status == 409 and split.value.retry_after is None
     assert "ollama, vllm" in split.value.detail
     # one role alone is served whatever the other sits on
     monkeypatch.setattr(card_wait.card, "holds_for", lambda spec: True)
@@ -676,10 +675,10 @@ def test_the_chat_waits_a_minute_only_while_a_judge_is_running(monkeypatch):
     monkeypatch.setattr(card_wait.job_queue, "pending_of_type", lambda t, **o: True)
     running = [False]
     monkeypatch.setattr(card_wait.job_queue, "running_of_type", lambda t: running[0])
-    with pytest.raises(card_wait.CardBusy) as idle:
+    with pytest.raises(card_wait.CardHeld) as idle:
         card_wait.wait_for_the_card("generation")
     running[0] = True
-    with pytest.raises(card_wait.CardBusy) as busy:
+    with pytest.raises(card_wait.CardHeld) as busy:
         card_wait.wait_for_the_card("generation")
     assert (idle.value.retry_after, busy.value.retry_after) == (5, 60)
 
@@ -691,9 +690,9 @@ def test_an_unseated_role_is_a_409_not_a_500(monkeypatch):
         raise engines.Unnamed("no model assigned to role reranking")
 
     monkeypatch.setattr(card_wait.llm, "resolve", unseated)
-    with pytest.raises(card_wait.CardBusy) as refused:
+    with pytest.raises(card_wait.CannotAnswer) as refused:
         card_wait.wait_for_the_card("reranking")
-    assert refused.value.status == 409 and "PUT /v1/role" in refused.value.detail
+    assert "PUT /v1/role" in refused.value.detail
 
 
 def test_a_judging_pass_asks_for_the_card_once(monkeypatch):
@@ -713,6 +712,9 @@ def test_a_judging_pass_asks_for_the_card_once(monkeypatch):
         raise _Stop
 
     monkeypatch.setattr(judging, "require_card", once)
+    monkeypatch.setattr(judging, "_refuse_a_second_judge",
+                        lambda run_name, model: asked.append(("second judge?", run_name)))
     with pytest.raises(_Stop):
         judging.judge_answers({"run_name": "r"})
-    assert asked == [("role", False), ("card", "judging")]
+    # a refusal comes before the card, so it never wakes a judge it would turn away
+    assert asked == [("role", False), ("second judge?", "r"), ("card", "judging")]

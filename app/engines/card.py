@@ -7,7 +7,7 @@ from errors import StandFault
 from models.registry import EngineKind
 
 from . import ollama, vllm
-from .core import EngineSpec
+from .core import CardState, EngineSpec
 from .lookup import CARD, card_engines
 
 log = logging_setup.get_logger(__name__)
@@ -33,12 +33,12 @@ def on_card() -> list[Holding]:
     for spec in card_engines():
         if spec.kind is EngineKind.vllm:
             # silence is not a free card: an unanswered server may be awake on it
-            if vllm.card_state(spec) in ("awake", "unknown"):
+            if vllm.card_state(spec) in (CardState.AWAKE, CardState.UNKNOWN):
                 held.append(Holding(spec, tuple(_served(spec))))
         elif spec.kind is EngineKind.ollama:
             # the same rule as for vLLM: a silence may hold the card, a stopped server does not
             state, seen = ollama.card_reading(spec)
-            if state in ("holds", "unknown"):
+            if state in (CardState.HOLDS, CardState.UNKNOWN):
                 held.append(Holding(spec, tuple(m["model"] for m in seen if m["vram_mb"] > 0)))
     return held
 
@@ -47,7 +47,7 @@ def on_card() -> list[Holding]:
 def sleep_every_vllm() -> None:
     for spec in card_engines(EngineKind.vllm):
         state = vllm.card_state(spec)
-        if state in ("awake", "unknown"):
+        if state in (CardState.AWAKE, CardState.UNKNOWN):
             # a silent one may be awake, and a refusal to sleep stops the boot rather than hides
             vllm.sleep(spec)
             log.info("card.vllm_asleep", engine=spec.name, was=state)
@@ -76,7 +76,7 @@ def model_on_card(spec: EngineSpec, model: str) -> bool | None:
         seen = [m for m in ollama.residency(spec) if m["model"] in wanted]
         return seen[0]["vram_mb"] >= seen[0]["size_mb"] if seen else None
     if spec.kind is EngineKind.vllm:
-        seen = {"awake": True, "asleep": False}.get(vllm.card_state(spec))
+        seen = {CardState.AWAKE: True, CardState.ASLEEP: False}.get(vllm.card_state(spec))
         # awake is not enough: the server must serve this very model
         if seen:
             try:
@@ -126,7 +126,7 @@ def _refuse_a_silent_target(target: EngineSpec) -> None:
         state, _ = ollama.card_reading(target)
     else:
         return
-    if state in ("down", "unknown"):
+    if state in (CardState.DOWN, CardState.UNKNOWN):
         raise CardNotHanded(f"{target.name} is {state}; the card stays where it is")
 
 

@@ -1,5 +1,5 @@
 import logging_setup
-from engines import ollama
+from engines import CARD, CardState, ollama
 from models.registry import EngineKind, Model, ModelRole, Placement, Role
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -57,7 +57,7 @@ def refuse_unfit_model(role: Role, model_name: str, engine_id: int | None = None
     if spec is not None and spec.kind is not EngineKind.ollama:
         log.info("model.acceptance_not_probed", role=role.value, model=model_name, engine=spec.name)
         return None
-    if spec is not None and ollama.card_reading(spec)[0] == "down":
+    if spec is not None and ollama.card_reading(spec)[0] == CardState.DOWN:
         raise EngineDown(f"{spec.name} does not answer; a role on it would fail on its first call")
     try:
         shown = ollama.shown(model_name, spec)
@@ -104,7 +104,7 @@ def _refuse_unfit_on_vllm(role: Role, model_name: str, spec) -> None:
     from engines import vllm
 
     state = vllm.card_state(spec)
-    if state == "down":
+    if state == CardState.DOWN:
         raise EngineDown(f"{spec.name} does not answer; a role on it would fail on its first call")
     pooling = vllm.pools(spec)
     if pooling is not None and pooling != (role in POOLING_ROLES):
@@ -116,7 +116,7 @@ def _refuse_unfit_on_vllm(role: Role, model_name: str, spec) -> None:
     if role is not Role.generation:
         return
     # a parserless server answers tools in text; an asleep one is not asked, it errs or hangs the door
-    if spec.placement is not Placement.cpu and state != "awake":
+    if spec.placement in CARD and state != CardState.AWAKE:
         probed = vllm.known_probe(spec, model_name, vllm.started_at(spec))
         if probed is None:
             raise NeedsProbe(f"{spec.name} is {state} and no probe of {model_name} is recorded")
