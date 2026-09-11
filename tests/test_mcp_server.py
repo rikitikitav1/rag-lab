@@ -8,6 +8,11 @@ from fastmcp.exceptions import ToolError
 from models.registry import Pipeline
 
 
+@pytest.fixture(autouse=True)
+def card_is_free(monkeypatch):
+    monkeypatch.setattr(mcp_server.card_wait, "wait_for_the_card", lambda *roles: None)
+
+
 def test_search_corpus_returns_content(monkeypatch):
     monkeypatch.setattr(
         mcp_server.chat,
@@ -173,3 +178,19 @@ def test_list_categories_bad_category_raises():
 def test_list_categories_only_top_with_category_raises():
     with pytest.raises(ToolError):
         mcp_server.list_categories(category="databases", only_top=True)
+
+
+def test_the_mcp_tools_wait_for_the_card_like_the_rest_chat(monkeypatch):
+    # 11.09: only the REST doors had the guard, and an MCP question met ollama beside an awake judge
+    asked = []
+
+    def busy(*roles):
+        asked.append(roles)
+        raise mcp_server.card_wait.CardBusy(503, "the card is held by the judge on vllm", 5)
+
+    monkeypatch.setattr(mcp_server.card_wait, "wait_for_the_card", busy)
+    with pytest.raises(ToolError, match="held by the judge"):
+        mcp_server.search_corpus("redis")
+    with pytest.raises(ToolError, match="held by the judge"):
+        mcp_server.answer_question("what is redis")
+    assert asked == [("embedding",), ("embedding", "generation")]

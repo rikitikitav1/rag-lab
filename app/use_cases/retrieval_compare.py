@@ -70,7 +70,7 @@ def questions(conn, set_name, limit, ids=None):
     cap = "" if ids else "LIMIT :limit"
     rows = conn.execute(
         sql(f"""
-            SELECT q.id, q.original_text, q.marked_sources, q.embedding::text AS emb,
+            SELECT q.id, q.original_text, q.marked_sources, q.embedding::text AS emb, q.embedded_by,
                    COALESCE(o.original_text, q.original_text) AS gold_heading
             FROM questions q
             LEFT JOIN questions o ON o.id = q.source_question_id
@@ -100,6 +100,8 @@ def ranked_lists(db, question, variant, depth=DEPTH, limit_keyword=CANDIDATES,
         distance_threshold=distance_threshold,
         ef_search=ef_search,
         exact=exact,
+        # embedded before the run, maybe by another embedder than the role serves today
+        embedded_by=question.get("embedded_by"),
     )
     if rerank_top:
         rows = _reranked(question["original_text"], rows, rerank_top)

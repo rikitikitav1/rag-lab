@@ -154,7 +154,11 @@ def unload(model: str, spec=None) -> None:
 
 # an empty generate loads the weights and answers nothing
 def load_into_memory(model: str, spec=None) -> dict:
-    post("/api/generate", {"model": model}, spec)
+    # an embedder answers `/api/generate` with a 400, and an empty embed loads it just the same
+    if "embedding" in (shown(model, spec).get("capabilities") or []):
+        post("/api/embed", {"model": model, "input": []}, spec)
+    else:
+        post("/api/generate", {"model": model}, spec)
     log.info("ollama.loaded", model=model)
     return {"model": model, "context_length": context_length(model, spec)}
 

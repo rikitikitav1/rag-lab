@@ -1,6 +1,6 @@
 import logging_setup
 from engines import ollama
-from models.registry import EngineKind, Role
+from models.registry import EngineKind, Placement, Role
 
 # what each role needs of a model, in the terms the server answers in
 REQUIRED_CAPABILITY = {Role.generation: "tools"}
@@ -43,6 +43,11 @@ def complaints(role: Role, shown: dict) -> list[str]:
 
 def refuse_unfit_model(role: Role, model_name: str) -> None:
     spec = _engine_of(model_name)
+    # only a vLLM pooling server scores pairs; an engine not yet readable, as mid-bootstrap, is no no
+    if role is Role.reranking and spec is not None and spec.kind is not EngineKind.vllm:
+        raise ValueError(f"{model_name} cannot rerank: the role lives on a vLLM pooling server")
+    if spec is not None and spec.kind is EngineKind.vllm:
+        return _refuse_unfit_on_vllm(role, model_name, spec)
     # only ollama describes its models, so an engine that cannot be asked is not a failed probe
     if spec is not None and spec.kind is not EngineKind.ollama:
         log.info("model.acceptance_not_probed", role=role.value, model=model_name, engine=spec.name)
@@ -70,3 +75,26 @@ def _unknown(role: Role, model_name: str, error: Exception) -> None:
     log.warning(
         "model.acceptance_unknown", role=role.value, model=model_name, error=str(error)
     )
+
+
+# this build of vLLM on the cpu has no kernels for these, so the server would never come up with them
+CPU_UNREADABLE = ("AWQ", "GGUF")
+
+
+def _refuse_unfit_on_vllm(role: Role, model_name: str, spec) -> None:
+    from engines import vllm
+
+    quant = vllm.artifact_of(model_name).get("quant")
+    if spec.placement is Placement.cpu and quant in CPU_UNREADABLE:
+        raise ValueError(f"{model_name} is {quant}, which {spec.name} on the cpu cannot serve")
+    if role is not Role.generation:
+        return
+    # the agent calls tools, and a server started without a parser answers them as plain text
+    probed = vllm.tool_calls_probed(spec, model_name)
+    if probed is False:
+        raise ValueError(
+            f"{model_name} on {spec.name} does not return tool calls; start the server with"
+            " --enable-auto-tool-choice and a --tool-call-parser"
+        )
+    if probed is None:
+        log.warning("model.tool_probe_unknown", model=model_name, engine=spec.name)

@@ -196,7 +196,9 @@ def language_cost(
         "returns judged counts, the three judged axes, how often the answer "
         "came from a remote tool against the corpus, how often the coverage gate "
         "fired, latency (avg and p50) and the outcome histogram. Per pair of runs "
-        "returns a paired Wilcoxon test over the same questions. Use instead of "
+        "returns a paired Wilcoxon test over the same questions. For exactly two runs, "
+        "verdicts counts the judge's scores that moved on shared questions, per axis, which "
+        "a mean hides when moves cancel. Use instead of "
         "compare_runs when the question is where a difference comes from, not "
         "which run wins on average."
     ),
@@ -270,6 +272,22 @@ def experiment_results(
             for name, body in deltas.items()
         }
         return out
+
+
+@mcp_ops.tool(
+    name="engines",
+    description=(
+        "Which engine holds the GPU right now and which models it has there, whether each vLLM "
+        "on the card is asleep, and whether every registered engine answers. Read from the "
+        "servers, not from a table. Use before a run or a judging pass to see who owns the card."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def engines_on_the_stand() -> dict:
+    from use_cases import stand_health
+
+    # one reader for `/health` and this tool, so the two can never tell different stories
+    return stand_health.engines_section()
 
 
 @mcp_ops.tool(

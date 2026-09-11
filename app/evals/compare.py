@@ -106,8 +106,47 @@ def paired(left, right, axis) -> dict:
     return result
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 p never null; 6 `p`; 7 engine name; 8 determinism
-SCHEMA = 8
+def _judged(ql, axis) -> dict:
+    return (ql.metrics or {}).get(axis) or {}
+
+
+# a mean can hold still while the ruler moves: 1 to 0 on one row and 0 to 1 on another cancel
+def verdicts(left: list, right: list) -> dict:
+    before, after = by_question(left), by_question(right)
+    shared = [q for q in after if q in before]
+    axes = {}
+    for axis in AXES:
+        both = [(before[q], after[q]) for q in shared
+                if getattr(before[q], axis) is not None and getattr(after[q], axis) is not None]
+        tokens = [(_judged(a, axis).get("judge_prompt_tokens"),
+                   _judged(b, axis).get("judge_prompt_tokens")) for a, b in both]
+        axes[axis] = {
+            "comparable": len(both),
+            "disagree": sum(1 for a, b in both if float(getattr(a, axis)) != float(getattr(b, axis))),
+            # scored on one side only: neither a match nor a clash, and left out of both counts
+            "one_sided": sum(1 for q in shared
+                             if (getattr(before[q], axis) is None) != (getattr(after[q], axis) is None)),
+            "left": mean_of(getattr(a, axis) for a, _ in both),
+            "right": mean_of(getattr(b, axis) for _, b in both),
+            # the judge read fewer tokens on one side: its context was cut, or the tokenizer differs
+            "prompt_tokens_differ": sum(1 for a, b in tokens
+                                        if a is not None and b is not None and a != b),
+            "seconds_left": mean_of((_judged(a, axis).get("elapsed") for a, _ in both), digits=1),
+            "seconds_right": mean_of((_judged(b, axis).get("elapsed") for _, b in both), digits=1),
+        }
+    comparable = sum(a["comparable"] for a in axes.values())
+    disagree = sum(a["disagree"] for a in axes.values())
+    return {
+        "questions": len(shared),
+        "comparable": comparable,
+        "disagree": disagree,
+        "disagree_rate": round(disagree / comparable, 3) if comparable else None,
+        "axes": axes,
+    }
+
+
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts
+SCHEMA = 9
 
 
 def compare(runs: dict[str, list]) -> dict:
@@ -155,6 +194,8 @@ def compare(runs: dict[str, list]) -> dict:
         },
         "pools": pools,
         "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
+        # a pair only: with three runs the question is which pair, and the caller names it
+        "verdicts": verdicts(*runs.values()) if len(runs) == 2 else None,
     }
 
 

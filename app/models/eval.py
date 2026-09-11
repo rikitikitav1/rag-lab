@@ -30,6 +30,7 @@ class Question(Base):
     status: Mapped[str | None]
     source_question_id: Mapped[int | None] = mapped_column(ForeignKey("questions.id"))
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
+    embedded_by: Mapped[str | None]
 
     def __repr__(self) -> str:
         return f"Question(id={self.id!r}, text={self.original_text[:40]!r})"

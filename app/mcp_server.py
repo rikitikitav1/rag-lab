@@ -7,7 +7,7 @@ from fastmcp.exceptions import ToolError
 from models.registry import Pipeline
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
-from use_cases import agent, chat
+from use_cases import agent, card_wait, chat
 
 import db
 
@@ -64,6 +64,19 @@ _TOOL_DESC = {
 }
 
 
+# the same guard as the REST chat: 11.09 an MCP question reached ollama beside an awake judge
+def _wait_for_the_card(*roles) -> None:
+    try:
+        card_wait.wait_for_the_card(*roles)
+    except card_wait.CardBusy as e:
+        raise ToolError(e.detail) from e
+
+
+# the agent's gate scores with the cross-encoder too, and it is a role on its own engine now
+def _reranking(gated: bool = False) -> tuple[str, ...]:
+    return ("reranking",) if gated or chat.resolve_rerank(None) else ()
+
+
 @mcp.tool(
     name="search_corpus",
     description=_TOOL_DESC["search_corpus"],
@@ -82,9 +95,13 @@ def search_corpus(
 ) -> str:
     _check_text(query, "query")
     category = _safe_category(category)
-    content, _texts, _sources, _depth, _chunks = chat.search_chunks(
-        query, category, variant=config.settings.corpus.variant
-    )
+    _wait_for_the_card("embedding", *_reranking())
+    try:
+        content, _texts, _sources, _depth, _chunks = chat.search_chunks(
+            query, category, variant=config.settings.corpus.variant
+        )
+    except db.ForeignVectors as e:
+        raise ToolError(str(e)) from e
     return content
 
 
@@ -112,11 +129,15 @@ def answer_question(
     category = _safe_category(category)
     if pipeline == Pipeline.agent and category:
         raise ToolError("category filter is only supported with pipeline=single_shot")
+    gated = pipeline == Pipeline.agent and config.settings.agent.gate_signal == "cross_encoder"
+    _wait_for_the_card("embedding", "generation", *_reranking(gated))
     try:
         if pipeline == Pipeline.agent:
             res = agent.run(text, run_name="mcp", language=language)
         else:
             res = chat.answer(text, category=category, run_name="mcp", language=language)
+    except db.ForeignVectors as e:
+        raise ToolError(str(e)) from e
     except Exception as e:
         log.error("mcp.answer_failed", error=str(e))
         raise

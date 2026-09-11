@@ -1,3 +1,4 @@
+import pytest
 from evals import runner
 
 
@@ -41,7 +42,6 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
         runner, "_release",
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
-    monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
     # the card check is a network call; the tests that care about it override these
     monkeypatch.setattr(runner.ollama, "warn_if_models_do_not_fit", lambda spec=None: [])
     monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda spec=None: [])
@@ -60,13 +60,13 @@ def test_phases_run_in_order_and_free_vram(monkeypatch):
     assert kinds == [
         "search", "search",
         "unload", "unload",
+        # no unload after it: the cross-encoder sleeps in its own server when the card is handed on
         "rerank",
-        "unload",
         "generate", "generate",
-        # teardown, on every exit: reranker, embedder, generator
-        "unload", "unload", "unload",
+        # teardown, on every exit: embedder, generator; the reranker lives in its own server
+        "unload", "unload",
     ]
-    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+    assert [c[1] for c in calls[-2:]] == ["embedding", "generation"]
 
 
 def test_rerank_runs_once_for_the_whole_set(monkeypatch):
@@ -91,7 +91,7 @@ def test_retrieval_widens_only_when_reranking(monkeypatch):
     assert not [c for c in calls if c[0] == "rerank"]
     # a run without a rerank phase still frees the embedder and gives the card back
     assert [c[1] for c in calls if c[0] == "unload"] == [
-        "embedding", "reranker", "embedding", "generation"
+        "embedding", "embedding", "generation"
     ]
 
 
@@ -122,8 +122,7 @@ def _rerank_by_content(monkeypatch, ranking):
     def fake_predict(pairs):
         return [ranking.get(chunk, 0.0) for _, chunk in pairs]
 
-    monkeypatch.setattr(runner.rerank, "_model", lambda: type("M", (), {"predict": staticmethod(fake_predict)})())
-    monkeypatch.setattr(runner.rerank, "_predict", fake_predict)
+    monkeypatch.setattr(runner.rerank, "score_pairs", fake_predict)
 
 
 def test_rerank_phase_keeps_candidates_with_their_own_question(monkeypatch):
@@ -277,11 +276,11 @@ def test_the_card_is_asked_about_before_the_generator_is_paid_for(monkeypatch):
     monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda _spec=None: ["bge-m3"])
     with pytest.raises(RuntimeError, match="not on the GPU"):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
-    assert [c[0] for c in calls] == ["search", "search", "unload", "unload", "unload"], (
+    assert [c[0] for c in calls] == ["search", "search", "unload", "unload"], (
         "nothing after retrieval should have run, and the card goes back anyway"
     )
     # the refusal raised past the unload, so the run left its own generator on the card
-    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+    assert [c[1] for c in calls[-2:]] == ["embedding", "generation"]
 
 
 def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
@@ -314,7 +313,7 @@ def test_a_rerank_that_throws_still_gives_the_card_back(monkeypatch):
     monkeypatch.setattr(runner.rerank, "score_pairs", _boom)
     with pytest.raises(RuntimeError, match="cuda is unhappy"):
         runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))
-    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+    assert [c[1] for c in calls[-2:]] == ["embedding", "generation"]
 
 
 def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
@@ -324,9 +323,8 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
         runner, "_release",
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
-    monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
     monkeypatch.setattr(runner, "_answer_one", lambda *a, **kw: calls.append(("answer",)))
-    monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda allow_cpu, use_rerank=False: None)
+    monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda allow_cpu: None)
     answered, cancelled = runner._run_sequential(
         ["q1", "q2"],
         "run",
@@ -337,9 +335,7 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
         allow_cpu=False,
     )
     assert (answered, cancelled) == (2, False)
-    assert [c[1] for c in calls if c[0] == "unload"] == [
-        "reranker", "embedding", "generation"
-    ]
+    assert [c[1] for c in calls if c[0] == "unload"] == ["embedding", "generation"]
 
 
 def test_a_run_refuses_when_its_depth_stopped_walking_the_index(monkeypatch):
@@ -354,20 +350,6 @@ def test_a_run_refuses_when_its_depth_stopped_walking_the_index(monkeypatch):
 
     with pytest.raises(RuntimeError, match="no longer walks its index"):
         runner.run("run", set_name="s", pipeline="agent")
-
-
-def test_the_card_guard_sees_the_cross_encoder_before_the_set_is_reranked(monkeypatch):
-    # asked between retrieval and reranking, the model is still None and the guard is blind
-    import pytest
-
-    warmed = []
-    _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.rerank, "warm", lambda: warmed.append(True))
-    monkeypatch.setattr(runner.rerank, "off_the_card", lambda: "reranker on cpu")
-
-    with pytest.raises(RuntimeError, match="not on the GPU"):
-        runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))
-    assert warmed, "the model is loaded before it is asked where it sits"
 
 
 def test_the_answering_knobs_travel_as_one_value_not_as_a_row_of_positions():
@@ -388,3 +370,16 @@ def test_the_answering_knobs_travel_as_one_value_not_as_a_row_of_positions():
             if p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
         ]
         assert len(positional) <= 3, f"{fn.__name__} takes {len(positional)} by position"
+
+
+def test_a_vllm_generator_is_not_asked_ollama_s_spill_question(monkeypatch):
+    # 11.09: the run gate asked `/api/ps` of the vLLM generator and logged a 404 on every run
+    import engines
+    from models.registry import EngineKind, Placement
+
+    spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    monkeypatch.setattr(runner.llm, "resolve", lambda role: engines.Resolved("Qwen/Q", spec))
+    monkeypatch.setattr(runner.ollama, "warn_if_models_do_not_fit", lambda spec=None: [])
+    monkeypatch.setattr(runner.ollama, "models_off_the_card",
+                        lambda spec=None: pytest.fail("ollama asked about a vLLM generator"))
+    runner._refuse_a_cpu_run(allow_cpu=False)

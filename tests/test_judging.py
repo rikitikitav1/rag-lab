@@ -143,6 +143,7 @@ def test_every_row_is_judged_once_whatever_the_width(monkeypatch):
     monkeypatch.setattr(judging, "Session", FakeSession)
     monkeypatch.setattr(judging.experiment, "try_aggregate_for_run", lambda run: None)
     monkeypatch.setattr(judging, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(judging, "require_card", lambda role, model=None, asked_by=None: None)
     monkeypatch.setattr(judging.rejudge, "arm_bench", lambda arm: judging.judge.Bench())
     monkeypatch.setattr(judging.judge.Bench, "template", lambda self, purpose: ("t", 1))
 
@@ -617,12 +618,12 @@ def test_a_vllm_pass_is_named_by_the_process_that_holds_the_judge(monkeypatch):
 
     # a server that cannot say when it started names nothing, and the pass stands alone
     started[0] = None
-    assert j._residency(42) == j.Residency(42, None, None)
+    assert j._residency(42) == j.Residency(42, None, "vllm /metrics unreachable")
 
 
 def test_the_process_start_is_read_from_metrics_and_not_from_created(monkeypatch):
     import engines
-    from engines import core
+    from engines import vllm as core
     from models.registry import EngineKind, Placement
 
     spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
@@ -638,7 +639,7 @@ def test_the_process_start_is_read_from_metrics_and_not_from_created(monkeypatch
 
     import requests
 
-    monkeypatch.setattr(requests, "get", lambda url, timeout=None: _R(url))
+    monkeypatch.setattr(requests, "get", lambda url, headers=None, timeout=None: _R(url))
     assert core.started_at(spec) == "2026-09-10T15:26:53.970000+00:00"
     assert seen == ["http://vllm:8000/metrics"]
 
@@ -720,6 +721,7 @@ def test_the_language_probe_records_what_judged_it(monkeypatch):
     )
     monkeypatch.setattr(judging, "_parallel_slots", lambda: 1)
     monkeypatch.setattr(judging, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(judging, "require_card", lambda role, model=None, asked_by=None: None)
     monkeypatch.setattr(judge_language, "measure", lambda *a, **kw: seen.update(kw) or {})
     monkeypatch.setattr(judging.measurements, "record", lambda *a, **kw: "nowhere")
     judging.judge_language({"run_name": "r", "_job_id": 1})

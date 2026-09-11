@@ -56,6 +56,11 @@ class FakeAsyncSession:
     async def delete(self, obj):
         self.deleted.append(obj)
 
+    async def flush(self):
+        for obj in self.added:
+            if getattr(obj, "id", 0) is None:
+                obj.id = 7
+
     async def commit(self):
         pass
 
@@ -132,10 +137,34 @@ def test_the_same_name_twice_on_one_engine_is_a_409(door):
     assert r.status_code == 409
 
 
-def test_loading_a_model_on_an_engine_the_admin_half_cannot_reach_is_refused(door):
+def test_a_load_is_queued_as_a_card_handover_and_not_run_by_the_api(door, monkeypatch):
+    import job_queue
+
+    asked = []
+    from api.v1 import llm_model
+
+    monkeypatch.setattr(job_queue, "enqueue", lambda t, o, **kw: asked.append((t, o)) or 77)
+    serves = [False]
+    monkeypatch.setattr(llm_model, "_serves", lambda engine, name: serves[0])
     session = FakeAsyncSession(
         engines=[_engine(2, "vllm", EngineKind.vllm)],
-        model=Model(id=5, name="qwen2.5:7b", engine_id=2, status=Status.ready),
+        model=Model(id=5, name="Qwen/Q", engine_id=2, status=Status.ready),
+    )
+    with door(session) as client:
+        wrong = client.post("/v1/model/5/load")
+        serves[0] = True
+        r = client.post("/v1/model/5/load")
+
+    assert wrong.status_code == 422, "a vLLM serving another model must not be woken with a 202"
+    assert r.status_code == 202
+    assert r.json() == {"job_id": 77, "engine": "vllm", "model": "Qwen/Q"}
+    assert asked == [("hand_card", {"engine_id": 2, "model": "Qwen/Q"})]
+
+
+def test_loading_on_a_cloud_engine_is_not_applicable(door):
+    session = FakeAsyncSession(
+        engines=[_engine(2, "cloud", EngineKind.openai_compatible)],
+        model=Model(id=5, name="gpt", engine_id=2, status=Status.ready),
     )
     with door(session) as client:
         r = client.post("/v1/model/5/load")
@@ -230,3 +259,100 @@ def test_a_delete_for_an_engine_that_vanished_refuses_instead_of_picking_another
     monkeypatch.setattr(model_ops.engines, "spec_of_id", lambda _id: None)
     with pytest.raises(ValueError, match="engine 999 is not registered"):
         model_ops._engine_for_delete("gemma2:9b", 999)
+
+
+def test_an_engine_moves_off_the_card_but_never_renames_or_repoints(door, monkeypatch):
+    from api.v1 import engine as engine_door
+
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm:8000")
+    running = [True]
+    monkeypatch.setattr(engine_door, "_running", lambda spec: running[0])
+    row = _engine(2, "vllm", EngineKind.vllm)
+    session = FakeAsyncSession(engines=[row])
+    with door(session) as client:
+        # a live process stays on the card whatever its row says, and the card logic trusts the row
+        refused = client.patch("/v1/engine/2", json={"placement": "cpu"})
+        same = client.patch("/v1/engine/2", json={"placement": "gpu"})
+        running[0] = False
+        moved = client.patch("/v1/engine/2", json={"placement": "cpu"})
+        renamed = client.patch("/v1/engine/2", json={"name": "other"})
+        repointed = client.patch("/v1/engine/2", json={"placement": "gpu", "env_prefix": "OTHER"})
+
+    assert refused.status_code == 409 and "stop it" in refused.json()["detail"]
+    assert same.status_code == 200, "restating the placement it has is no move"
+    assert moved.status_code == 200 and moved.json()["placement"] == "cpu"
+    # a stamp names its engine by name and address: changing either would move the ruler silently
+    assert renamed.status_code == 422 and repointed.status_code == 422
+    assert row.name == "vllm" and row.env_prefix == "VLLM"
+
+
+def test_a_vllm_that_does_not_serve_the_name_is_refused_before_the_row(door, monkeypatch):
+    from api.v1 import llm_model
+
+    serves = [False]
+    monkeypatch.setattr(llm_model, "_serves", lambda engine, name: serves[0])
+    monkeypatch.setattr(llm_model.vllm, "artifact_of",
+                        lambda name: {"quant": "F16", "size_bytes": 2_000_000_000})
+    session = FakeAsyncSession(engines=[_engine(2, "vllm", EngineKind.vllm)])
+    with door(session) as client:
+        refused = client.post("/v1/model", json={"name": "Qwen/Q", "engine_id": 2})
+        serves[0] = True
+        taken = client.post("/v1/model", json={"name": "Qwen/Q", "engine_id": 2})
+
+    assert refused.status_code == 400 and "does not serve" in refused.json()["detail"]
+    rows = [m for m in session.added if isinstance(m, Model)]
+    assert len(rows) == 1, "the refusal comes before the row, not after it"
+    assert taken.status_code == 200
+    # 11.09: a row the door made carried no quant, while the bootstrap's rows did
+    assert (rows[0].quant, rows[0].size_bytes) == ("F16", 2_000_000_000)
+
+
+def test_a_model_takes_a_quant_by_hand_and_a_weights_key_only_the_hub_knows(door, monkeypatch):
+    from api.v1 import llm_model
+
+    known = [False]
+    monkeypatch.setattr(llm_model, "_repo_exists", lambda repo: known[0])
+    session = FakeAsyncSession(
+        engines=[_engine(2, "vllm", EngineKind.vllm)],
+        model=Model(id=5, name="Qwen/Q", engine_id=2, status=Status.ready),
+    )
+    with door(session) as client:
+        empty = client.patch("/v1/model/5", json={})
+        renamed = client.patch("/v1/model/5", json={"name": "other"})
+        unknown = client.patch("/v1/model/5", json={"weights": "Qwen/Nowhere"})
+        known[0] = None
+        silent = client.patch("/v1/model/5", json={"weights": "Qwen/Nowhere"})
+        fixed = client.patch("/v1/model/5", json={"quant": "AWQ"})
+
+    assert empty.status_code == 422 and renamed.status_code == 422
+    # a key the hub has never heard of is free text again, and a silent hub is not a no
+    assert unknown.status_code == 422 and silent.status_code == 502
+    assert fixed.status_code == 200 and fixed.json()["quant"] == "AWQ"
+
+    known[0] = True
+    with door(session) as client:
+        keyed = client.patch("/v1/model/5", json={"weights": "Qwen/Qwen2.5-7B-Instruct"})
+    assert keyed.status_code == 200 and keyed.json()["weights"] == "Qwen/Qwen2.5-7B-Instruct"
+    assert session.model.weights_id == 7, "the row points at the weights the hub vouched for"
+
+
+def test_an_engine_is_running_unless_its_connection_is_refused(monkeypatch):
+    import requests
+    from api.v1 import engine as engine_door
+
+    spec = engine_door.engines.EngineSpec(2, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm:8000")
+    replies = {"x": None}
+
+    def get(url, timeout):
+        if replies["x"]:
+            raise replies["x"]
+
+    monkeypatch.setattr(requests, "get", get)
+    assert engine_door._running(spec) is True
+    replies["x"] = requests.ConnectionError("refused")
+    assert engine_door._running(spec) is False
+    replies["x"] = requests.Timeout("3 s")
+    assert engine_door._running(spec) is True, "a silent server may still hold the card"
+    monkeypatch.delenv("VLLM_BASE_URL")
+    assert engine_door._running(spec) is False, "an engine with no address runs nowhere"

@@ -296,7 +296,8 @@ def test_the_door_carries_the_disqualification_and_not_only_the_means(monkeypatc
     from fastapi.testclient import TestClient
 
     full = {
-        "schema": 8, "runs": ["a", "b"], "pools": {}, "blended_do_not_rank": {},
+        "schema": 9, "runs": ["a", "b"], "pools": {}, "blended_do_not_rank": {},
+        "verdicts": {"comparable": 3, "disagree": 1},
         "correlation_population": {"predicate": "p", "n": {}},
         "residency": {"one_residency": False, "read_this_first": "not comparable"},
     }
@@ -325,7 +326,8 @@ def test_the_door_carries_the_disqualification_and_not_only_the_means(monkeypatc
     assert got.status_code == 200, got.text
     body = got.json()
     assert body["residency"]["read_this_first"] == "not comparable"
-    assert body["schema"] == 8, "a reader cannot tell two eras of this record apart without it"
+    assert body["verdicts"] == {"comparable": 3, "disagree": 1}, "the pair's number reaches the door"
+    assert body["schema"] == 9, "a reader cannot tell two eras of this record apart without it"
 
 
 def test_a_run_that_cannot_be_paired_is_refused_by_name_not_by_a_bare_500(monkeypatch):
@@ -365,3 +367,47 @@ def test_a_run_that_cannot_be_paired_is_refused_by_name_not_by_a_bare_500(monkey
 
     assert got.status_code == 409, got.text
     assert "77529" in got.json()["detail"], "the caller is told which question, not just that it failed"
+
+
+def _scored(question_id, faith, rel, tokens=100, elapsed=2.0):
+    ql = _log(question_id=question_id, faith=faith, rel=rel)
+    ql.metrics = {axis: {"judge_prompt_tokens": tokens, "elapsed": elapsed}
+                  for axis in ("faithfulness", "relevance")}
+    return ql
+
+
+def test_verdicts_count_a_moved_ruler_that_the_means_hide():
+    # 1 to 0 on one row and 0 to 1 on another: the means hold still, two verdicts moved
+    left = [_scored(1, 1, 1), _scored(2, 0, 1), _scored(3, 1, 1)]
+    right = [_scored(1, 0, 1), _scored(2, 1, 1), _scored(3, 1, 1)]
+    seen = compare.verdicts(left, right)
+
+    faith = seen["axes"]["faithfulness"]
+    assert faith["left"] == faith["right"]
+    assert (faith["comparable"], faith["disagree"]) == (3, 2)
+    assert (seen["comparable"], seen["disagree"], seen["disagree_rate"]) == (6, 2, 0.333)
+    assert seen["axes"]["completeness"]["comparable"] == 0
+
+
+def test_a_verdict_scored_on_one_side_is_neither_a_match_nor_a_clash():
+    # the script before this door counted it as a clash and left it out of the denominator
+    left = [_scored(1, 1, None), _scored(2, 1, 1)]
+    right = [_scored(1, 1, 1), _scored(2, 1, 0)]
+    rel = compare.verdicts(left, right)["axes"]["relevance"]
+    assert (rel["comparable"], rel["disagree"], rel["one_sided"]) == (1, 1, 1)
+
+
+def test_verdicts_pair_only_shared_questions_and_say_where_the_judge_read_less():
+    left = [_scored(1, 1, 1, tokens=900, elapsed=2.0), _scored(2, 1, 1), _scored(9, 0, 0)]
+    right = [_scored(1, 1, 1, tokens=400, elapsed=4.0), _scored(2, 1, 1), _scored(8, 1, 1)]
+    seen = compare.verdicts(left, right)
+    assert seen["questions"] == 2, "a question one arm never asked is not a verdict to compare"
+    faith = seen["axes"]["faithfulness"]
+    assert faith["prompt_tokens_differ"] == 1
+    assert (faith["seconds_left"], faith["seconds_right"]) == (2.0, 3.0)
+
+
+def test_compare_carries_verdicts_for_a_pair_and_none_for_more():
+    rows = [_scored(1, 1, 1)]
+    assert compare.compare({"a": rows, "b": rows})["verdicts"]["comparable"] == 2
+    assert compare.compare({"a": rows, "b": rows, "c": rows})["verdicts"] is None

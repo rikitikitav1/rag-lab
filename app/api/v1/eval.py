@@ -213,6 +213,7 @@ class CompareResponse(BaseModel):
     schema_version: int = Field(alias="schema")
     residency: dict
     correlation_population: dict
+    verdicts: dict | None
 
     model_config = {"populate_by_name": True}
 

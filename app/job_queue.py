@@ -5,7 +5,7 @@ import job_specs
 import logging_setup
 from models import Job, JobStatus
 from orm.sync_db import Session
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, text
 
 log = logging_setup.get_logger(__name__)
 
@@ -21,10 +21,18 @@ class ClaimedJob:
 def enqueue(type: str, options: dict | None = None, queue: str | None = None) -> int:
     job_specs.check(type, options)
     with Session() as session:
-        job = Job(type=type, options=options or {}, queue=queue or job_specs.lane(type))
+        job = Job(type=type, options=options or {}, queue=_lane(type, queue))
         session.add(job)
         session.commit()
         return job.id
+
+
+# one lane for the card: a caller naming another lane would let two card jobs run at once
+def _lane(type: str, asked: str | None) -> str:
+    lane = job_specs.lane(type)
+    if asked is not None and asked != lane:
+        raise ValueError(f"{type} lives in the {lane} lane, not in {asked}")
+    return lane
 
 
 # the options matter as well as the type: two variants may each wait for their own index
@@ -48,9 +56,19 @@ def add_job(
 ) -> Job:
     # stage a job in the caller's transaction (caller commits); async-safe: .add() is sync
     job_specs.check(type, options)
-    job = Job(type=type, options=options or {}, queue=queue or job_specs.lane(type))
+    job = Job(type=type, options=options or {}, queue=_lane(type, queue))
     session.add(job)
     return job
+
+
+# a handover takes the priority of the job that asked for it, and an old enough job goes first
+def _turn():
+    asker = func.coalesce(Job.options["asked_by"].astext, Job.type)
+    ranked = case(job_specs.PRIORITY, value=asker, else_=0)
+    starved = Job.created_at < func.now() - text(
+        f"interval '{job_specs.STARVED_AFTER_MINUTES} minutes'"
+    )
+    return case((starved, -1), else_=ranked)
 
 
 def claim_next(queues: list[str]) -> ClaimedJob | None:
@@ -62,7 +80,7 @@ def claim_next(queues: list[str]) -> ClaimedJob | None:
                 Job.queue.in_(queues),
                 Job.apply_since <= func.now(),
             )
-            .order_by(Job.apply_since)
+            .order_by(_turn(), Job.apply_since)
             .with_for_update(skip_locked=True)
             .limit(1)
         ).first()
@@ -192,3 +210,34 @@ def _update(id: int, **fields) -> None:
         for key, value in fields.items():
             setattr(job, key, value)
         session.commit()
+
+
+# the judge wakes once per batch of live answers, and the batch waits this long for company
+LIVE_BATCH_SECONDS = 300
+
+
+# appended only while nobody has taken the job: a running one read its rows when it was claimed
+def judge_live(log_id: int) -> int:
+    with Session() as session:
+        waiting = session.execute(text("""
+            UPDATE jobs
+            SET options = jsonb_set(options, '{log_ids}', (options->'log_ids') || to_jsonb(:log_id))
+            WHERE id = (
+                SELECT id FROM jobs
+                WHERE type = 'judge_answers' AND status = 'new' AND options->>'live' = 'true'
+                ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id
+        """), {"log_id": log_id}).first()
+        if waiting is not None:
+            session.commit()
+            return waiting[0]
+        options = {"log_ids": [log_id], "live": True}
+        job_specs.check("judge_answers", options)
+        job = Job(
+            type="judge_answers", options=options, queue=_lane("judge_answers", None),
+            apply_since=datetime.now(timezone.utc) + timedelta(seconds=LIVE_BATCH_SECONDS),
+        )
+        session.add(job)
+        session.commit()
+        return job.id

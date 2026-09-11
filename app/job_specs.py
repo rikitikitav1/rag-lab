@@ -75,6 +75,8 @@ class JudgeAnswers(Spec):
     control_sample: int | None = None
     control_seed: int | None = None
     experiment_id: int | None = None
+    # the batch the chat's answers gather in: it waits so the judge wakes once, not once per question
+    live: bool | None = None
 
     # no target judges every unjudged row there is, and only the sweep may mean that
     @model_validator(mode="after")
@@ -111,6 +113,16 @@ class AnalyzeSource(Spec):
 
 class CheckMcpHealth(Spec):
     integration_id: int
+
+
+class HandCard(Spec):
+    engine_id: int = Field(ge=1)
+    # the handover runs when its asker's turn comes: its own fixed priority ping-pongs the card
+    asked_by: str | None = Field(default=None, max_length=64)
+    # for ollama the model to load once the card is free; vLLM serves one model and needs no name
+    model: str | None = Field(
+        default=None, min_length=1, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern
+    )
 
 
 class ModelByName(Spec):
@@ -172,10 +184,21 @@ SPECS: dict[str, type[Spec]] = {
     "analyze_source": AnalyzeSource,
     "check_mcp_health": CheckMcpHealth,
     "pull_llm_model": ModelByName,
+    "hand_card": HandCard,
     "delete_llm_model": ModelByName,
 }
 
 LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io"}
+
+# lower runs first; judging waits for runs and loads, so the card changes hands once per batch
+PRIORITY = {"judge_answers": 10, "judge_guest_axes": 10, "judge_language": 10}
+
+# a flow of runs must not hold the judge back forever: a job this old is taken before any priority
+STARVED_AFTER_MINUTES = 30
+
+
+def priority(job_type: str) -> int:
+    return PRIORITY.get(job_type, 0)
 
 # the safe way round: an unclassified type evicts. `judge_guest_axes` left when relevancy arrived
 KEEPS_THE_JUDGE = ("judge_answers", "check_mcp_health", "build_vector_index")

@@ -1,4 +1,5 @@
 from . import (  # noqa: F401  (populate HANDLERS)
+    card,
     dataprep,
     evaluation,
     indexing,

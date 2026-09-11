@@ -139,10 +139,16 @@ def test_an_unregistered_name_runs_on_the_engine_of_the_role(monkeypatch):
     assert (picked.name, picked.engine.name) == ("never-registered", "vllm")
 
 
-def test_a_second_ollama_is_a_refusal_and_not_a_pick(monkeypatch):
-    # the config's models belong to ollama by kind, and two of them is a question, not a default
+def test_a_second_ollama_does_not_unseat_the_seeded_one_but_a_guess_is_refused(monkeypatch):
+    # 11.09: with `ollama-cpu` registered the bootstrap skipped the seeded ollama's models
     _rows_are(monkeypatch, [
         (1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
+        (5, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu),
+    ])
+    assert engines.seeded_ollama().name == "ollama"
+    # without the seeded prefix two ollamas are still a question, not a default
+    _rows_are(monkeypatch, [
+        (1, "ollama1", EngineKind.ollama, "OLLAMA1", Placement.gpu),
         (2, "ollama2", EngineKind.ollama, "OLLAMA2", Placement.gpu),
     ])
     with pytest.raises(engines.Unnamed, match="2 ollama engines"):
@@ -259,3 +265,18 @@ def test_an_override_naming_a_model_on_two_engines_takes_the_role_own_engine(mon
     # the second ask names the role's engine, and its answer is what the pass must use
     assert asked == [None, OLLAMA.id], "the retry must name the role's engine, not guess"
     assert picked.engine is SECOND, "the row found on that engine wins, not a fabricated pair"
+
+
+def test_an_embedder_is_loaded_by_an_empty_embed_and_a_generator_by_an_empty_generate(monkeypatch):
+    # 11.09: `/api/generate` on bge-m3 answers 400, so a handover naming the embedder failed
+    from engines import ollama
+
+    sent = []
+    caps = {"bge-m3": ["embedding"], "llama3.1:8b": ["completion", "tools"]}
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": caps[model]})
+    monkeypatch.setattr(ollama, "post", lambda path, body, spec=None: sent.append((path, body)))
+    monkeypatch.setattr(ollama, "context_length", lambda model, spec=None: None)
+    ollama.load_into_memory("bge-m3")
+    ollama.load_into_memory("llama3.1:8b")
+    assert sent == [("/api/embed", {"model": "bge-m3", "input": []}),
+                    ("/api/generate", {"model": "llama3.1:8b"})]

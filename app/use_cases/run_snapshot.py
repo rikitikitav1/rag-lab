@@ -2,15 +2,15 @@ import config
 import llm
 import logging_setup
 import version
-from engines import ollama
-from models.registry import Role
+from engines import card, ollama, vllm
+from models.registry import EngineKind, Role
 
 import db
 
 log = logging_setup.get_logger(__name__)
 
-# 5 engine per role; 6 what the engine refused; 7 that field renamed `engine_refused`
-SCHEMA = 7
+# 5 engine per role; 6 what the engine refused; 7 renamed `engine_refused`; 8 where each role sat
+SCHEMA = 8
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -45,6 +45,8 @@ KEYS = (
     "engines",
     # what a role asked of its engine and the engine would not carry: never read as applied
     "engine_refused",
+    # per role, read from the server: a generator half on the cpu answered with other kernels
+    "on_card",
 )
 
 
@@ -53,18 +55,20 @@ ANSWERING = (Role.generation, Role.embedding)
 
 
 # a report must not die on an unreachable registry: the engine is extra, the run is the record
-def _by_role(picked) -> tuple[dict, dict]:
-    named, dropped = {}, {}
+def _by_role(picked) -> tuple[dict, dict, dict]:
+    named, dropped, placed = {}, {}, {}
     for role in ANSWERING:
         try:
-            spec = picked.engine if role is Role.generation else llm.resolve(role).engine
+            chosen = picked if role is Role.generation else llm.resolve(role)
+            spec = chosen.engine
             if spec is None:
                 continue
             named[role] = spec.name
             dropped[role] = llm.sampler(role, spec).dropped
+            placed[role] = card.model_on_card(spec, chosen.name)
         except Exception as e:
             log.warning("run_snapshot.engine_unread", role=role, error=str(e))
-    return named, dropped
+    return named, dropped, placed
 
 
 # the comment below promises the report survives an unreadable registry, so this one does too
@@ -74,6 +78,13 @@ def _generator(model: str | None):
     except Exception as e:
         log.warning("run_snapshot.generator_unread", model=model, error=str(e))
         return llm.Resolved(model or "?", None)
+
+
+# by the generator's own engine: a vLLM generator recorded a null, since `/api/ps` is ollama's
+def _window(picked) -> int | None:
+    if picked.engine is not None and picked.engine.kind is EngineKind.vllm:
+        return vllm.max_model_len(picked.engine, picked.name)
+    return ollama.context_length(picked.name, picked.engine)
 
 
 def _rerank_device() -> str | None:
@@ -101,7 +112,7 @@ def of_run(
     if unknown:
         raise ValueError(f"the run snapshot has no place for {unknown}")
     picked = _generator(model)
-    named, dropped = _by_role(picked)
+    named, dropped, placed = _by_role(picked)
     common = {
         "schema": SCHEMA,
         "rerank": use_rerank,
@@ -117,9 +128,10 @@ def of_run(
         "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
         # the commit both pipelines ran, so two arms can be shown to have run the same code
         "code_version": version.CODE_VERSION,
-        "context_length": ollama.context_length(picked.name, picked.engine),
+        "context_length": _window(picked),
         "engines": named,
         "engine_refused": dropped,
+        "on_card": placed,
     }
     return {key: None for key in KEYS} | common | filled
 

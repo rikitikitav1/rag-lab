@@ -1,7 +1,7 @@
 import engines
 import job_queue
 from crud import get_or_404
-from engines import ollama
+from engines import ollama, vllm
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.registry import (
@@ -17,7 +17,7 @@ from models.registry import (
     refuse_unknown_registry,
 )
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from query_utils import Page, apply_in_filters, apply_sort_limit_offset
 from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
@@ -156,6 +156,10 @@ async def create_model(
         status = Status.ready
 
     model = Model(name=request.name, engine_id=engine.id, status=status)
+    if engine.kind is EngineKind.vllm:
+        # the bootstrap read these off the weights and the door did not, so its rows carried nulls
+        seen = await run_in_threadpool(vllm.artifact_of, request.name)
+        model.quant, model.size_bytes = seen.get("quant"), seen.get("size_bytes")
     session.add(model)
     if engine.kind is EngineKind.ollama:
         job_queue.add_job(
@@ -181,25 +185,79 @@ def _serves(engine: Engine, name: str) -> bool:
         return False
 
 
-class LoadedResponse(BaseModel):
+class LoadQueuedResponse(BaseModel):
+    job_id: int
+    engine: str
     model: str
-    context_length: int | None
 
     model_config = {"protected_namespaces": ()}
 
 
-@router.post("/{id}/load", response_model=LoadedResponse)
+# one road to the card, the queue: a load from this process met an awake judge with CUDA OOM
+@router.post("/{id}/load", response_model=LoadQueuedResponse, status_code=202)
 async def load_model(id: int, session: AsyncSession = Depends(get_session)):
     model = await get_or_404(Model, id, session)
     engine = await _engine_of(session, model)
-    _refuse_unless_ollama(engine.kind, "loading")
-    spec = engines.EngineSpec(
-        engine.id, engine.name, engine.kind, engine.env_prefix, engine.placement
+    if engine.kind is EngineKind.openai_compatible:
+        raise HTTPException(status_code=501, detail=f"loading is not applicable to {engine.kind}")
+    # a vLLM process serves one model, and a load of another would wake the wrong one with a 202
+    if engine.kind is EngineKind.vllm and not await run_in_threadpool(_serves, engine, model.name):
+        raise HTTPException(status_code=422, detail=f"{engine.name} does not serve {model.name}")
+    job_id = await run_in_threadpool(
+        job_queue.enqueue, "hand_card", {"engine_id": engine.id, "model": model.name}
     )
+    return LoadQueuedResponse(job_id=job_id, engine=engine.name, model=model.name)
+
+
+# what the server cannot say about its weights: fixed by hand, and a key only the hub vouches for
+class ModelPatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    quant: str | None = Field(
+        default=None, min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_.+-]+$"
+    )
+    weights: str | None = Field(
+        default=None, max_length=200, pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    )
+
+
+@router.patch("/{id}", response_model=ModelResponse)
+async def patch_model(
+    id: int, request: ModelPatchRequest, session: AsyncSession = Depends(get_session)
+):
+    if request.quant is None and request.weights is None:
+        raise HTTPException(status_code=422, detail="nothing to change: name a quant or weights")
+    model = await get_or_404(Model, id, session)
+    engine = await _engine_of(session, model)
+    if request.quant is not None:
+        model.quant = request.quant
+    weights = None
+    if request.weights is not None:
+        # a key spelled by hand is free text again unless the hub knows the repository
+        known = await run_in_threadpool(_repo_exists, request.weights)
+        if known is None:
+            raise HTTPException(status_code=502, detail="the hub did not answer; try again")
+        if not known:
+            raise HTTPException(status_code=422, detail=f"{request.weights} is not on the hub")
+        row = await session.scalar(select(Weights).where(Weights.name == request.weights))
+        if row is None:
+            row = Weights(name=request.weights)
+            session.add(row)
+            await session.flush()
+        model.weights_id = row.id
+        weights = row.name
+    await commit_and_refresh(session, model)
+    return ModelResponse.of(model, engine.name, weights)
+
+
+def _repo_exists(repo: str) -> bool | None:
+    import requests
+
     try:
-        return await run_in_threadpool(ollama.load_into_memory, model.name, spec)
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        seen = requests.get(f"https://huggingface.co/api/models/{repo}", timeout=10)
+    except Exception:
+        return None
+    return seen.status_code == 200
 
 
 @router.delete("/{id}", response_model=ModelResponse)
