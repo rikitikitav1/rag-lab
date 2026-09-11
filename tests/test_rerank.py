@@ -85,19 +85,53 @@ def test_the_role_gate_keeps_the_cross_encoder_on_a_vllm(monkeypatch):
     gate.refuse_unfit_model(Role.reranking, "BAAI/r")
     monkeypatch.setattr(gate, "_engine_of", lambda name: RERANK)
     monkeypatch.setattr(vllm, "artifact_of", lambda repo: {"quant": "F16"})
+    monkeypatch.setattr(vllm, "card_state", lambda spec: "asleep")
+    monkeypatch.setattr(vllm, "pools", lambda spec: True)
     gate.refuse_unfit_model(Role.reranking, "BAAI/r")
 
 
-def test_a_door_that_reranks_waits_for_the_reranker_s_engine_too(monkeypatch):
-    import mcp_server
-    from api.v1 import chat as door
+def test_one_rule_says_when_an_answer_needs_the_reranker(monkeypatch):
+    # four copies of the gate rule, and the new ones forgot that `either` scores too
+    import config
+    from use_cases import card_wait
 
-    assert door._reranking(True) == ("reranking",) and door._reranking(False) == ()
-    monkeypatch.setattr(door.chat.config.settings.rerank, "enabled", True)
-    assert door._reranking(None) == ("reranking",), "the default is the config's"
-    monkeypatch.setattr(door.chat.config.settings.rerank, "enabled", False)
-    assert mcp_server._reranking() == ()
-    assert mcp_server._reranking(gated=True) == ("reranking",), "the agent's gate scores too"
+    monkeypatch.setattr(config.settings.rerank, "enabled", False)
+    monkeypatch.setattr(config.settings.agent, "fallback_policy", "corpus_first_weak")
+    assert card_wait.reranker_needed(True) and not card_wait.reranker_needed(False)
+    for signal, needed in (("cross_encoder", True), ("either", True), ("distance", False)):
+        monkeypatch.setattr(config.settings.agent, "gate_signal", signal)
+        assert card_wait.reranker_needed(agent=True) is needed, signal
+        assert not card_wait.reranker_needed(), "the chat has no gate"
+    # the gate only scores under the weak policy, so a request's own policy decides
+    assert not card_wait.reranker_needed(agent=True, fallback_policy="corpus_first")
+    assert card_wait.answering_roles(agent=True) == ("embedding", "generation")
+    # a run sweeps the signal, and its own value decides over the config's
+    assert card_wait.reranker_needed(agent=True, gate_signal="cross_encoder")
+    monkeypatch.setattr(config.settings.agent, "gate_signal", "either")
+    assert not card_wait.reranker_needed(agent=True, gate_signal="distance")
+    monkeypatch.setattr(config.settings.rerank, "enabled", True)
+    assert card_wait.answering_roles() == ("embedding", "generation", "reranking")
+
+
+def test_every_answering_door_waits_for_the_card(monkeypatch):
+    # the REST agent was the one door left without the guard
+    import mcp_server
+    from api.v1 import agent as agent_door
+    from api.v1 import chat as chat_door
+    from fastapi import HTTPException
+    from use_cases import card_wait
+
+    def busy(*roles):
+        raise card_wait.CardBusy(503, "the card is held by the judge on vllm", 5)
+
+    monkeypatch.setattr(card_wait, "wait_for_the_card", busy)
+    with pytest.raises(HTTPException) as refused:
+        agent_door.ask(agent_door.AgentRequest(text="what is redis"))
+    assert refused.value.status_code == 503
+    with pytest.raises(HTTPException):
+        chat_door.ask(chat_door.QuestionRequest(text="what is redis"))
+    with pytest.raises(mcp_server.ToolError):
+        mcp_server.answer_question("what is redis")
 
 
 def test_the_config_seats_the_cross_encoder_on_its_own_engine():

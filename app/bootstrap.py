@@ -32,15 +32,13 @@ def bootstrap_models() -> None:
 
 # vLLM takes the card first when the stack comes up, so it sleeps before ollama loads any role
 def _put_vllm_to_sleep() -> None:
-    for spec in engines.card_engines(EngineKind.vllm):
-        awake = vllm.is_sleeping(spec) is False
-        if not awake:
-            # an engine that does not answer holds no card, and asleep is where it should be
-            log.info("bootstrap.vllm_not_awake", engine=spec.name)
-            continue
-        # awake and refusing would leave every ollama role half on the cpu, and nothing would say so
-        vllm.sleep(spec)
-        log.info("bootstrap.vllm_asleep", engine=spec.name)
+    from engines import card
+
+    # `compose --profile ... up` reruns the bootstrap, and a sleep under a running pass cost its row
+    if job_queue.running_of_type_in_lane("default"):
+        log.info("bootstrap.card_left_to_the_running_job")
+        return
+    card.sleep_every_vllm()
 
 
 # `pull_models` come through `/api/pull`, so their engine is chosen by kind, not by being the only one
@@ -96,10 +94,13 @@ def _ensure_roles(seeded) -> None:
                 continue
             # the same gate `PUT /v1/role` runs: an empty database is the usual way roles are set
             try:
-                model_acceptance.refuse_unfit_model(Role(role), cfg.model)
+                model_acceptance.refuse_unfit_model(Role(role), cfg.model, spec.id)
             except ValueError as e:
                 log.error("bootstrap.role_refused", role=role, model=cfg.model, error=str(e))
                 continue
+            # a boot cannot wait: a stopped engine is named by `/readiness`, a probe asked on its turn
+            except (model_acceptance.EngineDown, model_acceptance.NeedsProbe) as e:
+                log.warning("bootstrap.role_seated_unasked", role=role, model=cfg.model, why=str(e))
             session.add(ModelRole(role=Role(role), model_id=model.id))
         session.commit()
 
@@ -134,17 +135,22 @@ def _fill_vllm_rows() -> None:
             .join(Engine, Engine.id == Model.engine_id)
             .where(Engine.kind == EngineKind.vllm)
         ).all()
+        # one hashing pass per repository: 8 GB were read up to three times per boot, per row
+        checked = {}
         for model, engine_id in rows:
-            if not vllm.weights_intact(model.name):
-                log.error("bootstrap.vllm_weights_not_intact", model=model.name,
-                          broken=vllm.broken_weights(model.name)[:5])
+            if model.name not in checked:
+                checked[model.name] = vllm.weights_check(model.name)
+            broken = checked[model.name]
+            if broken:
+                log.error("bootstrap.vllm_weights_not_intact", model=model.name, broken=broken[:5])
                 model.status = Status.loading
                 to_pull.append((model.name, engine_id))
                 continue
             model.status = Status.ready
-            if model.quant is None:
+            # each field on its own: a quant typed by hand left the size empty for good
+            if model.quant is None or model.size_bytes is None:
                 seen = vllm.artifact_of(model.name)
-                model.quant = seen.get("quant")
+                model.quant = model.quant or seen.get("quant")
                 model.size_bytes = model.size_bytes or seen.get("size_bytes")
         session.commit()
     for name, engine_id in to_pull:
@@ -260,14 +266,15 @@ def _queue_index_build(variant: str) -> None:
 
 
 def _ensure_question_embeddings() -> None:
-    from models.eval import Question
+    from use_cases.index import question_needs_embedding
 
-    missing = Question.embedding.is_(None)
+    label = None
     try:
         # a role moved to another embedder leaves every question vector foreign to the new one
-        missing = missing | Question.embedded_by.is_distinct_from(llm.embedder_label())
+        label = llm.embedder_label()
     except Exception as e:
         log.error("bootstrap.embedder_unknown", error=str(e))
+    missing = question_needs_embedding(label)
     with Session() as session:
         pending = session.scalar(select(exists().where(missing)))
     if not pending:

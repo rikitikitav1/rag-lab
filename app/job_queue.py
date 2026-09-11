@@ -35,8 +35,8 @@ def _lane(type: str, asked: str | None) -> str:
     return lane
 
 
-# the options matter as well as the type: two variants may each wait for their own index
-def pending_of_type(type: str, **options) -> bool:
+# options matter as well as the type; the id, so a door answers with it rather than queue a second
+def pending_of_type(type: str, **options) -> int | None:
     with Session() as session:
         query = select(Job.id).where(
             Job.type == type,
@@ -48,7 +48,22 @@ def pending_of_type(type: str, **options) -> bool:
                 query = query.where(Job.options[key].astext.is_(None))
             else:
                 query = query.where(Job.options[key].astext == str(value))
-        return bool(session.scalar(query.limit(1)))
+        return session.scalar(query.limit(1))
+
+
+def running_of_type(type: str) -> bool:
+    with Session() as session:
+        return bool(session.scalar(
+            select(Job.id).where(Job.type == type, Job.status == JobStatus.running).limit(1)
+        ))
+
+
+# the card's lane: a job running there may hold the card, and nothing from outside takes it away
+def running_of_type_in_lane(lane: str) -> bool:
+    with Session() as session:
+        return bool(session.scalar(
+            select(Job.id).where(Job.queue == lane, Job.status == JobStatus.running).limit(1)
+        ))
 
 
 def add_job(
@@ -61,10 +76,9 @@ def add_job(
     return job
 
 
-# a handover takes the priority of the job that asked for it, and an old enough job goes first
+# a job takes the card in its own turn now, so the turn is the job's type, and an old job goes first
 def _turn():
-    asker = func.coalesce(Job.options["asked_by"].astext, Job.type)
-    ranked = case(job_specs.PRIORITY, value=asker, else_=0)
+    ranked = case(job_specs.PRIORITY, value=Job.type, else_=0)
     starved = Job.created_at < func.now() - text(
         f"interval '{job_specs.STARVED_AFTER_MINUTES} minutes'"
     )

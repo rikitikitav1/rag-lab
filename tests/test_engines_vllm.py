@@ -56,7 +56,7 @@ def test_the_sleep_state_is_read_and_silence_is_not_a_no(server):
 
 
 def test_a_wake_that_the_server_refused_is_an_error_not_a_quiet_retry(server):
-    # 11.09: a wake on a card ollama still held answered 500 and left the server asleep
+    # a wake on a card ollama still held answered 500 and left the server asleep
     server["replies"][("post", "/wake_up")] = _Reply(500)
     with pytest.raises(engines.WakeFailed):
         vllm.wake_up(SPEC)
@@ -113,27 +113,29 @@ def test_a_probe_that_answers_in_text_says_no_and_a_silent_server_says_nothing(s
 def test_the_bootstrap_puts_only_an_awake_vllm_to_sleep(monkeypatch):
     # vLLM takes the card first when the stack comes up, and ollama roles would land half on the cpu
     import bootstrap
+    from engines import card
 
     state, slept = {}, []
     other = engines.EngineSpec(4, "vllm-2", EngineKind.vllm, "VLLM_2", Placement.gpu)
-    monkeypatch.setattr(bootstrap.engines, "card_engines", lambda kind=None: [SPEC, other])
-    monkeypatch.setattr(bootstrap.vllm, "is_sleeping", lambda spec: state[spec.name])
-    monkeypatch.setattr(bootstrap.vllm, "sleep", lambda spec: slept.append(spec.name))
+    monkeypatch.setattr(card, "card_engines", lambda kind=None: [SPEC, other])
+    monkeypatch.setattr(card.vllm, "card_state", lambda spec: state[spec.name])
+    monkeypatch.setattr(card.vllm, "sleep", lambda spec: slept.append(spec.name))
+    monkeypatch.setattr(bootstrap.job_queue, "running_of_type_in_lane", lambda lane: False)
 
-    state.update({"vllm": False, "vllm-2": True})
+    state.update({"vllm": "awake", "vllm-2": "asleep"})
     bootstrap._put_vllm_to_sleep()
     assert slept == ["vllm"]
 
-    # a server that does not answer holds no card, so the stack still comes up
-    state.update({"vllm": None, "vllm-2": None})
+    # a stopped service under a profile holds no card; a silent one may, so it is put to sleep too
+    state.update({"vllm": "down", "vllm-2": "unknown"})
     bootstrap._put_vllm_to_sleep()
-    assert slept == ["vllm"]
+    assert slept == ["vllm", "vllm-2"]
 
     def refuses(spec):
         raise RuntimeError("did not go to sleep")
 
-    monkeypatch.setattr(bootstrap.vllm, "sleep", refuses)
-    state["vllm"] = False
+    monkeypatch.setattr(card.vllm, "sleep", refuses)
+    state["vllm"] = "awake"
     with pytest.raises(RuntimeError):
         bootstrap._put_vllm_to_sleep()
 
@@ -174,6 +176,9 @@ def test_the_generation_role_refuses_a_vllm_that_answers_tools_in_text(monkeypat
     monkeypatch.setattr(gate, "_engine_of", lambda name: seen["engine"])
     monkeypatch.setattr(vllm, "artifact_of", lambda repo: {"quant": seen["quant"]})
     monkeypatch.setattr(vllm, "tool_calls_probed", lambda spec, model: seen["probed"])
+    monkeypatch.setattr(vllm, "card_state", lambda spec: "awake")
+    monkeypatch.setattr(vllm, "pools", lambda spec: False)
+    monkeypatch.setattr(vllm, "started_at", lambda spec: "t0")
 
     with pytest.raises(ValueError, match="does not return tool calls"):
         gate.refuse_unfit_model(Role.generation, "Qwen/Q")
@@ -183,8 +188,10 @@ def test_the_generation_role_refuses_a_vllm_that_answers_tools_in_text(monkeypat
 
     # the cpu build has no kernels for AWQ: the role is refused before the handover wastes a card
     seen.update(engine=cpu, probed=True)
-    with pytest.raises(ValueError, match="cannot serve"):
-        gate.refuse_unfit_model(Role.judging, "Qwen/Q")
+    for unreadable in ("AWQ", "GGUF"):
+        seen["quant"] = unreadable
+        with pytest.raises(ValueError, match=f"{unreadable}, which vllm-cpu on the cpu cannot serve"):
+            gate.refuse_unfit_model(Role.judging, "Qwen/Q")
     seen["quant"] = "BF16"
     gate.refuse_unfit_model(Role.judging, "Qwen/Q")
 
@@ -197,6 +204,9 @@ def test_a_refused_connection_holds_no_card_and_a_timeout_may(server, monkeypatc
     server["replies"][("get", "/is_sleeping")] = vllm.requests.ConnectionError("refused")
     assert vllm.card_state(SPEC) == "down"
     server["replies"][("get", "/is_sleeping")] = vllm.requests.Timeout("10 s")
+    assert vllm.card_state(SPEC) == "unknown"
+    # a ConnectTimeout is a ConnectionError too, yet the host may still hold the card
+    server["replies"][("get", "/is_sleeping")] = vllm.requests.ConnectTimeout("no route")
     assert vllm.card_state(SPEC) == "unknown"
     monkeypatch.delenv("VLLM_BASE_URL")
     assert vllm.card_state(SPEC) == "down", "an engine with no address runs nowhere"
@@ -244,10 +254,224 @@ def test_a_silent_second_ollama_keeps_its_rows_as_they_were(monkeypatch):
 
 
 def test_a_run_records_the_window_of_a_vllm_generator_from_the_server(monkeypatch):
-    # 11.09: the first run with the generator on vLLM recorded `context_length: null`
+    # the first run with the generator on vLLM recorded `context_length: null`
     from use_cases import run_snapshot
 
     monkeypatch.setattr(run_snapshot.vllm, "max_model_len", lambda spec, name: 8192)
     monkeypatch.setattr(run_snapshot.ollama, "context_length",
                         lambda *a, **kw: pytest.fail("ollama asked about a vLLM generator"))
     assert run_snapshot._window(engines.Resolved("Qwen/Q", SPEC)) == 8192
+
+
+def _asleep_gate(monkeypatch, state):
+    from engines import lookup
+    from use_cases import model_acceptance as gate
+
+    asked, recorded = [], {}
+    monkeypatch.setattr(gate, "_engine_of", lambda name: SPEC)
+    monkeypatch.setattr(vllm, "artifact_of", lambda repo: {"quant": "AWQ"})
+    monkeypatch.setattr(vllm, "card_state", lambda spec: state[0])
+    monkeypatch.setattr(vllm, "pools", lambda spec: state[1] if len(state) > 1 else False)
+    monkeypatch.setattr(vllm, "started_at", lambda spec: "t0")
+    monkeypatch.setattr(vllm, "_probe", lambda spec, model: asked.append(model) or False)
+    monkeypatch.setattr(lookup, "recorded_tool_probe",
+                        lambda engine_id, model, started: recorded.get(started))
+    monkeypatch.setattr(lookup, "record_tool_probe",
+                        lambda engine_id, model, started, probed: recorded.__setitem__(started, probed))
+    vllm._probed.clear()
+    return gate, asked, recorded
+
+
+def test_the_gate_does_not_ask_an_asleep_server_and_reads_the_recorded_probe(monkeypatch):
+    # the probe is read from the model row, which every process sees
+    from models.registry import Role
+
+    state = ["asleep"]
+    gate, asked, recorded = _asleep_gate(monkeypatch, state)
+    with pytest.raises(gate.NeedsProbe):
+        gate.refuse_unfit_model(Role.generation, "Qwen/Q")
+    assert asked == [], "an asleep server is not probed"
+    recorded["t0"] = False
+    with pytest.raises(ValueError, match="does not return tool calls"):
+        gate.refuse_unfit_model(Role.generation, "Qwen/Q")
+    recorded.clear()
+    vllm._probed.clear()
+    state[0] = "awake"
+    with pytest.raises(ValueError):
+        gate.refuse_unfit_model(Role.generation, "Qwen/Q")
+    assert asked == ["Qwen/Q"] and recorded == {"t0": False}, "asked awake, and written for the next"
+    vllm._probed.clear()
+    with pytest.raises(ValueError):
+        gate.refuse_unfit_model(Role.generation, "Qwen/Q")
+    assert asked == ["Qwen/Q"], "another process reads the record instead of asking again"
+
+
+def test_a_role_goes_only_where_its_server_runs_and_answers(monkeypatch):
+    # the reranker on a stopped `vllm-rerank` was seated as the generator with a 200
+    from models.registry import Role
+
+    state = ["down"]
+    gate, _, recorded = _asleep_gate(monkeypatch, state)
+    with pytest.raises(gate.EngineDown):
+        gate.refuse_unfit_model(Role.generation, "BAAI/r")
+    state[:] = ["awake", True]
+    with pytest.raises(ValueError, match="pooling runner"):
+        gate.refuse_unfit_model(Role.generation, "BAAI/r")
+    gate.refuse_unfit_model(Role.reranking, "BAAI/r")
+    state[:] = ["asleep", False]
+    with pytest.raises(ValueError, match="generating runner"):
+        gate.refuse_unfit_model(Role.reranking, "Qwen/Q")
+    # a server that cannot say how it runs is not refused on that
+    state[:] = ["asleep", None]
+    recorded["t0"] = True
+    gate.refuse_unfit_model(Role.generation, "Qwen/Q")
+
+
+def test_a_role_on_a_stopped_ollama_is_refused_like_one_on_a_stopped_vllm(monkeypatch):
+    # a stopped ollama is refused a role as a stopped vLLM is
+    from models.registry import Role
+    from use_cases import model_acceptance as gate
+
+    ollama = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    monkeypatch.setattr(engines, "spec_of_id", lambda engine_id: ollama)
+    state = ["down"]
+    monkeypatch.setattr(gate.ollama, "card_reading", lambda spec: (state[0], []))
+    monkeypatch.setattr(gate.ollama, "shown", lambda model, spec=None: {})
+    with pytest.raises(gate.EngineDown, match="ollama does not answer"):
+        gate.refuse_unfit_model(Role.generation, "llama3.1:8b", engine_id=1)
+    state[0] = "free"
+    gate.refuse_unfit_model(Role.generation, "llama3.1:8b", engine_id=1)
+
+
+def test_the_server_says_whether_it_pools(server):
+    info = "model='Qwen/Q', quantization=auto_awq, pooler_config={}, compilation_config=..."
+    server["replies"][("get", "/server_info")] = _Reply(body={"vllm_config": info.format("None")})
+    assert vllm.pools(SPEC) is False
+    server["replies"][("get", "/server_info")] = _Reply(
+        body={"vllm_config": info.format("PoolerConfig(pooling_type='CLS')")})
+    assert vllm.pools(SPEC) is True
+    server["replies"][("get", "/server_info")] = _Reply(body={"vllm_config": "model='x'"})
+    assert vllm.pools(SPEC) is None, "a config that names no pooler says nothing"
+    server["replies"][("get", "/server_info")] = _Reply(404)
+    assert vllm.pools(SPEC) is None
+
+
+def test_a_recorded_probe_speaks_only_for_the_process_start_it_was_asked_at(monkeypatch):
+    from types import SimpleNamespace
+
+    from engines import lookup
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, stmt):
+            return SimpleNamespace(first=lambda: SimpleNamespace(tool_probe=False,
+                                                                 tool_probe_start="t0"))
+
+    monkeypatch.setattr(lookup, "Session", _Session)
+    assert lookup.recorded_tool_probe(SPEC.id, "Qwen/Q", "t0") is False
+    assert lookup.recorded_tool_probe(SPEC.id, "Qwen/Q", "t1") is None, "a restart may change flags"
+    vllm._probed.clear()
+    assert vllm.known_probe(SPEC, "Qwen/Q", None) is None, "no start, no process to vouch for"
+
+
+def test_the_role_door_on_an_asleep_server_queues_the_probe_and_a_down_one_is_503(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from api.v1 import model_role
+    from fastapi import HTTPException
+    from models.registry import Role
+
+    class _Session:
+        async def get(self, cls, ident):
+            return SimpleNamespace(id=10, name="Qwen/Q", engine_id=3) if ident == 10 else None
+
+    queued = []
+    monkeypatch.setattr(model_role.job_queue, "enqueue",
+                        lambda kind, options: queued.append((kind, options)) or 77)
+    fault = [None]
+
+    def refuse(role, name, engine_id):
+        assert engine_id == 3, "the door knows the engine and says it"
+        raise fault[0]
+
+    monkeypatch.setattr(model_role.model_acceptance, "refuse_unfit_model", refuse)
+    request = model_role.RoleAssignRequest(model_id=10)
+
+    fault[0] = model_role.model_acceptance.NeedsProbe("vllm is asleep")
+    answer = asyncio.run(model_role.assign_role(Role.generation, request, _Session()))
+    assert answer.status_code == 202 and b'"job_id":77' in answer.body
+    assert queued == [("hand_card", {"engine_id": 3, "model": "Qwen/Q", "seat": "generation",
+                                     "seat_over": None})], "no role yet, so nothing to be overtaken"
+
+    fault[0] = model_role.model_acceptance.EngineDown("vllm-rerank does not answer")
+    with pytest.raises(HTTPException) as down:
+        asyncio.run(model_role.assign_role(Role.generation, request, _Session()))
+    assert down.value.status_code == 503 and len(queued) == 1, "nothing is queued for a dead server"
+
+
+def test_an_unexpected_probe_body_reads_unknown_not_a_500(server):
+    server["replies"][("get", "/metrics")] = _Reply(text=START)
+    server["replies"][("post", "/v1/chat/completions")] = _Reply(body={"object": "error"})
+    assert vllm.tool_calls_probed(SPEC, "Qwen/Q") is None
+
+
+def test_a_handover_that_seats_a_role_asks_the_woken_server_first(monkeypatch):
+    from job_handlers import card as handler
+
+    calls = []
+    monkeypatch.setattr(handler.engines, "spec_of_id", lambda engine_id: SPEC)
+    monkeypatch.setattr(handler, "take", lambda spec, model=None: calls.append("take"))
+    monkeypatch.setattr(handler.model_acceptance, "seat",
+                        lambda role, engine_id, model, over: calls.append(f"seat {role} {model} {over}"))
+    verdict = [None]
+
+    def gate(role, model, engine_id):
+        calls.append(f"gate {engine_id}")
+        if verdict[0]:
+            raise verdict[0]
+
+    monkeypatch.setattr(handler.model_acceptance, "refuse_unfit_model", gate)
+    options = {"engine_id": 3, "model": "Qwen/Q", "seat": "generation", "seat_over": 4}
+    handler.hand_card(options)
+    assert calls == ["take", "gate 3", "seat generation Qwen/Q 4"]
+    calls.clear()
+    verdict[0] = ValueError("Qwen/Q on vllm does not return tool calls")
+    # a retry would only wake the server and take the card again for the same answer
+    with pytest.raises(handler.Final, match="tool calls"):
+        handler.hand_card(options)
+    assert calls == ["take", "gate 3"], "a refused role stays where it was"
+    calls.clear()
+    handler.hand_card({"engine_id": 3, "model": "Qwen/Q"})
+    assert calls == ["take"], "a plain `/load` seats nothing"
+
+
+def test_the_worker_probes_the_generator_it_just_woke(monkeypatch):
+    from job_handlers import card as handler
+
+    probed = []
+    monkeypatch.setattr(handler.llm, "resolve", lambda role: engines.Resolved("Qwen/Q", SPEC))
+    monkeypatch.setattr(handler.vllm, "tool_calls_probed", lambda spec, model: probed.append(model))
+    handler._probe_the_woken_generator(SPEC)
+    other = engines.EngineSpec(7, "vllm-rerank", EngineKind.vllm, "VLLM_RERANK", Placement.gpu)
+    handler._probe_the_woken_generator(other)
+    assert probed == ["Qwen/Q"], "a pooling server asked for tool calls would read as parserless"
+
+
+def test_a_rerun_bootstrap_leaves_the_card_to_a_running_job(monkeypatch):
+    # `compose --profile rerank up` reran the bootstrap and put a judging judge to sleep
+    import bootstrap
+    from engines import card
+
+    slept = []
+    monkeypatch.setattr(card, "sleep_every_vllm", lambda: slept.append(1))
+    monkeypatch.setattr(bootstrap.job_queue, "running_of_type_in_lane", lambda lane: True)
+    bootstrap._put_vllm_to_sleep()
+    monkeypatch.setattr(bootstrap.job_queue, "running_of_type_in_lane", lambda lane: False)
+    bootstrap._put_vllm_to_sleep()
+    assert slept == [1]

@@ -157,7 +157,7 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
         return (
             db.hybrid_search(
                 question, llm.embed(question), category, limit=k, variant=variant,
-                ef_search=depth,
+                ef_search=depth, embedded_by=llm.embedder_label(),
             ),
             None,
             depth,
@@ -172,6 +172,7 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
         limit=config.settings.rerank.candidates,
         variant=variant,
         ef_search=depth,
+        embedded_by=llm.embedder_label(),
     )
     ranked = rerank.rerank(question, candidates, top=k)
     return [row for row, _ in ranked], [score for _, score in ranked], depth
@@ -299,6 +300,7 @@ def answer_from_rows(
     ef_search: int | None = None,
     *,
     variant: str,
+    placed_during: dict | None = None,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
     lang = resolve_language(question, language)
@@ -339,7 +341,7 @@ def answer_from_rows(
         _log_answer(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
             _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
-            contexts=texts or None, chunks=chunks or None,
+            contexts=texts or None, chunks=chunks or None, placed_during=placed_during,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -378,7 +380,7 @@ def _retrieval_snapshot(rows, sources) -> dict:
 
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
                      ef_search: int | None = None, model: str | None = None,
-                     language: str | None = None) -> dict:
+                     language: str | None = None, placed_during: dict | None = None) -> dict:
     return run_snapshot.of_run(
         language=language,
         variant=variant,
@@ -388,6 +390,7 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
         distance_threshold=distance_threshold,
         model=model,
         rerank_device=rerank_device,
+        placed_during=placed_during,
         # the agent has no phase and single_shot has no hops: each records None for the other
         phased=phased,
     )
@@ -397,6 +400,7 @@ def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
+    placed_during: dict | None = None,
 ) -> None:
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
@@ -414,6 +418,8 @@ def _log_answer(
             models={
                 "generation": ans.metrics.model,
                 "embedding": llm.resolve_name("embedding"),
+                # the cross-encoder left the config for a role, and a run that reranked names its model
+                **({"reranking": llm.resolve_name("reranking")} if use_rerank else {}),
             },
             prompts={
                 "generate_answer": prompt_repo.active_version(Purpose.generate_answer)
@@ -422,6 +428,7 @@ def _log_answer(
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
                     rerank_device, variant, ef_search, ans.metrics.model, lang,
+                    placed_during=placed_during,
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand

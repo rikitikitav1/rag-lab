@@ -6,6 +6,7 @@ import engines
 import engines.ollama
 import llm
 import logging_setup
+from errors import StandFault
 from langchain_core.tools import StructuredTool
 from use_cases import agent_policy as policy
 from use_cases import chat
@@ -122,6 +123,8 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
         # for this arm the limit is the budget, so reaching it is exhaustion, not a failure
         result.failed = False
         return
+    except StandFault:
+        raise
     except Exception as e:
         log.error("react.client_failed", error=str(e))
         result.text = ""

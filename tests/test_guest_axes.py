@@ -75,6 +75,22 @@ def test_a_guest_that_throws_records_the_try_and_moves_on(monkeypatch):
     assert "RuntimeError" in ql.metrics["ragas_faithfulness"]["error"]
 
 
+def test_a_lost_card_on_a_guest_ends_the_pass_and_writes_no_error_into_the_row(monkeypatch):
+    import pytest
+    from engines.card import CardNotHanded
+    from job_handlers import judging
+
+    def lost(axis, ql):
+        raise CardNotHanded("ollama did not let go of the card in 60s")
+
+    monkeypatch.setattr(guest_axes, "score", lost)
+    ql = _row(metrics={"relevance": {"reason": "ok"}})
+    monkeypatch.setattr(judging, "Session", _session_of(ql))
+    with pytest.raises(CardNotHanded):
+        judging._score_guests(1, {})
+    assert "ragas_faithfulness" not in ql.metrics
+
+
 def test_a_guest_stops_being_tried_after_the_same_cap_our_axes_have(monkeypatch):
     from job_handlers import judging
 
@@ -141,16 +157,16 @@ def test_the_card_is_read_from_the_one_holder_that_already_answers_it(monkeypatc
 
     monkeypatch.setattr(judging.llm, "resolve", lambda role: engines.Resolved("q:7b", stub_engine()))
     monkeypatch.setattr(
-        judging.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
+        judging.card.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
     )
     assert judging.judge_on_card() is True
 
     monkeypatch.setattr(
-        judging.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
+        judging.card.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
     )
     assert judging.judge_on_card() is False
 
-    monkeypatch.setattr(judging.ollama, "residency", lambda spec=None: [])
+    monkeypatch.setattr(judging.card.ollama, "residency", lambda spec=None: [])
     assert judging.judge_on_card() is None
 
 
@@ -367,7 +383,7 @@ def test_a_cancelled_judging_job_stops_instead_of_running_to_the_end(monkeypatch
     monkeypatch.setattr(judging, "_judge_log", lambda log_id, **kw: judged.append(log_id) or True)
     monkeypatch.setattr(judging, "_bench_from", lambda o: SimpleNamespace(
         model=None, template=lambda p: "t"))
-    monkeypatch.setattr(judging, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(judging, "require_role_ready", lambda role, **kw: None)
     monkeypatch.setattr(judging, "require_card", lambda role, model=None, asked_by=None: None)
     monkeypatch.setattr(judging, "_target_log_ids", lambda s, o: [1, 2, 3, 4, 5])
     monkeypatch.setattr(judging.experiment, "revive_for_run", lambda r: None)
@@ -383,7 +399,7 @@ def test_a_cancelled_judging_job_stops_instead_of_running_to_the_end(monkeypatch
 
 
 def test_the_guest_pass_draws_a_seeded_subsample_and_redraws_the_same_rows():
-    # the owner's decision of 07.09: guests calibrate on a subsample, they cost 35x ours a row
+    # guests calibrate on a subsample, they cost 35x ours a row
     from job_handlers.judging import _drawn
 
     ids = list(range(100, 200))

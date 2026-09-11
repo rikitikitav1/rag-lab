@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import config
 import job_queue
 import limits
+import llm
 import logging_setup
 from evals.retrieval_metrics import is_gold, rank_of_gold
 from evals.stats import deltas_over, tally
@@ -101,7 +102,7 @@ def ranked_lists(db, question, variant, depth=DEPTH, limit_keyword=CANDIDATES,
         ef_search=ef_search,
         exact=exact,
         # embedded before the run, maybe by another embedder than the role serves today
-        embedded_by=question.get("embedded_by"),
+        embedded_by=question.get("embedded_by") or llm.embedder_label(),
     )
     if rerank_top:
         rows = _reranked(question["original_text"], rows, rerank_top)

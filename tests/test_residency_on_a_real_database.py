@@ -46,7 +46,7 @@ def _judged(db, engine, residency, at, started=None, on_card=True):
 
 
 def test_a_residency_is_lent_only_by_the_engine_that_holds_it(db, judging):
-    # 10.09: `arc5_floor_d_ollama` carries 2533, which is the number of a vLLM pass
+    # `arc5_floor_d_ollama` carries 2533, which is the number of a vLLM pass
     _judged(db, "ollama", 2526, T1)
     _judged(db, "vllm", 2533, T3)
 
@@ -82,7 +82,7 @@ def test_a_vllm_residency_is_lent_only_under_the_same_process_start(db, judging)
 
 
 def test_a_pass_that_found_the_judge_on_the_cpu_lends_nothing_to_the_card(db, judging):
-    # 10.09: ollama lost the card, pass 2551 judged on the cpu, and the next one on the card took 2551
+    # ollama lost the card, pass 2551 judged on the cpu, and the next one on the card took 2551
     _judged(db, "ollama", 2533, T1)
     _judged(db, "ollama", 2551, T3, on_card=False)
 
@@ -111,7 +111,7 @@ def test_the_bootstrap_fills_the_quant_of_vllm_rows_from_their_weights(judging, 
                 " SELECT :n, id, 'ready' FROM engines WHERE name = :e"
             ), {"n": name, "e": engine})
     monkeypatch.setattr(bootstrap, "Session", sessionmaker(db))
-    monkeypatch.setattr(bootstrap.vllm, "weights_intact", lambda repo: True)
+    monkeypatch.setattr(bootstrap.vllm, "weights_check", lambda repo: [])
     monkeypatch.setattr(
         bootstrap.vllm, "artifact_of",
         lambda repo: {"quant": "AWQ" if repo == "Qwen/Q-AWQ" else "ASKED", "size_bytes": 5},
@@ -130,16 +130,16 @@ def test_the_last_residency_is_the_last_judged_not_the_last_created(db, judging)
 
 
 def test_the_queue_runs_the_generation_first_and_judges_in_one_batch(db, monkeypatch):
-    # a judge on vLLM, a run on ollama, a judge on vLLM: one handover to vLLM after the run, not two
+    # jobs take the card in their own turn: the run first, the judges back to back, only the chat queues
     import job_queue
 
     monkeypatch.setattr(job_queue, "Session", sessionmaker(db))
     rows = [
         ("judge_answers", {}, "-3 minutes", "-3 minutes"),
         ("eval_run", {}, "-2 minutes", "-2 minutes"),
-        ("hand_card", {"engine_id": 3, "asked_by": "judge_answers"}, "-1 minutes", "-1 minutes"),
         ("judge_answers", {"late": 1}, "-1 minutes", "-1 minutes"),
-        ("hand_card", {"engine_id": 1, "asked_by": "eval_run"}, "0 minutes", "0 minutes"),
+        # asked by the chat, which has nothing to wait with: it overtakes everything that waits
+        ("hand_card", {"engine_id": 1, "asked_by": "chat"}, "0 minutes", "0 minutes"),
         # queued long ago and deferred since: its turn has come whatever its priority
         ("judge_language", {}, "0 minutes", "-40 minutes"),
     ]
@@ -154,18 +154,18 @@ def test_the_queue_runs_the_generation_first_and_judges_in_one_batch(db, monkeyp
     order = []
     while (claimed := job_queue.claim_next(["default"])) is not None:
         order.append((claimed.type, claimed.options.get("asked_by")))
+    # the chat's handover waited behind a queued run
     assert order == [
+        ("hand_card", "chat"),
         ("judge_language", None),
         ("eval_run", None),
-        ("hand_card", "eval_run"),
         ("judge_answers", None),
-        ("hand_card", "judge_answers"),
         ("judge_answers", None),
     ]
 
 
 def test_a_second_ollama_on_the_cpu_does_not_unseat_the_seeded_one(judging, monkeypatch, db):
-    # 11.09: with `ollama-cpu` registered the bootstrap skipped reconciling the seeded ollama
+    # with `ollama-cpu` registered the bootstrap skipped reconciling the seeded ollama
     import engines
     from engines import lookup
 
@@ -181,7 +181,8 @@ def test_a_clean_stand_seats_the_judge_on_the_model_vllm_serves(judging, monkeyp
     session = sessionmaker(db)
     monkeypatch.setattr(bootstrap, "Session", session)
     monkeypatch.setattr(lookup, "Session", session)
-    monkeypatch.setattr(bootstrap.model_acceptance, "refuse_unfit_model", lambda role, name: None)
+    monkeypatch.setattr(bootstrap.model_acceptance, "refuse_unfit_model",
+                        lambda role, name, engine_id: None)
     cfg = type("Role", (), {"model": "Qwen/Q-AWQ", "engine": "vllm", "options": {}})()
     monkeypatch.setattr(config.settings.llm, "roles", {"judging": cfg})
 
@@ -201,26 +202,116 @@ def test_a_clean_stand_seats_the_judge_on_the_model_vllm_serves(judging, monkeyp
     assert tuple(seated) == ("Qwen/Q-AWQ", "vllm", "ready")
 
 
+def test_a_boot_seats_a_role_whose_engine_is_stopped_or_unprobed(judging, monkeypatch, db):
+    # the default seats the reranker on `vllm-rerank`, stopped unless its profile is up
+    import bootstrap
+    import config
+    from engines import lookup
+
+    session = sessionmaker(db)
+    monkeypatch.setattr(bootstrap, "Session", session)
+    monkeypatch.setattr(lookup, "Session", session)
+    monkeypatch.setattr(bootstrap.vllm, "served", lambda spec: ["Qwen/Q-AWQ"])
+    cfg = type("Role", (), {"model": "Qwen/Q-AWQ", "engine": "vllm", "options": {}})()
+    monkeypatch.setattr(config.settings.llm, "roles", {"judging": cfg})
+    for fault in (bootstrap.model_acceptance.EngineDown("vllm does not answer"),
+                  bootstrap.model_acceptance.NeedsProbe("vllm is asleep")):
+        def refuse(role, name, engine_id, fault=fault):
+            raise fault
+
+        monkeypatch.setattr(bootstrap.model_acceptance, "refuse_unfit_model", refuse)
+        with db.connect() as c:
+            c.execute(text("DELETE FROM model_roles"))
+            c.commit()
+        bootstrap._ensure_roles(None)
+        with db.connect() as c:
+            assert c.execute(text("SELECT count(*) FROM model_roles")).scalar() == 1, fault
+
+
+def test_a_seat_asked_before_a_later_choice_does_not_undo_it(judging, monkeypatch, db):
+    # a seat queued behind a run must not overwrite a role chosen after it
+    from models.registry import Role
+    from use_cases import model_acceptance
+
+    monkeypatch.setattr(model_acceptance, "Session", sessionmaker(db))
+    with db.connect() as c:
+        ids = dict(c.execute(text(
+            "INSERT INTO models (name, engine_id, status) SELECT n, id, 'ready' FROM engines,"
+            " (VALUES ('Qwen/Q'), ('llama')) v(n) WHERE engines.name = 'vllm' RETURNING name, id"
+        )).all())
+        c.execute(text("INSERT INTO model_roles (role, model_id) VALUES ('generation', :m)"),
+                  {"m": ids["llama"]})
+        c.commit()
+        vllm_id = c.execute(text("SELECT id FROM engines WHERE name = 'vllm'")).scalar()
+
+    with pytest.raises(ValueError, match="reassigned"):
+        model_acceptance.seat(Role.generation, vllm_id, "Qwen/Q", over=None)
+    model_acceptance.seat(Role.generation, vllm_id, "Qwen/Q", over=ids["llama"])
+    model_acceptance.seat(Role.generation, vllm_id, "Qwen/Q", over=ids["llama"])
+    with db.connect() as c:
+        held = c.execute(text("SELECT model_id FROM model_roles WHERE role = 'generation'")).scalar()
+    assert held == ids["Qwen/Q"], "the second of two identical asks finds it done"
+
+
+def test_weights_another_row_of_the_same_kind_names_are_not_deleted(judging, monkeypatch, db):
+    # ollama and ollama-cpu share a volume, and the vLLMs share one HF cache
+    from job_handlers import model_ops
+
+    monkeypatch.setattr(model_ops, "Session", sessionmaker(db))
+    with db.connect() as c:
+        for name, engine in (("bge-m3", "ollama"), ("bge-m3:latest", "ollama-cpu"),
+                             ("gemma2:9b", "ollama"), ("gemma2:9b", "vllm"),
+                             ("Qwen/Q", "vllm"), ("Qwen/Q", "vllm-cpu")):
+            c.execute(text("INSERT INTO models (name, engine_id, status)"
+                           " SELECT :n, id, 'ready' FROM engines WHERE name = :e"),
+                      {"n": name, "e": engine})
+        c.commit()
+        ids = dict(c.execute(text("SELECT name, id FROM engines")).all())
+
+    with pytest.raises(ValueError, match="shares its weights with bge-m3:latest on ollama-cpu"):
+        model_ops.refuse_if_the_weights_are_shared("bge-m3", ids["ollama"])
+    with pytest.raises(ValueError, match="on vllm-cpu"):
+        model_ops.refuse_if_the_weights_are_shared("Qwen/Q", ids["vllm"])
+    model_ops.refuse_if_the_weights_are_shared("gemma2:9b", ids["ollama"])
+    # a vLLM repo and an ollama tag are two stores, however alike the names
+    with db.connect() as c:
+        c.execute(text("DELETE FROM models WHERE engine_id = :e"), {"e": ids["vllm-cpu"]})
+        c.commit()
+    model_ops.refuse_if_the_weights_are_shared("Qwen/Q", ids["vllm"])
+
+
 def test_the_bootstrap_pulls_vllm_weights_that_are_absent_or_broken(judging, monkeypatch, db):
     import bootstrap
 
     with db.connect() as c:
-        for name in ("Qwen/Intact", "Qwen/Broken"):
+        # one repository on two vLLMs is hashed once, not once per row
+        for name, engine in (("Qwen/Intact", "vllm"), ("Qwen/Broken", "vllm"),
+                             ("Qwen/Intact", "vllm-cpu")):
             c.execute(text(
                 "INSERT INTO models (name, engine_id, status, quant)"
-                " SELECT :n, id, 'available', 'AWQ' FROM engines WHERE name = 'vllm'"
-            ), {"n": name})
+                " SELECT :n, id, 'available', 'AWQ' FROM engines WHERE name = :e"
+            ), {"n": name, "e": engine})
     queued = []
     monkeypatch.setattr(bootstrap, "Session", sessionmaker(db))
-    monkeypatch.setattr(bootstrap.vllm, "weights_intact", lambda repo: repo == "Qwen/Intact")
-    monkeypatch.setattr(bootstrap.vllm, "broken_weights", lambda repo: ["model.safetensors"])
+    checked = []
+
+    def check(repo):
+        checked.append(repo)
+        return [] if repo == "Qwen/Intact" else ["model.safetensors"]
+
+    monkeypatch.setattr(bootstrap.vllm, "weights_check", check)
+    monkeypatch.setattr(bootstrap.vllm, "artifact_of", lambda repo: {"size_bytes": 1})
     monkeypatch.setattr(bootstrap.job_queue, "pending_of_type", lambda t, **o: False)
     monkeypatch.setattr(bootstrap.job_queue, "enqueue", lambda t, o, **kw: queued.append((t, o)))
     bootstrap._fill_vllm_rows()
     with db.connect() as c:
-        seen = dict(c.execute(text("SELECT name, status FROM models")).all())
-    assert seen == {"Qwen/Intact": "ready", "Qwen/Broken": "loading"}
+        seen = set(c.execute(text("SELECT name, status FROM models")).all())
+    assert seen == {("Qwen/Intact", "ready"), ("Qwen/Broken", "loading")}
     assert [(t, o["name"]) for t, o in queued] == [("pull_llm_model", "Qwen/Broken")]
+    assert sorted(checked) == ["Qwen/Broken", "Qwen/Intact"], "each repository hashed once"
+    with db.connect() as c:
+        size = c.execute(text("SELECT size_bytes FROM models WHERE name = 'Qwen/Intact'")).scalar()
+    assert size == 1, "a quant typed by hand no longer leaves the size empty"
 
 
 def test_live_answers_gather_in_one_waiting_job_and_never_join_a_running_one(db, monkeypatch):

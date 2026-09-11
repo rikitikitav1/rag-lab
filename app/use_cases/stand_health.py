@@ -8,7 +8,7 @@ import requests
 from engines import card as card_holder
 from engines import ollama, vllm
 from models.jobs import Job
-from models.registry import Engine, EngineKind, Model, ModelRole
+from models.registry import Engine, EngineKind, Model, ModelRole, Role
 from orm.sync_db import Session
 from sqlalchemy import func, select
 from use_cases import search_depth
@@ -67,30 +67,31 @@ def drifting_roles(declared: dict, served: dict) -> list[str]:
     )
 
 
-# a role that names no engine sits on the seeded ollama, as bootstrap seats it
-def _declared_engine(cfg) -> str:
+# a role that names no engine sits on the seeded ollama; None when that cannot be read
+def _declared_engine(cfg) -> str | None:
     if getattr(cfg, "engine", None):
         return cfg.engine
     try:
         return engines.seeded_ollama().name
     except Exception:
-        return "the seeded ollama"
+        return None
 
 
 # the file declares and the database serves, and bootstrap leaves an assigned role alone
 def roles() -> dict:
-    # by engine too: `bge-m3` moved to `ollama-cpu` kept its name and read as no drift
-    declared = {
-        name: f"{cfg.model}@{_declared_engine(cfg)}"
-        for name, cfg in config.settings.llm.roles.items()
-    }
     with Session() as session:
         rows = session.execute(
             select(ModelRole.role, Model.name, Engine.name)
             .join(Model, Model.id == ModelRole.model_id)
             .join(Engine, Engine.id == Model.engine_id)
         ).all()
-    served = {str(role): f"{name}@{engine}" for role, name, engine in rows}
+    served = {str(role): engines.label(name, engine) for role, name, engine in rows}
+    by_role = {str(role): engine for role, _name, engine in rows}
+    # by engine too (`bge-m3` on `ollama-cpu` read as no drift); an unreadable one is compared by name
+    declared = {
+        name: engines.label(cfg.model, _declared_engine(cfg) or by_role.get(name, "?"))
+        for name, cfg in config.settings.llm.roles.items()
+    }
     return {
         "declared": declared,
         "served": served,
@@ -134,23 +135,48 @@ def engines_section() -> dict:
     }
 
 
-# 11.09: the judge's vLLM died of OOM and the stand said nothing; the reranker counts only when used
+# every role the enum knows, seated or not: a bare literal list skipped nothing and crashed on one
+def _roles() -> list[tuple[str, llm.Resolved | None]]:
+    seen = []
+    for role in Role:
+        try:
+            seen.append((role.value, llm.resolve(role.value)))
+        except engines.Unnamed:
+            seen.append((role.value, None))
+    return seen
+
+
+# the judge's vLLM once died of OOM and the stand said nothing; the reranker counts only when used
 def roles_down() -> list[str]:
-    rerank_used = config.settings.rerank.enabled or config.settings.agent.gate_signal == "cross_encoder"
+    from use_cases import card_wait
+
+    rerank_used = card_wait.reranker_needed(agent=True)
     down = []
-    for role in ("generation", "embedding", "judging", "paraphrasing", "reranking"):
-        if role == "reranking" and not rerank_used:
+    for role, picked in _roles():
+        if role == Role.reranking and not rerank_used:
             continue
-        spec = llm.resolve(role).engine
-        if _answers(spec) is not True:
-            down.append(f"{role}: {spec.name} does not answer")
+        if picked is None:
+            down.append(f"{role}: no model is seated")
+        elif _answers(picked.engine) is not True:
+            down.append(f"{role}: {picked.engine.name} does not answer")
+        elif role == Role.generation and _parserless(picked):
+            down.append(f"{role}: {engines.label(picked.name, picked.engine.name)} returns no tool calls")
     return down
 
 
-# a health read waits seconds, not the two minutes a completion may take
+# a boot seats the generator unasked; the worker's probe after the wake is what names it here
+def _parserless(picked) -> bool:
+    spec = picked.engine
+    if spec.kind is not EngineKind.vllm:
+        return False
+    return vllm.known_probe(spec, picked.name, vllm.started_at(spec)) is False
+
+
+# a health read waits seconds, not the two minutes a completion may take; a paid engine wants its key
 def _answers(spec) -> bool | None:
     try:
-        return requests.get(f"{engines.base_url(spec)}/v1/models", timeout=3).ok
+        headers = {"Authorization": f"Bearer {engines.api_key(spec)}"}
+        return requests.get(f"{engines.base_url(spec)}/v1/models", headers=headers, timeout=3).ok
     except engines.Unconfigured:
         return None
     except Exception:
@@ -173,15 +199,18 @@ def window() -> dict:
 # every role by its own engine's instrument; only ollama spills, an asleep vLLM is just asleep
 def roles_on_card() -> dict:
     seen = {}
-    for role in ("generation", "embedding", "judging", "paraphrasing", "reranking"):
-        picked = llm.resolve(role)
+    for role, picked in _roles():
+        if picked is None:
+            # the reranker without its weights on a clean machine: named, and the others still read
+            seen[role] = {"model": None, "engine": None, "placement": None, "on_card": None,
+                          "spilled": False}
+            continue
         spec = picked.engine
         on = card_holder.model_on_card(spec, picked.name)
         seen[role] = {
             "model": picked.name, "engine": spec.name, "placement": str(spec.placement),
             "on_card": on,
-            "spilled": spec.kind is EngineKind.ollama and spec.placement in engines.CARD
-            and on is False,
+            "spilled": card_holder.spilled(spec, picked.name),
         }
     return seen
 

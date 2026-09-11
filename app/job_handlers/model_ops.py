@@ -16,14 +16,14 @@ def _pair(name: str, engine_id: int | None) -> engines.Resolved:
     if found is None:
         raise ValueError(f"no model {name} on engine {engine_id}" if engine_id else
                          f"model {name} is not registered")
-    _refuse_remote(found.engine, name)
+    refuse_remote(found.engine.kind, name)
     return found
 
 
-# weights on a paid engine are the provider's; local engines each keep their own and are asked
-def _refuse_remote(spec: engines.EngineSpec, name: str) -> None:
-    if spec.kind is EngineKind.openai_compatible:
-        raise engines.NotSupported(f"managing {name} is not applicable to {spec.kind}")
+# a paid engine keeps the weights itself; the doors and the worker refuse the same way
+def refuse_remote(kind: EngineKind, name: str) -> None:
+    if kind is EngineKind.openai_compatible:
+        raise engines.NotSupported(f"{name} lives on a remote {kind} engine: no weights here to manage")
 
 
 @register("pull_llm_model")
@@ -107,7 +107,7 @@ def _engine_for_delete(name: str, engine_id: int | None) -> engines.EngineSpec:
         if found is None:
             raise ValueError(f"model {name} is not registered")
         spec = found.engine
-    _refuse_remote(spec, name)
+    refuse_remote(spec.kind, name)
     return spec
 
 
@@ -116,6 +116,10 @@ def _engine_for_delete(name: str, engine_id: int | None) -> engines.EngineSpec:
 def delete_llm_model(options: dict) -> None:
     name = options["name"]
     spec = _engine_for_delete(name, options.get("engine_id"))
+    # every refusal before the row goes: after it, a refusal left weights with no row to name them
+    refuse_if_the_weights_are_shared(name, spec.id)
+    if spec.kind is EngineKind.vllm:
+        vllm.refuse_if_served(name)
     with Session() as session:
         model = session.scalars(
             select(Model).where(Model.engine_id == spec.id, Model.name == name)
@@ -127,36 +131,25 @@ def delete_llm_model(options: dict) -> None:
                 raise ValueError(f"{name} is assigned to role {assigned.role}; reassign it first")
             session.delete(model)
             session.commit()
-    _refuse_if_another_row_needs_these_weights(name)
     if spec.kind is EngineKind.vllm:
-        _refuse_if_served(spec, name)
         vllm.delete_weights(name)
     else:
         ollama.delete_model(name, spec)
 
 
-# a running vLLM reads its weights from this directory, and deleting it under the server breaks it
-def _refuse_if_served(spec: engines.EngineSpec, name: str) -> None:
-    try:
-        served = vllm.served(spec)
-    except Exception:
-        return
-    if name in served:
-        raise ValueError(f"{name} is served by {spec.name} right now; stop that server first")
-
-
-# two rows can name one artifact, and two engines can share a volume: the row is not the unit
-def _refuse_if_another_row_needs_these_weights(name: str) -> None:
-    wanted = ollama.add_tags([name])[0]
+# engines of one kind read one store (ollama a volume, vLLM the HF cache) the stand cannot see
+def refuse_if_the_weights_are_shared(name: str, engine_id: int) -> None:
     with Session() as session:
-        held = session.execute(
-            select(Model.name, Engine.name, ModelRole.role)
-            .join(ModelRole, ModelRole.model_id == Model.id)
-            .join(Engine, Engine.id == Model.engine_id)
+        kind = session.scalar(select(Engine.kind).where(Engine.id == engine_id))
+        others = session.execute(
+            select(Model.name, Engine.name).join(Engine, Engine.id == Model.engine_id)
+            .where(Engine.kind == kind)
+            .where(~((Model.engine_id == engine_id) & (Model.name == name)))
         ).all()
-    for model_name, engine_name, role in held:
-        if ollama.add_tags([model_name])[0] == wanted:
+    same = (lambda n: ollama.add_tags([n])[0]) if kind is EngineKind.ollama else (lambda n: n)
+    for model_name, engine_name in others:
+        if same(model_name) == same(name):
             raise ValueError(
-                f"{name} is the same artifact as {model_name} on engine {engine_name},"
-                f" which role {role} still uses; reassign that role first"
+                f"{name} shares its weights with {model_name} on {engine_name}; deleting them"
+                " would leave that row without its files, so delete that row first"
             )

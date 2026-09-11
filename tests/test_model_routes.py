@@ -1,5 +1,7 @@
 """The happy path of `POST /v1/model`, which no test walked when `engine_id` became mandatory."""
 
+from types import SimpleNamespace
+
 import pytest
 from models.registry import Engine, EngineKind, Model, Placement, Status
 
@@ -34,6 +36,8 @@ class FakeAsyncSession:
 
     async def scalar(self, stmt):
         text = str(stmt).lower()
+        if "weights.name" in text and getattr(self, "scalar_answer", None):
+            return self.scalar_answer
         if "exists" in text:
             return self.taken
         if "engines.name" in text:
@@ -144,6 +148,8 @@ def test_a_load_is_queued_as_a_card_handover_and_not_run_by_the_api(door, monkey
     from api.v1 import llm_model
 
     monkeypatch.setattr(job_queue, "enqueue", lambda t, o, **kw: asked.append((t, o)) or 77)
+    waiting = [None]
+    monkeypatch.setattr(job_queue, "pending_of_type", lambda t, **o: waiting[0])
     serves = [False]
     monkeypatch.setattr(llm_model, "_serves", lambda engine, name: serves[0])
     session = FakeAsyncSession(
@@ -159,6 +165,11 @@ def test_a_load_is_queued_as_a_card_handover_and_not_run_by_the_api(door, monkey
     assert r.status_code == 202
     assert r.json() == {"job_id": 77, "engine": "vllm", "model": "Qwen/Q"}
     assert asked == [("hand_card", {"engine_id": 2, "model": "Qwen/Q"})]
+    # a second load while the first waits gets the first one's job
+    waiting[0] = 77
+    with door(session) as client:
+        again = client.post("/v1/model/5/load")
+    assert again.json()["job_id"] == 77 and len(asked) == 1
 
 
 def test_loading_on_a_cloud_engine_is_not_applicable(door):
@@ -198,6 +209,7 @@ def test_deleting_a_model_still_removes_the_weights_after_the_row_is_gone(monkey
     spec = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
     removed = []
     monkeypatch.setattr(model_ops.engines, "spec_of_id", lambda _id: spec)
+    monkeypatch.setattr(model_ops, "refuse_if_the_weights_are_shared", lambda n, engine_id: None)
     monkeypatch.setattr(model_ops.ollama, "delete_model", lambda n, s: removed.append(n))
 
     class _Session:
@@ -227,28 +239,29 @@ def test_deleting_a_model_still_removes_the_weights_after_the_row_is_gone(monkey
     assert removed == ["qwen2.5:7b"], "the row was already gone, the weights still must go"
 
 
-def test_weights_a_role_still_uses_under_another_name_are_not_destroyed(monkeypatch):
-    # `bge-m3` and `bge-m3:latest` are two rows and one artifact, and two engines can share a volume
-    import pytest
+def test_the_delete_door_asks_the_worker_s_rule_on_shared_weights_before_the_row_goes(
+    door, monkeypatch
+):
+    # the door refuses before the row goes; the rule itself is tested on a real database
+    import job_queue
     from job_handlers import model_ops
 
-    class _Session:
-        def __enter__(self):
-            return self
+    asked, queued = [], []
+    monkeypatch.setattr(job_queue, "add_job", lambda s, t, o, **kw: queued.append(t))
 
-        def __exit__(self, *_):
-            return False
+    def shared(name, engine_id):
+        asked.append((name, engine_id))
+        raise ValueError("bge-m3 shares its weights with bge-m3:latest on ollama-cpu")
 
-        def execute(self, _stmt):
-            class _R:
-                def all(self):
-                    return [("bge-m3", "ollama", "embedding")]
-
-            return _R()
-
-    monkeypatch.setattr(model_ops, "Session", _Session)
-    with pytest.raises(ValueError, match="same artifact"):
-        model_ops._refuse_if_another_row_needs_these_weights("bge-m3:latest")
+    monkeypatch.setattr(model_ops, "refuse_if_the_weights_are_shared", shared)
+    session = FakeAsyncSession(
+        engines=[_engine(1, "ollama", EngineKind.ollama)],
+        model=Model(id=2, name="bge-m3", engine_id=1, status=Status.ready),
+    )
+    with door(session) as client:
+        refused = client.delete("/v1/model/2")
+    assert refused.status_code == 409 and "ollama-cpu" in refused.json()["detail"]
+    assert asked == [("bge-m3", 1)] and session.deleted == [] and queued == []
 
 
 def test_a_delete_for_an_engine_that_vanished_refuses_instead_of_picking_another(monkeypatch):
@@ -303,7 +316,7 @@ def test_a_vllm_that_does_not_serve_the_name_is_refused_before_the_row(door, mon
     rows = [m for m in session.added if isinstance(m, Model)]
     assert len(rows) == 1, "the refusal comes before the row, not after it"
     assert taken.status_code == 200
-    # 11.09: a row the door made carried no quant, while the bootstrap's rows did
+    # a row the door made carried no quant, while the bootstrap's rows did
     assert (rows[0].quant, rows[0].size_bytes) == ("F16", 2_000_000_000)
 
 
@@ -356,3 +369,120 @@ def test_an_engine_is_running_unless_its_connection_is_refused(monkeypatch):
     assert engine_door._running(spec) is True, "a silent server may still hold the card"
     monkeypatch.delenv("VLLM_BASE_URL")
     assert engine_door._running(spec) is False, "an engine with no address runs nowhere"
+
+
+def test_a_vllm_model_is_deleted_through_the_door_unless_a_server_reads_it(door, monkeypatch):
+    # the worker could delete vLLM weights, and the door still answered 501
+    import job_queue
+    from api.v1 import llm_model
+    from job_handlers import model_ops
+
+    queued = []
+    monkeypatch.setattr(job_queue, "add_job", lambda s, t, o, **kw: queued.append((t, o)))
+    monkeypatch.setattr(model_ops, "refuse_if_the_weights_are_shared", lambda n, engine_id: None)
+    serving = [True]
+
+    def refuse(name):
+        if serving[0]:
+            raise llm_model.vllm.StillServed(f"{name} is served by vllm right now")
+
+    monkeypatch.setattr(llm_model.vllm, "refuse_if_served", refuse)
+    session = FakeAsyncSession(
+        engines=[_engine(2, "vllm", EngineKind.vllm)],
+        model=Model(id=5, name="Qwen/Q", engine_id=2, status=Status.ready),
+    )
+    with door(session) as client:
+        served = client.delete("/v1/model/5")
+        assert served.status_code == 409 and session.deleted == [], "the row stays when refused"
+        serving[0] = False
+        deleted = client.delete("/v1/model/5")
+    assert deleted.status_code == 200, deleted.text
+    assert queued == [("delete_llm_model", {"name": "Qwen/Q", "engine_id": 2})]
+
+    cloud = FakeAsyncSession(
+        engines=[_engine(3, "cloud", EngineKind.openai_compatible)],
+        model=Model(id=6, name="gpt", engine_id=3, status=Status.ready),
+    )
+    with door(cloud) as client:
+        assert client.delete("/v1/model/6").status_code == 501
+
+
+def test_only_a_404_from_the_hub_means_the_repository_is_not_there(monkeypatch):
+    # a 401, 429 or 5xx read as "not on the hub" and answered 422
+    import requests
+    from api.v1 import llm_model
+
+    codes = [200]
+    monkeypatch.setattr(requests, "get", lambda url, timeout: SimpleNamespace(status_code=codes[0]))
+    seen = []
+    for code in (200, 404, 401, 429, 503):
+        codes[0] = code
+        seen.append(llm_model._repo_exists("Qwen/Q"))
+    assert seen == [True, False, None, None, None]
+
+
+def test_a_load_says_why_it_cannot_before_it_answers_202(door, monkeypatch):
+    # a cpu vLLM took a 202 that did nothing, and a silent vLLM read as a missing model
+    from api.v1 import llm_model
+
+    serves = [None]
+    monkeypatch.setattr(llm_model, "_serves", lambda engine, name: serves[0])
+    cpu = Engine(id=4, name="vllm-cpu", kind=EngineKind.vllm, env_prefix="VLLM_CPU",
+                 placement=Placement.cpu)
+    for engine, status, expected in (
+        (_engine(2, "vllm", EngineKind.vllm), Status.ready, 503),
+        (cpu, Status.ready, 409),
+        (_engine(1), Status.loading, 409),
+    ):
+        session = FakeAsyncSession(engines=[engine],
+                                   model=Model(id=5, name="m", engine_id=engine.id, status=status))
+        with door(session) as client:
+            assert client.post("/v1/model/5/load").status_code == expected, (engine.name, status)
+
+
+def test_a_quant_patch_keeps_saying_which_weights_the_row_has(door):
+    session = FakeAsyncSession(
+        engines=[_engine(2, "vllm", EngineKind.vllm)],
+        model=Model(id=5, name="Qwen/Q", engine_id=2, status=Status.ready, weights_id=3),
+    )
+    session.scalar_answer = "Qwen/Qwen2.5-7B-Instruct"
+    with door(session) as client:
+        r = client.patch("/v1/model/5", json={"quant": "AWQ"})
+    assert r.json()["weights"] == "Qwen/Qwen2.5-7B-Instruct"
+
+
+def test_an_engine_is_placed_where_its_kind_can_run(door, monkeypatch):
+    # a remote engine on `gpu` joined the card engines and every handover waited on it
+    monkeypatch.setenv("CLOUD_BASE_URL", "https://cloud.example")
+    monkeypatch.setenv("CLOUD_API_KEY", "k")
+    session = FakeAsyncSession(engines=[])
+    with door(session) as client:
+        bad = client.post("/v1/engine", json={"name": "cloud", "kind": "openai_compatible",
+                                              "env_prefix": "CLOUD", "placement": "gpu"})
+        local = client.post("/v1/engine", json={"name": "ollama-2", "kind": "ollama",
+                                                "env_prefix": "OLLAMA", "placement": "remote"})
+    assert bad.status_code == 422 and local.status_code == 422
+
+
+def test_a_vllm_on_the_card_without_sleep_routes_is_refused(door, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("VLLM_X_BASE_URL", "http://vllm-x:8000")
+    codes = [404]
+
+    def get(url, timeout):
+        if codes[0] is None:
+            raise requests.ConnectionError("refused")
+        return SimpleNamespace(status_code=codes[0])
+
+    monkeypatch.setattr(requests, "get", get)
+    from api.v1 import engine as engine_door
+
+    body = {"name": "vllm-x", "kind": "vllm", "env_prefix": "VLLM_X", "placement": "gpu"}
+    with door(FakeAsyncSession(engines=[])) as client:
+        refused = client.post("/v1/engine", json=body)
+    assert refused.status_code == 422 and "VLLM_SERVER_DEV_MODE" in refused.json()["detail"]
+    # a service under a profile is registered before it starts, and its flags are compose's
+    codes[0] = None
+    engine_door._refuse_a_vllm_that_cannot_sleep(Engine(id=9, **{**body, "kind": EngineKind.vllm,
+                                                                  "placement": Placement.gpu}))

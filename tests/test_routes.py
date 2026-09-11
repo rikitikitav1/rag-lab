@@ -17,6 +17,22 @@ def test_agent_language_invalid_422(client):
     assert r.status_code == 422
 
 
+def test_the_agent_door_refuses_foreign_vectors_rather_than_answering_without_the_corpus(
+    client, monkeypatch
+):
+    import api.v1.agent as agent_door
+
+    import db
+
+    def foreign(*a, **kw):
+        raise db.ForeignVectors("variant holds vectors of bge-m3@ollama-cpu")
+
+    monkeypatch.setattr(agent_door, "wait_for_the_card", lambda *roles: None)
+    monkeypatch.setattr(agent_door.agent, "run", foreign)
+    r = client.post("/v1/agent/question", json={"text": "x"})
+    assert r.status_code == 409 and "bge-m3@ollama-cpu" in r.json()["detail"]
+
+
 def test_eval_run_pipeline_invalid_422(client):
     r = client.post("/v1/eval/run", json={"set_name": "s", "pipeline": "bogus"})
     assert r.status_code == 422

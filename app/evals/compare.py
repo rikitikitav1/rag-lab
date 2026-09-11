@@ -8,6 +8,7 @@ from evals.pools import (
     ALL_OUTCOMES,
     JOINS_BOTH_JUDGES,
     POOLS,
+    Ambiguous,
     by_question,
     has_remote_evidence,
     joins_both_judges,
@@ -149,7 +150,18 @@ def verdicts(left: list, right: list) -> dict:
 SCHEMA = 9
 
 
+class TwoJudges(Ambiguous):
+    pass
+
+
 def compare(runs: dict[str, list]) -> dict:
+    residency = residencies(runs)
+    # two judges are two rulers: a difference of their means measures nothing
+    if residency["one_engine_name"] is False:
+        raise TwoJudges(
+            f"{residency['read_this_first']}: judged on {residency['engine_names_by_run']}."
+            " Read each arm alone through `run_metrics`, or rejudge one arm on the other's engine"
+        )
     by_pool = {name: split(logs) for name, logs in runs.items()}
     names = list(runs)
 
@@ -185,7 +197,9 @@ def compare(runs: dict[str, list]) -> dict:
     return {
         "schema": SCHEMA,
         "runs": names,
-        "residency": residencies(runs),
+        "residency": residency,
+        # the treatment, not a fault: two generators on two engines is what a pair of arms compares
+        "answering_engines_by_run": {name: _answering_engines(logs) for name, logs in runs.items()},
         # the correlation's own predicate, called not restated: one label stood over two selections
         "correlation_population": {
             "predicate": JOINS_BOTH_JUDGES,
@@ -312,6 +326,15 @@ def _one_retrieval(runs: dict[str, list]) -> bool | None:
         if len(set(prints)) != 1:
             return False
     return True if compared else None
+
+
+# read off the run snapshot (schema 9), per role; a row from before it names nothing
+def _answering_engines(logs: list) -> dict[str, list[str]]:
+    seen: dict[str, set] = {}
+    for ql in logs:
+        for role, engine in (((ql.metrics or {}).get("config") or {}).get("engines") or {}).items():
+            seen.setdefault(str(role), set()).add(engine)
+    return {role: sorted(engines) for role, engines in sorted(seen.items())}
 
 
 # two arms judged across a reload are two instruments: 14% of scores move on identical input

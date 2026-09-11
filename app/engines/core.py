@@ -84,6 +84,11 @@ def _refuse_unusable(spec: EngineSpec, address: str) -> str:
     return address
 
 
+# `model@engine`: the embedder's mark on every vector, the roles' drift, the migration's backfill
+def label(model: str, engine: str) -> str:
+    return f"{model}@{engine}"
+
+
 # a paid engine refuses here rather than sending a placeholder and reading the server's 401
 def api_key(spec: EngineSpec) -> str:
     seen = os.getenv(f"{spec.env_prefix}_API_KEY")

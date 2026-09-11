@@ -35,7 +35,8 @@ def test_bootstrap_seats_a_role_through_the_same_gate_the_route_uses(monkeypatch
     )
     monkeypatch.setattr(
         bootstrap.model_acceptance, "refuse_unfit_model",
-        lambda role, name: refused.append(name) or (_ for _ in ()).throw(ValueError("no tools")),
+        lambda role, name, engine_id: refused.append(name) or (_ for _ in ()).throw(
+            ValueError("no tools")),
     )
 
     bootstrap._ensure_roles(stub_engine())

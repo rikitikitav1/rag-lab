@@ -97,6 +97,31 @@ def test_no_comment_block_runs_past_one_line():
     )
 
 
+def test_a_comment_says_what_the_code_does_and_not_how_it_came_to_be():
+    # when a line appeared and who asked for it is git's to say, and a comment outlives both
+    import re
+
+    history = re.compile(
+        r"[\U0001F534-\U0001F7EB]|\b[0-3][0-9]\.(0[1-9]|1[0-2])\b|\breview\b|\baudit(or)?\b"
+        r"|\bowner'?s? (rule|decision)|\(owner"
+    )
+    root = Path(__file__).resolve().parent.parent
+    found = []
+    for pattern in COMMENTED:
+        if pattern.startswith("db/"):
+            continue
+        for source in sorted(root.glob(pattern)):
+            lines = source.read_text().splitlines()
+            found += [f"{source.relative_to(root)}:{i}" for i in sorted(_comment_lines(source))
+                      if history.search(lines[i - 1].split("#", 1)[-1])]
+    for name in COMMENTED_FILES:
+        source = root / name
+        lines = source.read_text().splitlines()
+        found += [f"{name}:{i}" for i in sorted(_comment_lines(source))
+                  if history.search(lines[i - 1])]
+    assert found == [], found
+
+
 def test_no_script_puts_the_app_on_the_path_by_hand():
     # `app` is installed editable by `uv sync` here and by the second sync in the image
 

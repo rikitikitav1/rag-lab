@@ -124,7 +124,7 @@ def test_exact_search_sets_its_mode_on_the_connection_the_query_uses(monkeypatch
     monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
     monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
-    db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True)
+    db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True, embedded_by="bge-m3@ollama")
 
     assert seen[0] == "SET LOCAL enable_indexscan = off"
     assert not any("hnsw.ef_search" in s for s in seen), "exact search names no depth"
@@ -168,7 +168,8 @@ def test_a_search_row_is_read_by_name_so_a_moved_column_cannot_change_its_meanin
     monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
     monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
-    hit, = db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True)
+    hit, = db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True,
+                            embedded_by="bge-m3@ollama")
 
     assert (hit.content, hit.source, hit.distance, hit.section) == (
         "body", "a.md", 0.42, "Redis"
@@ -227,22 +228,33 @@ class _Seen:
 
 
 def test_a_search_refuses_vectors_another_embedder_wrote(monkeypatch):
-    # 10.09: bge-m3 on two engines reordered the top-20 of 172 questions in 200, under one name
-    import llm
-
+    # bge-m3 on two engines reordered the top-20 of 172 questions in 200, under one name
     import db
 
-    monkeypatch.setattr(llm, "embedder_label", lambda role="embedding": "bge-m3@vllm")
     with pytest.raises(db.ForeignVectors, match="bge-m3@ollama.*embeds with bge-m3@vllm"):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "baseline")
+        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "baseline", "bge-m3@vllm")
     # a variant half reindexed holds both, and is refused as well
     with pytest.raises(db.ForeignVectors):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "baseline")
+        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "baseline", "bge-m3@vllm")
     seen = _Seen(["bge-m3@vllm"])
-    db.refuse_foreign_vectors(seen, "baseline")
+    db.refuse_foreign_vectors(seen, "baseline", "bge-m3@vllm")
     assert seen.asked == [{"variant": "baseline"}]
     # a question embedded earlier carries its own embedder, and that one decides
     db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "baseline", "bge-m3@ollama")
+    # a vector nobody marked is a ruler nobody named, refused rather than passed
+    with pytest.raises(db.ForeignVectors, match="no recorded embedder"):
+        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", None]), "baseline", "bge-m3@ollama")
+
+
+def test_no_search_asks_the_role_registry_on_its_own_connection():
+    # the guard resolved the embedder through a second pooled connection per search
+    import inspect
+
+    import db
+
+    for fn in (db.refuse_foreign_vectors, db.hybrid_search, db.nearest_distance):
+        assert "llm." not in inspect.getsource(fn), fn.__name__
+        assert inspect.signature(fn).parameters["embedded_by"].default is inspect.Parameter.empty
 
 
 def test_the_index_and_the_questions_write_which_embedder_made_their_vectors(monkeypatch):
@@ -293,8 +305,8 @@ def test_every_vector_search_passes_the_guard_first(monkeypatch):
     with pytest.raises(_Refused):
         db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="x@y")
     with pytest.raises(_Refused):
-        db.nearest_distance([0.0], variant="baseline")
-    assert guarded == [("baseline", "x@y"), ("baseline", None)]
+        db.nearest_distance([0.0], variant="baseline", embedded_by="a@b")
+    assert guarded == [("baseline", "x@y"), ("baseline", "a@b")]
 
 
 def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monkeypatch):
@@ -310,3 +322,16 @@ def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monk
     question = {"original_text": "q", "emb": "[0]", "embedded_by": "bge-m3@ollama"}
     retrieval_compare.ranked_lists(_Db(), question, "baseline")
     assert seen["embedded_by"] == "bge-m3@ollama"
+
+
+# the depth script lives outside `app`, and a signature change there broke it without a word
+def test_the_depth_script_searches_with_the_embedder_of_each_question(monkeypatch, script):
+    ef_latency = script("ef_latency")
+    seen = []
+    monkeypatch.setattr(ef_latency.db, "hybrid_search", lambda *a, **kw: seen.append(kw))
+    monkeypatch.setattr(ef_latency.llm, "embedder_label", lambda: "bge-m3@ollama")
+
+    ef_latency.timings([("q", "[0]", "bge-m3@vllm-embed"), ("q", "[0]", None)], "baseline", 100)
+
+    assert [kw["embedded_by"] for kw in seen] == ["bge-m3@vllm-embed", "bge-m3@ollama"]
+    assert "embedded_by" in ef_latency.SAMPLE

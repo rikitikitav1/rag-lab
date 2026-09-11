@@ -64,17 +64,12 @@ _TOOL_DESC = {
 }
 
 
-# the same guard as the REST chat: 11.09 an MCP question reached ollama beside an awake judge
+# the same guard as the REST chat: an MCP question reached ollama beside an awake judge
 def _wait_for_the_card(*roles) -> None:
     try:
         card_wait.wait_for_the_card(*roles)
     except card_wait.CardBusy as e:
         raise ToolError(e.detail) from e
-
-
-# the agent's gate scores with the cross-encoder too, and it is a role on its own engine now
-def _reranking(gated: bool = False) -> tuple[str, ...]:
-    return ("reranking",) if gated or chat.resolve_rerank(None) else ()
 
 
 @mcp.tool(
@@ -95,7 +90,7 @@ def search_corpus(
 ) -> str:
     _check_text(query, "query")
     category = _safe_category(category)
-    _wait_for_the_card("embedding", *_reranking())
+    _wait_for_the_card("embedding", *(("reranking",) if card_wait.reranker_needed() else ()))
     try:
         content, _texts, _sources, _depth, _chunks = chat.search_chunks(
             query, category, variant=config.settings.corpus.variant
@@ -129,8 +124,7 @@ def answer_question(
     category = _safe_category(category)
     if pipeline == Pipeline.agent and category:
         raise ToolError("category filter is only supported with pipeline=single_shot")
-    gated = pipeline == Pipeline.agent and config.settings.agent.gate_signal == "cross_encoder"
-    _wait_for_the_card("embedding", "generation", *_reranking(gated))
+    _wait_for_the_card(*card_wait.answering_roles(agent=pipeline == Pipeline.agent))
     try:
         if pipeline == Pipeline.agent:
             res = agent.run(text, run_name="mcp", language=language)

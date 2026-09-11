@@ -7,6 +7,7 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
+from errors import StandFault
 from langgraph.graph import END, StateGraph
 from models.registry import Purpose
 from use_cases import agent_policy as policy
@@ -409,6 +410,8 @@ def invoke(question, system, ctx, result) -> None:
                 "recursion_limit": recursion_limit(ctx["max_hops"]),
             },
         )
+    except StandFault:
+        raise
     except Exception as e:
         # a run that raises here writes no row at all, and a missing row breaks every pairing
         log.error("graph.failed", error=str(e))

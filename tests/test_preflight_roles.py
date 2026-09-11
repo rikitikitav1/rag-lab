@@ -8,6 +8,24 @@ def test_a_role_the_stand_serves_and_the_file_never_declares_is_drift(preflight)
     ]
 
 
+def test_an_asleep_vllm_is_not_printed_with_a_spill_s_words(preflight, monkeypatch):
+    # an asleep judge passes the check, and its line must not read as a spill
+    import json
+
+    seen = {
+        "judging": {"model": "Qwen/Q", "engine": "vllm", "on_card": False, "spilled": False},
+        "generation": {"model": "llama", "engine": "ollama", "on_card": True, "spilled": False},
+    }
+    monkeypatch.setattr(preflight, "_in_worker", lambda code: json.dumps(seen))
+    monkeypatch.setattr(preflight, "_card", lambda: "card free 600 of 7805 MiB")
+    ok, line = preflight.models_are_on_the_card()
+    assert ok and "judging=Qwen/Q@vllm not on the card now" in line and "off the card" not in line
+    seen["generation"].update(on_card=False, spilled=True)
+    seen["embedding"] = {"model": "bge-m3", "engine": "ollama", "on_card": True, "spilled": False}
+    ok, line = preflight.models_are_on_the_card()
+    assert not ok and "generation=llama@ollama spilled to the cpu" in line
+
+
 def test_a_name_that_differs_is_drift_and_a_matching_pair_is_not(preflight):
     declared = {"generation": "llama3.1:8b", "judging": "qwen2.5:7b"}
 

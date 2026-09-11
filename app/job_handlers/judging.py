@@ -7,10 +7,11 @@ import job_queue
 import limits
 import llm
 import logging_setup
-from engines import ollama
+from engines import card
+from errors import StandFault
 from evals import guest_axes, measurements, sampling
 from models.eval import Question, QuestionLog
-from models.registry import Engine, EngineKind, Placement, Purpose, Role
+from models.registry import Engine, EngineKind, Purpose, Role
 from orm import dsn
 from orm.sync_db import Session
 from sqlalchemy import DateTime, and_, cast, func, or_, select, text
@@ -34,18 +35,14 @@ _LOCK_WAIT_MS = 5000
 def _bounded_wait(session) -> None:
     session.execute(text(f"SET LOCAL lock_timeout = '{_LOCK_WAIT_MS}ms'"))
 
-# only ollama splits a model between vram and ram without saying so, so only it needs this reading
-def residency_instrument(spec) -> str | None:
-    return "ollama /api/ps" if spec.kind is EngineKind.ollama else None
+
+residency_instrument = card.placement_instrument
 
 
 # a pass whose guests cost several times our own can lose the judge to a neighbour halfway
 def judge_on_card(model: str | None = None) -> bool | None:
     judged_by = llm.resolve_for("judging", model)
-    if residency_instrument(judged_by.engine) is None:
-        return None
-    seen = [m for m in ollama.residency(judged_by.engine) if m["model"] == judged_by.name]
-    return seen[0]["vram_mb"] >= seen[0]["size_mb"] if seen else None
+    return card.model_on_card(judged_by.engine, judged_by.name)
 
 
 # the runtime image carries no `ragas`, and a pass that cannot score says so before it walks
@@ -164,8 +161,9 @@ def judge_answers(options: dict) -> None:
         # the arm's override: a mistyped tag passed `require_role_ready` and failed per log
         require_model_ready(bench.model)
     else:
-        require_role_ready(Role.judging)
-    require_card("judging", bench.model, asked_by="judge_answers")
+        require_role_ready(Role.judging, take_card=False)
+    # once, with the bench's model when it names one: the role gate asked for the card a second time
+    require_card("judging", bench.model)
     # resolved before any log: inside the loop it was swallowed per axis
     for purpose in _PURPOSES:
         bench.template(purpose)
@@ -203,6 +201,8 @@ def judge_answers(options: dict) -> None:
             return _judge_log(
                 log_id, force=force, bench=bench, width=width, skip=skip, residency=residency
             )
+        except StandFault:
+            raise
         except Exception as e:
             log.error("judge.log_failed", log_id=log_id, error=str(e))
             _count_the_attempt(log_id, skip, f"{type(e).__name__}: {e}")
@@ -299,6 +299,8 @@ def judge_guest_axes(options: dict) -> None:
             return False
         try:
             return _score_guests(log_id, stamp)
+        except StandFault:
+            raise
         except Exception as e:
             log.error("guest_axes.log_failed", log_id=log_id, error=str(e))
             return False
@@ -394,6 +396,8 @@ def _score_guests(log_id: int, stamp: dict) -> bool:
             scored[axis] = {**stamp, **guest_axes.score(axis, row),
                             "on_card_at_this_row": judge_on_card()}
             wrote = True
+        except StandFault:
+            raise
         except Exception as e:
             log.error("guest_axes.failed", axis=axis, log_id=log_id, error=str(e))
             scored[axis] = _errored_metric(metrics, axis, f"{type(e).__name__}: {e}")
@@ -531,8 +535,8 @@ def _loaded_since(prev: int, job_id) -> bool:
 def _by_process_start(job_id, engine) -> Residency:
     started = engines.started_at(engine)
     if started is None:
-        # the instrument exists and did not answer, which a null would read as "nowhere to ask"
-        return Residency(job_id, None, "vllm /metrics unreachable")
+        # the id is the pass's own; the field names who minted it, and why the server did not
+        return Residency(job_id, None, "the pass, vllm /metrics unreachable")
     last = _last_residency(engine.name, started)
     return Residency(job_id if last is None else last[0], None, "vllm /metrics process start")
 
@@ -569,7 +573,7 @@ def _card_changed_hands(since: str | None, engine_name: str) -> bool:
         # a row too old to say when it was judged cannot vouch that nothing came between
         return True
     holders = select(Engine.name).where(
-        Engine.name != engine_name, Engine.placement.in_((Placement.gpu, Placement.gpu_and_cpu))
+        Engine.name != engine_name, Engine.placement.in_(engines.CARD)
     )
     when = DateTime(timezone=True)
     with Session() as session:
@@ -615,7 +619,7 @@ def stamp_of(width: int, residency: Residency | None = None, model: str | None =
     }
 
 
-# the owner's rule of 06.09: on a refusal an axis does not apply, so both sides stay silent
+# on a refusal an axis does not apply, so both sides stay silent
 def _refused(metrics) -> bool:
     return (metrics or {}).get("refusal") is True
 
@@ -764,6 +768,8 @@ def _errored_metric(metrics: dict, axis: str, err: str) -> dict:
 def _run_axis(log_id, axis, verdict_fn, *args):
     try:
         return verdict_fn(*args), None
+    except StandFault:
+        raise
     except Exception as e:
         log.error("judge.axis_failed", axis=axis, log_id=log_id, error=str(e))
         # the kind and what it said: a row that failed three times left only an exception name

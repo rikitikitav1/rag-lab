@@ -18,7 +18,7 @@ def eval_run(options: dict) -> None:
         require_role_ready(Role.generation, take_card=False)
     # one preamble takes the card: two, on two engines, handed it back and forth and never started
     require_role_ready(Role.embedding, take_card=False)
-    require_card("generation", model, asked_by="eval_run")
+    require_card("generation", model, allow_spill=bool(options.get("allow_cpu")))
     answered = runner.run(
         run_name=options["run_name"],
         set_name=options.get("set_name"),

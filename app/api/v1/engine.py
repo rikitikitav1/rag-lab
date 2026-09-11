@@ -58,12 +58,23 @@ class EngineCreateRequest(BaseModel):
     placement: Placement
 
 
+# a remote engine on `gpu` joined the card engines and every handover waited for it forever
+def _refuse_a_placement_the_kind_cannot_have(kind: EngineKind, placement: Placement) -> None:
+    remote_kind = kind is EngineKind.openai_compatible
+    if remote_kind != (placement is Placement.remote):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{kind.value} engines are placed {'remote' if remote_kind else 'locally'}, not {placement.value}",
+        )
+
+
 @router.post("", response_model=EngineResponse)
 async def create_engine(
     request: EngineCreateRequest, session: AsyncSession = Depends(get_session)
 ):
     if await session.scalar(select(exists().where(Engine.name == request.name))):
         raise HTTPException(status_code=409, detail=f"engine {request.name} already exists")
+    _refuse_a_placement_the_kind_cannot_have(request.kind, request.placement)
     row = Engine(**request.model_dump())
     # asked before the insert: a misspelt prefix used to leave a row behind and answer 400
     try:
@@ -71,6 +82,8 @@ async def create_engine(
                                                         row.placement))
     except engines.Unconfigured as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    if row.kind is EngineKind.vllm and row.placement in engines.CARD:
+        await run_in_threadpool(_refuse_a_vllm_that_cannot_sleep, row)
     session.add(row)
     await commit_and_refresh(session, row)
     return EngineResponse.of(row, address)
@@ -88,6 +101,7 @@ async def patch_engine(
     id: int, request: EnginePatchRequest, session: AsyncSession = Depends(get_session)
 ):
     row = await get_or_404(Engine, id, session)
+    _refuse_a_placement_the_kind_cannot_have(row.kind, request.placement)
     # the row describes the process it will start: a live one stays where it is, whatever it says
     if request.placement != row.placement and await run_in_threadpool(_running, _spec(row)):
         raise HTTPException(
@@ -107,6 +121,23 @@ async def probe_engine(id: int, session: AsyncSession = Depends(get_session)):
     # a synchronous call with a 120 second timeout would hold the loop for every other request
     reachable = await run_in_threadpool(_answers, _spec(row))
     return EngineResponse.of(row, _address(row), reachable)
+
+
+# without VLLM_SERVER_DEV_MODE the sleep routes answer 404, and it would hold the card for good
+def _refuse_a_vllm_that_cannot_sleep(row: Engine) -> None:
+    import requests
+
+    try:
+        seen = requests.get(f"{engines.base_url(_spec(row))}/is_sleeping", timeout=3)
+    except Exception:
+        # not up yet, as a service under a profile: the start flags are compose's, asked later
+        return
+    if seen.status_code == 404:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{row.name} has no sleep routes: start it with VLLM_SERVER_DEV_MODE=1 and"
+            " --enable-sleep-mode, or the card can never be handed away from it",
+        )
 
 
 # seconds, not the completion timeout: a refused connection answers at once, and silence is running

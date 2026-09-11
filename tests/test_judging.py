@@ -70,6 +70,18 @@ def test_a_failed_axis_leaves_the_snapshot_alone():
     assert snapshot.metrics["relevance"]["attempts"] == 1
 
 
+def test_a_lost_card_on_an_axis_ends_the_pass_instead_of_failing_the_row():
+    import pytest
+    from engines.card import CardNotHanded
+    from job_handlers.judging import _run_axis
+
+    def lost(*a):
+        raise CardNotHanded("vllm is down; the card stays where it is")
+
+    with pytest.raises(CardNotHanded):
+        _run_axis(1, "relevance", lost)
+
+
 def test_rejudging_replaces_the_prompt_version_it_names():
     from job_handlers.judging import Snapshot, _apply_axis, _run_axis
     from models.registry import Purpose
@@ -142,7 +154,7 @@ def test_every_row_is_judged_once_whatever_the_width(monkeypatch):
     )
     monkeypatch.setattr(judging, "Session", FakeSession)
     monkeypatch.setattr(judging.experiment, "try_aggregate_for_run", lambda run: None)
-    monkeypatch.setattr(judging, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(judging, "require_role_ready", lambda role, **kw: None)
     monkeypatch.setattr(judging, "require_card", lambda role, model=None, asked_by=None: None)
     monkeypatch.setattr(judging.rejudge, "arm_bench", lambda arm: judging.judge.Bench())
     monkeypatch.setattr(judging.judge.Bench, "template", lambda self, purpose: ("t", 1))
@@ -187,7 +199,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     named = judging.stamp_of(4, judging.Residency(7, True, "ollama /api/ps and the queue"))
     assert named["residency_source"] == "ollama /api/ps and the queue", "what minted it, verbatim"
 
-    # a role with no seed says so rather than implying one: the passes before 31.08 had none
+    # a role with no seed says so rather than implying one: the early passes had none
     monkeypatch.setattr(
         judging.llm, "sampler",
         lambda role, spec=None: judging.engines.Sampler({"temperature": 0}, {}),
@@ -460,7 +472,7 @@ def test_our_judge_scores_outside_the_lock_and_writes_under_it():
 
 
 def test_a_refusal_owes_no_axis_and_both_halves_of_the_rule_say_so():
-    # the owner's rule of 06.09: abstain, rather than bend the judge prompt towards the guest
+    # abstain, rather than bend the judge prompt towards the guest
     from types import SimpleNamespace
 
     from job_handlers.judging import _owed, still_to_judge
@@ -618,7 +630,7 @@ def test_a_vllm_pass_is_named_by_the_process_that_holds_the_judge(monkeypatch):
 
     # a server that cannot say when it started names nothing, and the pass stands alone
     started[0] = None
-    assert j._residency(42) == j.Residency(42, None, "vllm /metrics unreachable")
+    assert j._residency(42) == j.Residency(42, None, "the pass, vllm /metrics unreachable")
 
 
 def test_the_process_start_is_read_from_metrics_and_not_from_created(monkeypatch):
@@ -720,7 +732,7 @@ def test_the_language_probe_records_what_judged_it(monkeypatch):
         lambda role, spec=None: judging.engines.Sampler({"seed": 0}, {}),
     )
     monkeypatch.setattr(judging, "_parallel_slots", lambda: 1)
-    monkeypatch.setattr(judging, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(judging, "require_role_ready", lambda role, **kw: None)
     monkeypatch.setattr(judging, "require_card", lambda role, model=None, asked_by=None: None)
     monkeypatch.setattr(judge_language, "measure", lambda *a, **kw: seen.update(kw) or {})
     monkeypatch.setattr(judging.measurements, "record", lambda *a, **kw: "nowhere")
@@ -784,22 +796,24 @@ def test_the_card_is_read_after_the_judge_answered_and_not_before(monkeypatch):
     assert order.count("probe") == 1, "one probe per pass, not per row"
 
 
-def test_an_engine_without_that_instrument_names_none_and_is_not_asked(monkeypatch):
-    # `/api/ps` is ollama's door; on vllm it 404s, the error is swallowed, and null read as "unknown"
+def test_a_vllm_judge_is_read_by_its_own_door_and_never_by_ollama_s(monkeypatch):
+    # the one instrument: the judge on vLLM wrote null while the stand said true
     import engines
     from job_handlers import judging
     from models.registry import EngineKind, Placement
 
     spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
     asked = []
-    monkeypatch.setattr(judging.ollama, "residency", lambda s: asked.append(s) or [])
+    monkeypatch.setattr(judging.card.ollama, "residency", lambda s: asked.append(s) or [])
+    monkeypatch.setattr(judging.card.vllm, "card_state", lambda s: "awake")
+    monkeypatch.setattr(judging.card.vllm, "served", lambda s: ["Qwen/Qwen2.5-7B-Instruct-AWQ"])
     monkeypatch.setattr(
         judging.llm, "resolve", lambda role: engines.Resolved("Qwen/Qwen2.5-7B-Instruct-AWQ", spec)
     )
 
-    assert judging.residency_instrument(spec) is None
-    assert judging.judge_on_card() is None
-    assert asked == [], "asking an engine that has no such door records not-applicable as unknown"
+    assert judging.residency_instrument(spec) == "vllm /is_sleeping"
+    assert judging.judge_on_card() is True
+    assert asked == [], "`/api/ps` is ollama's door and 404s on a vLLM"
 
 
 def test_the_next_sweep_does_not_inherit_the_retry_counter(monkeypatch):
@@ -849,7 +863,7 @@ def test_the_card_is_read_for_the_engine_that_judges_not_the_one_the_role_names(
                                              Placement.gpu),
         ),
     )
-    monkeypatch.setattr(judging.ollama, "residency", lambda _spec: [])
+    monkeypatch.setattr(judging.card.vllm, "card_state", lambda _spec: "asleep")
 
-    assert judging.judge_on_card("Qwen/Qwen2.5-7B-Instruct-AWQ") is None
+    assert judging.judge_on_card("Qwen/Qwen2.5-7B-Instruct-AWQ") is False
     assert asked == ["Qwen/Qwen2.5-7B-Instruct-AWQ"], "the override must reach the card probe"

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from models.registry import Engine, EngineKind, Model, ModelRole, Placement
 from orm.sync_db import Session
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from .core import SEEDED_PREFIX, Ambiguous, EngineSpec, Unnamed
 
@@ -97,3 +97,23 @@ def card_engines(kind: EngineKind | None = None) -> list[EngineSpec]:
         stmt = stmt.where(Engine.kind == kind)
     with Session() as session:
         return [_spec(r) for r in session.execute(stmt).all()]
+
+
+# the one record of a tool probe: the worker, the door and the bootstrap run in three processes
+def record_tool_probe(engine_id: int, model: str, started: str, probed: bool) -> None:
+    with Session() as session:
+        session.execute(
+            update(Model).where(Model.engine_id == engine_id, Model.name == model)
+            .values(tool_probe=probed, tool_probe_start=started)
+        )
+        session.commit()
+
+
+# an answer from an earlier process start says nothing: a restart may have changed the flags
+def recorded_tool_probe(engine_id: int, model: str, started: str) -> bool | None:
+    with Session() as session:
+        seen = session.execute(
+            select(Model.tool_probe, Model.tool_probe_start)
+            .where(Model.engine_id == engine_id, Model.name == model)
+        ).first()
+    return seen.tool_probe if seen and seen.tool_probe_start == started else None

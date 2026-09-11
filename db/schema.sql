@@ -335,7 +335,9 @@ CREATE TABLE public.models (
     engine_id integer NOT NULL,
     quant text,
     weights_id integer,
-    size_bytes bigint
+    size_bytes bigint,
+    tool_probe boolean,
+    tool_probe_start text
 );
 
 
@@ -939,4 +941,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260909000001'),
     ('20260909000002'),
     ('20260909000003'),
-    ('20260911000001');
+    ('20260911000001'),
+    ('20260911000002'),
+    ('20260911000003');
