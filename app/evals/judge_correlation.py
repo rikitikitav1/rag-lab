@@ -64,7 +64,7 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
         if not in_corpus(ql):
             off_pool += 1
             continue
-        # our own outcome decides, not the standard's `nan`: the owner's rule of 06.09
+        # our own outcome decides, not the standard's `nan`
         if _outcome(ql) == Outcome.refused:
             refused += 1
             if entry.get("abstained"):

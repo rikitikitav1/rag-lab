@@ -79,6 +79,12 @@ def weak_by_distance(sources: list, gate: Gate) -> bool:
     return bool(distances) and min(distances) >= gate.distance_threshold
 
 
+# the one reading of when the agent's gate calls the cross-encoder: `either` calls it as well
+def gates_with_cross_encoder(policy, signal) -> bool:
+    return (FallbackPolicy(policy) == FallbackPolicy.corpus_first_weak
+            and GateSignal(signal) != GateSignal.distance)
+
+
 def verdict(sources: list, gate: Gate) -> str | None:
     if not sources:
         return FallbackReason.empty

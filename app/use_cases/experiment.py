@@ -90,7 +90,7 @@ def _compare_question_sets(set_a: list, set_b: list) -> dict:
 # the population this report actually walks, said in the report so a reader never has to derive it
 BLENDED = (
     "every row of both runs that pairs by question_id, all pools blended: a delta here mixes"
-    " pools that sit at different heights, and on 07.09 that read +1.507 where the corpus pool"
+    " pools that sit at different heights, and once that read +1.507 where the corpus pool"
     " alone read +0.19 [-0.25, 0.62]"
 )
 

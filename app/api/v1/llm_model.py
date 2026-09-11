@@ -1,9 +1,10 @@
 import engines
 import job_queue
 from crud import get_or_404
-from engines import ollama, vllm
+from engines import vllm
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
+from job_handlers import model_ops
 from models.registry import (
     MAX_MODEL_NAME,
     MODEL_NAME_RE,
@@ -53,6 +54,13 @@ class ModelResponse(BaseModel):
             size_bytes=model.size_bytes,
             weights=weights,
         )
+
+
+def _refuse_remote(engine: Engine, name: str) -> None:
+    try:
+        model_ops.refuse_remote(engine.kind, name)
+    except engines.NotSupported as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
 
 
 async def _engine_of(session: AsyncSession, model: Model) -> Engine:
@@ -149,7 +157,10 @@ async def create_model(
     # an engine that does not pull is asked whether it already serves the name, before the row
     status = Status.available
     if engine.kind is not EngineKind.ollama:
-        if not await run_in_threadpool(_serves, engine, request.name):
+        serves = await run_in_threadpool(_serves, engine, request.name)
+        if serves is None:
+            raise HTTPException(status_code=503, detail=f"{engine.name} does not answer")
+        if not serves:
             raise HTTPException(
                 status_code=400, detail=f"{engine.name} does not serve {request.name}"
             )
@@ -175,14 +186,15 @@ async def create_model(
     return ModelResponse.of(model, engine.name)
 
 
-def _serves(engine: Engine, name: str) -> bool:
+# None when the server did not answer: a server that is down is a 503, not a model it lacks
+def _serves(engine: Engine, name: str) -> bool | None:
     spec = engines.EngineSpec(
         engine.id, engine.name, engine.kind, engine.env_prefix, engine.placement
     )
     try:
         return any(m.id == name for m in engines.client_for(spec).models.list().data)
     except Exception:
-        return False
+        return None
 
 
 class LoadQueuedResponse(BaseModel):
@@ -198,12 +210,23 @@ class LoadQueuedResponse(BaseModel):
 async def load_model(id: int, session: AsyncSession = Depends(get_session)):
     model = await get_or_404(Model, id, session)
     engine = await _engine_of(session, model)
-    if engine.kind is EngineKind.openai_compatible:
-        raise HTTPException(status_code=501, detail=f"loading is not applicable to {engine.kind}")
-    # a vLLM process serves one model, and a load of another would wake the wrong one with a 202
-    if engine.kind is EngineKind.vllm and not await run_in_threadpool(_serves, engine, model.name):
-        raise HTTPException(status_code=422, detail=f"{engine.name} does not serve {model.name}")
+    _refuse_remote(engine, model.name)
+    if model.status != Status.ready:
+        raise HTTPException(status_code=409, detail=f"{model.name} is {model.status.value}, not ready")
+    if engine.kind is EngineKind.vllm:
+        # on the processor it holds its model while it lives: a 202 that does nothing was a lie
+        if engine.placement is Placement.cpu:
+            raise HTTPException(status_code=409, detail=f"{engine.name} runs on the cpu: nothing to load")
+        # a vLLM process serves one model, and a load of another would wake the wrong one with a 202
+        serves = await run_in_threadpool(_serves, engine, model.name)
+        if serves is None:
+            raise HTTPException(status_code=503, detail=f"{engine.name} does not answer")
+        if not serves:
+            raise HTTPException(status_code=422, detail=f"{engine.name} does not serve {model.name}")
+    # a load already waiting answers a second ask
     job_id = await run_in_threadpool(
+        job_queue.pending_of_type, "hand_card", engine_id=engine.id, model=model.name
+    ) or await run_in_threadpool(
         job_queue.enqueue, "hand_card", {"engine_id": engine.id, "model": model.name}
     )
     return LoadQueuedResponse(job_id=job_id, engine=engine.name, model=model.name)
@@ -231,7 +254,8 @@ async def patch_model(
     engine = await _engine_of(session, model)
     if request.quant is not None:
         model.quant = request.quant
-    weights = None
+    # a quant-only patch answered `weights: null` for a row that had them
+    weights = await session.scalar(select(Weights.name).where(Weights.id == model.weights_id))
     if request.weights is not None:
         # a key spelled by hand is free text again unless the hub knows the repository
         known = await run_in_threadpool(_repo_exists, request.weights)
@@ -243,21 +267,29 @@ async def patch_model(
         if row is None:
             row = Weights(name=request.weights)
             session.add(row)
-            await session.flush()
+            try:
+                await session.flush()
+            except IntegrityError as e:
+                # two patches naming one new repository at once: the second one is asked to repeat
+                await session.rollback()
+                raise HTTPException(status_code=409, detail="the weights row was just made; repeat") from e
         model.weights_id = row.id
         weights = row.name
     await commit_and_refresh(session, model)
     return ModelResponse.of(model, engine.name, weights)
 
 
+# only a 404 says "not on the hub": a 401, a 429 or a 5xx is a hub that did not answer the question
 def _repo_exists(repo: str) -> bool | None:
     import requests
 
     try:
-        seen = requests.get(f"https://huggingface.co/api/models/{repo}", timeout=10)
+        seen = requests.get(f"{vllm.HUB}/api/models/{repo}", timeout=10)
     except Exception:
         return None
-    return seen.status_code == 200
+    if seen.status_code == 200:
+        return True
+    return False if seen.status_code == 404 else None
 
 
 @router.delete("/{id}", response_model=ModelResponse)
@@ -272,7 +304,18 @@ async def delete_model(id: int, session: AsyncSession = Depends(get_session)):
         )
 
     engine = await _engine_of(session, model)
-    _refuse_unless_ollama(engine.kind, "deleting")
+    # the worker deletes vLLM weights too; only a remote engine keeps nothing here to delete
+    _refuse_remote(engine, model.name)
+    # the worker's own rule, asked before the row goes: a 200 here and a failed job later told two stories
+    try:
+        await run_in_threadpool(model_ops.refuse_if_the_weights_are_shared, model.name, engine.id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    if engine.kind is EngineKind.vllm:
+        try:
+            await run_in_threadpool(vllm.refuse_if_served, model.name)
+        except vllm.StillServed as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
     name = model.name
     await session.delete(model)
@@ -285,15 +328,3 @@ async def delete_model(id: int, session: AsyncSession = Depends(get_session)):
     await session.commit()
 
     return ModelResponse.of(model, engine.name)
-
-
-# one refusal, written in the engine layer; every door translates it into its own shape
-def _refuse_unless_ollama(kind: EngineKind, doing: str) -> None:
-    try:
-        ollama.refuse_unless_ollama(_kind_only(kind), doing)
-    except engines.NotSupported as e:
-        raise HTTPException(status_code=501, detail=str(e)) from e
-
-
-def _kind_only(kind: EngineKind) -> engines.EngineSpec:
-    return engines.EngineSpec(0, "", kind, "", Placement.gpu)

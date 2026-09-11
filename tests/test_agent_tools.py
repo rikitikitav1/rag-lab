@@ -34,6 +34,21 @@ def test_dispatch_catches_tool_exception(monkeypatch):
     assert "kaboom" not in result.content
 
 
+def test_dispatch_lets_a_stand_fault_end_the_run(monkeypatch):
+    import pytest
+
+    import db
+
+    def foreign(**kwargs):
+        raise db.ForeignVectors("variant holds vectors of another embedder")
+
+    monkeypatch.setitem(
+        at._REGISTRY, "foreign", at.Tool(name="foreign", description="", parameters={}, run=foreign)
+    )
+    with pytest.raises(db.ForeignVectors):
+        at.dispatch("foreign", "{}")
+
+
 def test_dispatch_drops_undeclared_args(monkeypatch):
     seen = {}
 

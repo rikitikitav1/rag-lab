@@ -1,7 +1,9 @@
+import config
 import engines
 import job_queue
 import llm
 from engines import card
+from use_cases import agent_policy, chat
 
 # a judging pass ends in about a minute; a card nobody is judging on comes back in seconds
 BUSY_RETRY_SECONDS = 60
@@ -14,9 +16,28 @@ class CardBusy(Exception):
         self.status, self.detail, self.retry_after = status, detail, retry_after
 
 
+# every door asks this one: four copies of the gate rule had already parted over `either`
+def reranker_needed(rerank_asked: bool | None = None, agent: bool = False,
+                    fallback_policy: str | None = None, gate_signal: str | None = None) -> bool:
+    if chat.resolve_rerank(rerank_asked):
+        return True
+    settings = config.settings.agent
+    return agent and agent_policy.gates_with_cross_encoder(
+        fallback_policy or settings.fallback_policy, gate_signal or settings.gate_signal
+    )
+
+
+def answering_roles(**asked) -> tuple[str, ...]:
+    return ("embedding", "generation", *(("reranking",) if reranker_needed(**asked) else ()))
+
+
 # the API never hands the card: it asks the queue and names who holds it, or says why it never will
 def wait_for_the_card(*roles) -> None:
-    picked = [llm.resolve(role).engine for role in roles]
+    try:
+        picked = [llm.resolve(role).engine for role in roles]
+    except engines.Unnamed as e:
+        # the reranker without its weights on a clean machine: a layout fact, not a server error
+        raise CardBusy(409, f"{e}; seat it through PUT /v1/role before asking") from e
     on_card = {spec.id: spec for spec in picked if spec.placement in engines.CARD}
     if len(on_card) > 1:
         names = ", ".join(sorted(spec.name for spec in on_card.values()))
@@ -29,7 +50,8 @@ def wait_for_the_card(*roles) -> None:
             continue
         if not job_queue.pending_of_type("hand_card", engine_id=spec.id):
             job_queue.enqueue("hand_card", {"engine_id": spec.id, "asked_by": "chat"})
-        judging = job_queue.pending_of_type("judge_answers")
+        # running, not waiting: the live batch waits five minutes after every answer and read as busy
+        judging = job_queue.running_of_type("judge_answers")
         raise CardBusy(
             503,
             f"the card is held by {_holder()}; it is handed to {spec.name} through the queue",
@@ -38,10 +60,14 @@ def wait_for_the_card(*roles) -> None:
 
 
 def _holder() -> str:
-    judge = llm.resolve("judging").engine
     held = card.on_card()
     if not held:
         return "nobody yet"
+    # with no judge seated the holder is still named, not turned into a 500
+    try:
+        judge_id = llm.resolve("judging").engine.id
+    except engines.Unnamed:
+        judge_id = None
     return ", ".join(
-        f"the judge on {h.engine.name}" if h.engine.id == judge.id else h.engine.name for h in held
+        f"the judge on {h.engine.name}" if h.engine.id == judge_id else h.engine.name for h in held
     )

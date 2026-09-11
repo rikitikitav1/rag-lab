@@ -5,6 +5,7 @@ import logging_setup
 from models.eval import Question
 from orm.sync_db import Session
 from sqlalchemy import select
+from use_cases.index import question_needs_embedding
 
 from .base import register, require_embedder_ready
 from .card import clear_the_engine_for
@@ -94,11 +95,7 @@ def embed_questions(options: dict) -> None:
     label = llm.embedder_label()
     with Session() as session:
         # a vector from another embedder is as missing as none: search would refuse it anyway
-        pending = session.scalars(
-            select(Question).where(
-                Question.embedding.is_(None) | Question.embedded_by.is_distinct_from(label)
-            )
-        ).all()
+        pending = session.scalars(select(Question).where(question_needs_embedding(label))).all()
         for i in range(0, len(pending), size):
             batch = pending[i : i + size]
             vectors = llm.request_embeddings_batch([q.original_text for q in batch])

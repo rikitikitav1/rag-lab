@@ -117,12 +117,22 @@ class CheckMcpHealth(Spec):
 
 class HandCard(Spec):
     engine_id: int = Field(ge=1)
-    # the handover runs when its asker's turn comes: its own fixed priority ping-pongs the card
+    # only the API queues this now (chat, `/load`): who asked, for the reader, not for the turn
     asked_by: str | None = Field(default=None, max_length=64)
     # for ollama the model to load once the card is free; vLLM serves one model and needs no name
     model: str | None = Field(
         default=None, min_length=1, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern
     )
+    # the role door on an asleep vLLM: probe the woken server, then seat the role or fail with why
+    seat: Literal["generation"] | None = None
+    # the model the role held when the door asked; the seat is refused if another has come since
+    seat_over: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _seats_a_named_model(self):
+        if self.seat and not self.model:
+            raise ValueError("seat names the model it seats")
+        return self
 
 
 class ModelByName(Spec):
@@ -190,15 +200,12 @@ SPECS: dict[str, type[Spec]] = {
 
 LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io"}
 
-# lower runs first; judging waits for runs and loads, so the card changes hands once per batch
-PRIORITY = {"judge_answers": 10, "judge_guest_axes": 10, "judge_language": 10}
+# lower first; judging waits for runs, and the API's `hand_card` overtakes what waits
+PRIORITY = {"hand_card": -2, "judge_answers": 10, "judge_guest_axes": 10, "judge_language": 10}
 
 # a flow of runs must not hold the judge back forever: a job this old is taken before any priority
 STARVED_AFTER_MINUTES = 30
 
-
-def priority(job_type: str) -> int:
-    return PRIORITY.get(job_type, 0)
 
 # the safe way round: an unclassified type evicts. `judge_guest_axes` left when relevancy arrived
 KEEPS_THE_JUDGE = ("judge_answers", "check_mcp_health", "build_vector_index")

@@ -12,6 +12,17 @@ x-engine-env: &engine-env
   CLOUD_BASE_URL: ${CLOUD_BASE_URL:-}
   CLOUD_API_KEY: ${CLOUD_API_KEY:-}
 
+# pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
+x-vllm-image: &vllm-image vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
+
+x-gpu: &gpu
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
+
 services:
   rag-lab:
     depends_on:
@@ -27,18 +38,14 @@ services:
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      # the tree is mounted: bytecode written here outlived a restart as a mutant the tests had made
+      PYTHONDONTWRITEBYTECODE: "1"
       <<: *engine-env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8000:8000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
     volumes:
       - .:/app
       - ${HOME}/working_docs/notes:/notes:ro
@@ -118,13 +125,14 @@ services:
       dockerfile: Dockerfile
     command: ["python", "app/worker.py"]
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
       WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
       # read by the judge and capped by the slots ollama was started with
       JUDGE_WIDTH: ${JUDGE_WIDTH:-1}
       ENGINE_HF_CACHE: /engine_weights
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      # without this sentence_transformers asks huggingface whether the weights moved
+      # nothing here asks the hub on its own; a weights pull opens it for its own subprocess
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
@@ -141,13 +149,7 @@ services:
       - hf_cache:/root/.cache/huggingface
       # where `pull_llm_model` puts vLLM weights: the same host cache the `vllm` service reads
       - ${HOME}/.cache/huggingface:/engine_weights
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
 
   ollama:
     image: ollama/ollama
@@ -169,21 +171,14 @@ services:
       retries: 20
     volumes:
       - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
 
   vllm:
-    # pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
-    image: vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
+    image: *vllm-image
     command:
       ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}",
        "--max-model-len", "${VLLM_MAX_MODEL_LEN:-8192}",
-       # 0.95 died of CUDA OOM on 11.09 beside a sleeping `vllm-rerank`: every sleeper keeps ~200 MiB
+       # 0.95 died of CUDA OOM beside a sleeping `vllm-rerank`: every sleeper keeps ~200 MiB
        "--gpu-memory-utilization", "${VLLM_GPU_UTIL:-0.9}",
        "--enforce-eager", "--max-num-seqs", "16",
        "--enable-sleep-mode",
@@ -211,13 +206,7 @@ services:
     volumes:
       # the weights live in the host cache, where step 0 downloaded them, not in the `hf_cache` volume
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
 
   # always up: ollama loads a model on the first call and gives the memory back after the keep-alive
   ollama-cpu:
@@ -261,7 +250,7 @@ services:
   # by profile: a generating vLLM cannot embed, and it starts after the bootstrap put the judge to sleep
   vllm-embed:
     profiles: ["embed"]
-    image: vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
+    image: *vllm-image
     command:
       ["--model", "${VLLM_EMBED_MODEL:-BAAI/bge-m3}",
        "--runner", "pooling", "--dtype", "float16",
@@ -278,18 +267,12 @@ services:
         condition: service_completed_successfully
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
 
   # by profile: the cross-encoder left the API and the worker, whose torch held card the handover missed
   vllm-rerank:
     profiles: ["rerank"]
-    image: vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
+    image: *vllm-image
     command:
       ["--model", "${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}",
        "--runner", "pooling", "--dtype", "float16",
@@ -314,13 +297,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
 
 volumes:
   ollama_data:

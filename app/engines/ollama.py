@@ -6,13 +6,15 @@ import logging_setup
 import requests
 from models.registry import EngineKind
 
-from .core import EngineSpec, NotSupported, base_url
+from .core import EngineSpec, NotSupported, Unconfigured, base_url
 from .lookup import seeded_ollama
 
 log = logging_setup.get_logger(__name__)
 
 HTTP_TIMEOUT = 60
 PULL_TIMEOUT = 3600
+# seconds, not a completion's: the card is read every half second while it changes hands
+CARD_READ_TIMEOUT = 3
 
 
 # every call names the server it goes to; the seeded engine answers when nobody named one
@@ -66,7 +68,7 @@ def context_length(model: str, spec=None) -> int | None:
     if time.monotonic() - seen_at < _WINDOW_SECONDS:
         return window
     # the full tag, or llama3.1:8b would read the window of a loaded llama3.1:70b
-    wanted = {model, f"{model}:latest"}
+    wanted = spellings(model)
     window = next(
         (e.get("context_length") for e in loaded_models(spec) if e.get("name") in wanted), None
     )
@@ -82,43 +84,37 @@ def list_models(spec=None) -> list:
     return [m["name"] for m in list_tagged(spec)]
 
 
+# the same read of `/api/ps` the card uses, so both treat a silent server alike
 def residency(spec=None) -> list[dict]:
+    return card_reading(spec)[1]
+
+
+# the readings a vLLM gives: a refused connection holds no card, a silence may hold it
+def card_reading(spec=None) -> tuple[str, list[dict]]:
+    try:
+        answer = requests.get(f"{_at(spec)}/api/ps", timeout=CARD_READ_TIMEOUT)
+        seen = _shaped((_check(answer, "/api/ps") or {}).get("models") or [])
+    except requests.Timeout as e:
+        log.warning("ollama.ps_unanswered", error=str(e))
+        return "unknown", []
+    except (requests.ConnectionError, Unconfigured):
+        return "down", []
+    except Exception as e:
+        log.warning("ollama.ps_unanswered", error=str(e))
+        return "unknown", []
+    return ("holds" if any(m["vram_mb"] > 0 for m in seen) else "free"), seen
+
+
+def _shaped(models: list) -> list[dict]:
     return [
         {
             "model": m.get("name", "?"),
             "size_mb": round((m.get("size") or 0) / 2**20),
             "vram_mb": round((m.get("size_vram") or 0) / 2**20),
         }
-        for m in loaded_models(spec)
+        for m in models
         if m.get("size")
     ]
-
-
-# nothing in vram at all: the model answers from the processor
-def off_the_card(entry: dict) -> bool:
-    return entry["vram_mb"] == 0
-
-
-def warn_if_models_do_not_fit(spec=None) -> list[str]:
-    spilled, off_card = [], []
-    for entry in residency(spec):
-        if entry["vram_mb"] >= entry["size_mb"]:
-            continue
-        spilled.append(entry["model"])
-        if off_the_card(entry):
-            off_card.append(entry["model"])
-        log.warning(
-            "ollama.model_spilled_to_cpu",
-            **entry,
-            context=config.settings.llm.context_length,
-        )
-    if off_card:
-        log.error("ollama.gpu_unavailable", models=off_card)
-    return spilled
-
-
-def models_off_the_card(spec=None) -> list[str]:
-    return [e["model"] for e in residency(spec) if off_the_card(e)]
 
 
 # the registry knows the size before the first byte, and a first pull has no recorded size at all
@@ -199,7 +195,7 @@ def artifact_of(model: str, spec=None) -> dict:
 
 
 def _size_of(model: str, spec=None) -> int | None:
-    wanted = {model, f"{model}:latest"}
+    wanted = spellings(model)
     return next((m.get("size") for m in list_tagged(spec) if m.get("name") in wanted), None)
 
 
@@ -209,6 +205,11 @@ def list_tagged(spec=None) -> list:
 
 def add_tags(models) -> list:
     return [m if ":" in m else f"{m}:latest" for m in models]
+
+
+# `/api/ps` may add `:latest` to a name the registry keeps bare
+def spellings(model: str) -> set[str]:
+    return {model, f"{model}:latest"}
 
 
 def ensure_models(spec=None) -> None:

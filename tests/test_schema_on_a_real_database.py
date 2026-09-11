@@ -36,7 +36,7 @@ def test_the_same_name_twice_on_one_engine_is_refused(db):
 
 
 def test_an_engine_with_models_cannot_be_deleted(db):
-    # the owner's straw man: a dangling name is allowed in run records, never in the registry
+    # a dangling name is allowed in run records, never in the registry
     with db.connect() as c:
         one = _engine(c, "held")
         c.execute(text("INSERT INTO models (name, engine_id) VALUES ('held-model', :e)"), {"e": one})

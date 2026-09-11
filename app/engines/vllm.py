@@ -60,6 +60,8 @@ def served(spec: EngineSpec) -> list[str]:
 
 # a cross-encoder answers pairs; bounded requests, since a run sends every candidate of every question
 SCORE_BATCH = 256
+# 256 pairs score in about two seconds on the card; the wake ceiling was never this call's clock
+SCORE_TIMEOUT = 60
 
 
 def score(spec: EngineSpec, model: str, pairs: list[tuple[str, str]]) -> list[float]:
@@ -70,7 +72,7 @@ def score(spec: EngineSpec, model: str, pairs: list[tuple[str, str]]) -> list[fl
             _url(spec, "/score"),
             json={"model": model, "text_1": [q for q, _ in chunk], "text_2": [d for _, d in chunk]},
             headers=_headers(spec),
-            timeout=WAKE_TIMEOUT,
+            timeout=SCORE_TIMEOUT,
         )
         seen.raise_for_status()
         scores.extend(d["score"] for d in sorted(seen.json()["data"], key=lambda d: d["index"]))
@@ -94,6 +96,10 @@ def card_state(spec: EngineSpec) -> str:
         seen = requests.get(_url(spec, "/is_sleeping"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
         seen.raise_for_status()
         return "asleep" if seen.json()["is_sleeping"] else "awake"
+    except requests.Timeout as e:
+        # a ConnectTimeout is a ConnectionError too, and a host that did not answer may hold the card
+        log.warning("vllm.card_state_unknown", engine=spec.name, error=str(e))
+        return "unknown"
     except (requests.ConnectionError, Unconfigured):
         return "down"
     except Exception as e:
@@ -140,26 +146,64 @@ def started_at(spec: EngineSpec) -> str | None:
     return None
 
 
+# the runner the server started with, not the weights: gte-Qwen2 is `*ForCausalLM` served as an embedder
+def pools(spec: EngineSpec) -> bool | None:
+    try:
+        seen = requests.get(_url(spec, "/server_info"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
+        seen.raise_for_status()
+        said = str(seen.json().get("vllm_config", ""))
+    except Exception as e:
+        log.warning("vllm.server_info_unknown", engine=spec.name, error=str(e))
+        return None
+    if "pooler_config=None" in said:
+        return False
+    return True if "pooler_config=PoolerConfig(" in said else None
+
+
 # the flags cannot change while the process lives, so one probe per process start answers for all
 _probed: dict[tuple[int, str, str], bool] = {}
 
 
-# what a probe already said, without asking: a stamp must not send a request into a judged pass
+# what a probe already said, here or in another process, without asking the server
 def known_probe(spec: EngineSpec, model: str, started: str | None) -> bool | None:
-    return _probed.get((spec.id, model, started)) if started else None
-
-
-def tool_calls_probed(spec: EngineSpec, model: str) -> bool | None:
-    started = started_at(spec)
     if started is None:
         return None
     key = (spec.id, model, started)
     if key not in _probed:
-        seen = _probe(spec, model)
+        from .lookup import recorded_tool_probe
+
+        try:
+            seen = recorded_tool_probe(spec.id, model, started)
+        except Exception as e:
+            log.warning("vllm.tool_probe_unread", engine=spec.name, error=str(e))
+            return None
         if seen is None:
             return None
         _probed[key] = seen
     return _probed[key]
+
+
+def tool_calls_probed(spec: EngineSpec, model: str) -> bool | None:
+    started = started_at(spec)
+    known = known_probe(spec, model, started)
+    if started is None or known is not None:
+        return known
+    seen = _probe(spec, model)
+    if seen is None:
+        return None
+    _probed[(spec.id, model, started)] = seen
+    _record(spec, model, started, seen)
+    return seen
+
+
+# an unwritten answer is asked again by the next process, not lost as a false one
+def _record(spec: EngineSpec, model: str, started: str, seen: bool) -> None:
+    from .lookup import record_tool_probe
+
+    try:
+        record_tool_probe(spec.id, model, started, seen)
+    except Exception as e:
+        log.warning("vllm.tool_probe_unrecorded", engine=spec.name, error=str(e))
 
 
 def _probe(spec: EngineSpec, model: str) -> bool | None:
@@ -178,7 +222,12 @@ def _probe(spec: EngineSpec, model: str) -> bool | None:
         return False
     if not seen.ok:
         return None
-    return bool(seen.json()["choices"][0]["message"].get("tool_calls"))
+    try:
+        return bool(seen.json()["choices"][0]["message"].get("tool_calls"))
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        # an unexpected body says nothing about the parser, and a door must not answer 500 on it
+        log.warning("vllm.tool_probe_unreadable", engine=spec.name, error=str(e))
+        return None
 
 
 # the engines' weights live in the host cache the `vllm` service mounts, not in the `hf_cache` volume
@@ -195,16 +244,24 @@ def _snapshot(repo: str) -> Path | None:
     return seen[-1] if seen else None
 
 
+HUB = "https://huggingface.co"
+
+
+def _siblings(repo: str) -> list[dict] | None:
+    try:
+        seen = requests.get(f"{HUB}/api/models/{repo}", params={"blobs": "true"}, timeout=10).json()
+        return seen["siblings"]
+    except Exception as e:
+        log.warning("vllm.hub_unanswered", repo=repo, error=str(e))
+        return None
+
+
 # the hub knows the size before the first byte, and a first pull has no recorded size at all
 def repo_size(repo: str) -> int | None:
-    try:
-        seen = requests.get(
-            f"https://huggingface.co/api/models/{repo}", params={"blobs": "true"}, timeout=10
-        ).json()
-        return sum(f.get("size") or 0 for f in seen["siblings"]) or None
-    except Exception as e:
-        log.warning("vllm.repo_size_unknown", repo=repo, error=str(e))
+    seen = _siblings(repo)
+    if not seen:
         return None
+    return sum(f.get("size") or 0 for f in seen) or None
 
 
 # the hub names each blob by its own hash: sha256 for large files, the git blob sha1 for small ones
@@ -224,42 +281,89 @@ def _intact(blob: Path) -> bool:
     elif len(name) == 40:
         seen = hashlib.sha1(b"blob %d\0" % blob.stat().st_size)
     else:
-        # a leftover partial or a name we cannot check: not a blob the snapshot points at
-        return not name.endswith(".incomplete")
+        # a partial download is not broken, it is unfinished: `unfinished_weights` holds it against the row
+        return True
     with open(blob, "rb") as f:
         for chunk in iter(lambda: f.read(2**24), b""):
             seen.update(chunk)
     return seen.hexdigest() == name
 
 
+# a pull cut short leaves a `.incomplete` blob and no link for its file: kept for the resume, not whole
+def unfinished_weights(repo: str) -> list[str]:
+    snap = _snapshot(repo)
+    partial = [b.name for b in (_repo_dir(repo) / "blobs").glob("*.incomplete")]
+    missing = [f for f in _expected_files(snap) if not (snap / f).exists()] if snap else []
+    return partial + missing
+
+
+# read off the disk, not the hub: the worker runs offline, and an index names every shard
+def _expected_files(snap: Path) -> list[str]:
+    for index in ("model.safetensors.index.json", "pytorch_model.bin.index.json"):
+        if (snap / index).exists():
+            shards = json.loads((snap / index).read_text()).get("weight_map", {}).values()
+            return ["config.json", *sorted(set(shards))]
+    # any name the repo gave its weights, `training_args.bin` aside: a fixed name looped a pull forever
+    single = [f.name for f in snap.iterdir()
+              if f.suffix in (".safetensors", ".bin") and "model" in f.name and f.exists()]
+    return ["config.json", *(single or ["model.safetensors"])]
+
+
+# what is wrong with the weights, hashed once; empty means intact, a missing snapshot is named
+def weights_check(repo: str) -> list[str]:
+    if _snapshot(repo) is None:
+        return ["no snapshot"]
+    return broken_weights(repo) + unfinished_weights(repo)
+
+
 def weights_intact(repo: str) -> bool:
-    return _snapshot(repo) is not None and not broken_weights(repo)
+    return not weights_check(repo)
 
 
 # a blob with the right name and the wrong bytes is never fetched again, so it goes before the pull
-def _drop_broken(repo: str) -> None:
-    root = _repo_dir(repo)
-    for blob in (root / "blobs").glob("*"):
-        if blob.is_file() and not _intact(blob):
-            log.warning("vllm.blob_broken", repo=repo, blob=blob.name)
+def _drop(repo: str, broken: list[str]) -> None:
+    for name in broken:
+        blob = _repo_dir(repo) / "blobs" / name
+        if blob.is_file():
+            log.warning("vllm.blob_broken", repo=repo, blob=name)
             blob.unlink()
+
+
+# only what a server loads: `onnx` and `.pt` copies doubled a pull for nothing
+_PULLED = ["*.json", "*.txt", "*.model", "tokenizer*", "*.tiktoken"]
+
+
+# safetensors where the repo has them, else the pickled `.bin`: bge-m3 ships only `pytorch_model.bin`
+def _patterns(repo: str) -> list[str]:
+    files = _siblings(repo)
+    if files is None:
+        return [*_PULLED, "*.safetensors", "*.bin"]
+    has_safetensors = any(f.get("rfilename", "").endswith(".safetensors") for f in files)
+    return [*_PULLED, "*.safetensors" if has_safetensors else "*.bin"]
 
 
 # the worker runs offline so the reranker asks nobody; a pull is the one call that must go out
 def pull_weights(repo: str) -> None:
-    if weights_intact(repo):
+    # hashed once: the intact check and the drop each hashed every blob again
+    broken = broken_weights(repo)
+    if _snapshot(repo) is not None and not broken and not unfinished_weights(repo):
         log.info("vllm.weights_present", repo=repo)
         return
-    _drop_broken(repo)
+    _drop(repo, broken)
     env = {**os.environ, "HF_HUB_OFFLINE": "0", "HF_HOME": weights_cache()}
-    code = "import sys; from huggingface_hub import snapshot_download; snapshot_download(sys.argv[1])"
+    code = ("import json, sys; from huggingface_hub import snapshot_download;"
+            " snapshot_download(sys.argv[1], allow_patterns=json.loads(sys.argv[2]))")
     done = subprocess.run(
-        [sys.executable, "-c", code, repo],
+        [sys.executable, "-c", code, repo, json.dumps(_patterns(repo))],
         env=env, capture_output=True, text=True, timeout=PULL_TIMEOUT,
     )
     if done.returncode:
         said = (done.stderr.strip().splitlines() or ["no output"])[-1]
         raise RuntimeError(f"pull of {repo} failed: {said}")
+    # the pull finished: a partial blob left now is of a file no pattern asks for, and would loop it
+    for orphan in (_repo_dir(repo) / "blobs").glob("*.incomplete"):
+        log.warning("vllm.partial_blob_orphaned", repo=repo, blob=orphan.name)
+        orphan.unlink()
 
 
 _DTYPES = {"float16": "F16", "bfloat16": "BF16", "float32": "F32"}
@@ -273,11 +377,37 @@ def artifact_of(repo: str) -> dict:
     config = snap / "config.json"
     seen = json.loads(config.read_text()) if config.exists() else {}
     method = (seen.get("quantization_config") or {}).get("quant_method")
-    blobs = [f for f in (_repo_dir(repo) / "blobs").glob("*") if f.is_file()]
+    # the snapshot the server reads, files only and `1_Pooling/` too: a directory counted its 4096 bytes
+    files = [f for f in snap.rglob("*") if f.is_file()]
     return {
         "quant": method.upper() if method else _DTYPES.get(seen.get("torch_dtype")),
-        "size_bytes": sum(f.stat().st_size for f in blobs) or None,
+        "size_bytes": sum(f.stat().st_size for f in files) or None,
     }
+
+
+class StillServed(ValueError):
+    pass
+
+
+# the weights sit in one host cache every vLLM service reads, so each one is asked, and silence is no
+def refuse_if_served(repo: str) -> None:
+    from models.registry import EngineKind
+
+    from .lookup import registered
+
+    for spec in registered():
+        if spec.kind is not EngineKind.vllm:
+            continue
+        try:
+            names = served(spec)
+        except requests.Timeout as e:
+            raise StillServed(f"{spec.name} did not answer, so whether it serves {repo} is unknown: {e}") from e
+        except (requests.ConnectionError, Unconfigured):
+            continue
+        except Exception as e:
+            raise StillServed(f"{spec.name} did not answer, so whether it serves {repo} is unknown: {e}") from e
+        if repo in names:
+            raise StillServed(f"{repo} is served by {spec.name} right now; stop that server first")
 
 
 def delete_weights(repo: str) -> None:

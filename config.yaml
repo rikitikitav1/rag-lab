@@ -303,11 +303,11 @@ llm:
     embedding:    { model: bge-m3 }
     # 8b: gemma3 reports no tool calling in ollama, so the agent path refuses every question
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
-    # evaluation, on vLLM since 11.09: the same scale without ollama's drift, served by `vllm`
+    # evaluation on vLLM: the same scale without ollama's drift, served by `vllm`
     judging:      { model: Qwen/Qwen2.5-7B-Instruct-AWQ, engine: vllm, options: { max_tokens: 1024, temperature: 0, seed: 0 } }
     # building the question sets
     paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 } }
-    # the cross-encoder, out of the API and the worker since 11.09: `vllm-rerank`, `--profile rerank`
+    # the cross-encoder, out of the API and the worker: `vllm-rerank`, `--profile rerank`
     reranking:    { model: BAAI/bge-reranker-v2-m3, engine: vllm-rerank }
   candidates: []
 

@@ -124,6 +124,9 @@ class Model(Base):
     quant: Mapped[str | None] = mapped_column(default=None)
     # what this artifact takes on disk, so a pull can refuse before it starts, not halfway
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    # whether a vLLM serving it returns tool calls, and for which process start that was asked
+    tool_probe: Mapped[bool | None] = mapped_column(default=None)
+    tool_probe_start: Mapped[str | None] = mapped_column(default=None)
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )

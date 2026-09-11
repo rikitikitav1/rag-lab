@@ -8,15 +8,17 @@ import job_queue
 import llm
 import logging_setup
 import rerank
-from engines import ollama
+from engines import card, ollama
+from errors import StandFault
 from models.eval import Question
-from models.registry import EngineKind, Pipeline
+from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from sqlalchemy import select
-from use_cases import agent, chat, search_depth
+from use_cases import agent, chat, run_snapshot, search_depth
 
 # the same resolver every other caller asks: a default is one default only if one decides
 from use_cases.chat import resolve_rerank
+from use_cases.run_snapshot import ANSWERING
 
 import db
 
@@ -97,13 +99,10 @@ def _release(role: str, model: str | None = None) -> None:
     ollama.unload(picked.name, picked.engine)
 
 
-def _refuse_a_cpu_run(allow_cpu: bool) -> None:
-    # ollama drops the card and keeps answering: same numbers, four times the hours
-    ollama.warn_if_models_do_not_fit()
-    # asked of the generator's own engine: a vllm run used to pass this gate by asking ollama
-    generator = llm.resolve("generation").engine
-    # only ollama spills to the processor; a vLLM on a full card refuses to wake instead
-    off_card = ollama.models_off_the_card(generator) if generator.kind is EngineKind.ollama else []
+# asked after a role's first call: before it ollama has not loaded, and a spill is not there to see
+def _refuse_a_cpu_run(roles: tuple[Role, ...], allow_cpu: bool, model: str | None) -> None:
+    picked = {role: run_snapshot.model_of(role, model) for role in roles}
+    off_card = [f"{role}={p.name}" for role, p in picked.items() if card.spilled(p.engine, p.name)]
     if off_card and not allow_cpu:
         raise RuntimeError(
             f"models are not on the GPU: {', '.join(off_card)}."
@@ -122,12 +121,14 @@ def _run_sequential(
         for text in texts:
             if job_id is not None and job_queue.is_cancelled(job_id):
                 return answered, True
-            # after the first answer the generator is loaded, so a spill is finally visible
+            # after the first answer both roles have been called, so a spill is finally visible
             if answered == 1:
-                _refuse_a_cpu_run(allow_cpu)
+                _refuse_a_cpu_run(ANSWERING, allow_cpu, spec.model)
             try:
                 _answer_one(text, run_name, spec)
                 answered += 1
+            except StandFault:
+                raise
             except Exception as e:
                 log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
         return answered, False
@@ -142,6 +143,8 @@ def _embed_in_batches(texts: list[str]) -> list:
         chunk = texts[start : start + size]
         try:
             vectors.extend(llm.request_embeddings_batch(chunk))
+        except StandFault:
+            raise
         except Exception as e:
             log.error("eval_run.embed_failed", start=start, n=len(chunk), error=str(e))
             vectors.extend([None] * len(chunk))
@@ -152,6 +155,7 @@ def _phase_retrieve(texts: list[str], spec: RunSpec) -> tuple[list, int]:
     limit = config.settings.rerank.candidates if spec.use_rerank else spec.k
     # resolved once and carried: a phased run recorded `ef_search: null`, and phased is default
     depth = search_depth.resolve(spec.variant)
+    label = llm.embedder_label()
     retrieved = []
     for text, vector in zip(texts, _embed_in_batches(texts), strict=True):
         if vector is None:
@@ -161,10 +165,12 @@ def _phase_retrieve(texts: list[str], spec: RunSpec) -> tuple[list, int]:
                 (
                     text,
                     db.hybrid_search(text, vector, None, limit=limit, variant=spec.variant,
-                                     ef_search=depth),
+                                     ef_search=depth, embedded_by=label),
                     None,
                 )
             )
+        except StandFault:
+            raise
         except Exception as e:
             log.error("eval_run.search_failed", run_text=text[:80], error=str(e))
     return retrieved, depth
@@ -194,6 +200,7 @@ def _phase_generate(
     allow_cpu: bool = False,
     rerank_device: str | None = None,
     ef_search: int | None = None,
+    placed_during: dict | None = None,
 ) -> tuple[int, bool]:
     answered = 0
     for text, rows, rerank_scores in retrieved:
@@ -214,13 +221,16 @@ def _phase_generate(
                 rerank_device=rerank_device,
                 variant=spec.variant,
                 ef_search=ef_search,
+                placed_during=placed_during,
             )
             answered += 1
+        except StandFault:
+            raise
         except Exception as e:
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
         # outside the try: a guard whose refusal the loop swallows is not a guard
         if answered == 1:
-            _refuse_a_cpu_run(allow_cpu)
+            _refuse_a_cpu_run((Role.generation,), allow_cpu, spec.model)
     return answered, False
 
 
@@ -250,9 +260,11 @@ def _phased(
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
              elapsed=round(time.perf_counter() - started, 1))
 
-    # here, so a run that would answer off the card stops two minutes in
-    _refuse_a_cpu_run(allow_cpu)
+    # here, so a run whose embedder spilled stops two minutes in, before the generator is paid for
+    _refuse_a_cpu_run((Role.embedding,), allow_cpu, spec.model)
 
+    # read before the release: every row is written after it, and read then the embedder is gone
+    placed_during = {"embedding": _placed("embedding")}
     # retrieval is over, and its model is 1.2 GiB the generator wants on a card that holds 8
     _release("embedding")
 
@@ -266,6 +278,7 @@ def _phased(
         log.info("eval_run.phase", name="rerank", n=len(retrieved),
                  elapsed=round(time.perf_counter() - started, 1))
         rerank_device = rerank.device()
+        placed_during["reranking"] = _placed("reranking")
 
         if job_id is not None and job_queue.is_cancelled(job_id):
             return 0, True
@@ -273,11 +286,21 @@ def _phased(
     started = time.perf_counter()
     answered, cancelled = _phase_generate(
         retrieved, run_name, spec, job_id=job_id, allow_cpu=allow_cpu,
-        rerank_device=rerank_device, ef_search=ef_search,
+        rerank_device=rerank_device, ef_search=ef_search, placed_during=placed_during,
     )
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))
     return answered, cancelled
+
+
+# by the role's own engine, and a failed read is unknown rather than a reason to stop the run
+def _placed(role: str) -> bool | None:
+    try:
+        picked = llm.resolve(role)
+        return card.model_on_card(picked.engine, picked.name)
+    except Exception as e:
+        log.warning("eval_run.placement_unread", role=role, error=str(e))
+        return None
 
 
 def _walks_the_index(variant: str, depth: int) -> bool:

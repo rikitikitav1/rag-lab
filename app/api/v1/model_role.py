@@ -1,5 +1,7 @@
+import job_queue
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from models.registry import Model, ModelRole, Role
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel
@@ -29,7 +31,10 @@ class RoleAssignRequest(BaseModel):
     anyway: bool = False
 
 
-@router.put("/{role}", response_model=RoleResponse)
+@router.put("/{role}", response_model=RoleResponse, responses={
+    202: {"description": "an asleep vLLM: a `hand_card` job wakes it, probes and then seats the role"},
+    503: {"description": "the model's engine does not answer"},
+})
 async def assign_role(
     role: Role,
     request: RoleAssignRequest,
@@ -44,9 +49,22 @@ async def assign_role(
     # asked here: a model that cannot do its role fails per row while the job reports done
     if not request.anyway:
         try:
-            await run_in_threadpool(model_acceptance.refuse_unfit_model, role, model.name)
+            await run_in_threadpool(
+                model_acceptance.refuse_unfit_model, role, model.name, model.engine_id
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"{e}. Pass anyway=true to insist") from e
+        except model_acceptance.EngineDown as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        except model_acceptance.NeedsProbe as e:
+            # the stand can wake it and ask, as `/load` does; the role is seated once the probe says so
+            held = await session.get(ModelRole, role)
+            job_id = await run_in_threadpool(
+                job_queue.enqueue, "hand_card",
+                {"engine_id": model.engine_id, "model": model.name, "seat": role.value,
+                 "seat_over": held.model_id if held else None},
+            )
+            return JSONResponse(status_code=202, content={"job_id": job_id, "detail": str(e)})
 
     assignment = await session.get(ModelRole, role)
     if assignment is None:

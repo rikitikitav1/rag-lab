@@ -10,6 +10,11 @@ class Deferred(Exception):
         self.delay_seconds = delay_seconds
 
 
+# the same options fail the same way: a retry only wakes a server and takes the card again
+class Final(Exception):
+    pass
+
+
 def register(job_type):
     def deco(fn):
         HANDLERS[job_type] = fn
@@ -18,23 +23,17 @@ def register(job_type):
     return deco
 
 
-# a job on a card engine waits for the card, and asks for it once rather than once per retry
-def require_card(role: str, model: str | None = None, asked_by: str | None = None) -> None:
+# taken in the job's own turn: a handover queued apart ping-ponged the card with whoever came between
+def require_card(role: str, model: str | None = None, allow_spill: bool = False) -> None:
     import engines
-    import job_queue
     import llm
-    from engines import card
+
+    from .card import take
 
     picked = llm.resolve_for(role, model)
-    spec = picked.engine
-    if spec.placement not in engines.CARD or card.holds_for(spec):
-        return
-    if not job_queue.pending_of_type("hand_card", engine_id=spec.id):
-        job_queue.enqueue(
-            "hand_card", {"engine_id": spec.id, "model": picked.name, "asked_by": asked_by}
-        )
-    # short: `reschedule` moves the waiter on by this much after the card has already changed hands
-    raise Deferred(5)
+    if picked.engine.placement in engines.CARD:
+        # a run's `allow_cpu`: a fresh load half on the processor then measures the cpu on purpose
+        take(picked.engine, picked.name, allow_spill=allow_spill)
 
 
 def require_role_ready(role, take_card: bool = True) -> None:
@@ -48,7 +47,7 @@ def require_role_ready(role, take_card: bool = True) -> None:
         raise Deferred(10)
     # every role that answers on the card asks for it here, so no handler can forget to
     if take_card:
-        require_card(role.value, asked_by="judge_answers" if role is Role.judging else None)
+        require_card(role.value)
 
 
 def require_embedder_ready() -> None:

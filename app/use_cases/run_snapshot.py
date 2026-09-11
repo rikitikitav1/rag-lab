@@ -9,8 +9,8 @@ import db
 
 log = logging_setup.get_logger(__name__)
 
-# 5 engine per role; 6 what the engine refused; 7 renamed `engine_refused`; 8 where each role sat
-SCHEMA = 8
+# 5 engine per role; 6 engine refused; 7 renamed; 8 where each role sat; 9 reranker as a role
+SCHEMA = 9
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -55,11 +55,11 @@ ANSWERING = (Role.generation, Role.embedding)
 
 
 # a report must not die on an unreachable registry: the engine is extra, the run is the record
-def _by_role(picked) -> tuple[dict, dict, dict]:
+def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict]:
     named, dropped, placed = {}, {}, {}
-    for role in ANSWERING:
+    for role in roles:
         try:
-            chosen = picked if role is Role.generation else llm.resolve(role)
+            chosen = picked if role is Role.generation else model_of(role)
             spec = chosen.engine
             if spec is None:
                 continue
@@ -71,10 +71,15 @@ def _by_role(picked) -> tuple[dict, dict, dict]:
     return named, dropped, placed
 
 
+# the model a role of this run answers with: the snapshot and the run's gate read one resolution
+def model_of(role: Role, model: str | None = None) -> llm.Resolved:
+    return llm.resolve_for(role, model) if role is Role.generation else llm.resolve(role)
+
+
 # the comment below promises the report survives an unreadable registry, so this one does too
 def _generator(model: str | None):
     try:
-        return llm.resolve_for(Role.generation, model)
+        return model_of(Role.generation, model)
     except Exception as e:
         log.warning("run_snapshot.generator_unread", model=model, error=str(e))
         return llm.Resolved(model or "?", None)
@@ -106,17 +111,24 @@ def of_run(
     distance_threshold,
     model=None,
     rerank_device=None,
+    placed_during=None,
+    cross_encoder_used=None,
     **filled,
 ) -> dict:
     unknown = sorted(set(filled) - set(KEYS))
     if unknown:
         raise ValueError(f"the run snapshot has no place for {unknown}")
     picked = _generator(model)
-    named, dropped, placed = _by_role(picked)
+    # the agent's gate can call the reranker without `use_rerank`, and the record names it then too
+    reranked = use_rerank if cross_encoder_used is None else cross_encoder_used
+    roles = (*ANSWERING, Role.reranking) if reranked else ANSWERING
+    named, dropped, placed = _by_role(picked, roles)
+    # read while the role worked: a phased run writes its rows after the embedder has left the card
+    placed |= placed_during or {}
     common = {
         "schema": SCHEMA,
         "rerank": use_rerank,
-        "rerank_device": (rerank_device or _rerank_device()) if use_rerank else None,
+        "rerank_device": (rerank_device or _rerank_device()) if reranked else None,
         "distance_threshold": distance_threshold,
         "k": k,
         "variant": variant,

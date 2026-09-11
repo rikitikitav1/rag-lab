@@ -7,6 +7,7 @@ import engines
 import logging_setup
 from engines import vllm as vllm_engine
 from engines.lookup import Resolved
+from errors import StandFault
 from models.registry import EngineKind
 from openai import APIStatusError, OpenAIError
 
@@ -184,6 +185,8 @@ def score_pairs(pairs: list, role="reranking") -> list[float]:
     _card_for(spec, name)
     try:
         scores = vllm_engine.score(spec, name, pairs)
+    except StandFault:
+        raise
     except Exception as e:
         said = _without_the_body(e)
         log.error("llm.rerank_failed", model=name, engine=spec.name, error=said)
@@ -195,7 +198,7 @@ def score_pairs(pairs: list, role="reranking") -> list[float]:
 # what wrote a vector: one model name on two engines writes two geometries
 def embedder_label(role="embedding") -> str:
     picked = resolve(role)
-    return f"{picked.name}@{picked.engine.name}"
+    return engines.label(picked.name, picked.engine.name)
 
 
 def embed(prompt, role="embedding"):

@@ -52,6 +52,13 @@ def stand(monkeypatch):
     monkeypatch.setattr(card.vllm, "served", lambda spec: ["Qwen/Q"])
     monkeypatch.setattr(card.ollama, "unload", unload)
     monkeypatch.setattr(card.ollama, "residency", residency)
+    def card_reading(spec=None):
+        if s.get("ollama_state"):
+            return s["ollama_state"], []
+        seen = residency(spec)
+        return ("holds" if any(m["vram_mb"] > 0 for m in seen) else "free"), seen
+
+    monkeypatch.setattr(card.ollama, "card_reading", card_reading)
     monkeypatch.setattr(card.ollama, "load_into_memory", load)
     monkeypatch.setattr(card, "POLL_SECONDS", 0)
     monkeypatch.setattr(card, "WAIT_CEILING", 0.05)
@@ -60,13 +67,29 @@ def stand(monkeypatch):
 
 def test_the_holder_is_read_from_the_servers(stand):
     assert card.on_card() == []
-    # 11.09: ollama lost CUDA and served the judge from the cpu, which holds nothing on the card
+    # ollama lost CUDA and served the judge from the cpu, which holds nothing on the card
     stand["spilled"] = ["qwen2.5:7b"]
     assert card.on_card() == []
     stand["ollama"] = ["llama3.1:8b"]
     assert [h.engine.name for h in card.on_card()] == ["ollama"]
     stand["awake"] = True
     assert [h.engine.name for h in card.on_card()] == ["ollama", "vllm"]
+
+
+def test_a_silent_ollama_holds_the_card_as_a_silent_vllm_does(stand):
+    # silence was a free card for ollama alone, and a wake would meet what it held
+    stand["ollama_state"] = "unknown"
+    assert [h.engine.name for h in card.on_card()] == ["ollama"]
+    assert card.holds_for(VLLM) is False, "nothing wakes beside a server that did not answer"
+
+
+def test_a_stopped_ollama_holds_nothing_and_the_judge_takes_the_card_at_once(stand):
+    # with ollama stopped a handover to the judge waited 60 s and failed
+    stand["ollama_state"] = "down"
+    assert card.on_card() == []
+    assert card.holds_for(VLLM) is False and card.holds_for(OLLAMA) is True
+    card.hand_to(VLLM)
+    assert stand["awake"] is True and stand["calls"] == ["wake"]
 
 
 def test_a_card_nobody_holds_is_ollamas_but_not_vllms(stand):
@@ -79,7 +102,7 @@ def test_a_card_nobody_holds_is_ollamas_but_not_vllms(stand):
 
 
 def test_the_card_goes_to_vllm_after_ollama_let_go_even_if_the_first_wake_fails(stand):
-    # 11.09: a wake 3 s after the unload met 5946 MiB still held and failed; a later one worked
+    # a wake 3 s after the unload met 5946 MiB still held and failed; a later one worked
     stand["ollama"] = ["llama3.1:8b", "bge-m3:latest"]
     stand["wake_fails"] = 1
     card.hand_to(VLLM)
@@ -108,35 +131,37 @@ def test_a_wake_that_never_succeeds_is_a_failure_not_an_endless_retry(stand):
         card.hand_to(VLLM)
 
 
-def test_a_job_asks_for_the_card_once_and_waits(monkeypatch):
+def test_a_job_takes_the_card_in_its_own_turn_and_queues_nothing(stand, monkeypatch):
+    # a handover queued apart ping-ponged the card with whoever came between
     import job_queue
     from job_handlers import base
+    from job_handlers import card as handler
 
-    holds, pending, asked = [False], [False], []
+    monkeypatch.setattr(handler, "_probe_the_woken_generator", lambda spec: None)
     monkeypatch.setattr(
         llm, "resolve_for",
         lambda role, model=None: engines.Resolved("Qwen/Q", {"judging": VLLM, "cpu": CPU}[role]),
     )
-    monkeypatch.setattr(card, "holds_for", lambda spec: holds[0])
-    monkeypatch.setattr(job_queue, "pending_of_type", lambda t, **o: pending[0])
-    monkeypatch.setattr(job_queue, "enqueue", lambda t, o, **kw: asked.append((t, o)) or 1)
-
-    with pytest.raises(base.Deferred) as waited:
-        base.require_card("judging")
-    assert asked == [("hand_card", {"engine_id": 3, "model": "Qwen/Q", "asked_by": None})]
-    assert waited.value.delay_seconds <= 10, "the waiter must not sleep long past the handover"
-
-    pending[0] = True
-    with pytest.raises(base.Deferred):
-        base.require_card("judging")
-    assert len(asked) == 1, "a retry must not queue a second handover"
-
-    holds[0] = True
+    monkeypatch.setattr(job_queue, "enqueue", lambda *a, **kw: pytest.fail("a job queued a handover"))
+    stand["ollama"] = ["llama3.1:8b"]
     base.require_card("judging")
-    # an engine off the card never waits for it
-    holds[0] = False
+    assert stand["calls"] == ["unload llama3.1:8b", "wake"], "taken before the first row"
+    base.require_card("judging")
+    assert stand["calls"] == ["unload llama3.1:8b", "wake"], "a card already held is not taken again"
     base.require_card("cpu")
-    assert len(asked) == 1
+    assert stand["calls"][-1] == "wake", "an engine off the card never takes it"
+
+
+def test_no_module_but_the_owner_changes_who_holds_the_card():
+    # five places changed the holder once; one road is the whole point
+    import re
+    from pathlib import Path
+
+    app = Path(__file__).resolve().parent.parent / "app"
+    # by the call, whatever the module is imported as: `card as card_holder` hid one from a prefix
+    change = re.compile(r"\.(hand_to|sleep_every_vllm|clear_for|wake_up)\(|\bvllm\w*\.sleep\(")
+    changing = {str(f.relative_to(app)) for f in app.rglob("*.py") if change.search(f.read_text())}
+    assert changing <= {"engines/card.py", "job_handlers/card.py", "bootstrap.py"}, changing
 
 
 def test_an_engine_off_the_card_loads_without_taking_it_from_anyone(stand):
@@ -160,7 +185,7 @@ def test_a_job_that_needs_the_card_cannot_be_sent_to_another_lane():
     assert job_queue._lane("hand_card", None) == "default"
 
 
-# one road to the card: a load from the API met an awake judge with CUDA OOM (auditor, 11.09)
+# one road to the card: a load from the API met an awake judge with CUDA OOM
 ALLOWED_TO_TOUCH_THE_CARD = {
     "engines/card.py", "engines/vllm.py", "engines/ollama.py",
     "job_handlers/card.py",
@@ -196,8 +221,8 @@ def test_the_chat_waits_for_the_card_through_the_queue_and_says_how_long(client,
         "bge-m3", VLLM if role == "judging" else OLLAMA))
     monkeypatch.setattr(card_wait.card, "holds_for", lambda spec: holds[0])
     monkeypatch.setattr(card_wait.card, "on_card", lambda: [card.Holding(VLLM, ("Qwen/Q",))])
-    monkeypatch.setattr(job_queue, "pending_of_type",
-                        lambda t, **o: judging[0] if t == "judge_answers" else bool(asked))
+    monkeypatch.setattr(job_queue, "pending_of_type", lambda t, **o: bool(asked))
+    monkeypatch.setattr(job_queue, "running_of_type", lambda t: judging[0])
     monkeypatch.setattr(job_queue, "enqueue", lambda t, o, **kw: asked.append((t, o)) or 1)
     monkeypatch.setattr(door.chat, "retrieve",
                         lambda *a, **kw: SimpleNamespace(sources=[], elapsed=0.1))
@@ -227,13 +252,12 @@ def test_a_silent_vllm_is_not_a_free_card_but_a_stopped_one_is(stand):
 
 
 def test_every_role_that_is_ready_asks_for_the_card(monkeypatch):
-    # 11.09: the language probe and the guest axes reached a sleeping judge without asking
+    # the language probe and the guest axes reached a sleeping judge without asking
     from job_handlers import base
     from models.registry import Role, Status
 
     asked = []
-    monkeypatch.setattr(base, "require_card", lambda role, model=None, asked_by=None:
-                        asked.append((role, asked_by)))
+    monkeypatch.setattr(base, "require_card", lambda role, model=None: asked.append(role))
 
     class _Session:
         def __enter__(self):
@@ -248,9 +272,7 @@ def test_every_role_that_is_ready_asks_for_the_card(monkeypatch):
     monkeypatch.setattr(base, "Session", _Session)
     base.require_role_ready(Role.judging)
     base.require_role_ready(Role.paraphrasing)
-    assert asked == [("judging", "judge_answers"), ("paraphrasing", None)], (
-        "a judge's handover waits with the judging, a run's does not"
-    )
+    assert asked == ["judging", "paraphrasing"]
 
 
 def test_every_handler_that_names_a_role_passes_a_gate_that_asks_for_the_card():
@@ -307,7 +329,7 @@ def test_a_handler_asks_for_its_role_before_it_calls_a_model(monkeypatch, module
 
 
 def test_a_role_says_where_its_model_answered_from_by_its_own_engine(stand):
-    # 11.09: ollama lost CUDA and the generator answered from the cpu with nothing in the record
+    # ollama lost CUDA and the generator answered from the cpu with nothing in the record
     assert card.model_on_card(OLLAMA, "llama3.1:8b") is None, "not loaded is not read, not a no"
     stand["ollama"] = ["llama3.1:8b"]
     assert card.model_on_card(OLLAMA, "llama3.1:8b") is True
@@ -316,6 +338,7 @@ def test_a_role_says_where_its_model_answered_from_by_its_own_engine(stand):
     assert card.model_on_card(VLLM, "Qwen/Q") is False, "asleep answers nothing from the card"
     stand["awake"] = True
     assert card.model_on_card(VLLM, "Qwen/Q") is True
+    assert card.model_on_card(VLLM, "Qwen/Other") is False, "awake, but with another model"
     stand["state"] = "unknown"
     assert card.model_on_card(VLLM, "Qwen/Q") is None
     assert card.model_on_card(CPU, "qwen2.5:7b-instruct-fp16") is False, "declared off the card"
@@ -333,11 +356,38 @@ def test_the_run_snapshot_stamps_each_answering_role_placement(monkeypatch):
                         lambda spec, name: {"llama3.1:8b": False, "bge-m3": True}[name])
     named, _, placed = run_snapshot._by_role(engines.Resolved("llama3.1:8b", OLLAMA))
     assert placed == {Role.generation: False, Role.embedding: True}
-    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 8
+    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 9
+
+
+def test_a_run_that_reranks_names_the_reranker_and_keeps_what_was_read_while_roles_worked(monkeypatch):
+    # the reranker's move left no trace in the record, and the embedder read as None
+    from models.registry import Role
+    from use_cases import run_snapshot
+
+    rerank_engine = engines.EngineSpec(7, "vllm-rerank", EngineKind.vllm, "VLLM_RERANK", Placement.gpu)
+    picks = {"embedding": engines.Resolved("bge-m3", OLLAMA),
+             "reranking": engines.Resolved("BAAI/r", rerank_engine)}
+    monkeypatch.setattr(run_snapshot.llm, "resolve", lambda role: picks[role])
+    monkeypatch.setattr(run_snapshot.llm, "sampler", lambda role, spec: engines.Sampler({}, {}))
+    monkeypatch.setattr(run_snapshot.card, "model_on_card", lambda spec, name: None)
+    monkeypatch.setattr(run_snapshot, "_window", lambda picked: 8192)
+    monkeypatch.setattr(run_snapshot, "_generator", lambda model: engines.Resolved("llama", OLLAMA))
+    monkeypatch.setattr(run_snapshot.db, "fingerprint_or_none", lambda variant: None)
+    snap = run_snapshot.of_run(variant="baseline", use_rerank=True, k=5, ef_search=100,
+                               distance_threshold=None, placed_during={Role.embedding: True})
+    assert snap["engines"][Role.reranking] == "vllm-rerank"
+    assert snap["on_card"][Role.embedding] is True, "read while it worked, not after it left"
+    plain = run_snapshot.of_run(variant="baseline", use_rerank=False, k=5, ef_search=100,
+                                distance_threshold=None)
+    assert Role.reranking not in plain["engines"]
+    gated = run_snapshot.of_run(variant="baseline", use_rerank=False, k=5, ef_search=100,
+                                distance_threshold=None, cross_encoder_used=True)
+    assert gated["engines"][Role.reranking] == "vllm-rerank", "the agent's gate called it"
+    assert gated["rerank"] is False, "the knob stays what was asked"
 
 
 def test_no_process_of_ours_holds_the_cross_encoder_on_the_card():
-    # 11.09: torch in the API held card the handover could not reach, and on OOM it went to the cpu
+    # torch in the API held card the handover could not reach, and on OOM it went to the cpu
     import inspect
 
     import rerank
@@ -349,9 +399,10 @@ def test_no_process_of_ours_holds_the_cross_encoder_on_the_card():
 
 
 def test_a_second_role_takes_the_card_per_call_and_the_judge_goes_to_sleep(stand, monkeypatch):
-    # 11.09: the language probe woke the judge, then asked ollama for a restatement on a full card
+    # the language probe woke the judge, then asked ollama for a restatement on a full card
     from job_handlers import card as handler
 
+    monkeypatch.setattr(handler, "_probe_the_woken_generator", lambda spec: None)
     stand["awake"] = True
     handler.take_for_call(OLLAMA, "llama3.1:8b")
     assert stand["calls"] == ["sleep"], "ollama loads on the call itself, the judge only sleeps"
@@ -428,7 +479,7 @@ def test_a_run_takes_the_card_once_for_generation_and_not_for_each_role(monkeypa
     monkeypatch.setattr(evaluation, "require_role_ready",
                         lambda role, take_card=True: carded.append((role.value, take_card)))
 
-    def once(role, model=None, asked_by=None):
+    def once(role, model=None, allow_spill=False):
         carded.append(role)
         raise stopped
 
@@ -445,11 +496,24 @@ def test_the_busy_card_names_its_real_holder_and_a_split_layout_is_a_409(monkeyp
     monkeypatch.setattr(card_wait.llm, "resolve", lambda role: engines.Resolved("m", roles[role]))
     monkeypatch.setattr(card_wait.card, "holds_for", lambda spec: False)
     monkeypatch.setattr(card_wait.job_queue, "pending_of_type", lambda t, **o: True)
+    monkeypatch.setattr(card_wait.job_queue, "running_of_type", lambda t: True)
     other = engines.EngineSpec(6, "vllm-2", EngineKind.vllm, "VLLM_2", Placement.gpu)
     monkeypatch.setattr(card_wait.card, "on_card", lambda: [card.Holding(other, ("x",))])
     with pytest.raises(card_wait.CardBusy) as held:
         card_wait.wait_for_the_card("embedding")
     assert held.value.status == 503 and "held by vllm-2;" in held.value.detail, "not the judge"
+
+    # no judge seated: still a 503, not a 500
+    def unseated(role):
+        if role == "judging":
+            raise engines.Unnamed("no model assigned to role judging")
+        return engines.Resolved("m", roles[role])
+
+    monkeypatch.setattr(card_wait.llm, "resolve", unseated)
+    with pytest.raises(card_wait.CardBusy) as held:
+        card_wait.wait_for_the_card("embedding")
+    assert held.value.status == 503 and "held by vllm-2;" in held.value.detail
+    monkeypatch.setattr(card_wait.llm, "resolve", lambda role: engines.Resolved("m", roles[role]))
 
     # the embedder and the generator on two card engines: the chat would hand the card per call
     roles["embedding"] = VLLM
@@ -466,7 +530,7 @@ def test_the_busy_card_names_its_real_holder_and_a_split_layout_is_a_409(monkeyp
 
 
 def test_indexing_clears_the_embedder_s_engine_of_everything_else(monkeypatch):
-    # 11.09: bge-m3 in batches of 64 beside a resident llama3.1:8b dropped ollama's runner
+    # bge-m3 in batches of 64 beside a resident llama3.1:8b dropped ollama's runner
     from job_handlers import card as handler
 
     resident = [{"model": "llama3.1:8b"}, {"model": "bge-m3:latest"}]
@@ -491,3 +555,164 @@ def test_both_embedding_jobs_clear_the_engine_before_the_first_batch():
         lines = [line.strip() for line in inspect.getsource(job).splitlines()]
         gate = lines.index("require_embedder_ready()")
         assert lines[gate + 1] == 'clear_the_engine_for("embedding")', job.__name__
+
+
+def test_a_handover_to_a_silent_server_refuses_before_anything_lets_go(stand):
+    # the card was released first, then `wake_up` met a refused connection, card lost
+    stand["ollama"] = ["llama3.1:8b"]
+    stand["state"] = "down"
+    with pytest.raises(card.CardNotHanded, match="vllm is down; the card stays"):
+        card.hand_to(VLLM)
+    stand["state"] = "unknown"
+    with pytest.raises(card.CardNotHanded, match="unknown"):
+        card.hand_to(VLLM)
+    assert stand["calls"] == [], "nobody let go of the card"
+
+    stand.pop("state")
+    stand["awake"] = True
+    for state in ("down", "unknown"):
+        stand["ollama_state"] = state
+        with pytest.raises(card.CardNotHanded, match=f"ollama is {state}; the card stays"):
+            card.hand_to(OLLAMA)
+    assert stand["calls"] == [], "the judge stays awake when ollama cannot take the card"
+
+
+def test_a_server_that_dies_mid_wake_is_retried_to_the_ceiling_not_thrown_raw(stand, monkeypatch):
+    import requests
+
+    def dead(spec):
+        raise requests.ConnectionError("refused")
+
+    monkeypatch.setattr(card.vllm, "wake_up", dead)
+    with pytest.raises(card.CardNotHanded, match="did not wake"):
+        card.hand_to(VLLM)
+
+
+def test_whatever_breaks_a_handover_inside_a_call_is_a_stand_fault(stand, monkeypatch):
+    import requests
+    from errors import StandFault
+    from job_handlers import card as handler
+
+    def broken(spec):
+        raise requests.ConnectionError("refused")
+
+    monkeypatch.setattr(handler.card, "holds_for", broken)
+    with pytest.raises(StandFault, match="did not reach vllm"):
+        handler.take_for_call(VLLM, "Qwen/Q")
+
+
+def test_a_held_card_is_not_handed_again_unless_ollama_lacks_the_model_asked(stand, monkeypatch):
+    from job_handlers import card as handler
+
+    handed = []
+    monkeypatch.setattr(handler, "_probe_the_woken_generator", lambda spec: None)
+    monkeypatch.setattr(handler.card, "hand_to",
+                        lambda spec, model=None, allow_spill=False: handed.append((spec.name, model)))
+    stand["ollama"] = ["llama3.1:8b"]
+    handler.take(OLLAMA, "llama3.1:8b")
+    handler.take(OLLAMA)
+    assert handed == [], "every call of a role would otherwise ask the servers to hand it over again"
+    handler.take(OLLAMA, "gemma2:9b")
+    assert handed == [("ollama", "gemma2:9b")], "a load of another model on the holder still loads"
+    spill = []
+    monkeypatch.setattr(handler.card, "hand_to",
+                        lambda spec, model=None, allow_spill=False: spill.append(allow_spill))
+    handler.take(OLLAMA, "qwen2.5:7b", allow_spill=True)
+    assert spill == [True], "a run's `allow_cpu` reaches the card"
+    # a model resident only on the cpu is not loaded for the card
+    stand["spilled"] = ["qwen2.5:7b"]
+    handler.take(OLLAMA, "qwen2.5:7b")
+    assert len(spill) == 2, "a model resident only on the cpu is loaded again for the card"
+
+
+def test_a_probe_that_fails_after_a_handover_is_not_a_card_that_did_not_arrive(stand, monkeypatch):
+    # the handover itself went through
+    from job_handlers import card as handler
+
+    monkeypatch.setattr(handler.card, "hand_to", lambda spec, model=None, allow_spill=False: None)
+
+    def hiccup(spec):
+        raise RuntimeError("registry unreachable")
+
+    monkeypatch.setattr(handler, "_probe_the_woken_generator", hiccup)
+    with pytest.raises(RuntimeError, match="registry unreachable") as raised:
+        handler.take(VLLM)
+    assert not isinstance(raised.value, card.CardNotHanded)
+
+
+def test_a_model_that_loads_half_on_the_processor_is_not_a_handed_card(stand, monkeypatch):
+    # a model half on the processor answers with other kernels
+    def spills(name, spec):
+        stand["calls"].append(f"load {name}")
+        stand["spilled"].append(name)
+
+    monkeypatch.setattr(card.ollama, "load_into_memory", spills)
+    with pytest.raises(card.CardNotHanded, match="not whole on the card"):
+        card.hand_to(OLLAMA, "llama3.1:8b")
+    # a run with `allow_cpu` asked for the cpu
+    card.hand_to(OLLAMA, "llama3.1:8b", allow_spill=True)
+
+
+def test_a_run_s_allow_cpu_reaches_the_card(monkeypatch):
+    from job_handlers import evaluation
+
+    asked = []
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda role, take_card=True: None)
+    monkeypatch.setattr(evaluation, "require_card",
+                        lambda role, model=None, allow_spill=False: asked.append(allow_spill))
+    monkeypatch.setattr(evaluation.runner, "run", lambda **kw: 0)
+    evaluation.eval_run({"run_name": "r", "set_name": "s", "allow_cpu": True})
+    evaluation.eval_run({"run_name": "r", "set_name": "s"})
+    assert asked == [True, False]
+
+
+def test_the_chat_waits_a_minute_only_while_a_judge_is_running(monkeypatch):
+    # the live batch waits five minutes after every answer, and read as a busy judge
+    from use_cases import card_wait
+
+    monkeypatch.setattr(card_wait.llm, "resolve", lambda role: engines.Resolved("m", OLLAMA))
+    monkeypatch.setattr(card_wait.card, "holds_for", lambda spec: False)
+    monkeypatch.setattr(card_wait.card, "on_card", lambda: [])
+    monkeypatch.setattr(card_wait.job_queue, "pending_of_type", lambda t, **o: True)
+    running = [False]
+    monkeypatch.setattr(card_wait.job_queue, "running_of_type", lambda t: running[0])
+    with pytest.raises(card_wait.CardBusy) as idle:
+        card_wait.wait_for_the_card("generation")
+    running[0] = True
+    with pytest.raises(card_wait.CardBusy) as busy:
+        card_wait.wait_for_the_card("generation")
+    assert (idle.value.retry_after, busy.value.retry_after) == (5, 60)
+
+
+def test_an_unseated_role_is_a_409_not_a_500(monkeypatch):
+    from use_cases import card_wait
+
+    def unseated(role):
+        raise engines.Unnamed("no model assigned to role reranking")
+
+    monkeypatch.setattr(card_wait.llm, "resolve", unseated)
+    with pytest.raises(card_wait.CardBusy) as refused:
+        card_wait.wait_for_the_card("reranking")
+    assert refused.value.status == 409 and "PUT /v1/role" in refused.value.detail
+
+
+def test_a_judging_pass_asks_for_the_card_once(monkeypatch):
+    # the role gate took the card, and then the bench took it again
+    from job_handlers import judging
+
+    asked = []
+
+    class _Stop(Exception):
+        pass
+
+    monkeypatch.setattr(judging, "require_role_ready",
+                        lambda role, take_card=True: asked.append(("role", take_card)))
+
+    def once(role, model=None):
+        asked.append(("card", role))
+        raise _Stop
+
+    monkeypatch.setattr(judging, "require_card", once)
+    with pytest.raises(_Stop):
+        judging.judge_answers({"run_name": "r"})
+    assert asked == [("role", False), ("card", "judging")]

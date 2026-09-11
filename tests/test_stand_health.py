@@ -108,7 +108,7 @@ def _engine(name, kind, placement):
 
 
 def test_the_window_is_read_from_the_generator_s_own_engine(monkeypatch):
-    # 11.09: `/api/ps` asked of a vLLM failed the whole stand read
+    # `/api/ps` asked of a vLLM failed the whole stand read
     import engines
 
     vllm_spec = _engine("vllm", "vllm", "gpu")
@@ -139,7 +139,7 @@ def test_only_ollama_spills_and_an_asleep_vllm_is_not_off_the_card(monkeypatch):
 
 
 def test_a_role_whose_engine_does_not_answer_is_named(monkeypatch):
-    # 11.09: the judge's vLLM died of CUDA OOM, exited 0, and nothing on the stand said so
+    # the judge's vLLM died of CUDA OOM, exited 0, and nothing on the stand said so
     import engines
 
     specs = {"generation": _engine("ollama", "ollama", "gpu"), "embedding": _engine("ollama", "ollama", "gpu"),
@@ -152,6 +152,22 @@ def test_a_role_whose_engine_does_not_answer_is_named(monkeypatch):
     assert stand_health.roles_down() == ["judging: vllm does not answer"], "an unused reranker is off"
     monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", True)
     assert stand_health.roles_down()[-1] == "reranking: vllm-rerank does not answer"
+
+
+def test_a_generator_seated_unasked_is_named_once_its_probe_says_no(monkeypatch):
+    # a boot seats the generator without a probe, so a later `False` has to be shown somewhere
+    import engines
+
+    vllm = _engine("vllm", "vllm", "gpu")
+    monkeypatch.setattr(stand_health.llm, "resolve", lambda role: engines.Resolved("Qwen/Q", vllm))
+    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", False)
+    monkeypatch.setattr(stand_health.vllm, "started_at", lambda spec: "t0")
+    probe = [None]
+    monkeypatch.setattr(stand_health.vllm, "known_probe", lambda spec, model, started: probe[0])
+    assert stand_health.roles_down() == [], "not yet asked is not a verdict"
+    probe[0] = False
+    assert stand_health.roles_down() == ["generation: Qwen/Q@vllm returns no tool calls"]
 
 
 def test_readiness_names_the_dead_role_and_stays_up_for_the_chat(monkeypatch):
@@ -180,3 +196,43 @@ def test_readiness_names_the_dead_role_and_stays_up_for_the_chat(monkeypatch):
         server.app.dependency_overrides.clear()
     assert got.status_code == 200
     assert got.json()["status"] == "degraded" and got.json()["roles_down"] == ["judging: vllm does not answer"]
+
+
+def test_an_unseated_role_is_named_and_the_others_still_read(monkeypatch):
+    # a clean machine without the reranker's weights failed the whole section
+    import engines
+
+    def resolve(role):
+        if role == "reranking":
+            raise engines.Unnamed("no model assigned to role reranking")
+        return engines.Resolved(role, _engine("ollama", "ollama", "gpu"))
+
+    monkeypatch.setattr(stand_health.llm, "resolve", resolve)
+    monkeypatch.setattr(stand_health.card_holder, "model_on_card", lambda spec, name: True)
+    seen = stand_health.roles_on_card()
+    assert seen["reranking"]["model"] is None and seen["generation"]["on_card"] is True
+    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", True)
+    assert stand_health.roles_down() == ["reranking: no model is seated"]
+
+
+def test_an_unreadable_seeded_engine_is_compared_by_name_not_read_as_drift(monkeypatch):
+    # the placeholder "the seeded ollama" read as drift on every role without an engine
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, _stmt):
+            return SimpleNamespace(all=lambda: [(Role.generation, "llama3.1:8b", "ollama")])
+
+    def unreadable():
+        raise RuntimeError("the engines table did not answer")
+
+    monkeypatch.setattr(stand_health, "Session", _Session)
+    monkeypatch.setattr(stand_health.engines, "seeded_ollama", unreadable)
+    monkeypatch.setattr(stand_health.config.settings.llm, "roles",
+                        {"generation": SimpleNamespace(model="llama3.1:8b", engine=None)})
+    assert stand_health.roles()["drift"] == []

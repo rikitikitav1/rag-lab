@@ -231,7 +231,7 @@ SEEDED_ENGINE = {
     "env_prefix": "OLLAMA",
     "placement": Placement.gpu,
 }
-# the judge's engine by default since 11.09: the `vllm` service in compose answers under this prefix
+# the judge's engine by default: the `vllm` service in compose answers under this prefix
 SEEDED_VLLM = {
     "name": "vllm",
     "kind": EngineKind.vllm,

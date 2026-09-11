@@ -56,7 +56,7 @@ class RejudgeResponse(BaseModel):
 class GuestAxesRequest(BaseModel):
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
     judge_width: int | None = Field(default=None, ge=1, le=limits.MAX_RUNS)
-    # the owner's decision of 07.09: the guests calibrate on a subsample, they are not an axis
+    # the guests calibrate on a subsample, they are not an axis
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
 
@@ -212,6 +212,7 @@ class CompareResponse(BaseModel):
     # the door used to drop these: a caller read two arms the code itself calls incomparable
     schema_version: int = Field(alias="schema")
     residency: dict
+    answering_engines_by_run: dict
     correlation_population: dict
     verdicts: dict | None
 

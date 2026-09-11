@@ -140,7 +140,7 @@ def test_an_unregistered_name_runs_on_the_engine_of_the_role(monkeypatch):
 
 
 def test_a_second_ollama_does_not_unseat_the_seeded_one_but_a_guess_is_refused(monkeypatch):
-    # 11.09: with `ollama-cpu` registered the bootstrap skipped the seeded ollama's models
+    # with `ollama-cpu` registered the bootstrap skipped the seeded ollama's models
     _rows_are(monkeypatch, [
         (1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
         (5, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu),
@@ -268,7 +268,7 @@ def test_an_override_naming_a_model_on_two_engines_takes_the_role_own_engine(mon
 
 
 def test_an_embedder_is_loaded_by_an_empty_embed_and_a_generator_by_an_empty_generate(monkeypatch):
-    # 11.09: `/api/generate` on bge-m3 answers 400, so a handover naming the embedder failed
+    # `/api/generate` on bge-m3 answers 400, so a handover naming the embedder failed
     from engines import ollama
 
     sent = []
@@ -280,3 +280,37 @@ def test_an_embedder_is_loaded_by_an_empty_embed_and_a_generator_by_an_empty_gen
     ollama.load_into_memory("llama3.1:8b")
     assert sent == [("/api/embed", {"model": "bge-m3", "input": []}),
                     ("/api/generate", {"model": "llama3.1:8b"})]
+
+
+def test_an_ollama_card_reading_tells_a_stopped_server_from_a_silent_one(monkeypatch):
+    # a stopped ollama read as a holder, and a handover to the judge waited 60 s
+    import requests
+    from engines import ollama
+
+    class _Answer:
+        def __init__(self, status, body=None):
+            self.status_code, self.ok, self._body = status, status < 400, body
+            self.text = "x" if body is not None or status >= 400 else ""
+
+        def json(self):
+            return self._body or {"error": "boom"}
+
+    held = {"models": [{"name": "llama3.1:8b", "size": 2**30, "size_vram": 2**30}]}
+    spilled = {"models": [{"name": "qwen2.5:7b", "size": 2**30, "size_vram": 0}]}
+    for said, state in ((requests.ConnectionError("refused"), "down"),
+                        (requests.ConnectTimeout("no route"), "unknown"),
+                        (requests.ReadTimeout("slow"), "unknown"),
+                        (_Answer(500), "unknown"),
+                        (_Answer(200, held), "holds"),
+                        (_Answer(200, spilled), "free")):
+        def get(url, timeout, said=said):
+            if isinstance(said, Exception):
+                raise said
+            return said
+
+        monkeypatch.setattr(ollama.requests, "get", get)
+        assert ollama.card_reading(OLLAMA)[0] == state, said
+    # the residency is the card's own read
+    assert ollama.residency(OLLAMA) == ollama.card_reading(OLLAMA)[1] != []
+    # no address configured means the server runs nowhere
+    assert ollama.card_reading(SECOND)[0] == "down"

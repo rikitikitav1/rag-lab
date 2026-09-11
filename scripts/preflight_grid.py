@@ -106,10 +106,12 @@ def models_are_on_the_card() -> tuple[bool, str]:
     if not any(r["on_card"] for r in seen.values()):
         # the card is what a run about to load four models will be given
         return False, f"no model is loaded: ask one to load before reading the window; {_card()}"
-    # naming the role matters: a job runs one model, and the others being resident proves nothing
+    # per role; an asleep vLLM is not a spill and is not called one
     lines = [
-        f"{role}={r['model']}@{r['engine']} "
-        + {True: "on the card", False: "off the card", None: "not resident"}[r["on_card"]]
+        f"{role}={r['model']}@{r['engine']} " + (
+            "spilled to the cpu" if r["spilled"] else
+            {True: "on the card", False: "not on the card now", None: "not resident"}[r["on_card"]]
+        )
         for role, r in seen.items()
     ]
     spilled = [f"{role}={r['model']}" for role, r in seen.items() if r["spilled"]]

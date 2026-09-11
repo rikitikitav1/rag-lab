@@ -119,6 +119,8 @@ def dispatch(
     kwargs.update({key: val for key, val in runtime.items() if val is not None and key in accepted})
     try:
         return tool.run(**kwargs)
+    except errors.StandFault:
+        raise
     except Exception as e:
         log.error("tool.failed", tool=name, error=str(e))
         return ToolResult(

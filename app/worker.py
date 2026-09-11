@@ -17,6 +17,7 @@ MAX_ATTEMPTS = 3
 MAX_DEFERRED_SECONDS = 3600
 
 Deferred = job_handlers.Deferred
+Final = job_handlers.Final
 HANDLERS = job_handlers.HANDLERS
 QUEUES = [q.strip() for q in os.getenv("WORKER_QUEUES", "default,io").split(",") if q.strip()]
 
@@ -84,7 +85,7 @@ def run_once(queues: list[str]) -> bool:
     except Exception as e:
         elapsed = round(time.perf_counter() - start, 3)
         attempts = claimed.options.get("attempts", 0) + 1
-        if attempts < MAX_ATTEMPTS:
+        if attempts < MAX_ATTEMPTS and not isinstance(e, Final):
             job_queue.reschedule(
                 claimed.id,
                 {**claimed.options, "attempts": attempts},

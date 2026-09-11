@@ -221,6 +221,37 @@ def test_two_engines_taking_the_same_port_in_turn_are_told_apart(monkeypatch):
     assert "same host and port" in got["read_this_first"]
 
 
+def test_a_pair_judged_on_two_engines_is_refused_and_answering_engines_are_named(monkeypatch):
+    # two judges are two rulers
+    import pytest
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"ollama", "vllm"})
+    with pytest.raises(compare.TwoJudges, match="judged on"):
+        compare.compare({"left": [_judged(engine="ollama:11434", name="ollama")],
+                         "right": [_judged(engine="vllm:8000", name="vllm")]})
+    assert issubclass(compare.TwoJudges, compare.Ambiguous), "every door already answers it 409"
+
+    arm, other = _log(kind="in_corpus", faith=7), _log(kind="in_corpus", faith=8)
+    arm.metrics["config"] = {"engines": {"generation": "vllm-cpu", "embedding": "ollama"}}
+    other.metrics["config"] = {"engines": {"generation": "ollama", "embedding": "ollama"}}
+    got = compare.compare({"cpu": [arm], "gpu": [other]})
+    assert got["answering_engines_by_run"] == {
+        "cpu": {"embedding": ["ollama"], "generation": ["vllm-cpu"]},
+        "gpu": {"embedding": ["ollama"], "generation": ["ollama"]},
+    }, "two generators are the treatment: named, not refused"
+
+
+def test_the_door_carries_every_key_the_comparison_writes():
+    # a response model drops any key it does not declare
+    from api.v1.eval import CompareResponse
+    from evals import compare
+
+    written = set(compare.compare({"a": [_log(kind="in_corpus", faith=7)]}))
+    carried = {f.alias or name for name, f in CompareResponse.model_fields.items()}
+    assert written <= carried, written - carried
+
+
 def test_an_engine_deleted_since_the_run_is_named_as_gone(monkeypatch):
     from evals import compare
 
@@ -299,6 +330,7 @@ def test_the_door_carries_the_disqualification_and_not_only_the_means(monkeypatc
         "schema": 9, "runs": ["a", "b"], "pools": {}, "blended_do_not_rank": {},
         "verdicts": {"comparable": 3, "disagree": 1},
         "correlation_population": {"predicate": "p", "n": {}},
+        "answering_engines_by_run": {},
         "residency": {"one_residency": False, "read_this_first": "not comparable"},
     }
     monkeypatch.setattr(eval_route.compare_uc, "compare", lambda runs: full)

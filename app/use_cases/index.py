@@ -64,6 +64,14 @@ def _provision_source(session, source, variant) -> DataSource:
     return data_source
 
 
+# a question with no vector, or one another embedder wrote: the bootstrap and the job ask the same
+def question_needs_embedding(label: str | None):
+    from models.eval import Question
+
+    missing = Question.embedding.is_(None)
+    return missing if label is None else missing | Question.embedded_by.is_distinct_from(label)
+
+
 # on its own it left the source empty for as long as the embeddings took
 def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_size: int) -> int:
     for i in range(0, len(chunks), embed_size):

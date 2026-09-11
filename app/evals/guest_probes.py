@@ -9,6 +9,7 @@ ten rows is what let a difference be called refuted once already.
 import statistics
 
 import llm
+from errors import StandFault
 from evals.guest_llm import stamp
 from use_cases.ingest_quality import FENCE
 
@@ -66,6 +67,8 @@ def score(metric, ql, answer) -> tuple[float | None, int, str | None]:
     try:
         value, n = asyncio.run(run())
         return value, n, None
+    except StandFault:
+        raise
     except Exception as e:
         return None, 0, f"{type(e).__name__}: {e}"[:120]
 

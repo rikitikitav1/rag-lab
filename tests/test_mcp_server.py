@@ -181,7 +181,7 @@ def test_list_categories_only_top_with_category_raises():
 
 
 def test_the_mcp_tools_wait_for_the_card_like_the_rest_chat(monkeypatch):
-    # 11.09: only the REST doors had the guard, and an MCP question met ollama beside an awake judge
+    # only the REST doors had the guard, and an MCP question met ollama beside an awake judge
     asked = []
 
     def busy(*roles):

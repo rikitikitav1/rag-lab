@@ -15,6 +15,7 @@ from .core import (
     base_url,
     client_for,
     forget_clients,
+    label,
     translate,
 )
 from .disk import NotEnoughDisk, free_bytes, refuse_if_tight
@@ -34,10 +35,12 @@ from .stamps import DANGLING, NAMED, UNNAMED, Stamped, engine_of
 from .vllm import WakeFailed, started_at
 
 __all__ = [
-    "ACCEPTS", "CARD", "card_engines", "registered", "DANGLING", "LLM_TIMEOUT", "NAMED", "SAMPLER_KEYS", "SEEDED_PREFIX", "UNNAMED",
+    "ACCEPTS", "CARD", "DANGLING", "LLM_TIMEOUT", "NAMED", "SAMPLER_KEYS", "SEEDED_PREFIX",
+    "UNNAMED",
     "Ambiguous", "EngineSpec", "NotEnoughDisk", "NotSupported", "Resolved", "Sampler",
     "Stamped", "Unconfigured", "Unnamed", "WakeFailed",
-    "added_by", "address_of", "api_key", "base_url", "client_for", "engine_of", "find_model",
-    "forget_clients", "free_bytes", "refuse_if_tight", "registered_names", "seeded_ollama",
-    "spec_of_id", "spec_of_name", "spec_of_role", "started_at", "translate",
+    "added_by", "address_of", "api_key", "base_url", "card_engines", "client_for", "engine_of",
+    "find_model", "forget_clients", "free_bytes", "label", "refuse_if_tight", "registered",
+    "registered_names", "seeded_ollama", "spec_of_id", "spec_of_name", "spec_of_role",
+    "started_at", "translate",
 ]
