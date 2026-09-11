@@ -131,28 +131,17 @@ def added_by(spec: EngineSpec, model: str) -> dict:
         from . import ollama
 
         return _named({"num_ctx": ollama.context_length(model, spec)})
+    from . import vllm
+
+    started = vllm.started_at(spec)
     return _named({
         "max_model_len": _served_window(spec, model),
         "engine_version": _asked(spec, "/version", "version"),
         # the flag every vLLM noise floor rests on, and nothing in the record said whether it was on
         "batch_invariant": _vllm_env(spec).get("VLLM_BATCH_INVARIANT"),
-        "started_at": started_at(spec),
+        "started_at": started,
+        "tool_calls_probed": vllm.known_probe(spec, model, started),
     })
-
-
-# one vLLM process holds one model, so its start opens a residency; `created` is the reply's clock
-def started_at(spec: EngineSpec) -> str | None:
-    try:
-        from datetime import datetime, timezone
-
-        import requests
-
-        for line in requests.get(f"{base_url(spec)}/metrics", timeout=5).text.splitlines():
-            if line.startswith("process_start_time_seconds "):
-                return datetime.fromtimestamp(float(line.split()[1]), timezone.utc).isoformat()
-    except Exception:
-        return None
-    return None
 
 
 # `/server_info` exists only under VLLM_SERVER_DEV_MODE, and its absence is silence, not a false

@@ -5,13 +5,28 @@ from typing import Any
 import config
 import engines
 import logging_setup
+from engines import vllm as vllm_engine
 from engines.lookup import Resolved
+from models.registry import EngineKind
 from openai import APIStatusError, OpenAIError
 
 # where the seeded engine answers; every other engine says so through its own `env_prefix`
 LLM_BASE = os.getenv("OLLAMA_BASE_URL") or config.settings.llm.base_url
 
 log = logging_setup.get_logger(__name__)
+
+# set by the worker alone: a job that calls a second role on the card takes it per call, the API never
+_before_call = None
+
+
+def take_the_card_before_calls(hook) -> None:
+    global _before_call
+    _before_call = hook
+
+
+def _card_for(spec, name: str) -> None:
+    if _before_call is not None:
+        _before_call(spec, name)
 
 
 @dataclass
@@ -64,6 +79,7 @@ def _without_the_body(e: Exception) -> str:
 
 # one contract for a failed completion: the same log event and error text, written twice
 def _complete(spec, name: str, messages, params):
+    _card_for(spec, name)
     try:
         return engines.client_for(spec).chat.completions.create(
             model=name, messages=messages, **params
@@ -156,6 +172,32 @@ def _params(role, schema, spec) -> dict:
     return params
 
 
+# the cross-encoder is a role like the others: its engine answers, and the card is taken for it
+def score_pairs(pairs: list, role="reranking") -> list[float]:
+    if not pairs:
+        # the server refuses an empty list with a 400, and nothing is there to score
+        return []
+    picked = resolve(role)
+    name, spec = picked.name, picked.engine
+    if spec.kind is not EngineKind.vllm:
+        raise RuntimeError(f"{name} on {spec.name}: only a vLLM pooling server scores pairs")
+    _card_for(spec, name)
+    try:
+        scores = vllm_engine.score(spec, name, pairs)
+    except Exception as e:
+        said = _without_the_body(e)
+        log.error("llm.rerank_failed", model=name, engine=spec.name, error=said)
+        raise RuntimeError(f"LLM rerank failed ({name} on {spec.name}): {said}") from e
+    log.info("llm.rerank", model=name, engine=spec.name, count=len(pairs))
+    return scores
+
+
+# what wrote a vector: one model name on two engines writes two geometries
+def embedder_label(role="embedding") -> str:
+    picked = resolve(role)
+    return f"{picked.name}@{picked.engine.name}"
+
+
 def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
 
@@ -163,6 +205,7 @@ def embed(prompt, role="embedding"):
 def request_embeddings_batch(texts, role="embedding"):
     picked = resolve(role)
     name = picked.name
+    _card_for(picked.engine, name)
     try:
         resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
     except OpenAIError as e:

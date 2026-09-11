@@ -19,6 +19,8 @@ def judging(db, monkeypatch):
 
     with db.connect() as c:
         c.execute(text("TRUNCATE question_logs"))
+        c.execute(text("DELETE FROM model_roles"))
+        c.execute(text("DELETE FROM models"))
         c.execute(text("DELETE FROM engines"))
         for name, kind, placement in (
             ("ollama", "ollama", "gpu"), ("vllm", "vllm", "gpu"),
@@ -87,3 +89,157 @@ def test_a_pass_that_found_the_judge_on_the_cpu_lends_nothing_to_the_card(db, ju
     assert judging._last_residency("ollama") == (2533, T1)
     _judged(db, "ollama", 2552, T3, on_card=None)
     assert judging._last_residency("ollama") == (2533, T1), "not read is not the same as whole"
+
+
+def test_the_engines_that_can_hold_the_card_are_found_not_assumed(judging, monkeypatch, db):
+    import engines
+    from engines import lookup
+    from models.registry import EngineKind
+
+    monkeypatch.setattr(lookup, "Session", sessionmaker(db))
+    assert [e.name for e in engines.card_engines()] == ["ollama", "vllm"]
+    assert [e.name for e in engines.card_engines(EngineKind.vllm)] == ["vllm"]
+
+
+def test_the_bootstrap_fills_the_quant_of_vllm_rows_from_their_weights(judging, monkeypatch, db):
+    import bootstrap
+
+    with db.connect() as c:
+        for name, engine in (("Qwen/Q-AWQ", "vllm"), ("qwen2.5:7b", "ollama")):
+            c.execute(text(
+                "INSERT INTO models (name, engine_id, status)"
+                " SELECT :n, id, 'ready' FROM engines WHERE name = :e"
+            ), {"n": name, "e": engine})
+    monkeypatch.setattr(bootstrap, "Session", sessionmaker(db))
+    monkeypatch.setattr(bootstrap.vllm, "weights_intact", lambda repo: True)
+    monkeypatch.setattr(
+        bootstrap.vllm, "artifact_of",
+        lambda repo: {"quant": "AWQ" if repo == "Qwen/Q-AWQ" else "ASKED", "size_bytes": 5},
+    )
+    bootstrap._fill_vllm_rows()
+    with db.connect() as c:
+        seen = dict(c.execute(text("SELECT name, quant FROM models")).all())
+    assert seen == {"Qwen/Q-AWQ": "AWQ", "qwen2.5:7b": None}, "ollama rows are ollama's"
+
+
+def test_the_last_residency_is_the_last_judged_not_the_last_created(db, judging):
+    # run A created, run B created, B judged, A judged: the next pass must see A, not B
+    _judged(db, "ollama", 2601, T3)
+    _judged(db, "ollama", 2602, T1)
+    assert judging._last_residency("ollama") == (2601, T3)
+
+
+def test_the_queue_runs_the_generation_first_and_judges_in_one_batch(db, monkeypatch):
+    # a judge on vLLM, a run on ollama, a judge on vLLM: one handover to vLLM after the run, not two
+    import job_queue
+
+    monkeypatch.setattr(job_queue, "Session", sessionmaker(db))
+    rows = [
+        ("judge_answers", {}, "-3 minutes", "-3 minutes"),
+        ("eval_run", {}, "-2 minutes", "-2 minutes"),
+        ("hand_card", {"engine_id": 3, "asked_by": "judge_answers"}, "-1 minutes", "-1 minutes"),
+        ("judge_answers", {"late": 1}, "-1 minutes", "-1 minutes"),
+        ("hand_card", {"engine_id": 1, "asked_by": "eval_run"}, "0 minutes", "0 minutes"),
+        # queued long ago and deferred since: its turn has come whatever its priority
+        ("judge_language", {}, "0 minutes", "-40 minutes"),
+    ]
+    with db.connect() as c:
+        c.execute(text("TRUNCATE jobs"))
+        for kind, options, since, created in rows:
+            c.execute(text(
+                "INSERT INTO jobs (type, options, apply_since, created_at)"
+                " VALUES (:t, CAST(:o AS jsonb), now() + CAST(:s AS interval),"
+                " now() + CAST(:c AS interval))"
+            ), {"t": kind, "o": json.dumps(options), "s": since, "c": created})
+    order = []
+    while (claimed := job_queue.claim_next(["default"])) is not None:
+        order.append((claimed.type, claimed.options.get("asked_by")))
+    assert order == [
+        ("judge_language", None),
+        ("eval_run", None),
+        ("hand_card", "eval_run"),
+        ("judge_answers", None),
+        ("hand_card", "judge_answers"),
+        ("judge_answers", None),
+    ]
+
+
+def test_a_second_ollama_on_the_cpu_does_not_unseat_the_seeded_one(judging, monkeypatch, db):
+    # 11.09: with `ollama-cpu` registered the bootstrap skipped reconciling the seeded ollama
+    import engines
+    from engines import lookup
+
+    monkeypatch.setattr(lookup, "Session", sessionmaker(db))
+    assert engines.seeded_ollama().name == "ollama"
+
+
+def test_a_clean_stand_seats_the_judge_on_the_model_vllm_serves(judging, monkeypatch, db):
+    import bootstrap
+    import config
+    from engines import lookup
+
+    session = sessionmaker(db)
+    monkeypatch.setattr(bootstrap, "Session", session)
+    monkeypatch.setattr(lookup, "Session", session)
+    monkeypatch.setattr(bootstrap.model_acceptance, "refuse_unfit_model", lambda role, name: None)
+    cfg = type("Role", (), {"model": "Qwen/Q-AWQ", "engine": "vllm", "options": {}})()
+    monkeypatch.setattr(config.settings.llm, "roles", {"judging": cfg})
+
+    # compose and the config name the model twice; a server serving another seats nothing
+    monkeypatch.setattr(bootstrap.vllm, "served", lambda spec: ["Qwen/Other"])
+    bootstrap._ensure_roles(None)
+    with db.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM model_roles")).scalar() == 0
+
+    monkeypatch.setattr(bootstrap.vllm, "served", lambda spec: ["Qwen/Q-AWQ"])
+    bootstrap._ensure_roles(None)
+    with db.connect() as c:
+        seated = c.execute(text(
+            "SELECT m.name, e.name, m.status FROM model_roles r JOIN models m ON m.id = r.model_id"
+            " JOIN engines e ON e.id = m.engine_id WHERE r.role = 'judging'"
+        )).one()
+    assert tuple(seated) == ("Qwen/Q-AWQ", "vllm", "ready")
+
+
+def test_the_bootstrap_pulls_vllm_weights_that_are_absent_or_broken(judging, monkeypatch, db):
+    import bootstrap
+
+    with db.connect() as c:
+        for name in ("Qwen/Intact", "Qwen/Broken"):
+            c.execute(text(
+                "INSERT INTO models (name, engine_id, status, quant)"
+                " SELECT :n, id, 'available', 'AWQ' FROM engines WHERE name = 'vllm'"
+            ), {"n": name})
+    queued = []
+    monkeypatch.setattr(bootstrap, "Session", sessionmaker(db))
+    monkeypatch.setattr(bootstrap.vllm, "weights_intact", lambda repo: repo == "Qwen/Intact")
+    monkeypatch.setattr(bootstrap.vllm, "broken_weights", lambda repo: ["model.safetensors"])
+    monkeypatch.setattr(bootstrap.job_queue, "pending_of_type", lambda t, **o: False)
+    monkeypatch.setattr(bootstrap.job_queue, "enqueue", lambda t, o, **kw: queued.append((t, o)))
+    bootstrap._fill_vllm_rows()
+    with db.connect() as c:
+        seen = dict(c.execute(text("SELECT name, status FROM models")).all())
+    assert seen == {"Qwen/Intact": "ready", "Qwen/Broken": "loading"}
+    assert [(t, o["name"]) for t, o in queued] == [("pull_llm_model", "Qwen/Broken")]
+
+
+def test_live_answers_gather_in_one_waiting_job_and_never_join_a_running_one(db, monkeypatch):
+    # the judge on vLLM would wake once per chat question; the batch wakes it once per five minutes
+    import job_queue
+
+    monkeypatch.setattr(job_queue, "Session", sessionmaker(db))
+    with db.connect() as c:
+        c.execute(text("TRUNCATE jobs"))
+    first = job_queue.judge_live(101)
+    assert job_queue.judge_live(102) == first, "a second answer joins the waiting batch"
+    with db.connect() as c:
+        options, waits = c.execute(text(
+            "SELECT options, apply_since > now() + interval '4 minutes' FROM jobs WHERE id = :i"
+        ), {"i": first}).one()
+        assert options == {"log_ids": [101, 102], "live": True} and waits
+        c.execute(text("UPDATE jobs SET status = 'running' WHERE id = :i"), {"i": first})
+    third = job_queue.judge_live(103)
+    assert third != first, "a running job read its rows already, so the answer starts a new batch"
+    with db.connect() as c:
+        kept = c.execute(text("SELECT options FROM jobs WHERE id = :i"), {"i": first}).scalar()
+    assert kept["log_ids"] == [101, 102]

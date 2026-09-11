@@ -10,7 +10,7 @@ import logging_setup
 import rerank
 from engines import ollama
 from models.eval import Question
-from models.registry import Pipeline
+from models.registry import EngineKind, Pipeline
 from orm.sync_db import Session
 from sqlalchemy import select
 from use_cases import agent, chat, search_depth
@@ -97,17 +97,13 @@ def _release(role: str, model: str | None = None) -> None:
     ollama.unload(picked.name, picked.engine)
 
 
-def _refuse_a_cpu_run(allow_cpu: bool, use_rerank: bool = False) -> None:
+def _refuse_a_cpu_run(allow_cpu: bool) -> None:
     # ollama drops the card and keeps answering: same numbers, four times the hours
     ollama.warn_if_models_do_not_fit()
     # asked of the generator's own engine: a vllm run used to pass this gate by asking ollama
-    off_card = ollama.models_off_the_card(llm.resolve("generation").engine)
-    # ollama cannot see the cross-encoder: it is torch in this process and is loaded here
-    if use_rerank:
-        rerank.warm()
-    spilled = rerank.off_the_card()
-    if spilled:
-        off_card = [*off_card, spilled]
+    generator = llm.resolve("generation").engine
+    # only ollama spills to the processor; a vLLM on a full card refuses to wake instead
+    off_card = ollama.models_off_the_card(generator) if generator.kind is EngineKind.ollama else []
     if off_card and not allow_cpu:
         raise RuntimeError(
             f"models are not on the GPU: {', '.join(off_card)}."
@@ -128,7 +124,7 @@ def _run_sequential(
                 return answered, True
             # after the first answer the generator is loaded, so a spill is finally visible
             if answered == 1:
-                _refuse_a_cpu_run(allow_cpu, spec.use_rerank)
+                _refuse_a_cpu_run(allow_cpu)
             try:
                 _answer_one(text, run_name, spec)
                 answered += 1
@@ -224,7 +220,7 @@ def _phase_generate(
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
         # outside the try: a guard whose refusal the loop swallows is not a guard
         if answered == 1:
-            _refuse_a_cpu_run(allow_cpu, spec.use_rerank)
+            _refuse_a_cpu_run(allow_cpu)
     return answered, False
 
 
@@ -241,7 +237,6 @@ def run_phased(
 
 
 def _free_the_card(model: str | None) -> None:
-    rerank.unload()
     _release("embedding")
     _release("generation", model)
 
@@ -256,7 +251,7 @@ def _phased(
              elapsed=round(time.perf_counter() - started, 1))
 
     # here, so a run that would answer off the card stops two minutes in
-    _refuse_a_cpu_run(allow_cpu, spec.use_rerank)
+    _refuse_a_cpu_run(allow_cpu)
 
     # retrieval is over, and its model is 1.2 GiB the generator wants on a card that holds 8
     _release("embedding")
@@ -271,7 +266,6 @@ def _phased(
         log.info("eval_run.phase", name="rerank", n=len(retrieved),
                  elapsed=round(time.perf_counter() - started, 1))
         rerank_device = rerank.device()
-        rerank.unload()
 
         if job_id is not None and job_queue.is_cancelled(job_id):
             return 0, True

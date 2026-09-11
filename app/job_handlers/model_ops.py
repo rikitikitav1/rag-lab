@@ -1,7 +1,7 @@
 import engines
 import logging_setup
-from engines import ollama
-from models.registry import Engine, Model, ModelRole, Status, Weights
+from engines import ollama, vllm
+from models.registry import Engine, EngineKind, Model, ModelRole, Status, Weights
 from orm.sync_db import Session
 from sqlalchemy import select
 
@@ -16,16 +16,25 @@ def _pair(name: str, engine_id: int | None) -> engines.Resolved:
     if found is None:
         raise ValueError(f"no model {name} on engine {engine_id}" if engine_id else
                          f"model {name} is not registered")
-    ollama.refuse_unless_ollama(found.engine, "managing", name)
+    _refuse_remote(found.engine, name)
     return found
+
+
+# weights on a paid engine are the provider's; local engines each keep their own and are asked
+def _refuse_remote(spec: engines.EngineSpec, name: str) -> None:
+    if spec.kind is EngineKind.openai_compatible:
+        raise engines.NotSupported(f"managing {name} is not applicable to {spec.kind}")
 
 
 @register("pull_llm_model")
 def pull_llm_model(options: dict) -> None:
     found = _pair(options["name"], options.get("engine_id"))
-    engines.refuse_if_tight(_size_seen_before(found), found.name)
-
-    ollama.pull_model(found.name, found.engine)
+    if found.engine.kind is EngineKind.vllm:
+        engines.refuse_if_tight(_size_seen_before(found), found.name, vllm.weights_cache())
+        vllm.pull_weights(found.name)
+    else:
+        engines.refuse_if_tight(_size_seen_before(found), found.name)
+        ollama.pull_model(found.name, found.engine)
     record_what_the_server_holds(found)
 
 
@@ -44,13 +53,20 @@ def _size_seen_before(found) -> int | None:
             .where(Model.name == found.name, Model.size_bytes.isnot(None))
         ).first()
     # nobody has pulled this name yet, so the registry is the only one who knows what it costs
-    return seen or ollama.registry_size(found.name)
+    if seen:
+        return seen
+    if found.engine.kind is EngineKind.vllm:
+        return vllm.repo_size(found.name)
+    return ollama.registry_size(found.name)
 
 
 # the size is unknown until the weights are here, and then it is what the next estimate reads
 def record_what_the_server_holds(found) -> None:
     try:
-        seen = ollama.artifact_of(found.name, found.engine)
+        if found.engine.kind is EngineKind.vllm:
+            seen = vllm.artifact_of(found.name)
+        else:
+            seen = ollama.artifact_of(found.name, found.engine)
     except Exception as e:
         log.warning("pull.artifact_unread", model=found.name, error=str(e))
         seen = {}
@@ -91,7 +107,7 @@ def _engine_for_delete(name: str, engine_id: int | None) -> engines.EngineSpec:
         if found is None:
             raise ValueError(f"model {name} is not registered")
         spec = found.engine
-    ollama.refuse_unless_ollama(spec, "managing", name)
+    _refuse_remote(spec, name)
     return spec
 
 
@@ -112,7 +128,21 @@ def delete_llm_model(options: dict) -> None:
             session.delete(model)
             session.commit()
     _refuse_if_another_row_needs_these_weights(name)
-    ollama.delete_model(name, spec)
+    if spec.kind is EngineKind.vllm:
+        _refuse_if_served(spec, name)
+        vllm.delete_weights(name)
+    else:
+        ollama.delete_model(name, spec)
+
+
+# a running vLLM reads its weights from this directory, and deleting it under the server breaks it
+def _refuse_if_served(spec: engines.EngineSpec, name: str) -> None:
+    try:
+        served = vllm.served(spec)
+    except Exception:
+        return
+    if name in served:
+        raise ValueError(f"{name} is served by {spec.name} right now; stop that server first")
 
 
 # two rows can name one artifact, and two engines can share a volume: the row is not the unit

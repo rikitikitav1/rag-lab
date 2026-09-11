@@ -68,10 +68,12 @@ def _provision_source(session, source, variant) -> DataSource:
 def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_size: int) -> int:
     for i in range(0, len(chunks), embed_size):
         batch = chunks[i : i + embed_size]
+        label = llm.embedder_label()
         for chunk, vector in zip(
             batch, llm.request_embeddings_batch([c.content for c in batch]), strict=True
         ):
             chunk.embedding = vector
+            chunk.embedded_by = label
     session.execute(
         delete(DataChunk).where(
             DataChunk.source_id == source_id, DataChunk.variant == variant

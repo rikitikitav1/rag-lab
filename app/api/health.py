@@ -35,6 +35,14 @@ async def readiness(session: AsyncSession = Depends(get_session)):
     if checks["postgres"] != "ok":
         raise HTTPException(status_code=503, detail=checks)
 
+    # the chat may still answer, so not a 503; but a role with no engine is named, not guessed
+    try:
+        down = await run_in_threadpool(stand_health.roles_down)
+    except Exception as e:
+        down = [f"cannot read the roles: {str(e)[:80]}"]
+    if down:
+        checks["status"] = "degraded"
+        checks["roles_down"] = down
     return checks
 
 

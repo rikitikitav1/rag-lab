@@ -439,8 +439,13 @@ def _log_answer(
         session.commit()
         log_id = log_row.id
 
+    _judge_later(ans, run_name, log_id)
+
+
+# a live answer joins the waiting batch; a run's answers are judged by the run's own job
+def _judge_later(ans: Answer, run_name: str | None, log_id: int) -> None:
     if ans.success and run_name is None:
-        job_queue.enqueue("judge_answers", {"log_ids": [log_id]})
+        job_queue.judge_live(log_id)
 
 
 def _find_or_create_question(session, original_text, lang, set_name="live"):

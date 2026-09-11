@@ -13,6 +13,7 @@ class Role(StrEnum):
     embedding = "embedding"
     judging = "judging"
     paraphrasing = "paraphrasing"
+    reranking = "reranking"
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline

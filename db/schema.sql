@@ -85,7 +85,8 @@ CREATE TABLE public.data_chunks (
     variant text NOT NULL,
     section text,
     content_hash text,
-    prefix_len integer
+    prefix_len integer,
+    embedded_by text
 );
 
 
@@ -459,7 +460,8 @@ CREATE TABLE public.questions (
     kind text,
     status text,
     embedding public.vector(1024),
-    source_question_id integer
+    source_question_id integer,
+    embedded_by text
 );
 
 
@@ -797,6 +799,13 @@ CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (v
 
 
 --
+-- Name: data_chunks_variant_embedded_by_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_variant_embedded_by_idx ON public.data_chunks USING btree (variant, embedded_by);
+
+
+--
 -- Name: idx_jobs_queue_status_apply_since; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -929,4 +938,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260906000002'),
     ('20260909000001'),
     ('20260909000002'),
-    ('20260909000003');
+    ('20260909000003'),
+    ('20260911000001');

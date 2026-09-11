@@ -17,7 +17,7 @@ from sqlalchemy import DateTime, and_, cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from use_cases import experiment, judge, rejudge
 
-from .base import register, require_model_ready, require_role_ready
+from .base import register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
 
@@ -165,6 +165,7 @@ def judge_answers(options: dict) -> None:
         require_model_ready(bench.model)
     else:
         require_role_ready(Role.judging)
+    require_card("judging", bench.model, asked_by="judge_answers")
     # resolved before any log: inside the loop it was swallowed per axis
     for purpose in _PURPOSES:
         bench.template(purpose)
@@ -530,7 +531,8 @@ def _loaded_since(prev: int, job_id) -> bool:
 def _by_process_start(job_id, engine) -> Residency:
     started = engines.started_at(engine)
     if started is None:
-        return Residency(job_id, None)
+        # the instrument exists and did not answer, which a null would read as "nowhere to ask"
+        return Residency(job_id, None, "vllm /metrics unreachable")
     last = _last_residency(engine.name, started)
     return Residency(job_id if last is None else last[0], None, "vllm /metrics process start")
 
@@ -552,7 +554,10 @@ def _last_residency(engine_name: str, started_at: str | None = None) -> tuple[in
             else:
                 # a pass that found the judge on the cpu minted a number the card must not inherit
                 asked = asked.where(QuestionLog.metrics[(axis, "on_card")].as_boolean().is_(True))
-            got = session.execute(asked.order_by(desc(QuestionLog.id)).limit(1)).first()
+            # rows are created by the run and judged later, so the order that matters is the judging
+            judged = QuestionLog.metrics[(axis, "judged_at")].as_string()
+            latest = desc(cast(judged, DateTime(timezone=True))).nulls_last()
+            got = session.execute(asked.order_by(latest).limit(1)).first()
             if got is not None:
                 return got[0], got[1]
     return None

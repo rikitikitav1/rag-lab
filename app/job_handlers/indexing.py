@@ -7,6 +7,7 @@ from orm.sync_db import Session
 from sqlalchemy import select
 
 from .base import register, require_embedder_ready
+from .card import clear_the_engine_for
 
 log = logging_setup.get_logger(__name__)
 
@@ -17,6 +18,7 @@ def index_data(options: dict) -> None:
     import use_cases.index
 
     require_embedder_ready()
+    clear_the_engine_for("embedding")
     built = list(sources.factory.all_sources())
     # written by the bootstrap and read by nobody: a job for one source re-indexed all 177
     wanted = options.get("source") or "all"
@@ -87,15 +89,21 @@ def analyze_source(options: dict) -> None:
 @register("embed_questions")
 def embed_questions(options: dict) -> None:
     require_embedder_ready()
+    clear_the_engine_for("embedding")
     size = config.settings.ingestion.batch_size
+    label = llm.embedder_label()
     with Session() as session:
+        # a vector from another embedder is as missing as none: search would refuse it anyway
         pending = session.scalars(
-            select(Question).where(Question.embedding.is_(None))
+            select(Question).where(
+                Question.embedding.is_(None) | Question.embedded_by.is_distinct_from(label)
+            )
         ).all()
         for i in range(0, len(pending), size):
             batch = pending[i : i + size]
             vectors = llm.request_embeddings_batch([q.original_text for q in batch])
             for question, vector in zip(batch, vectors, strict=True):
                 question.embedding = vector
+                question.embedded_by = label
             session.commit()
     log.info("worker.embed_questions", embedded=len(pending))

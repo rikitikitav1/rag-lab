@@ -165,7 +165,8 @@ def test_one_place_decides_whether_a_run_reranks(monkeypatch):
     # True over a config already False: a resolver ignoring config passes the older test
     monkeypatch.setattr(config.settings.rerank, "enabled", True)
     seen = {}
-    monkeypatch.setattr(evaluation, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda role, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda role, model=None, asked_by=None: None)
     monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 0)
 
     evaluation.eval_run({"run_name": "r", "set_name": "s"})
@@ -292,3 +293,15 @@ def test_a_piece_that_is_not_a_corpus_chunk_still_holds_its_place():
     )
     assert mismatched == [None, None]
 
+
+
+def test_a_live_answer_joins_the_batch_and_a_run_or_a_failure_does_not(monkeypatch):
+    from use_cases import chat
+
+    batched, single = [], []
+    monkeypatch.setattr(chat.job_queue, "judge_live", lambda log_id: batched.append(log_id))
+    monkeypatch.setattr(chat.job_queue, "enqueue", lambda *a, **kw: single.append(a))
+    chat._judge_later(SimpleNamespace(success=True), None, 7)
+    chat._judge_later(SimpleNamespace(success=True), "arc5_run", 8)
+    chat._judge_later(SimpleNamespace(success=False), None, 9)
+    assert batched == [7] and single == [], "one waiting batch, never a job per question"

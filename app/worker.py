@@ -6,6 +6,7 @@ from datetime import timedelta
 import job_handlers
 import job_queue
 import job_specs
+import llm
 import logging_setup
 
 log = logging_setup.get_logger(__name__)
@@ -129,6 +130,7 @@ def main() -> None:
     if not QUEUES:
         raise SystemExit("WORKER_QUEUES is empty")
     log.info("worker.start", queues=QUEUES, handlers=list(HANDLERS))
+    llm.take_the_card_before_calls(job_handlers.card.take_for_call)
     reclaim(QUEUES)
     for lane in QUEUES[1:]:
         threading.Thread(target=_loop, args=([lane],), daemon=True).start()

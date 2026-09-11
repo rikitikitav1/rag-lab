@@ -38,7 +38,6 @@ class RetrievalCfg(BaseModel):
 
 class RerankCfg(BaseModel):
     enabled: bool = False
-    model: str = "BAAI/bge-reranker-v2-m3"
     candidates: int = 20
 
 

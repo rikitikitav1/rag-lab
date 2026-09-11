@@ -1,9 +1,10 @@
 import config
 import engines
 import job_queue
+import llm
 import logging_setup
-from engines import ollama
-from models.registry import Engine, Model, ModelRole, Role, Status
+from engines import ollama, vllm
+from models.registry import Engine, EngineKind, Model, ModelRole, Role, Status
 from orm.sync_db import Session
 from sqlalchemy import exists, select
 from use_cases import model_acceptance
@@ -12,17 +13,34 @@ log = logging_setup.get_logger(__name__)
 
 
 def bootstrap_models() -> None:
+    _put_vllm_to_sleep()
     seeded = _seeded()
     if seeded is not None:
         _ensure_models(seeded)
     # a role naming its own engine does not need the seeded one, and that is the point of naming it
     _ensure_roles(seeded)
-    if seeded is not None:
-        _reconcile_with_ollama(seeded)
+    # every ollama: the rows on `ollama-cpu` got neither a status nor a pull while only one was read
+    for spec in engines.registered():
+        if spec.kind is EngineKind.ollama:
+            _reconcile_with_ollama(spec, pull_when_silent=spec == seeded)
+    _fill_vllm_rows()
     _ensure_index()
     _ensure_vector_indexes()
     _repair_served_vector_index()
     _ensure_question_embeddings()
+
+
+# vLLM takes the card first when the stack comes up, so it sleeps before ollama loads any role
+def _put_vllm_to_sleep() -> None:
+    for spec in engines.card_engines(EngineKind.vllm):
+        awake = vllm.is_sleeping(spec) is False
+        if not awake:
+            # an engine that does not answer holds no card, and asleep is where it should be
+            log.info("bootstrap.vllm_not_awake", engine=spec.name)
+            continue
+        # awake and refusing would leave every ollama role half on the cpu, and nothing would say so
+        vllm.sleep(spec)
+        log.info("bootstrap.vllm_asleep", engine=spec.name)
 
 
 # `pull_models` come through `/api/pull`, so their engine is chosen by kind, not by being the only one
@@ -70,6 +88,8 @@ def _ensure_roles(seeded) -> None:
             model = session.scalar(
                 select(Model).where(Model.engine_id == spec.id, Model.name == cfg.model)
             )
+            if model is None and spec.kind is EngineKind.vllm:
+                model = _register_what_vllm_serves(session, spec, role, cfg.model)
             if model is None:
                 log.error("bootstrap.role_model_absent", role=role, model=cfg.model,
                           engine=spec.name)
@@ -84,11 +104,62 @@ def _ensure_roles(seeded) -> None:
         session.commit()
 
 
-def _reconcile_with_ollama(spec) -> None:
+# the model is named twice, in compose and in the config: a server serving another is loud, not a row
+def _register_what_vllm_serves(session, spec, role: str, name: str):
+    try:
+        served = vllm.served(spec)
+    except Exception as e:
+        # a service under a profile starts after the bootstrap, and its weights answer for it
+        if not vllm.weights_intact(name):
+            log.error("bootstrap.vllm_unreachable", engine=spec.name, error=str(e))
+            return None
+        log.info("bootstrap.vllm_registered_from_disk", engine=spec.name, model=name)
+        served = [name]
+    if name not in served:
+        log.error("bootstrap.vllm_serves_another", role=role, engine=spec.name, asked=name,
+                  served=served)
+        return None
+    model = Model(name=name, engine_id=spec.id, status=Status.ready)
+    session.add(model)
+    session.flush()
+    return model
+
+
+# like ollama's reconcile: weights on disk and intact are ready, absent or broken ones are pulled
+def _fill_vllm_rows() -> None:
+    to_pull = []
+    with Session() as session:
+        rows = session.execute(
+            select(Model, Engine.id)
+            .join(Engine, Engine.id == Model.engine_id)
+            .where(Engine.kind == EngineKind.vllm)
+        ).all()
+        for model, engine_id in rows:
+            if not vllm.weights_intact(model.name):
+                log.error("bootstrap.vllm_weights_not_intact", model=model.name,
+                          broken=vllm.broken_weights(model.name)[:5])
+                model.status = Status.loading
+                to_pull.append((model.name, engine_id))
+                continue
+            model.status = Status.ready
+            if model.quant is None:
+                seen = vllm.artifact_of(model.name)
+                model.quant = seen.get("quant")
+                model.size_bytes = model.size_bytes or seen.get("size_bytes")
+        session.commit()
+    for name, engine_id in to_pull:
+        if not job_queue.pending_of_type("pull_llm_model", name=name, engine_id=engine_id):
+            job_queue.enqueue("pull_llm_model", {"name": name, "engine_id": engine_id})
+
+
+def _reconcile_with_ollama(spec, pull_when_silent: bool = True) -> None:
     try:
         pulled = set(ollama.add_tags(ollama.list_models(spec)))
     except Exception as e:
-        log.error("bootstrap.ollama_unreachable", error=str(e))
+        log.error("bootstrap.ollama_unreachable", engine=spec.name, error=str(e))
+        # a second ollama that is down says nothing about its disk, and a pull on it only fails
+        if not pull_when_silent:
+            return
         pulled = set()
 
     to_pull, to_fill = [], []
@@ -191,8 +262,14 @@ def _queue_index_build(variant: str) -> None:
 def _ensure_question_embeddings() -> None:
     from models.eval import Question
 
+    missing = Question.embedding.is_(None)
+    try:
+        # a role moved to another embedder leaves every question vector foreign to the new one
+        missing = missing | Question.embedded_by.is_distinct_from(llm.embedder_label())
+    except Exception as e:
+        log.error("bootstrap.embedder_unknown", error=str(e))
     with Session() as session:
-        pending = session.scalar(select(exists().where(Question.embedding.is_(None))))
+        pending = session.scalar(select(exists().where(missing)))
     if not pending:
         return
     if job_queue.pending_of_type("embed_questions"):

@@ -18,7 +18,26 @@ def register(job_type):
     return deco
 
 
-def require_role_ready(role) -> None:
+# a job on a card engine waits for the card, and asks for it once rather than once per retry
+def require_card(role: str, model: str | None = None, asked_by: str | None = None) -> None:
+    import engines
+    import job_queue
+    import llm
+    from engines import card
+
+    picked = llm.resolve_for(role, model)
+    spec = picked.engine
+    if spec.placement not in engines.CARD or card.holds_for(spec):
+        return
+    if not job_queue.pending_of_type("hand_card", engine_id=spec.id):
+        job_queue.enqueue(
+            "hand_card", {"engine_id": spec.id, "model": picked.name, "asked_by": asked_by}
+        )
+    # short: `reschedule` moves the waiter on by this much after the card has already changed hands
+    raise Deferred(5)
+
+
+def require_role_ready(role, take_card: bool = True) -> None:
     with Session() as session:
         model = session.scalar(
             select(Model)
@@ -27,6 +46,9 @@ def require_role_ready(role) -> None:
         )
     if model is None or model.status != Status.ready:
         raise Deferred(10)
+    # every role that answers on the card asks for it here, so no handler can forget to
+    if take_card:
+        require_card(role.value, asked_by="judge_answers" if role is Role.judging else None)
 
 
 def require_embedder_ready() -> None:
