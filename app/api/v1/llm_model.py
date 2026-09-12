@@ -4,7 +4,6 @@ from crud import get_or_404
 from engines import vllm
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from job_handlers import model_ops
 from models.registry import (
     MAX_MODEL_NAME,
     MODEL_NAME_RE,
@@ -23,6 +22,7 @@ from query_utils import Page, apply_in_filters, apply_sort_limit_offset
 from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from use_cases import weights_rules
 
 router = APIRouter(prefix="/model", tags=["models"])
 
@@ -58,7 +58,7 @@ class ModelResponse(BaseModel):
 
 def _refuse_remote(engine: Engine, name: str) -> None:
     try:
-        model_ops.refuse_remote(engine.kind, name)
+        weights_rules.refuse_remote(engine.kind, name)
     except engines.NotSupported as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
 
@@ -192,10 +192,12 @@ def _serves(engine: Engine, name: str) -> bool | None:
     spec = engines.EngineSpec(
         engine.id, engine.name, engine.kind, engine.env_prefix, engine.placement
     )
+    # seconds, not the completion client's two minutes and a retry
     try:
-        return any(m.id == name for m in engines.client_for(spec).models.list().data)
-    except Exception:
+        seen = engines.served_models(spec)
+    except engines.Unconfigured:
         return None
+    return None if seen is None else name in seen
 
 
 class LoadQueuedResponse(BaseModel):
@@ -226,7 +228,7 @@ async def load_model(id: int, session: AsyncSession = Depends(get_session)):
             raise HTTPException(status_code=422, detail=f"{engine.name} does not serve {model.name}")
     # a load already waiting answers a second ask
     job_id = await run_in_threadpool(
-        job_queue.pending_of_type, "hand_card", engine_id=engine.id, model=model.name
+        job_queue.pending_handover, engine.id, model.name
     ) or await run_in_threadpool(
         job_queue.enqueue, "hand_card", {"engine_id": engine.id, "model": model.name}
     )
@@ -240,9 +242,19 @@ class ModelPatchRequest(BaseModel):
     quant: str | None = Field(
         default=None, min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_.+-]+$"
     )
+    # each part starts with a letter or digit: `../..` and `a/..` are no hub repository
     weights: str | None = Field(
-        default=None, max_length=200, pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        default=None, max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$",
     )
+
+    # `a--b/c` shares a cache directory with `a/b--c`, and `..` names no repository
+    @field_validator("weights")
+    @classmethod
+    def _one_hub_directory(cls, v: str | None) -> str | None:
+        if v is not None and ("--" in v or ".." in v):
+            raise ValueError("weights names a hub repository: org/name, without `--` or `..`")
+        return v
 
 
 @router.patch("/{id}", response_model=ModelResponse)
@@ -297,7 +309,7 @@ async def delete_model(id: int, session: AsyncSession = Depends(get_session)):
     _refuse_remote(engine, model.name)
     # the worker's own rule, asked before the row goes: a 200 here and a failed job later told two stories
     try:
-        await run_in_threadpool(model_ops.refuse_if_the_weights_are_shared, model.name, engine.id)
+        await run_in_threadpool(weights_rules.refuse_if_the_weights_are_shared, model.name, engine.id)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     try:

@@ -153,11 +153,12 @@ def _hidden_by_cut(source: str, variant: str) -> bool:
 def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str,
                    ef_search: int | None = None):
     depth = search_depth.resolve(variant, ef_search)
+    label, vector = llm.embed_with_label(question)
     if not rerank_enabled:
         return (
             db.hybrid_search(
-                question, llm.embed(question), category, limit=k, variant=variant,
-                ef_search=depth, embedded_by=llm.embedder_label(),
+                question, vector, category, limit=k, variant=variant,
+                ef_search=depth, embedded_by=label,
             ),
             None,
             depth,
@@ -167,12 +168,12 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
 
     candidates = db.hybrid_search(
         question,
-        llm.embed(question),
+        vector,
         category,
         limit=config.settings.rerank.candidates,
         variant=variant,
         ef_search=depth,
-        embedded_by=llm.embedder_label(),
+        embedded_by=label,
     )
     ranked = rerank.rerank(question, candidates, top=k)
     return [row for row, _ in ranked], [score for _, score in ranked], depth

@@ -69,7 +69,7 @@ def wait_for_the_card(*roles) -> None:
     for spec in on_card.values():
         if card.holds_for(spec):
             continue
-        if not job_queue.pending_of_type("hand_card", engine_id=spec.id):
+        if not job_queue.pending_handover(spec.id):
             job_queue.enqueue("hand_card", {"engine_id": spec.id, "asked_by": "chat"})
         # running, not waiting: the live batch waits five minutes after every answer and read as busy
         judging = job_queue.running_of_type("judge_answers")

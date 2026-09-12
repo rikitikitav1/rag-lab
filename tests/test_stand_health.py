@@ -58,7 +58,8 @@ def test_a_card_that_cannot_be_read_is_reported_rather_than_raised(monkeypatch):
     monkeypatch.setattr(stand_health.gpu, "memory_mb", no_driver)
     out = stand_health.card()
 
-    assert out["cuda"] is None and "no driver" in out["error"]
+    # the name of the failure, not its text: the route answers without a key
+    assert out["cuda"] is None and out["error"] == "RuntimeError"
 
 
 def test_a_role_moved_to_another_engine_under_the_same_name_is_drift(monkeypatch):

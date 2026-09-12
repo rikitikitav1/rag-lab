@@ -244,7 +244,6 @@ def test_the_delete_door_asks_the_worker_s_rule_on_shared_weights_before_the_row
 ):
     # the door refuses before the row goes; the rule itself is tested on a real database
     import job_queue
-    from job_handlers import model_ops
 
     asked, queued = [], []
     monkeypatch.setattr(job_queue, "add_job", lambda s, t, o, **kw: queued.append(t))
@@ -253,7 +252,7 @@ def test_the_delete_door_asks_the_worker_s_rule_on_shared_weights_before_the_row
         asked.append((name, engine_id))
         raise ValueError("bge-m3 shares its weights with bge-m3:latest on ollama-cpu")
 
-    monkeypatch.setattr(model_ops, "refuse_if_the_weights_are_shared", shared)
+    monkeypatch.setattr("use_cases.weights_rules.refuse_if_the_weights_are_shared", shared)
     session = FakeAsyncSession(
         engines=[_engine(1, "ollama", EngineKind.ollama)],
         model=Model(id=2, name="bge-m3", engine_id=1, status=Status.ready),
@@ -375,11 +374,11 @@ def test_a_vllm_model_is_deleted_through_the_door_unless_a_server_reads_it(door,
     # the worker could delete vLLM weights, and the door still answered 501
     import job_queue
     from api.v1 import llm_model
-    from job_handlers import model_ops
 
     queued = []
     monkeypatch.setattr(job_queue, "add_job", lambda s, t, o, **kw: queued.append((t, o)))
-    monkeypatch.setattr(model_ops, "refuse_if_the_weights_are_shared", lambda n, engine_id: None)
+    monkeypatch.setattr("use_cases.weights_rules.refuse_if_the_weights_are_shared",
+                        lambda n, engine_id: None)
     serving = [True]
 
     def refuse(name):

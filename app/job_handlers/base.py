@@ -55,11 +55,21 @@ def require_embedder_ready() -> None:
 
 
 # a model named by a job: registered and pulled if new, and the job waits rather than fails
-def require_model_ready(name: str) -> None:
+def require_model_ready(name: str, role: str | None = None) -> None:
     import engines
     import job_queue
+    import llm
 
-    found = engines.find_model(name)
+    try:
+        found = engines.find_model(name)
+    except engines.Ambiguous:
+        if role is None:
+            raise
+        # one name on two engines, as on `ollama` and `ollama-cpu`: the role's engine answers
+        found = engines.find_model(name, llm.resolve(role).engine.id)
+        # the role's engine lacks it: still ambiguous, and never a new name to register and pull
+        if found is None:
+            raise
     if found is None:
         # the same refusal the HTTP door makes: this is a second way to have a name pulled
         refuse_unknown_registry(name)

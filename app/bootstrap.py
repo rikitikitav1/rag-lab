@@ -35,7 +35,7 @@ def _put_vllm_to_sleep() -> None:
     from engines import card
 
     # `compose --profile ... up` reruns the bootstrap, and a sleep under a running pass cost its row
-    if job_queue.running_of_type_in_lane("default"):
+    if job_queue.running_in_lane("default"):
         log.info("bootstrap.card_left_to_the_running_job")
         return
     card.sleep_every_vllm()
@@ -139,8 +139,15 @@ def _fill_vllm_rows() -> None:
         checked = {}
         for model, engine_id in rows:
             if model.name not in checked:
-                checked[model.name] = vllm.weights_check(model.name)
+                try:
+                    checked[model.name] = vllm.weights_check(model.name)
+                except ValueError as e:
+                    # a name the cache cannot hold apart stops this row, not the boot
+                    log.error("bootstrap.vllm_name_refused", model=model.name, error=str(e))
+                    checked[model.name] = None
             broken = checked[model.name]
+            if broken is None:
+                continue
             if broken:
                 log.error("bootstrap.vllm_weights_not_intact", model=model.name, broken=broken[:5])
                 model.status = Status.loading
@@ -187,6 +194,9 @@ def _reconcile_with_ollama(spec, pull_when_silent: bool = True) -> None:
         session.commit()
 
     for name, engine_id in to_pull:
+        # a pull still waiting from the last boot answers this one, as it does for vLLM
+        if job_queue.pending_of_type("pull_llm_model", name=name, engine_id=engine_id):
+            continue
         job_queue.enqueue("pull_llm_model", {"name": name, "engine_id": engine_id}, queue="io")
         log.info("bootstrap.pull_enqueued", name=name, engine_id=engine_id)
     _fill_from_the_server(spec, to_fill)

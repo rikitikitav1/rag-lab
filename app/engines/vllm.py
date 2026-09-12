@@ -4,13 +4,14 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import logging_setup
 import requests
 
-from .core import CardState, EngineSpec, Unconfigured, api_key, base_url
+from .core import CardState, EngineSpec, Unconfigured, api_key, base_url, models_listing
 
 log = logging_setup.get_logger(__name__)
 
@@ -53,9 +54,7 @@ def _headers(spec: EngineSpec) -> dict:
 
 
 def served(spec: EngineSpec) -> list[str]:
-    seen = requests.get(_url(spec, "/v1/models"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
-    seen.raise_for_status()
-    return [m["id"] for m in seen.json()["data"]]
+    return [m["id"] for m in models_listing(spec, HTTP_TIMEOUT)]
 
 
 # a cross-encoder answers pairs; bounded requests, since a run sends every candidate of every question
@@ -82,9 +81,8 @@ def score(spec: EngineSpec, model: str, pairs: list[tuple[str, str]]) -> list[fl
 # the window is a start flag: a longer prompt is refused with a 400, never cut as ollama cuts it
 def max_model_len(spec: EngineSpec, model: str) -> int | None:
     try:
-        seen = requests.get(_url(spec, "/v1/models"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
-        seen.raise_for_status()
-        return next((m.get("max_model_len") for m in seen.json()["data"] if m["id"] == model), None)
+        listed = models_listing(spec, HTTP_TIMEOUT)
+        return next((m.get("max_model_len") for m in listed if m["id"] == model), None)
     except Exception as e:
         log.warning("vllm.window_unknown", engine=spec.name, error=str(e))
         return None
@@ -171,6 +169,11 @@ def pools(spec: EngineSpec) -> bool | None:
 _probed: dict[tuple[int, str, str], bool] = {}
 
 
+# the probe recorded for this process of the server, if any
+def probe_now(spec: EngineSpec, model: str) -> bool | None:
+    return known_probe(spec, model, started_at(spec))
+
+
 # what a probe already said, here or in another process, without asking the server
 def known_probe(spec: EngineSpec, model: str, started: str | None) -> bool | None:
     if started is None:
@@ -243,6 +246,9 @@ def weights_cache() -> str:
 
 
 def _repo_dir(repo: str) -> Path:
+    # the hub's layout spells `/` as `--`, so `a--b` and `a/b` would share one directory
+    if "--" in repo:
+        raise ValueError(f"{repo}: `--` in a repository name would share another's cache directory")
     return Path(weights_cache()) / "hub" / ("models--" + repo.replace("/", "--"))
 
 
@@ -332,10 +338,24 @@ def _expected_files(snap: Path) -> list[str]:
 
 
 # what is wrong with the weights, hashed once; empty means intact, a missing snapshot is named
-def weights_check(repo: str) -> list[str]:
+def weights_check(repo: str, young_partials_ok: bool = False) -> list[str]:
     if _snapshot(repo) is None:
         return ["no snapshot"]
-    return broken_weights(repo) + unfinished_weights(repo)
+    unfinished = unfinished_weights(repo)
+    if young_partials_ok:
+        unfinished = [f for f in unfinished if not _young_partial(repo, f)]
+    return broken_weights(repo) + unfinished
+
+
+# a fresh partial may be a sibling service's download into the shared cache; a vanished one is none
+def _young_partial(repo: str, name: str) -> bool:
+    if not name.endswith(".incomplete"):
+        return False
+    try:
+        age = time.time() - (_repo_dir(repo) / "blobs" / name).stat().st_mtime
+    except FileNotFoundError:
+        return True
+    return age < ORPHAN_AFTER_SECONDS
 
 
 def weights_intact(repo: str) -> bool:
@@ -357,16 +377,20 @@ _PULLED = ["*.json", "*.txt", "*.model", "tokenizer*", "*.tiktoken"]
 
 # safetensors where the repo has them, else the pickled `.bin`: bge-m3 ships only `pytorch_model.bin`
 def _patterns(repo: str) -> list[str]:
-    files = _siblings(repo)
+    return _patterns_for(_siblings(repo))
+
+
+def _patterns_for(files: list[dict] | None) -> list[str]:
+    # the hub silent: no pickle blind; a repo with only `.bin` then fails the check and says so
     if files is None:
-        return [*_PULLED, "*.safetensors", "*.bin"]
+        return [*_PULLED, "*.safetensors"]
     has_safetensors = any(f.get("rfilename", "").endswith(".safetensors") for f in files)
     return [*_PULLED, "*.safetensors" if has_safetensors else "*.bin"]
 
 
 # the worker runs offline so the reranker asks nobody; a pull is the one call that must go out
 def pull_weights(repo: str) -> None:
-    # hashed once: the intact check and the drop each hashed every blob again
+    # hashed once before the pull, then once more after it, for the new bytes
     broken = broken_weights(repo)
     if _snapshot(repo) is not None and not broken and not unfinished_weights(repo):
         log.info("vllm.weights_present", repo=repo)
@@ -375,8 +399,9 @@ def pull_weights(repo: str) -> None:
     env = {**os.environ, "HF_HUB_OFFLINE": "0", "HF_HOME": weights_cache()}
     code = ("import json, sys; from huggingface_hub import snapshot_download;"
             " snapshot_download(sys.argv[1], allow_patterns=json.loads(sys.argv[2]))")
+    files = _siblings(repo)
     done = subprocess.run(
-        [sys.executable, "-c", code, repo, json.dumps(_patterns(repo))],
+        [sys.executable, "-c", code, repo, json.dumps(_patterns_for(files))],
         env=env, capture_output=True, text=True, timeout=PULL_TIMEOUT,
     )
     if done.returncode:
@@ -384,8 +409,18 @@ def pull_weights(repo: str) -> None:
         raise RuntimeError(f"pull of {repo} failed: {said}")
     # the pull finished: a partial blob left now is of a file no pattern asks for, and would loop it
     for orphan in (_repo_dir(repo) / "blobs").glob("*.incomplete"):
+        if _young_partial(repo, orphan.name):
+            continue
         log.warning("vllm.partial_blob_orphaned", repo=repo, blob=orphan.name)
-        orphan.unlink()
+        orphan.unlink(missing_ok=True)
+    # a download that exits zero is not yet whole weights: the row turns ready only on this check
+    left = weights_check(repo, young_partials_ok=True)
+    if left:
+        why = "; the hub did not answer, so only safetensors were asked for" if files is None else ""
+        raise RuntimeError(f"pull of {repo} finished, and the weights are still not whole: {left[:5]}{why}")
+
+
+ORPHAN_AFTER_SECONDS = 600
 
 
 _DTYPES = {"float16": "F16", "bfloat16": "BF16", "float32": "F32"}

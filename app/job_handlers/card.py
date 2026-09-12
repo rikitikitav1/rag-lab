@@ -32,7 +32,7 @@ def _to_load(spec, model: str | None) -> bool:
     if spec.kind is not EngineKind.ollama or not model:
         return False
     # all of it on the processor is not loaded for the card: the handover frees it and loads again
-    resident = {m["model"] for m in ollama.residency(spec) if m["vram_mb"] > 0}
+    resident = set(ollama.on_card_models(ollama.residency(spec)))
     return not resident & ollama.spellings(model)
 
 

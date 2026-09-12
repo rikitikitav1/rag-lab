@@ -89,6 +89,15 @@ def residency(spec=None) -> list[dict]:
     return card_reading(spec)[1]
 
 
+# a model holds the card while any of it sits in video memory: one rule for the card and a load
+def on_card_models(models: list[dict]) -> list[str]:
+    return [m["model"] for m in models if m["vram_mb"] > 0]
+
+
+def card_state(spec=None) -> CardState:
+    return card_reading(spec)[0]
+
+
 # the readings a vLLM gives: a refused connection holds no card, a silence may hold it
 def card_reading(spec=None) -> tuple[CardState, list[dict]]:
     try:
@@ -102,8 +111,7 @@ def card_reading(spec=None) -> tuple[CardState, list[dict]]:
     except Exception as e:
         log.warning("ollama.ps_unanswered", error=str(e))
         return CardState.UNKNOWN, []
-    holds = any(m["vram_mb"] > 0 for m in seen)
-    return (CardState.HOLDS if holds else CardState.FREE), seen
+    return (CardState.HOLDS if on_card_models(seen) else CardState.FREE), seen
 
 
 def _shaped(models: list) -> list[dict]:

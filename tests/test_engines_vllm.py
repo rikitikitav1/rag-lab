@@ -120,7 +120,7 @@ def test_the_bootstrap_puts_only_an_awake_vllm_to_sleep(monkeypatch):
     monkeypatch.setattr(card, "card_engines", lambda kind=None: [SPEC, other])
     monkeypatch.setattr(card.vllm, "card_state", lambda spec: state[spec.name])
     monkeypatch.setattr(card.vllm, "sleep", lambda spec: slept.append(spec.name))
-    monkeypatch.setattr(bootstrap.job_queue, "running_of_type_in_lane", lambda lane: False)
+    monkeypatch.setattr(bootstrap.job_queue, "running_in_lane", lambda lane: False)
 
     state.update({"vllm": "awake", "vllm-2": "asleep"})
     bootstrap._put_vllm_to_sleep()
@@ -314,6 +314,10 @@ def test_a_role_goes_only_where_its_server_runs_and_answers(monkeypatch):
     gate, _, recorded = _asleep_gate(monkeypatch, state)
     with pytest.raises(gate.EngineDown):
         gate.refuse_unfit_model(Role.generation, "BAAI/r")
+    # a timeout is refused as a refusal is, not queued as a probe that would fail its handover
+    state[:] = ["unknown"]
+    with pytest.raises(gate.EngineDown, match="unknown"):
+        gate.refuse_unfit_model(Role.generation, "BAAI/r")
     state[:] = ["awake", True]
     with pytest.raises(ValueError, match="pooling runner"):
         gate.refuse_unfit_model(Role.generation, "BAAI/r")
@@ -337,7 +341,11 @@ def test_a_role_on_a_stopped_ollama_is_refused_like_one_on_a_stopped_vllm(monkey
     state = ["down"]
     monkeypatch.setattr(gate.ollama, "card_reading", lambda spec: (state[0], []))
     monkeypatch.setattr(gate.ollama, "shown", lambda model, spec=None: {})
-    with pytest.raises(gate.EngineDown, match="ollama does not answer"):
+    with pytest.raises(gate.EngineDown, match="ollama is down"):
+        gate.refuse_unfit_model(Role.generation, "llama3.1:8b", engine_id=1)
+    # silent past its timeout reads as the handover reads it: nothing is seated there either
+    state[0] = "unknown"
+    with pytest.raises(gate.EngineDown, match="ollama is unknown"):
         gate.refuse_unfit_model(Role.generation, "llama3.1:8b", engine_id=1)
     state[0] = "free"
     gate.refuse_unfit_model(Role.generation, "llama3.1:8b", engine_id=1)
@@ -392,6 +400,7 @@ def test_the_role_door_on_an_asleep_server_queues_the_probe_and_a_down_one_is_50
             return SimpleNamespace(id=10, name="Qwen/Q", engine_id=3) if ident == 10 else None
 
     queued = []
+    monkeypatch.setattr(model_role.job_queue, "pending_of_type", lambda *a, **kw: None)
     monkeypatch.setattr(model_role.job_queue, "enqueue",
                         lambda kind, options: queued.append((kind, options)) or 77)
     fault = [None]
@@ -408,6 +417,12 @@ def test_the_role_door_on_an_asleep_server_queues_the_probe_and_a_down_one_is_50
     assert answer.status_code == 202 and b'"job_id":77' in answer.body
     assert queued == [("hand_card", {"engine_id": 3, "model": "Qwen/Q", "seat": "generation",
                                      "seat_over": None})], "no role yet, so nothing to be overtaken"
+
+    # a seat already waiting answers the second ask with its own job
+    monkeypatch.setattr(model_role.job_queue, "pending_of_type", lambda *a, **kw: 55)
+    again = asyncio.run(model_role.assign_role(Role.generation, request, _Session()))
+    assert b'"job_id":55' in again.body and len(queued) == 1
+    monkeypatch.setattr(model_role.job_queue, "pending_of_type", lambda *a, **kw: None)
 
     fault[0] = model_role.model_acceptance.EngineDown("vllm-rerank does not answer")
     with pytest.raises(HTTPException) as down:
@@ -470,8 +485,8 @@ def test_a_rerun_bootstrap_leaves_the_card_to_a_running_job(monkeypatch):
 
     slept = []
     monkeypatch.setattr(card, "sleep_every_vllm", lambda: slept.append(1))
-    monkeypatch.setattr(bootstrap.job_queue, "running_of_type_in_lane", lambda lane: True)
+    monkeypatch.setattr(bootstrap.job_queue, "running_in_lane", lambda lane: True)
     bootstrap._put_vllm_to_sleep()
-    monkeypatch.setattr(bootstrap.job_queue, "running_of_type_in_lane", lambda lane: False)
+    monkeypatch.setattr(bootstrap.job_queue, "running_in_lane", lambda lane: False)
     bootstrap._put_vllm_to_sleep()
     assert slept == [1]

@@ -23,8 +23,8 @@ def test_questions_embedded_by_another_embedder_are_embedded_again(db, monkeypat
     monkeypatch.setattr(indexing, "require_embedder_ready", lambda: None)
     monkeypatch.setattr(indexing, "clear_the_engine_for", lambda role: None)
     monkeypatch.setattr(llm, "embedder_label", lambda role="embedding": "bge-m3@vllm")
-    monkeypatch.setattr(llm, "request_embeddings_batch",
-                        lambda texts: asked.extend(texts) or [[0.5] * 1024] * len(texts))
+    monkeypatch.setattr(llm, "embed_labelled",
+                        lambda texts: ("bge-m3@vllm", asked.extend(texts) or [[0.5] * 1024] * len(texts)))
     indexing.embed_questions({})
 
     assert sorted(asked) == ["q0", "q1"], "the one already embedded by vllm is left alone"

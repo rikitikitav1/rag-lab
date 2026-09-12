@@ -173,7 +173,7 @@ def judge_answers(options: dict) -> None:
     bench = _bench_from(options)
     if bench.model:
         # the arm's override: a mistyped tag passed `require_role_ready` and failed per log
-        require_model_ready(bench.model)
+        require_model_ready(bench.model, "judging")
     else:
         require_role_ready(Role.judging, take_card=False)
     if options.get("run_name") and not options.get("log_ids"):

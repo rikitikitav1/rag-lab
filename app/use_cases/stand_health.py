@@ -4,7 +4,6 @@ import gpu
 import job_queue
 import llm
 import logging_setup
-import requests
 from engines import card as card_holder
 from engines import ollama, vllm
 from models.jobs import Job
@@ -24,7 +23,7 @@ def card() -> dict:
         seen = gpu.memory_mb()
     except Exception as e:  # a probe must not break the route it is read through
         log.warning("stand.card_unreadable", error=str(e))
-        return {"cuda": None, "error": str(e)[:120]}
+        return {"cuda": None, "error": type(e).__name__}
     if seen is None:
         return {"cuda": False}
     free, total = seen
@@ -169,14 +168,13 @@ def _parserless(picked) -> bool:
     spec = picked.engine
     if spec.kind is not EngineKind.vllm:
         return False
-    return vllm.known_probe(spec, picked.name, vllm.started_at(spec)) is False
+    return vllm.probe_now(spec, picked.name) is False
 
 
 # a health read waits seconds, not the two minutes a completion may take; a paid engine wants its key
 def _answers(spec) -> bool | None:
     try:
-        headers = {"Authorization": f"Bearer {engines.api_key(spec)}"}
-        return requests.get(f"{engines.base_url(spec)}/v1/models", headers=headers, timeout=3).ok
+        return engines.served_models(spec) is not None
     except engines.Unconfigured:
         return None
     except Exception:
@@ -207,7 +205,7 @@ def roles_on_card() -> dict:
         seen[role] = {
             "model": picked.name, "engine": spec.name, "placement": str(spec.placement),
             "on_card": on,
-            "spilled": card_holder.spilled(spec, picked.name),
+            "spilled": card_holder.spilled_reading(spec, on),
         }
     return seen
 
@@ -236,4 +234,5 @@ def _or_error(name: str, probe) -> dict:
         return probe()
     except Exception as e:
         log.warning("stand.probe_failed", probe=name, error=str(e))
-        return {"error": str(e)[:120]}
+        # the name of the failure, not its text: the route answers without a key
+        return {"error": type(e).__name__}

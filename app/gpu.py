@@ -17,5 +17,6 @@ def memory_mb() -> tuple[int, int] | None:
         return None
     if seen.returncode or not seen.stdout.strip():
         return None
-    free, total = (int(v) for v in seen.stdout.splitlines()[0].split(","))
-    return free, total
+    # the card with the most room: a model does not span two cards here, so a sum would overpromise
+    rows = [tuple(int(v) for v in line.split(",")) for line in seen.stdout.splitlines() if line.strip()]
+    return max(rows)

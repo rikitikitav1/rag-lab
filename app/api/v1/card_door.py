@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from use_cases import card_wait
 
 
-# every REST door that answers waits for the card here; a layout it cannot serve is a 409
+# every REST door that answers waits here: a held card is a 503 with Retry-After, a bad layout 409
 def wait_for_the_card(*roles) -> None:
     try:
         card_wait.wait_for_the_card(*roles)

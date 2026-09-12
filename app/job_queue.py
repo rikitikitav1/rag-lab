@@ -58,8 +58,14 @@ def running_of_type(type: str) -> bool:
         ))
 
 
+# one rule for a handover already waiting: the same engine, the same model if named, the same seat
+def pending_handover(engine_id: int, model: str | None = None, seat: str | None = None) -> int | None:
+    asked = {"engine_id": engine_id, "model": model, "seat": seat}
+    return pending_of_type("hand_card", **{k: v for k, v in asked.items() if v is not None})
+
+
 # the card's lane: a job running there may hold the card, and nothing from outside takes it away
-def running_of_type_in_lane(lane: str) -> bool:
+def running_in_lane(lane: str) -> bool:
     with Session() as session:
         return bool(session.scalar(
             select(Job.id).where(Job.queue == lane, Job.status == JobStatus.running).limit(1)
@@ -76,13 +82,14 @@ def add_job(
     return job
 
 
-# a job takes the card in its own turn now, so the turn is the job's type, and an old job goes first
+# a job takes the card in its own turn, so the turn is the job's type, and an old job goes early
 def _turn():
     ranked = case(job_specs.PRIORITY, value=Job.type, else_=0)
     starved = Job.created_at < func.now() - text(
         f"interval '{job_specs.STARVED_AFTER_MINUTES} minutes'"
     )
-    return case((starved, -1), else_=ranked)
+    # raised, never lowered: a starved API handover keeps its own place ahead
+    return case((starved, func.least(ranked, -1)), else_=ranked)
 
 
 def claim_next(queues: list[str]) -> ClaimedJob | None:

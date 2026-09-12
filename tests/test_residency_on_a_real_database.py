@@ -166,6 +166,8 @@ def test_the_queue_runs_the_generation_first_and_judges_in_one_batch(db, monkeyp
         ("judge_answers", {"late": 1}, "-1 minutes", "-1 minutes"),
         # asked by the chat, which has nothing to wait with: it overtakes everything that waits
         ("hand_card", {"engine_id": 1, "asked_by": "chat"}, "0 minutes", "0 minutes"),
+        # starving raises a turn and never lowers one: an old handover keeps its place ahead
+        ("hand_card", {"engine_id": 2, "asked_by": "load"}, "-1 minutes", "-40 minutes"),
         # queued long ago and deferred since: its turn has come whatever its priority
         ("judge_language", {}, "0 minutes", "-40 minutes"),
     ]
@@ -182,6 +184,7 @@ def test_the_queue_runs_the_generation_first_and_judges_in_one_batch(db, monkeyp
         order.append((claimed.type, claimed.options.get("asked_by")))
     # the chat's handover waited behind a queued run
     assert order == [
+        ("hand_card", "load"),
         ("hand_card", "chat"),
         ("judge_language", None),
         ("eval_run", None),
@@ -283,7 +286,8 @@ def test_weights_another_row_of_the_same_kind_names_are_not_deleted(judging, mon
     # ollama and ollama-cpu share a volume, and the vLLMs share one HF cache
     from job_handlers import model_ops
 
-    monkeypatch.setattr(model_ops, "Session", sessionmaker(db))
+    # the rule lives beside the doors now, and the worker imports it from there
+    monkeypatch.setattr("use_cases.weights_rules.Session", sessionmaker(db))
     with db.connect() as c:
         for name, engine in (("bge-m3", "ollama"), ("bge-m3:latest", "ollama-cpu"),
                              ("gemma2:9b", "ollama"), ("gemma2:9b", "vllm"),

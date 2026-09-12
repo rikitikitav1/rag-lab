@@ -394,8 +394,7 @@ def test_the_topic_axis_does_not_turn_foreign_vectors_into_no_signal(monkeypatch
     def foreign(*a, **kw):
         raise db.ForeignVectors("variant holds vectors of another embedder")
 
-    monkeypatch.setattr(agent.llm, "embed", lambda text: [0.0])
-    monkeypatch.setattr(agent.llm, "embedder_label", lambda: "bge-m3@ollama")
+    monkeypatch.setattr(agent.llm, "embed_with_label", lambda text: ("bge-m3@ollama", [0.0]))
     monkeypatch.setattr(agent.db, "nearest_distance", foreign)
     with pytest.raises(db.ForeignVectors):
         agent._topic_score("q", "baseline")

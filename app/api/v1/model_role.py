@@ -31,8 +31,14 @@ class RoleAssignRequest(BaseModel):
     anyway: bool = False
 
 
+class SeatQueuedResponse(BaseModel):
+    job_id: int
+    detail: str
+
+
 @router.put("/{role}", response_model=RoleResponse, responses={
-    202: {"description": "an asleep vLLM: a `hand_card` job wakes it, probes and then seats the role"},
+    202: {"model": SeatQueuedResponse,
+          "description": "an asleep vLLM: a `hand_card` job wakes it, probes and then seats the role"},
     503: {"description": "the model's engine does not answer"},
 })
 async def assign_role(
@@ -59,12 +65,16 @@ async def assign_role(
         except model_acceptance.NeedsProbe as e:
             # the stand can wake it and ask, as `/load` does; the role is seated once the probe says so
             held = await session.get(ModelRole, role)
+            asked = {"engine_id": model.engine_id, "model": model.name, "seat": role.value}
+            # a seat already waiting answers a second ask, as a load does
             job_id = await run_in_threadpool(
+                job_queue.pending_handover, model.engine_id, model.name, role.value
+            ) or await run_in_threadpool(
                 job_queue.enqueue, "hand_card",
-                {"engine_id": model.engine_id, "model": model.name, "seat": role.value,
-                 "seat_over": held.model_id if held else None},
+                {**asked, "seat_over": held.model_id if held else None},
             )
-            return JSONResponse(status_code=202, content={"job_id": job_id, "detail": str(e)})
+            queued = SeatQueuedResponse(job_id=job_id, detail=str(e))
+            return JSONResponse(status_code=202, content=queued.model_dump())
 
     assignment = await session.get(ModelRole, role)
     if assignment is None:
