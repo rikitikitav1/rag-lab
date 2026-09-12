@@ -4,6 +4,7 @@ from crud import get_or_404
 from engines import vllm
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
+from models.jobs import Job
 from models.registry import (
     MAX_MODEL_NAME,
     MODEL_NAME_RE,
@@ -14,6 +15,7 @@ from models.registry import (
     Placement,
     Status,
     Weights,
+    refuse_shared_cache_dir,
     refuse_unknown_registry,
 )
 from orm.async_db import commit_and_refresh, get_session
@@ -23,6 +25,8 @@ from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from use_cases import weights_rules
+
+from api.v1.job import JobResponse
 
 router = APIRouter(prefix="/model", tags=["models"])
 
@@ -200,8 +204,7 @@ def _serves(engine: Engine, name: str) -> bool | None:
     return None if seen is None else name in seen
 
 
-class LoadQueuedResponse(BaseModel):
-    job_id: int
+class LoadQueuedResponse(JobResponse):
     engine: str
     model: str
 
@@ -232,7 +235,8 @@ async def load_model(id: int, session: AsyncSession = Depends(get_session)):
     ) or await run_in_threadpool(
         job_queue.enqueue, "hand_card", {"engine_id": engine.id, "model": model.name}
     )
-    return LoadQueuedResponse(job_id=job_id, engine=engine.name, model=model.name)
+    row = JobResponse.model_validate(await session.get(Job, job_id)).model_dump()
+    return LoadQueuedResponse.model_validate({**row, "engine": engine.name, "model": model.name})
 
 
 # what the server cannot say about its weights: fixed by hand, and a key only the hub vouches for
@@ -248,12 +252,14 @@ class ModelPatchRequest(BaseModel):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$",
     )
 
-    # `a--b/c` shares a cache directory with `a/b--c`, and `..` names no repository
+    # `..` names no repository, and `--` shares another's cache directory
     @field_validator("weights")
     @classmethod
     def _one_hub_directory(cls, v: str | None) -> str | None:
-        if v is not None and ("--" in v or ".." in v):
-            raise ValueError("weights names a hub repository: org/name, without `--` or `..`")
+        if v is not None:
+            refuse_shared_cache_dir(v)
+            if ".." in v:
+                raise ValueError("weights names a hub repository: org/name, without `..`")
         return v
 
 

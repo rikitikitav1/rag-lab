@@ -10,8 +10,9 @@ from pathlib import Path
 
 import logging_setup
 import requests
+from models.registry import refuse_shared_cache_dir
 
-from .core import CardState, EngineSpec, Unconfigured, api_key, base_url, models_listing
+from .core import CardState, EngineSpec, Unconfigured, base_url, bearer, models_listing
 
 log = logging_setup.get_logger(__name__)
 
@@ -49,10 +50,6 @@ def _url(spec: EngineSpec, path: str) -> str:
     return f"{base_url(spec)}{path}"
 
 
-def _headers(spec: EngineSpec) -> dict:
-    return {"Authorization": f"Bearer {api_key(spec)}"}
-
-
 def served(spec: EngineSpec) -> list[str]:
     return [m["id"] for m in models_listing(spec, HTTP_TIMEOUT)]
 
@@ -70,7 +67,7 @@ def score(spec: EngineSpec, model: str, pairs: list[tuple[str, str]]) -> list[fl
         seen = requests.post(
             _url(spec, "/score"),
             json={"model": model, "text_1": [q for q, _ in chunk], "text_2": [d for _, d in chunk]},
-            headers=_headers(spec),
+            headers=bearer(spec),
             timeout=SCORE_TIMEOUT,
         )
         seen.raise_for_status()
@@ -91,7 +88,7 @@ def max_model_len(spec: EngineSpec, model: str) -> int | None:
 # a refused connection is a process that holds no card; a timeout is a server that may still hold it
 def card_state(spec: EngineSpec) -> CardState:
     try:
-        seen = requests.get(_url(spec, "/is_sleeping"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
+        seen = requests.get(_url(spec, "/is_sleeping"), headers=bearer(spec), timeout=HTTP_TIMEOUT)
         # no sleep routes without VLLM_SERVER_DEV_MODE: such a server is awake for good
         if seen.status_code == 404:
             log.warning("vllm.no_sleep_routes", engine=spec.name)
@@ -117,7 +114,7 @@ def is_sleeping(spec: EngineSpec) -> bool | None:
 # None when nobody answers: a service under a profile may simply not be up yet
 def has_sleep_routes(spec: EngineSpec) -> bool | None:
     try:
-        seen = requests.get(_url(spec, "/is_sleeping"), headers=_headers(spec), timeout=3)
+        seen = requests.get(_url(spec, "/is_sleeping"), headers=bearer(spec), timeout=3)
     except Exception:
         return None
     return seen.status_code != 404
@@ -126,7 +123,7 @@ def has_sleep_routes(spec: EngineSpec) -> bool | None:
 # level 1 keeps the weights in host memory, so the next wake reads nothing from disk
 def sleep(spec: EngineSpec, level: int = 1) -> None:
     seen = requests.post(
-        _url(spec, "/sleep"), params={"level": level}, headers=_headers(spec), timeout=WAKE_TIMEOUT
+        _url(spec, "/sleep"), params={"level": level}, headers=bearer(spec), timeout=WAKE_TIMEOUT
     )
     if not seen.ok:
         raise RuntimeError(f"vLLM {spec.name} did not go to sleep: http {seen.status_code}")
@@ -134,7 +131,7 @@ def sleep(spec: EngineSpec, level: int = 1) -> None:
 
 # a wake on a card another engine still holds fails with CUDA OOM and leaves the server asleep
 def wake_up(spec: EngineSpec) -> None:
-    seen = requests.post(_url(spec, "/wake_up"), headers=_headers(spec), timeout=WAKE_TIMEOUT)
+    seen = requests.post(_url(spec, "/wake_up"), headers=bearer(spec), timeout=WAKE_TIMEOUT)
     if not seen.ok:
         raise WakeFailed(f"vLLM {spec.name} did not wake: http {seen.status_code}")
 
@@ -142,7 +139,7 @@ def wake_up(spec: EngineSpec) -> None:
 # one vLLM process holds one model, so its start opens a residency; `created` is the reply's clock
 def started_at(spec: EngineSpec) -> str | None:
     try:
-        seen = requests.get(_url(spec, "/metrics"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
+        seen = requests.get(_url(spec, "/metrics"), headers=bearer(spec), timeout=HTTP_TIMEOUT)
         for line in seen.text.splitlines():
             if line.startswith("process_start_time_seconds "):
                 return datetime.fromtimestamp(float(line.split()[1]), timezone.utc).isoformat()
@@ -154,7 +151,7 @@ def started_at(spec: EngineSpec) -> str | None:
 # the runner the server started with, not the weights: gte-Qwen2 is `*ForCausalLM` served as an embedder
 def pools(spec: EngineSpec) -> bool | None:
     try:
-        seen = requests.get(_url(spec, "/server_info"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
+        seen = requests.get(_url(spec, "/server_info"), headers=bearer(spec), timeout=HTTP_TIMEOUT)
         seen.raise_for_status()
         said = str(seen.json().get("vllm_config", ""))
     except Exception as e:
@@ -221,7 +218,7 @@ def _probe(spec: EngineSpec, model: str) -> bool | None:
         seen = requests.post(
             _url(spec, "/v1/chat/completions"),
             json={"model": model, **_PROBE},
-            headers=_headers(spec),
+            headers=bearer(spec),
             timeout=WAKE_TIMEOUT,
         )
     except Exception as e:
@@ -246,9 +243,7 @@ def weights_cache() -> str:
 
 
 def _repo_dir(repo: str) -> Path:
-    # the hub's layout spells `/` as `--`, so `a--b` and `a/b` would share one directory
-    if "--" in repo:
-        raise ValueError(f"{repo}: `--` in a repository name would share another's cache directory")
+    refuse_shared_cache_dir(repo)
     return Path(weights_cache()) / "hub" / ("models--" + repo.replace("/", "--"))
 
 

@@ -72,6 +72,12 @@ def running_in_lane(lane: str) -> bool:
         ))
 
 
+# the row a door answers with once the job is queued in another session
+def get(job_id: int) -> Job:
+    with Session() as session:
+        return session.get(Job, job_id)
+
+
 def add_job(
     session, type: str, options: dict | None = None, queue: str | None = None
 ) -> Job:

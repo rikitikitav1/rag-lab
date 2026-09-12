@@ -27,6 +27,7 @@ lab: rag-lab (docker compose, runtime) {
   ollama: Ollama (GPU) {
     gen: llama3.1:8b
     embed: bge-m3
+    para: gemma2:9b
   }
 
   vllm: "vLLM (GPU),\nasleep unless it holds the card" {

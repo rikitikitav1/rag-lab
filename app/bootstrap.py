@@ -4,7 +4,15 @@ import job_queue
 import llm
 import logging_setup
 from engines import ollama, vllm
-from models.registry import Engine, EngineKind, Model, ModelRole, Role, Status
+from models.registry import (
+    Engine,
+    EngineKind,
+    Model,
+    ModelRole,
+    Role,
+    Status,
+    refuse_unknown_registry,
+)
 from orm.sync_db import Session
 from sqlalchemy import exists, select
 from use_cases import model_acceptance
@@ -19,11 +27,10 @@ def bootstrap_models() -> None:
         _ensure_models(seeded)
     # a role naming its own engine does not need the seeded one, and that is the point of naming it
     _ensure_roles(seeded)
-    # every ollama: the rows on `ollama-cpu` got neither a status nor a pull while only one was read
+    # every ollama with a row: the rows on `ollama-cpu` got neither a status nor a pull while one was read
     for spec in engines.registered():
-        # the card's ollama holds nothing without a card and is not started, so it is not asked
         if spec.kind is EngineKind.ollama and _holds_models(spec):
-            _reconcile_with_ollama(spec, pull_when_silent=spec == seeded)
+            _reconcile_with_ollama(spec)
     _fill_vllm_rows()
     _ensure_index()
     _ensure_vector_indexes()
@@ -95,16 +102,15 @@ def _ensure_roles(seeded) -> None:
             if model is None and spec.kind is EngineKind.vllm:
                 model = _register_what_vllm_serves(session, spec, role, cfg.model)
             # a role on an ollama the pull list does not cover: its row here, pulled by the reconcile
-            if model is None and spec.kind is EngineKind.ollama:
-                model = Model(name=cfg.model, engine_id=spec.id)
-                session.add(model)
-                session.flush()
-            if model is None:
+            new_row = model is None and spec.kind is EngineKind.ollama
+            if model is None and not new_row:
                 log.error("bootstrap.role_model_absent", role=role, model=cfg.model,
                           engine=spec.name)
                 continue
-            # the same gate `PUT /v1/role` runs: an empty database is the usual way roles are set
+            # the gates `POST /v1/model` and `PUT /v1/role` run: an empty database is how roles get set
             try:
+                if new_row:
+                    refuse_unknown_registry(cfg.model)
                 model_acceptance.refuse_unfit_model(Role(role), cfg.model, spec.id)
             except ValueError as e:
                 log.error("bootstrap.role_refused", role=role, model=cfg.model, error=str(e))
@@ -112,6 +118,10 @@ def _ensure_roles(seeded) -> None:
             # a boot cannot wait: a stopped engine is named by `/readiness`, a probe asked on its turn
             except (model_acceptance.EngineDown, model_acceptance.NeedsProbe) as e:
                 log.warning("bootstrap.role_seated_unasked", role=role, model=cfg.model, why=str(e))
+            if new_row:
+                model = Model(name=cfg.model, engine_id=spec.id)
+                session.add(model)
+                session.flush()
             session.add(ModelRole(role=Role(role), model_id=model.id))
         session.commit()
 
@@ -122,7 +132,13 @@ def _register_what_vllm_serves(session, spec, role: str, name: str):
         served = vllm.served(spec)
     except Exception as e:
         # a service under a profile starts after the bootstrap, and its weights answer for it
-        if not vllm.weights_intact(name):
+        try:
+            intact = vllm.weights_intact(name)
+        except ValueError as refused:
+            # a name the cache cannot hold apart stops this role, not the boot
+            log.error("bootstrap.vllm_name_refused", model=name, error=str(refused))
+            return None
+        if not intact:
             log.error("bootstrap.vllm_unreachable", engine=spec.name, error=str(e))
             return None
         log.info("bootstrap.vllm_registered_from_disk", engine=spec.name, model=name)
@@ -176,15 +192,13 @@ def _fill_vllm_rows() -> None:
             job_queue.enqueue("pull_llm_model", {"name": name, "engine_id": engine_id})
 
 
-def _reconcile_with_ollama(spec, pull_when_silent: bool = True) -> None:
+def _reconcile_with_ollama(spec) -> None:
     try:
         pulled = set(ollama.add_tags(ollama.list_models(spec)))
     except Exception as e:
-        log.error("bootstrap.ollama_unreachable", engine=spec.name, error=str(e))
-        # a second ollama that is down says nothing about its disk, and a pull on it only fails
-        if not pull_when_silent:
-            return
-        pulled = set()
+        # silence says nothing about its disk and a pull on it only fails: without a card, every boot
+        log.warning("bootstrap.ollama_silent_rows_kept", engine=spec.name, error=str(e))
+        return
 
     to_pull, to_fill = [], []
     with Session() as session:

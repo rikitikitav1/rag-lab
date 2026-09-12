@@ -1,15 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-
-
-# the whole row a queued job answers with, as the door reads it back after the commit
-def _queued_job(type: str, options: dict):
-    from datetime import UTC, datetime
-    from types import SimpleNamespace
-
-    now = datetime.now(UTC)
-    return SimpleNamespace(id=1, type=type, options=options, queue="default", status="new",
-                           error=None, elapsed=None, apply_since=now, created_at=now, updated_at=now)
+from stand_specs import queued_job as _queued_job
 
 
 def test_agent_max_hops_zero_422(client):

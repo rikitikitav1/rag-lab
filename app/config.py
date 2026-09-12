@@ -215,7 +215,7 @@ class AppConfig(BaseModel):
     mcp_integrations: McpIntegrationsCfg
 
 
-# the roles a stand cannot answer without: a layer that drops one fails at load, not on the first call
+# the roles a stand cannot answer without: a layer dropping one fails at load; the rest are optional
 REQUIRED_ROLES = ("generation", "embedding", "judging")
 
 

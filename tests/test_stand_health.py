@@ -253,3 +253,20 @@ def test_an_unreadable_seeded_engine_is_compared_by_name_not_read_as_drift(monke
     monkeypatch.setattr(stand_health.config.settings.llm, "roles",
                         {"generation": SimpleNamespace(model="llama3.1:8b", engine=None)})
     assert stand_health.roles()["drift"] == []
+
+
+def test_a_role_loaded_off_the_card_of_an_ollama_that_answers_is_named(monkeypatch):
+    # an ollama that lost CUDA answered every call from the processor and readiness said ok
+    import engines
+
+    ollama_spec = _engine("ollama", "ollama", "gpu")
+    monkeypatch.setattr(stand_health, "_roles",
+                        lambda: [("generation", engines.Resolved("llama3.1:8b", ollama_spec))])
+    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", False)
+    whole = [True]
+    monkeypatch.setattr(stand_health.card_holder, "spilled", lambda spec, name: not whole[0])
+    assert stand_health.roles_down() == []
+    whole[0] = False
+    (line,) = stand_health.roles_down()
+    assert line.startswith("generation: llama3.1:8b@ollama is not whole on the card")

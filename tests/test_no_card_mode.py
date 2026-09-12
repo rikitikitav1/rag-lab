@@ -141,3 +141,114 @@ def test_an_empty_card_is_said_in_words(monkeypatch):
     monkeypatch.setattr(stand_health.engines, "registered", lambda: [])
 
     assert stand_health.engines_section()["summary"] == "no engine holds the card"
+
+
+def test_a_down_card_engine_on_a_stand_already_without_a_card_points_to_the_seat(monkeypatch):
+    # the hint gave the very command the stand had been brought up with
+    import engines
+    from models.registry import EngineKind, Placement
+    from use_cases import card_wait, stand_health
+
+    vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    monkeypatch.setattr(stand_health, "_roles", lambda: [("judging", engines.Resolved("Qwen/Q", vllm))])
+    monkeypatch.setattr(stand_health, "_answers", lambda spec: False)
+    monkeypatch.setattr(card_wait, "reranker_needed", lambda **kw: False)
+    monkeypatch.setattr(stand_health.config, "CONFIG_OVERLAY", "config.cpu.yaml")
+
+    (judging,) = stand_health.roles_down()
+    assert "PUT /v1/role" in judging and "--cpu" not in judging
+
+
+def test_an_optional_role_nobody_seated_is_not_down_and_a_seated_one_whose_engine_fails_is(monkeypatch):
+    # the paraphraser is used by two jobs; unseated it read as down, so readiness and the layer disagreed
+    import config
+    import engines
+    from models.registry import EngineKind, Placement
+    from use_cases import card_wait, stand_health
+
+    assert "paraphrasing" not in config.REQUIRED_ROLES
+    cpu = engines.EngineSpec(5, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu)
+    roles = [("generation", engines.Resolved("llama3.1:8b", cpu)), ("paraphrasing", None),
+             ("judging", None)]
+    monkeypatch.setattr(stand_health, "_roles", lambda: roles)
+    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(card_wait, "reranker_needed", lambda **kw: False)
+    assert stand_health.roles_down() == ["judging: no model is seated"]
+
+    roles[1] = ("paraphrasing", engines.Resolved("gemma2:9b", cpu))
+    monkeypatch.setattr(stand_health, "_answers", lambda spec: False)
+    assert "paraphrasing: ollama-cpu does not answer" in stand_health.roles_down()
+
+
+class _Tagged(dict):
+    pass
+
+
+def _compose(name: str) -> dict:
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    def tagged(loader, node):
+        value = loader.construct_mapping(node) if isinstance(node, yaml.MappingNode) else None
+        return _Tagged(value or {})
+
+    for tag in ("!reset", "!override"):
+        Loader.add_constructor(tag, tagged)
+    return yaml.load((ROOT / name).read_text(), Loader=Loader)
+
+
+def test_every_service_that_reserves_the_card_is_let_go_by_the_no_card_layer():
+    # a new service with the card's reservation and no line in the layer would break `up.sh --cpu`
+    main = _compose("docker-compose.yml")["services"]
+    layer = _compose("docker-compose.cpu.yml")["services"]
+    reserving = {name for name, svc in main.items() if "deploy" in svc and "profiles" not in svc}
+    for name in reserving:
+        over = layer.get(name, {})
+        assert over.get("profiles") or isinstance(over.get("deploy"), _Tagged), name
+    assert isinstance(layer["bootstrap"]["depends_on"], _Tagged), "the layer waits for no card engine"
+    assert set(layer["bootstrap"]["depends_on"]) & {"ollama", "vllm"} == set()
+
+
+def test_up_sh_looks_for_the_device_compose_reserves():
+    import re
+
+    devices = re.findall(r'device_ids: \["([^"]+)"\]', (ROOT / "docker-compose.yml").read_text())
+    assert devices and set(devices) == {"nvidia.com/gpu=all"}
+    assert f'grep -q "{devices[0]}"' in (ROOT / "scripts/up.sh").read_text()
+
+
+def _run_up_sh(tmp_path, plan: str) -> list[str]:
+    import os
+    import subprocess
+
+    log, stopped = tmp_path / "docker.log", tmp_path / "stopped"
+    fake = tmp_path / "bin" / "docker"
+    fake.parent.mkdir()
+    fake.write_text(f"""#!/bin/sh
+echo "$*" >> {log}
+case "$*" in
+  info*) echo " nvidia.com/gpu=all" ;;
+  "compose --dry-run up -d"*) printf '%s\\n' "{plan}" ;;
+  "compose exec -T ollama ollama ps") printf 'NAME ID SIZE\\n'; [ -f {stopped} ] || echo "llama3.1:8b a1 6GB" ;;
+  "compose exec -T ollama ollama stop"*) touch {stopped} ;;
+esac
+""")
+    fake.chmod(0o755)
+    env = {**os.environ, "PATH": f"{fake.parent}:{os.environ['PATH']}"}
+    subprocess.run(["bash", str(ROOT / "scripts/up.sh")], env=env, check=True, capture_output=True)
+    return log.read_text().splitlines()
+
+
+def test_up_sh_frees_the_card_before_a_vllm_start_and_leaves_ollama_alone_otherwise(tmp_path):
+    # recreated while ollama held a model on the card, vLLM died short of memory and the stack waited
+    calls = _run_up_sh(tmp_path, "Container rag-lab-vllm-1  Recreate")
+    stop = calls.index("compose exec -T ollama ollama stop llama3.1:8b")
+    assert calls[-1] == "compose up -d" and stop < len(calls) - 1
+
+    quiet = tmp_path / "quiet"
+    quiet.mkdir()
+    calls = _run_up_sh(quiet, "Container rag-lab-vllm-1  Running")
+    assert not [c for c in calls if "ollama" in c], "a running vLLM takes nothing from ollama"
+    assert calls[-1] == "compose up -d"
