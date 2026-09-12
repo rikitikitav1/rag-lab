@@ -42,6 +42,8 @@ services:
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      # the chat answers in this process, and it read no timeout but its own default
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
       # the tree is mounted: bytecode written here outlived a restart as a mutant the tests had made
       PYTHONDONTWRITEBYTECODE: "1"
       <<: *engine-env
@@ -98,17 +100,14 @@ services:
     depends_on:
       seed:
         condition: service_completed_successfully
-      # not required: a host without a card leaves `ollama` and `vllm` out (`docker-compose.cpu.yml`)
       ollama:
         condition: service_healthy
-        required: false
       # the bootstrap reads every ollama, and a cpu one that is still starting reads as absent
       ollama-cpu:
         condition: service_healthy
       # vLLM takes the card first and the bootstrap puts it to sleep before ollama loads a role
       vllm:
         condition: service_healthy
-        required: false
     volumes:
       - .:/app
       # the bootstrap checks vLLM weights by their hashes in the same host cache the server reads

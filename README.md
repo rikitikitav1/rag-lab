@@ -102,7 +102,7 @@ Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagram
 | `rag-lab` | FastAPI server (uvicorn) |
 | `repos-owner` | hands the `repos_data` volume to the host's user before the worker starts, runs once |
 | `worker` | processes the job queue as the host's user, fifteen types: pull/delete a model, index the corpus, build a vector index, analyze a source, embed questions, paraphrase questions, build the veto set, eval run, judge answers, judge the guest axes, the language probe, compare retrieval, mcp health, hand the card to an engine |
-| `ollama` | local inference on GPU: the generator and the embedder |
+| `ollama` | local inference on GPU: the generator, the embedder and the paraphraser |
 | `ollama-cpu` | a second ollama on the processor, for a role that should not take the card |
 | `vllm` | the judge (`Qwen/Qwen2.5-7B-Instruct-AWQ`); takes the card first at start and is put to sleep whenever another engine needs it; its port is not published on the host |
 | `vllm-rerank`, `vllm-embed`, `vllm-cpu` | under the compose profiles `rerank`, `embed` and `cpu`: the reranking role, an embedder on vLLM, vLLM on the processor; started only with `--profile`; how to switch: [docs/stand_modes.md](docs/stand_modes.md) |
@@ -114,6 +114,7 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 | Variable | Default | What it does |
 |----------|---------|--------------|
 | `LLM_TIMEOUT` | `120` | Seconds per completion. A 70b model on CPU needs minutes; the default kills such runs mid-flight. |
+| `LLM_TIMEOUT_CPU` | `600` | The same in the no-card mode, where every role answers on the processor ([docs/stand_modes.md](docs/stand_modes.md), mode 8). |
 | `VLLM_GPU_UTIL` | `0.9` | The judge's share of the card. Every sleeping vLLM beside it keeps about 200 MiB, which is why it is not higher. |
 | `VLLM_RERANK_GPU_UTIL`, `VLLM_EMBED_GPU_UTIL` | `0.3`, `0.45` | The card share of the reranker and of the vLLM embedder, the profiles `rerank` and `embed`. |
 | `VLLM_CPU_MODEL`, `VLLM_CPU_DTYPE`, `VLLM_CPU_KVCACHE_SPACE` | `Qwen/Qwen2.5-7B-Instruct`, `float16`, `4` | vLLM on the processor, the profile `cpu`. It holds its whole model in host memory, so check `free` before starting it. |

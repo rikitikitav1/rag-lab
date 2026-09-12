@@ -161,7 +161,7 @@ curl -s "localhost:8000/v1/job?type=hand_card&status=error&limit=5" | python3 -m
 - `... loaded on ollama, but not whole on the card`: the model landed half on the processor; the
   card is short of memory, and `engines` with `nvidia-smi` say who holds it.
 - `nvidia-smi` inside a container answers `Failed to initialize NVML: Unknown Error`, and jobs end
-  with `not whole on the card`: the container lost the card. With the card given through CDI a
+  with `not whole on the card`, which `/readiness` names by role: the container lost the card. With the card given through CDI a
   `systemctl daemon-reload` no longer does this; if it happens anyway, `docker compose restart
   <service>` gives the card back, and `docker info` should list the NVIDIA CDI devices (README,
   Quickstart).
@@ -170,7 +170,8 @@ curl -s "localhost:8000/v1/job?type=hand_card&status=error&limit=5" | python3 -m
   ollama still held a model, since the ollama container is not recreated with it and keeps its
   models loaded. The API is down, so the queue cannot hand anything: unload ollama's models through
   its own port (`curl localhost:11434/api/generate -d '{"model":"<name>","keep_alive":0}'` for each
-  name in `curl localhost:11434/api/ps`), then `docker compose up -d` again.
+  name in `curl localhost:11434/api/ps`), then `docker compose up -d` again. `scripts/up.sh` does
+  this itself whenever `vllm` is about to start; a bare `docker compose up -d` does not.
 
 Back to the default: `POST /v1/model/{id of the judge}/load` hands the card to the judge through the
 queue, and the next job that needs ollama takes it back the same way.
@@ -183,8 +184,12 @@ scripts/up.sh --cpu
 
 `docker-compose.cpu.yml` goes over the main file: no service reserves the card, `ollama` and `vllm`
 are left out, and the roles come from `config.cpu.yaml`, every one on `ollama-cpu`, with
-`LLM_TIMEOUT` at 600 s. `scripts/up.sh` without the flag checks `docker info` for the card first,
-and on a host without one says why the stand would not start and gives this command.
+`LLM_TIMEOUT_CPU` (600 s) as the timeout. `scripts/up.sh` without the flag checks `docker info` for
+the card first, and on a host without one says why the stand would not start and gives this command.
+
+A bare `docker compose` reads the main file alone, so `docker compose up -d worker` in this mode would
+recreate the worker with the card and the two-minute timeout. Put
+`COMPOSE_FILE=docker-compose.yml:docker-compose.cpu.yml` in `.env` while the stand runs this way.
 
 The layer seats roles only on an empty database. A stand that already has roles keeps them, so seat
 each one with `PUT /v1/role` on its model on `ollama-cpu`, by the ids the model list gives.
@@ -209,7 +214,9 @@ is not checked: Docker Desktop passes no Metal into a container, so everything r
 its virtual machine needs room for two 7-8b models and the embedder at once, and `vllm-cpu` is an x86
 image that is not for it.
 
-Leave it: seat the roles back on their card engines, then `scripts/up.sh` on a host with a card.
+Leave it on a host with a card: `scripts/up.sh` first (drop `COMPOSE_FILE` from `.env`), then seat
+each role back on its card engine with `PUT /v1/role`. The other order fails: with the card engines
+not started the door refuses the seat with 503.
 
 ## After MR 3: a cloud engine
 

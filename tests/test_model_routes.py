@@ -47,8 +47,13 @@ class FakeAsyncSession:
         return None
 
     async def get(self, model, ident):
+        from models.jobs import Job
+        from stand_specs import queued_job
+
         if model is Engine:
             return next((e for e in self.engines if e.id == ident), None)
+        if model is Job:
+            return queued_job("hand_card", id=ident)
         return self.model
 
     def add(self, obj):
@@ -163,7 +168,9 @@ def test_a_load_is_queued_as_a_card_handover_and_not_run_by_the_api(door, monkey
 
     assert wrong.status_code == 422, "a vLLM serving another model must not be woken with a 202"
     assert r.status_code == 202
-    assert r.json() == {"job_id": 77, "engine": "vllm", "model": "Qwen/Q"}
+    seen = r.json()
+    assert (seen["job_id"], seen["type"], seen["engine"], seen["model"]) == (77, "hand_card", "vllm", "Qwen/Q")
+    assert seen["status"] == "new", "the whole row of the queued job, as every door that queues one"
     assert asked == [("hand_card", {"engine_id": 2, "model": "Qwen/Q"})]
     # a second load while the first waits gets the first one's job
     waiting[0] = 77

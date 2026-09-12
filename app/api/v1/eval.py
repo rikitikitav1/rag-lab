@@ -44,8 +44,7 @@ class RejudgeRequest(BaseModel):
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
 
 
-class RejudgeResponse(BaseModel):
-    job_id: int
+class RejudgeResponse(JobEnqueuedResponse):
     run_name: str
     copied: int
 
@@ -366,7 +365,8 @@ def enqueue_rejudge(request: RejudgeRequest):
         # the copy is committed and the job is not, under a name no retry can reuse
         rejudge.delete_runs([request.run_name])
         raise
-    return RejudgeResponse(job_id=job_id, run_name=request.run_name, copied=copied)
+    row = JobEnqueuedResponse.model_validate(job_queue.get(job_id)).model_dump()
+    return RejudgeResponse.model_validate({**row, "run_name": request.run_name, "copied": copied})
 
 
 # `/rejudge` judges a copy; a run judged in place had no door, and the queue was filled by hand

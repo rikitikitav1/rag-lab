@@ -67,6 +67,8 @@ class ImportResponse(BaseModel):
     parsed: int
     inserted: int
     run_name: str | None
+    # the run's job, read through `GET /v1/job/{id}`; none without `run`
+    job_id: int | None = None
 
 
 @router.post("/import", response_model=ImportResponse)
@@ -109,14 +111,16 @@ async def import_questions(
 
     job_queue.add_job(session, "embed_questions", {})
 
-    resolved_run = None
+    resolved_run, run_job_id = None, None
     if run:
         resolved_run = run_name or f"{set_name}_{int(time.time())}"
-        job_queue.add_job(
+        run_job = job_queue.add_job(
             session,
             "eval_run",
             {"run_name": resolved_run, "set_name": set_name, "question_ids": None},
         )
+        await session.flush()
+        run_job_id = run_job.id
 
     await session.commit()
     return ImportResponse(
@@ -124,4 +128,5 @@ async def import_questions(
         parsed=len(parsed),
         inserted=inserted,
         run_name=resolved_run,
+        job_id=run_job_id,
     )

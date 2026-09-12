@@ -2,12 +2,15 @@ import job_queue
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from models.jobs import Job
 from models.registry import Model, ModelRole, Role
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from use_cases import model_acceptance
+
+from api.v1.job import JobResponse
 
 router = APIRouter(prefix="/role", tags=["roles"])
 
@@ -31,8 +34,7 @@ class RoleAssignRequest(BaseModel):
     anyway: bool = False
 
 
-class SeatQueuedResponse(BaseModel):
-    job_id: int
+class SeatQueuedResponse(JobResponse):
     detail: str
 
 
@@ -73,8 +75,9 @@ async def assign_role(
                 job_queue.enqueue, "hand_card",
                 {**asked, "seat_over": held.model_id if held else None},
             )
-            queued = SeatQueuedResponse(job_id=job_id, detail=str(e))
-            return JSONResponse(status_code=202, content=queued.model_dump())
+            row = JobResponse.model_validate(await session.get(Job, job_id)).model_dump()
+            queued = SeatQueuedResponse.model_validate({**row, "detail": str(e)})
+            return JSONResponse(status_code=202, content=queued.model_dump(mode="json"))
 
     assignment = await session.get(ModelRole, role)
     if assignment is None:

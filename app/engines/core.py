@@ -187,10 +187,15 @@ def _asked(spec: EngineSpec, path: str, key: str):
         return None
 
 
+# the one header every engine call carries; a missing key raises, as the key itself does
+def bearer(spec: EngineSpec) -> dict:
+    return {"Authorization": f"Bearer {api_key(spec)}"}
+
+
 # a server started with `--api-key` answers nothing without it, and a missing key sends none
 def _auth(spec: EngineSpec) -> dict:
     try:
-        return {"Authorization": f"Bearer {api_key(spec)}"}
+        return bearer(spec)
     except Unconfigured:
         return {}
 
@@ -199,8 +204,7 @@ def _auth(spec: EngineSpec) -> dict:
 def models_listing(spec: EngineSpec, timeout: float) -> list[dict]:
     import requests
 
-    headers = {"Authorization": f"Bearer {api_key(spec)}"}
-    seen = requests.get(f"{base_url(spec)}/v1/models", headers=headers, timeout=timeout)
+    seen = requests.get(f"{base_url(spec)}/v1/models", headers=bearer(spec), timeout=timeout)
     seen.raise_for_status()
     return seen.json()["data"]
 

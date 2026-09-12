@@ -234,22 +234,23 @@ def test_the_bootstrap_reads_every_ollama_and_pulls_only_where_the_server_answer
         monkeypatch.setattr(bootstrap, step, lambda *a, **kw: None)
     monkeypatch.setattr(bootstrap, "_seeded", lambda: seeded)
     monkeypatch.setattr(bootstrap.engines, "registered", lambda: [seeded, SPEC, cpu])
-    monkeypatch.setattr(bootstrap, "_reconcile_with_ollama",
-                        lambda spec, pull_when_silent=True: read.append((spec.name, pull_when_silent)))
+    monkeypatch.setattr(bootstrap, "_reconcile_with_ollama", lambda spec: read.append(spec.name))
     monkeypatch.setattr(bootstrap, "_holds_models", lambda spec: True)
     bootstrap.bootstrap_models()
-    assert read == [("ollama", True), ("ollama-cpu", False)]
+    assert read == ["ollama", "ollama-cpu"]
 
     # without a card the card's ollama is not started and holds no model: an error line there lied
     read.clear()
     monkeypatch.setattr(bootstrap, "_holds_models", lambda spec: spec.name == "ollama-cpu")
     bootstrap.bootstrap_models()
-    assert read == [("ollama-cpu", False)]
+    assert read == ["ollama-cpu"]
 
 
-def test_a_silent_second_ollama_keeps_its_rows_as_they_were(monkeypatch):
+def test_a_silent_ollama_keeps_its_rows_and_pulls_nothing_even_the_seeded_one(monkeypatch):
+    # a stand once run with a card and brought up without one set the card's models `loading` each boot
     import bootstrap
 
+    seeded = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
     cpu = engines.EngineSpec(5, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu)
 
     def down(spec):
@@ -257,7 +258,9 @@ def test_a_silent_second_ollama_keeps_its_rows_as_they_were(monkeypatch):
 
     monkeypatch.setattr(bootstrap.ollama, "list_models", down)
     monkeypatch.setattr(bootstrap, "Session", lambda: pytest.fail("rows touched on silence"))
-    bootstrap._reconcile_with_ollama(cpu, pull_when_silent=False)
+    monkeypatch.setattr(bootstrap.job_queue, "enqueue", lambda *a, **kw: pytest.fail("pulled on silence"))
+    for spec in (seeded, cpu):
+        bootstrap._reconcile_with_ollama(spec)
 
 
 def test_a_run_records_the_window_of_a_vllm_generator_from_the_server(monkeypatch):
@@ -400,10 +403,14 @@ def test_the_role_door_on_an_asleep_server_queues_the_probe_and_a_down_one_is_50
 
     from api.v1 import model_role
     from fastapi import HTTPException
+    from models.jobs import Job
     from models.registry import Role
+    from stand_specs import queued_job
 
     class _Session:
         async def get(self, cls, ident):
+            if cls is Job:
+                return queued_job("hand_card", id=ident)
             return SimpleNamespace(id=10, name="Qwen/Q", engine_id=3) if ident == 10 else None
 
     queued = []

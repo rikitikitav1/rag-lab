@@ -149,17 +149,16 @@ def test_the_bookkeeping_of_a_retry_is_not_accepted_from_a_caller():
 
 def test_every_door_that_queues_a_job_answers_with_the_whole_row():
     # the eval doors answered three fields and the job door had no `job_id`: a client read ids two ways
-    from datetime import UTC, datetime
-    from types import SimpleNamespace
-
-    from api.v1.eval import JobEnqueuedResponse
+    from api.v1.eval import JobEnqueuedResponse, RejudgeResponse
     from api.v1.job import JobResponse
+    from api.v1.llm_model import LoadQueuedResponse
+    from api.v1.model_role import SeatQueuedResponse
+    from stand_specs import queued_job
 
-    now = datetime.now(UTC)
-    row = SimpleNamespace(id=7, type="eval_run", queue="default", status="new",
-                          options={"run_name": "r"}, error=None, elapsed=None,
-                          apply_since=now, created_at=now, updated_at=now)
-    seen = JobResponse.model_validate(row).model_dump()
+    seen = JobResponse.model_validate(queued_job(options={"run_name": "r"}, id=7)).model_dump()
     assert seen["job_id"] == seen["id"] == 7
     assert seen["queue"] == "default" and seen["status"] == "new"
     assert JobEnqueuedResponse is JobResponse, "one answer for one event"
+    # the rejudge, the load and the seat answered two or three fields of their own
+    for door in (RejudgeResponse, LoadQueuedResponse, SeatQueuedResponse):
+        assert issubclass(door, JobResponse), door.__name__

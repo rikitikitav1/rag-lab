@@ -158,9 +158,15 @@ def roles_down() -> list[str]:
         if role == Role.reranking and not rerank_used:
             continue
         if picked is None:
-            down.append(f"{role}: no model is seated")
+            # an optional role nobody seated is not down; the reranker stops being optional once used
+            if role in config.REQUIRED_ROLES or role == Role.reranking:
+                down.append(f"{role}: no model is seated")
         elif _answers(picked.engine) is not True:
             down.append(f"{role}: {picked.engine.name} does not answer{_no_card_hint(picked.engine)}")
+        # an ollama that lost the card still answers, and loads its models on the processor
+        elif card_holder.spilled(picked.engine, picked.name):
+            down.append(f"{role}: {engines.label(picked.name, picked.engine.name)} is not whole on the card;"
+                        " a container that lost the card answers so (docs/stand_modes.md)")
         elif role == Role.generation and _parserless(picked):
             down.append(f"{role}: {engines.label(picked.name, picked.engine.name)} returns no tool calls")
     return down
@@ -170,6 +176,9 @@ def roles_down() -> list[str]:
 def _no_card_hint(spec) -> str:
     if spec.placement not in engines.CARD:
         return ""
+    # already without a card, the way out is the seat and not the mode
+    if config.CONFIG_OVERLAY:
+        return "; this stand runs without a card: seat the role on `ollama-cpu` with `PUT /v1/role`"
     return "; a host without a card runs `scripts/up.sh --cpu` (docs/stand_modes.md)"
 
 
