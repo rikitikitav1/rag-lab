@@ -72,6 +72,9 @@ def test_a_role_that_names_its_engine_is_looked_up_on_that_engine(monkeypatch):
         def add(self, _obj):
             pass
 
+        def flush(self):
+            pass
+
         def commit(self):
             pass
 
@@ -82,6 +85,8 @@ def test_a_role_that_names_its_engine_is_looked_up_on_that_engine(monkeypatch):
         bootstrap.config.settings.llm, "roles",
         {"judging": SimpleNamespace(model="qwen", engine="vllm")},
     )
+    # the stub engine is an ollama, so the missing row is made and the gate is asked; not this test's
+    monkeypatch.setattr(bootstrap.model_acceptance, "refuse_unfit_model", lambda *a: None)
 
     bootstrap._ensure_roles(stub_engine())
 

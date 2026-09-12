@@ -236,8 +236,15 @@ def test_the_bootstrap_reads_every_ollama_and_pulls_only_where_the_server_answer
     monkeypatch.setattr(bootstrap.engines, "registered", lambda: [seeded, SPEC, cpu])
     monkeypatch.setattr(bootstrap, "_reconcile_with_ollama",
                         lambda spec, pull_when_silent=True: read.append((spec.name, pull_when_silent)))
+    monkeypatch.setattr(bootstrap, "_holds_models", lambda spec: True)
     bootstrap.bootstrap_models()
     assert read == [("ollama", True), ("ollama-cpu", False)]
+
+    # without a card the card's ollama is not started and holds no model: an error line there lied
+    read.clear()
+    monkeypatch.setattr(bootstrap, "_holds_models", lambda spec: spec.name == "ollama-cpu")
+    bootstrap.bootstrap_models()
+    assert read == [("ollama-cpu", False)]
 
 
 def test_a_silent_second_ollama_keeps_its_rows_as_they_were(monkeypatch):

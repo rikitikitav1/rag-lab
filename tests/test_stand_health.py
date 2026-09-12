@@ -159,9 +159,12 @@ def test_a_role_whose_engine_does_not_answer_is_named(monkeypatch):
     alive = {"ollama": True, "vllm": False, "vllm-rerank": None}
     monkeypatch.setattr(stand_health, "_answers", lambda spec: alive[spec.name])
     monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", False)
-    assert stand_health.roles_down() == ["judging: vllm does not answer"], "an unused reranker is off"
+    assert stand_health.roles_down() == [
+        "judging: vllm does not answer; a host without a card runs `scripts/up.sh --cpu`"
+        " (docs/stand_modes.md)"
+    ], "an unused reranker is off, and an engine of the card that is down points to the mode"
     monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", True)
-    assert stand_health.roles_down()[-1] == "reranking: vllm-rerank does not answer"
+    assert stand_health.roles_down()[-1].startswith("reranking: vllm-rerank does not answer;")
 
 
 def test_a_generator_seated_unasked_is_named_once_its_probe_says_no(monkeypatch):
@@ -196,16 +199,20 @@ def test_readiness_names_the_dead_role_and_stays_up_for_the_chat(monkeypatch):
     async def _yield():
         yield _Session()
 
-    monkeypatch.setattr(health.ollama, "list_models", lambda: [])
-    monkeypatch.setattr(health.stand_health, "roles_down", lambda: ["judging: vllm does not answer"])
+    down = [["judging: vllm does not answer"]]
+    monkeypatch.setattr(health.stand_health, "roles_down", lambda: down[0])
     server.app.dependency_overrides[get_session] = _yield
     try:
         with TestClient(server.app) as client:
             got = client.get("/readiness")
+            down[0] = []
+            fine = client.get("/readiness")
     finally:
         server.app.dependency_overrides.clear()
     assert got.status_code == 200
     assert got.json()["status"] == "degraded" and got.json()["roles_down"] == ["judging: vllm does not answer"]
+    # the card's ollama is absent on purpose without a card, so it is not probed on its own
+    assert fine.json() == {"postgres": "ok", "status": "ok"}
 
 
 def test_an_unseated_role_is_named_and_the_others_still_read(monkeypatch):

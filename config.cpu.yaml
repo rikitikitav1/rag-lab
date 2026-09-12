@@ -1,0 +1,7 @@
+# roles of a host without a card (`scripts/up.sh --cpu`, docs/stand_modes.md): no reranker, ollama scores no pairs
+llm:
+  roles:
+    embedding:    { model: bge-m3, engine: ollama-cpu }
+    generation:   { model: llama3.1:8b, engine: ollama-cpu, options: { max_tokens: 1024, temperature: 0.1 } }
+    judging:      { model: qwen2.5:7b, engine: ollama-cpu, options: { max_tokens: 1024, temperature: 0, seed: 0 } }
+    paraphrasing: { model: gemma2:9b, engine: ollama-cpu, options: { max_tokens: 512, temperature: 0.3 } }

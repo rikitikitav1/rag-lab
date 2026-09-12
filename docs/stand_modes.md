@@ -175,6 +175,42 @@ curl -s "localhost:8000/v1/job?type=hand_card&status=error&limit=5" | python3 -m
 Back to the default: `POST /v1/model/{id of the judge}/load` hands the card to the judge through the
 queue, and the next job that needs ollama takes it back the same way.
 
+## 8. Without a card
+
+```bash
+scripts/up.sh --cpu
+```
+
+`docker-compose.cpu.yml` goes over the main file: no service reserves the card, `ollama` and `vllm`
+are left out, and the roles come from `config.cpu.yaml`, every one on `ollama-cpu`, with
+`LLM_TIMEOUT` at 600 s. `scripts/up.sh` without the flag checks `docker info` for the card first,
+and on a host without one says why the stand would not start and gives this command.
+
+The layer seats roles only on an empty database. A stand that already has roles keeps them, so seat
+each one with `PUT /v1/role` on its model on `ollama-cpu`, by the ids the model list gives.
+
+No reranker: ollama scores no pairs, so `"rerank": true` and the agent's gate at `gate_signal:
+cross_encoder` or `either` do not work in this mode.
+
+The first `up` builds the index on the processor: about 2 chunks a second against about 33 on the
+card, so the index that takes about five minutes with a card takes about an hour and a half here.
+
+A mode for running, not for measuring: `ollama-cpu` unloads a model after ten idle minutes
+(`OLLAMA_CPU_KEEP_ALIVE`), so the judge's residency starts again often, and `compare` refuses a pair
+against a run judged on the card. Numbers from this mode do not go to the journal.
+
+What the record says: every role's engine is `ollama-cpu` with `placement: cpu`; `engines` says "no
+engine holds the card", and `/readiness` answers `"status": "ok"`: it reads the roles' engines and
+not the card's ollama, which this mode leaves out. On a host with a card it names a role whose card
+engine is down and points here.
+
+Checked on Linux with the card not given to the containers. A Mac is expected to behave the same and
+is not checked: Docker Desktop passes no Metal into a container, so everything runs on the processor,
+its virtual machine needs room for two 7-8b models and the embedder at once, and `vllm-cpu` is an x86
+image that is not for it.
+
+Leave it: seat the roles back on their card engines, then `scripts/up.sh` on a host with a card.
+
 ## After MR 3: a cloud engine
 
 Written with the cloud engine.
