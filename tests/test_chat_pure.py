@@ -77,7 +77,7 @@ def _offline_snapshot(monkeypatch, device=None):
 
     monkeypatch.setattr(run_snapshot, "_rerank_device", lambda: device)
     monkeypatch.setattr(run_snapshot.db, "fingerprint_or_none", lambda *, variant: None)
-    monkeypatch.setattr(run_snapshot.ollama, "context_length", lambda model, spec=None: 8192)
+    monkeypatch.setattr("engines.ollama.context_length", lambda model, spec=None: 8192)
     stub_engines(monkeypatch, run_snapshot)
 
 def test_config_snapshot_records_device_only_when_reranking(monkeypatch):
@@ -165,7 +165,8 @@ def test_one_place_decides_whether_a_run_reranks(monkeypatch):
     # True over a config already False: a resolver ignoring config passes the older test
     monkeypatch.setattr(config.settings.rerank, "enabled", True)
     seen = {}
-    monkeypatch.setattr(evaluation, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda role, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda role, model=None, allow_spill=False: None)
     monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 0)
 
     evaluation.eval_run({"run_name": "r", "set_name": "s"})
@@ -280,7 +281,7 @@ def test_a_piece_that_is_not_a_corpus_chunk_still_holds_its_place():
     refused = agent_tools.chunk_pieces({}, "No relevant documents found.")
     assert refused == [], "a call the gate emptied contributes neither text nor address"
 
-    # the run of 06.09: the gate replaced the content and the addresses outlived it, 133 rows of 300
+    # the gate replaced the content and the addresses outlived it, 133 rows of 300
     gated = agent_tools.chunk_pieces(
         {"chunks": [{"source": "a.md"}, {"source": "b.md"}]}, "No relevant documents found."
     )
@@ -292,3 +293,25 @@ def test_a_piece_that_is_not_a_corpus_chunk_still_holds_its_place():
     )
     assert mismatched == [None, None]
 
+
+
+def test_a_live_answer_joins_the_batch_and_a_run_or_a_failure_does_not(monkeypatch):
+    from use_cases import chat
+
+    batched, single = [], []
+    monkeypatch.setattr(chat.job_queue, "judge_live", lambda log_id: batched.append(log_id))
+    monkeypatch.setattr(chat.job_queue, "enqueue", lambda *a, **kw: single.append(a))
+    chat.judge_later(SimpleNamespace(success=True), None, 7)
+    chat.judge_later(SimpleNamespace(success=True), "arc5_run", 8)
+    chat.judge_later(SimpleNamespace(success=False), None, 9)
+    assert batched == [7] and single == [], "one waiting batch, never a job per question"
+
+
+def test_the_agent_judges_its_live_answers_by_the_chat_s_rule():
+    # the agent queued a pass per answer beside the chat's batch, and took the card each time
+    import inspect
+
+    from use_cases import agent
+
+    source = inspect.getsource(agent)
+    assert "chat.judge_later(" in source and 'enqueue("judge_answers"' not in source

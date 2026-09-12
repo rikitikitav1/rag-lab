@@ -1,4 +1,5 @@
 from . import (  # noqa: F401  (populate HANDLERS)
+    card,
     dataprep,
     evaluation,
     indexing,
@@ -6,6 +7,6 @@ from . import (  # noqa: F401  (populate HANDLERS)
     mcp,
     model_ops,
 )
-from .base import HANDLERS, Deferred, register
+from .base import HANDLERS, Deferred, Final, register
 
-__all__ = ["HANDLERS", "Deferred", "register"]
+__all__ = ["HANDLERS", "Deferred", "Final", "register"]

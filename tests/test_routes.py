@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from stand_specs import queued_job as _queued_job
 
 
 def test_agent_max_hops_zero_422(client):
@@ -17,18 +18,32 @@ def test_agent_language_invalid_422(client):
     assert r.status_code == 422
 
 
+def test_the_agent_door_refuses_foreign_vectors_rather_than_answering_without_the_corpus(
+    client, monkeypatch
+):
+    import api.v1.agent as agent_door
+
+    import db
+
+    def foreign(*a, **kw):
+        raise db.ForeignVectors("variant holds vectors of bge-m3@ollama-cpu")
+
+    monkeypatch.setattr(agent_door, "wait_for_the_card", lambda *roles: None)
+    monkeypatch.setattr(agent_door.agent, "run", foreign)
+    r = client.post("/v1/agent/question", json={"text": "x"})
+    assert r.status_code == 409 and "bge-m3@ollama-cpu" in r.json()["detail"]
+
+
 def test_eval_run_pipeline_invalid_422(client):
     r = client.post("/v1/eval/run", json={"set_name": "s", "pipeline": "bogus"})
     assert r.status_code == 422
 
 
 def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
-    from types import SimpleNamespace
-
     import api.v1.eval as eval_mod
 
     monkeypatch.setattr(
-        eval_mod.job_queue, "add_job", lambda s, t, o: SimpleNamespace(id=1, type=t, options=o)
+        eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o)
     )
 
     async def _refresh(session, obj):
@@ -43,12 +58,10 @@ def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
 
 def test_every_field_a_run_declares_reaches_the_queue(client, monkeypatch):
     # the options dict is copied field by field, so a new field is accepted and never carried
-    from types import SimpleNamespace
-
     import api.v1.eval as eval_mod
 
     monkeypatch.setattr(
-        eval_mod.job_queue, "add_job", lambda s, t, o: SimpleNamespace(id=1, type=t, options=o)
+        eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o)
     )
 
     async def _refresh(session, obj):

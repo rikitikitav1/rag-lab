@@ -3,7 +3,9 @@ from .core import (
     LLM_TIMEOUT,
     SAMPLER_KEYS,
     SEEDED_PREFIX,
+    SILENT,
     Ambiguous,
+    CardState,
     EngineSpec,
     NotSupported,
     Sampler,
@@ -15,13 +17,19 @@ from .core import (
     base_url,
     client_for,
     forget_clients,
-    started_at,
+    label,
+    models_listing,
+    served_models,
     translate,
 )
 from .disk import NotEnoughDisk, free_bytes, refuse_if_tight
+from .drivers import Driver, driver
 from .lookup import (
+    CARD,
     Resolved,
+    card_engines,
     find_model,
+    registered,
     registered_names,
     seeded_ollama,
     spec_of_id,
@@ -29,12 +37,16 @@ from .lookup import (
     spec_of_role,
 )
 from .stamps import DANGLING, NAMED, UNNAMED, Stamped, engine_of
+from .vllm import WakeFailed, started_at
 
 __all__ = [
-    "ACCEPTS", "DANGLING", "LLM_TIMEOUT", "NAMED", "SAMPLER_KEYS", "SEEDED_PREFIX", "UNNAMED",
-    "Ambiguous", "EngineSpec", "NotEnoughDisk", "NotSupported", "Resolved", "Sampler",
-    "Stamped", "Unconfigured", "Unnamed",
-    "added_by", "address_of", "api_key", "base_url", "client_for", "engine_of", "find_model",
-    "forget_clients", "free_bytes", "refuse_if_tight", "registered_names", "seeded_ollama",
-    "spec_of_id", "spec_of_name", "spec_of_role", "started_at", "translate",
+    "ACCEPTS", "CARD", "DANGLING", "LLM_TIMEOUT", "NAMED", "SAMPLER_KEYS", "SEEDED_PREFIX", "SILENT",
+    "UNNAMED",
+    "Ambiguous", "CardState", "Driver", "EngineSpec", "NotEnoughDisk", "NotSupported", "Resolved", "Sampler",
+    "Stamped", "Unconfigured", "Unnamed", "WakeFailed",
+    "added_by", "address_of", "api_key", "base_url", "card_engines", "client_for", "driver",
+    "engine_of",
+    "find_model", "forget_clients", "free_bytes", "label", "models_listing", "refuse_if_tight", "registered",
+    "registered_names", "seeded_ollama", "served_models", "spec_of_id", "spec_of_name", "spec_of_role",
+    "started_at", "translate",
 ]

@@ -353,6 +353,53 @@ def test_a_client_failure_is_logged_as_an_error_not_a_missing_row(monkeypatch_fa
     assert str(result.outcome) == "error"
 
 
+def test_a_stand_fault_ends_every_agent_arm_instead_of_failing_the_row(monkeypatch_factory):
+    import agent_tools
+    import langchain.agents as agents_module
+    from engines.card import CardNotHanded
+    from orchestrators import react
+
+    import db
+
+    def lost(*a, **kw):
+        raise CardNotHanded("vllm is down; the card stays where it is")
+
+    def foreign(*a, **kw):
+        raise db.ForeignVectors("variant holds vectors of another embedder")
+
+    class Broken:
+        def invoke(self, *a, **kw):
+            foreign()
+
+    search = [_turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"})]
+    for patch, fault in ((lambda mp: mp.setattr(agent.llm, "chat", lost), CardNotHanded),
+                         (lambda mp: mp.setattr(agent_tools, "dispatch", foreign), db.ForeignVectors)):
+        with monkeypatch_factory() as monkeypatch:
+            _agent_harness(monkeypatch, list(search), [])
+            patch(monkeypatch)
+            with pytest.raises(fault):
+                agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_ported)
+
+    with monkeypatch_factory() as monkeypatch:
+        _agent_harness(monkeypatch, [], [])
+        monkeypatch.setattr(react, "chat_model", lambda role=None, model=None: object())
+        monkeypatch.setattr(agents_module, "create_agent", lambda **kw: Broken())
+        with pytest.raises(db.ForeignVectors):
+            agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_idiomatic)
+
+
+def test_the_topic_axis_does_not_turn_foreign_vectors_into_no_signal(monkeypatch):
+    import db
+
+    def foreign(*a, **kw):
+        raise db.ForeignVectors("variant holds vectors of another embedder")
+
+    monkeypatch.setattr(agent.llm, "embed_with_label", lambda text: ("bge-m3@ollama", [0.0]))
+    monkeypatch.setattr(agent.db, "nearest_distance", foreign)
+    with pytest.raises(db.ForeignVectors):
+        agent._topic_score("q", "baseline")
+
+
 # a cross-check misses a mistake both sides make, so the plain path is pinned to a literal
 def test_the_plain_corpus_path_matches_a_written_down_shape(monkeypatch_factory):
     turns = [

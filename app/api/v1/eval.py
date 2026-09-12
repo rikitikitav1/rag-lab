@@ -25,6 +25,9 @@ from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrato
 from use_cases.chat import resolve_rerank
 from use_cases.index import VARIANT_RE
 
+# a door that queues a job answers with the whole row, the same one `POST /v1/job` answers with
+from api.v1.job import JobResponse as JobEnqueuedResponse
+
 # what a run may ask for is not what a log may hold: both retired arms stay queryable
 RunnableOrchestrator = StrEnum(
     "RunnableOrchestrator",
@@ -36,19 +39,12 @@ log = logging_setup.get_logger(__name__)
 router = APIRouter(prefix="/eval", tags=["eval"])
 
 
-class JobEnqueuedResponse(BaseModel):
-    job_id: int
-    type: str
-    options: dict
-
-
 class RejudgeRequest(BaseModel):
     source: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
 
 
-class RejudgeResponse(BaseModel):
-    job_id: int
+class RejudgeResponse(JobEnqueuedResponse):
     run_name: str
     copied: int
 
@@ -56,7 +52,7 @@ class RejudgeResponse(BaseModel):
 class GuestAxesRequest(BaseModel):
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
     judge_width: int | None = Field(default=None, ge=1, le=limits.MAX_RUNS)
-    # the owner's decision of 07.09: the guests calibrate on a subsample, they are not an axis
+    # the guests calibrate on a subsample, they are not an axis
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
 
@@ -121,7 +117,7 @@ def _debts_or_none(run_name: str):
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
     job = job_queue.add_job(session, type, options)
     await commit_and_refresh(session, job)
-    return JobEnqueuedResponse(job_id=job.id, type=job.type, options=job.options)
+    return JobEnqueuedResponse.model_validate(job)
 
 
 @router.post("/paraphrase", response_model=JobEnqueuedResponse)
@@ -212,7 +208,9 @@ class CompareResponse(BaseModel):
     # the door used to drop these: a caller read two arms the code itself calls incomparable
     schema_version: int = Field(alias="schema")
     residency: dict
+    answering_engines_by_run: dict
     correlation_population: dict
+    verdicts: dict | None
 
     model_config = {"populate_by_name": True}
 
@@ -367,7 +365,8 @@ def enqueue_rejudge(request: RejudgeRequest):
         # the copy is committed and the job is not, under a name no retry can reuse
         rejudge.delete_runs([request.run_name])
         raise
-    return RejudgeResponse(job_id=job_id, run_name=request.run_name, copied=copied)
+    row = JobEnqueuedResponse.model_validate(job_queue.get(job_id)).model_dump()
+    return RejudgeResponse.model_validate({**row, "run_name": request.run_name, "copied": copied})
 
 
 # `/rejudge` judges a copy; a run judged in place had no door, and the queue was filled by hand

@@ -13,6 +13,7 @@ class Role(StrEnum):
     embedding = "embedding"
     judging = "judging"
     paraphrasing = "paraphrasing"
+    reranking = "reranking"
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
@@ -24,6 +25,12 @@ ALLOWED_REGISTRIES = ("hf.co", "registry.ollama.ai")
 MAX_MODEL_NAME = 128
 
 
+# the hub cache spells `/` as `--`, so `a--b` would share the weights directory of `a/b`
+def refuse_shared_cache_dir(name: str) -> None:
+    if "--" in name:
+        raise ValueError(f"{name!r}: `--` would share another name's cache directory")
+
+
 def refuse_unknown_registry(name: str) -> None:
     # length and shape here too: the job door used to get only the half below
     if not name or len(name) > MAX_MODEL_NAME or not MODEL_NAME_RE.fullmatch(name):
@@ -31,6 +38,7 @@ def refuse_unknown_registry(name: str) -> None:
     parts = name.split("/")
     if any(part in ("", ".", "..") for part in parts) or len(parts) > 3:
         raise ValueError(f"invalid model name: {name!r}")
+    refuse_shared_cache_dir(name)
     if len(parts) == 3 and parts[0].lower() not in ALLOWED_REGISTRIES:
         raise ValueError(f"model registry host not allowed: {parts[0]!r}")
 
@@ -123,6 +131,9 @@ class Model(Base):
     quant: Mapped[str | None] = mapped_column(default=None)
     # what this artifact takes on disk, so a pull can refuse before it starts, not halfway
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    # whether a vLLM serving it returns tool calls, and for which process start that was asked
+    tool_probe: Mapped[bool | None] = mapped_column(default=None)
+    tool_probe_start: Mapped[str | None] = mapped_column(default=None)
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )

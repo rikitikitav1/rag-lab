@@ -138,7 +138,8 @@ def test_an_exact_search_resolves_no_depth(monkeypatch):
             return _R()
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True)
+    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
     assert not any("hnsw.ef_search" in q for q in issued)
 
 
@@ -168,6 +169,7 @@ def test_an_exact_search_turns_the_index_off_on_its_own_connection(monkeypatch):
             return _R()
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True)
+    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
     assert any("enable_indexscan = off" in q for q in issued)
     assert not any("hnsw.ef_search" in q for q in issued)

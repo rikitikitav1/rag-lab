@@ -5,10 +5,9 @@ import llm
 import pytest
 from engines import core, lookup
 from models.registry import EngineKind, Placement
+from stand_specs import OLLAMA, VLLM
 
-OLLAMA = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
 SECOND = engines.EngineSpec(2, "ollama2", EngineKind.ollama, "OLLAMA2", Placement.gpu)
-VLLM = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
 CLOUD = engines.EngineSpec(4, "cloud", EngineKind.openai_compatible, "CLOUD", Placement.remote)
 
 
@@ -139,10 +138,16 @@ def test_an_unregistered_name_runs_on_the_engine_of_the_role(monkeypatch):
     assert (picked.name, picked.engine.name) == ("never-registered", "vllm")
 
 
-def test_a_second_ollama_is_a_refusal_and_not_a_pick(monkeypatch):
-    # the config's models belong to ollama by kind, and two of them is a question, not a default
+def test_a_second_ollama_does_not_unseat_the_seeded_one_but_a_guess_is_refused(monkeypatch):
+    # with `ollama-cpu` registered the bootstrap skipped the seeded ollama's models
     _rows_are(monkeypatch, [
         (1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
+        (5, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu),
+    ])
+    assert engines.seeded_ollama().name == "ollama"
+    # without the seeded prefix two ollamas are still a question, not a default
+    _rows_are(monkeypatch, [
+        (1, "ollama1", EngineKind.ollama, "OLLAMA1", Placement.gpu),
         (2, "ollama2", EngineKind.ollama, "OLLAMA2", Placement.gpu),
     ])
     with pytest.raises(engines.Unnamed, match="2 ollama engines"):
@@ -178,6 +183,48 @@ def test_an_unreadable_table_never_calls_a_live_engine_deleted():
     assert got.state == engines.NAMED
 
 
+def test_a_name_on_two_engines_is_taken_from_the_role_s_engine_or_refused(monkeypatch):
+    # the fallback registered the name again on the seeded ollama and hit the unique key
+    from job_handlers import base
+    from models.registry import Status
+
+    def find(name, engine_id=None):
+        if engine_id is None:
+            raise engines.Ambiguous(f"{name} sits on two engines")
+        return engines.Resolved(name, OLLAMA) if engine_id == OLLAMA.id else None
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def scalar(self, _stmt):
+            return Status.ready
+
+        def add(self, _row):
+            pytest.fail("an ambiguous name is never registered again")
+
+    monkeypatch.setattr(engines, "find_model", find)
+    monkeypatch.setattr(llm, "resolve", lambda role: engines.Resolved(
+        "m", {"generation": OLLAMA, "judging": VLLM}[role]))
+    monkeypatch.setattr(base, "Session", _Session)
+    base.require_model_ready("bge-m3", "generation")
+    with pytest.raises(engines.Ambiguous):
+        base.require_model_ready("bge-m3", "judging")
+    with pytest.raises(engines.Ambiguous):
+        base.require_model_ready("bge-m3")
+
+
+def test_a_name_with_a_double_dash_is_refused_at_every_door():
+    # `a--b` would share the hub cache directory of `a/b`, and the boot died on such a row
+    from models.registry import refuse_unknown_registry
+
+    with pytest.raises(ValueError, match="share"):
+        refuse_unknown_registry("org--x/model")
+
+
 def test_ollama_adds_the_window_it_was_started_with(monkeypatch):
     from engines import ollama
 
@@ -194,23 +241,18 @@ def test_a_server_that_answers_nothing_leaves_the_key_out(monkeypatch):
 
 
 def test_vllm_adds_its_window_and_its_version(monkeypatch):
-    from types import SimpleNamespace
+    from engines import vllm
 
-    served = SimpleNamespace(id="m", max_model_len=8192, model_extra={})
-    monkeypatch.setattr(core, "client_for", lambda _spec: SimpleNamespace(
-        models=SimpleNamespace(list=lambda: SimpleNamespace(data=[served]))
-    ))
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: 8192)
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: "0.29.1")
     assert engines.added_by(VLLM, "m") == {"max_model_len": 8192, "engine_version": "0.29.1"}
 
 
 def test_the_stamp_says_whether_the_server_had_batch_invariance_on(monkeypatch):
     # measured on 0.29.1: `max_num_seqs` is nowhere in the server's answers, this flag is
-    from types import SimpleNamespace
+    from engines import vllm
 
-    monkeypatch.setattr(core, "client_for", lambda _spec: SimpleNamespace(
-        models=SimpleNamespace(list=lambda: SimpleNamespace(data=[]))
-    ))
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: None)
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: (
         {"VLLM_BATCH_INVARIANT": True} if path == "/server_info" else None
     ))
@@ -218,21 +260,21 @@ def test_the_stamp_says_whether_the_server_had_batch_invariance_on(monkeypatch):
 
 
 def test_a_server_without_dev_mode_leaves_the_flag_out_rather_than_calling_it_off(monkeypatch):
-    from types import SimpleNamespace
+    from engines import vllm
 
-    monkeypatch.setattr(core, "client_for", lambda _spec: SimpleNamespace(
-        models=SimpleNamespace(list=lambda: SimpleNamespace(data=[]))
-    ))
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: None)
     # `/server_info` answers 404 unless VLLM_SERVER_DEV_MODE is set, and absent is not False
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: None)
     assert "batch_invariant" not in engines.added_by(VLLM, "m")
 
 
 def test_an_unreachable_engine_adds_nothing_rather_than_failing_the_pass(monkeypatch):
-    def boom(_spec):
-        raise RuntimeError("down")
+    from engines import vllm
 
-    monkeypatch.setattr(core, "client_for", boom)
+    def boom(*a, **kw):
+        raise vllm.requests.ConnectionError("down")
+
+    monkeypatch.setattr(vllm.requests, "get", boom)
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: None)
     assert engines.added_by(VLLM, "m") == {}
 
@@ -259,3 +301,52 @@ def test_an_override_naming_a_model_on_two_engines_takes_the_role_own_engine(mon
     # the second ask names the role's engine, and its answer is what the pass must use
     assert asked == [None, OLLAMA.id], "the retry must name the role's engine, not guess"
     assert picked.engine is SECOND, "the row found on that engine wins, not a fabricated pair"
+
+
+def test_an_embedder_is_loaded_by_an_empty_embed_and_a_generator_by_an_empty_generate(monkeypatch):
+    # `/api/generate` on bge-m3 answers 400, so a handover naming the embedder failed
+    from engines import ollama
+
+    sent = []
+    caps = {"bge-m3": ["embedding"], "llama3.1:8b": ["completion", "tools"]}
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": caps[model]})
+    monkeypatch.setattr(ollama, "post", lambda path, body, spec=None: sent.append((path, body)))
+    monkeypatch.setattr(ollama, "context_length", lambda model, spec=None: None)
+    ollama.load_into_memory("bge-m3")
+    ollama.load_into_memory("llama3.1:8b")
+    assert sent == [("/api/embed", {"model": "bge-m3", "input": []}),
+                    ("/api/generate", {"model": "llama3.1:8b"})]
+
+
+def test_an_ollama_card_reading_tells_a_stopped_server_from_a_silent_one(monkeypatch):
+    # a stopped ollama read as a holder, and a handover to the judge waited 60 s
+    import requests
+    from engines import ollama
+
+    class _Answer:
+        def __init__(self, status, body=None):
+            self.status_code, self.ok, self._body = status, status < 400, body
+            self.text = "x" if body is not None or status >= 400 else ""
+
+        def json(self):
+            return self._body or {"error": "boom"}
+
+    held = {"models": [{"name": "llama3.1:8b", "size": 2**30, "size_vram": 2**30}]}
+    spilled = {"models": [{"name": "qwen2.5:7b", "size": 2**30, "size_vram": 0}]}
+    for said, state in ((requests.ConnectionError("refused"), "down"),
+                        (requests.ConnectTimeout("no route"), "unknown"),
+                        (requests.ReadTimeout("slow"), "unknown"),
+                        (_Answer(500), "unknown"),
+                        (_Answer(200, held), "holds"),
+                        (_Answer(200, spilled), "free")):
+        def get(url, timeout, said=said):
+            if isinstance(said, Exception):
+                raise said
+            return said
+
+        monkeypatch.setattr(ollama.requests, "get", get)
+        assert ollama.card_reading(OLLAMA)[0] == state, said
+    # the residency is the card's own read
+    assert ollama.residency(OLLAMA) == ollama.card_reading(OLLAMA)[1] != []
+    # no address configured means the server runs nowhere
+    assert ollama.card_reading(SECOND)[0] == "down"

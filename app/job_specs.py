@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Literal
 
 import limits
-from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline
+from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
@@ -75,6 +75,8 @@ class JudgeAnswers(Spec):
     control_sample: int | None = None
     control_seed: int | None = None
     experiment_id: int | None = None
+    # the batch the chat's answers gather in: it waits so the judge wakes once, not once per question
+    live: bool | None = None
 
     # no target judges every unjudged row there is, and only the sweep may mean that
     @model_validator(mode="after")
@@ -111,6 +113,26 @@ class AnalyzeSource(Spec):
 
 class CheckMcpHealth(Spec):
     integration_id: int
+
+
+class HandCard(Spec):
+    engine_id: int = Field(ge=1)
+    # the API queues this (the chat, `/load`, a role seat): who asked, for the reader, not the turn
+    asked_by: str | None = Field(default=None, max_length=64)
+    # for ollama the model to load once the card is free; vLLM serves one model and needs no name
+    model: str | None = Field(
+        default=None, min_length=1, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern
+    )
+    # the role door on an asleep vLLM: probe the woken server, then seat the role or fail with why
+    seat: Literal["generation"] | None = None
+    # the model the role held when the door asked; the seat is refused if another has come since
+    seat_over: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _seats_a_named_model(self):
+        if self.seat and not self.model:
+            raise ValueError("seat names the model it seats")
+        return self
 
 
 class ModelByName(Spec):
@@ -172,22 +194,41 @@ SPECS: dict[str, type[Spec]] = {
     "analyze_source": AnalyzeSource,
     "check_mcp_health": CheckMcpHealth,
     "pull_llm_model": ModelByName,
+    "hand_card": HandCard,
     "delete_llm_model": ModelByName,
 }
 
 LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io"}
 
-# the safe way round: an unclassified type evicts. `judge_guest_axes` left when relevancy arrived
-KEEPS_THE_JUDGE = ("judge_answers", "check_mcp_health", "build_vector_index")
+# lower first; judging waits for runs, and the API's `hand_card` overtakes what waits
+PRIORITY = {"hand_card": -2, "judge_answers": 10, "judge_guest_axes": 10, "judge_language": 10}
+
+# a flow of runs must not hold the judge back forever: a job this old goes before all but a handover
+STARVED_AFTER_MINUTES = 30
 
 
-def disturbs_the_judge(job_type: str) -> bool:
-    return job_type not in KEEPS_THE_JUDGE
+# the roles a type answers with; `hand_card` names its engine and model in the options instead
+LOADS: dict[str, tuple[Role, ...]] = {
+    "paraphrase_questions": (Role.paraphrasing,),
+    "build_veto_set": (Role.paraphrasing,),
+    "index_data": (Role.embedding,),
+    "embed_questions": (Role.embedding,),
+    "build_vector_index": (),
+    "analyze_source": (),
+    "eval_run": (Role.generation, Role.embedding, Role.reranking),
+    "compare_retrieval": (Role.reranking,),
+    "judge_answers": (Role.judging,),
+    "judge_guest_axes": (Role.judging, Role.embedding),
+    "judge_language": (Role.judging, Role.generation),
+    "check_mcp_health": (),
+    "pull_llm_model": (),
+    "hand_card": (),
+    "delete_llm_model": (),
+}
 
-
-# a renamed type would leave a dead entry here and quietly start evicting the judge on paper
-if not set(KEEPS_THE_JUDGE) <= set(SPECS):
-    raise RuntimeError(f"no such job type: {sorted(set(KEEPS_THE_JUDGE) - set(SPECS))}")
+# a type left out would read as loading nothing and never evict the judge
+if set(LOADS) != set(SPECS):
+    raise RuntimeError(f"roles not declared for: {sorted(set(LOADS) ^ set(SPECS))}")
 
 
 # a type that takes whatever it is given; the universal door made the empty list the safe state

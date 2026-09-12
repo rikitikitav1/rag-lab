@@ -7,17 +7,18 @@ import job_queue
 import limits
 import llm
 import logging_setup
-from engines import ollama
+from engines import card
+from errors import StandFault
 from evals import guest_axes, measurements, sampling
 from models.eval import Question, QuestionLog
-from models.registry import Engine, EngineKind, Placement, Purpose, Role
+from models.registry import Engine, EngineKind, Purpose, Role
 from orm import dsn
 from orm.sync_db import Session
 from sqlalchemy import DateTime, and_, cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from use_cases import experiment, judge, rejudge
 
-from .base import register, require_model_ready, require_role_ready
+from .base import Final, register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
 
@@ -34,18 +35,14 @@ _LOCK_WAIT_MS = 5000
 def _bounded_wait(session) -> None:
     session.execute(text(f"SET LOCAL lock_timeout = '{_LOCK_WAIT_MS}ms'"))
 
-# only ollama splits a model between vram and ram without saying so, so only it needs this reading
-def residency_instrument(spec) -> str | None:
-    return "ollama /api/ps" if spec.kind is EngineKind.ollama else None
+
+residency_instrument = card.placement_instrument
 
 
 # a pass whose guests cost several times our own can lose the judge to a neighbour halfway
 def judge_on_card(model: str | None = None) -> bool | None:
     judged_by = llm.resolve_for("judging", model)
-    if residency_instrument(judged_by.engine) is None:
-        return None
-    seen = [m for m in ollama.residency(judged_by.engine) if m["model"] == judged_by.name]
-    return seen[0]["vram_mb"] >= seen[0]["size_mb"] if seen else None
+    return card.model_on_card(judged_by.engine, judged_by.name)
 
 
 # the runtime image carries no `ragas`, and a pass that cannot score says so before it walks
@@ -157,14 +154,32 @@ def _stop_asked(job_id) -> bool:
     return job_id is not None and job_queue.is_cancelled(job_id)
 
 
+# a run finished on another engine than the one that began it is two rulers in one record
+def _refuse_a_second_judge(run_name: str, model: str | None) -> None:
+    judge = llm.resolve_for("judging", model).engine.name
+    stamps = [QuestionLog.metrics[(axis, "engine_name")].as_string() for axis in rejudge.AXES]
+    with Session() as session:
+        rows = session.execute(select(*stamps).where(QuestionLog.run_name == run_name)).all()
+    earlier = sorted({name for row in rows for name in row if name} - {judge})
+    if earlier:
+        raise Final(
+            f"run {run_name} was judged on {', '.join(earlier)} and the judge now sits on {judge};"
+            f" seat it back there, or rejudge the whole run into a copy through /v1/eval/rejudge"
+        )
+
+
 @register("judge_answers")
 def judge_answers(options: dict) -> None:
     bench = _bench_from(options)
     if bench.model:
         # the arm's override: a mistyped tag passed `require_role_ready` and failed per log
-        require_model_ready(bench.model)
+        require_model_ready(bench.model, "judging")
     else:
-        require_role_ready(Role.judging)
+        require_role_ready(Role.judging, take_card=False)
+    if options.get("run_name") and not options.get("log_ids"):
+        _refuse_a_second_judge(options["run_name"], bench.model)
+    # once, with the bench's model when it names one: the role gate asked for the card a second time
+    require_card("judging", bench.model)
     # resolved before any log: inside the loop it was swallowed per axis
     for purpose in _PURPOSES:
         bench.template(purpose)
@@ -202,6 +217,8 @@ def judge_answers(options: dict) -> None:
             return _judge_log(
                 log_id, force=force, bench=bench, width=width, skip=skip, residency=residency
             )
+        except StandFault:
+            raise
         except Exception as e:
             log.error("judge.log_failed", log_id=log_id, error=str(e))
             _count_the_attempt(log_id, skip, f"{type(e).__name__}: {e}")
@@ -298,6 +315,8 @@ def judge_guest_axes(options: dict) -> None:
             return False
         try:
             return _score_guests(log_id, stamp)
+        except StandFault:
+            raise
         except Exception as e:
             log.error("guest_axes.log_failed", log_id=log_id, error=str(e))
             return False
@@ -393,6 +412,8 @@ def _score_guests(log_id: int, stamp: dict) -> bool:
             scored[axis] = {**stamp, **guest_axes.score(axis, row),
                             "on_card_at_this_row": judge_on_card()}
             wrote = True
+        except StandFault:
+            raise
         except Exception as e:
             log.error("guest_axes.failed", axis=axis, log_id=log_id, error=str(e))
             scored[axis] = _errored_metric(metrics, axis, f"{type(e).__name__}: {e}")
@@ -492,7 +513,8 @@ class LateResidency:
 # a residency is read by the instrument its own engine has, and the engines have different ones
 def _residency(job_id, model: str | None = None) -> Residency:
     try:
-        engine = llm.resolve_for("judging", model).engine
+        judge = llm.resolve_for("judging", model)
+        engine = judge.engine
         if engine.kind is EngineKind.vllm:
             return _by_process_start(job_id, engine)
         on_card = judge_on_card(model)
@@ -503,7 +525,7 @@ def _residency(job_id, model: str | None = None) -> Residency:
         source = f"{residency_instrument(engine)} and the queue"
         last = _last_residency(engine.name)
         # `/api/ps` cannot say who loaded what between two passes, but the queue and the card can
-        fresh = last is None or _loaded_since(last[0], job_id)
+        fresh = last is None or _loaded_since(last[0], job_id, judge)
         if fresh or _card_changed_hands(last[1], engine.name):
             return Residency(job_id, on_card, source)
         return Residency(last[0], on_card, source)
@@ -513,24 +535,60 @@ def _residency(job_id, model: str | None = None) -> Residency:
         return Residency(None, None)
 
 
-def _loaded_since(prev: int, job_id) -> bool:
-    import job_specs
+def _loaded_since(prev: int, job_id, judge) -> bool:
     from models.jobs import Job, JobStatus
 
     # `running` and the ones that died after loading evict the judge exactly as `done` ones do
     ours = {JobStatus.new}
     with Session() as session:
-        asked = select(Job.type).where(Job.id > prev, Job.status.notin_(ours))
+        asked = select(Job.type, Job.options).where(Job.id > prev, Job.status.notin_(ours))
         # `Job.id != None` renders as a no-op, and an ad hoc pass then never inherits a residency
-        types = session.scalars(asked if job_id is None else asked.where(Job.id != job_id))
-        return any(job_specs.disturbs_the_judge(t) for t in types)
+        jobs = session.execute(asked if job_id is None else asked.where(Job.id != job_id)).all()
+    seen = {}
+    return any(evicts_the_judge(t, o or {}, judge, seen) for t, o in jobs)
+
+
+# any other model on the card evicts: on the judge's engine it shares memory, on another it takes it
+def evicts_the_judge(job_type: str, options: dict, judge, seen: dict | None = None) -> bool:
+    import job_specs
+
+    if job_type == "hand_card":
+        return (options.get("engine_id"), options.get("model") or judge.name) != (
+            judge.engine.id, judge.name
+        )
+    roles = job_specs.LOADS.get(job_type)
+    if roles is None:
+        return True
+    overrides = {"generation": options.get("model"), "judging": options.get("judge_model")}
+    seen = {} if seen is None else seen
+    for role in roles:
+        key = (str(role), overrides.get(role))
+        if key not in seen:
+            seen[key] = _puts_another_model_on_the_card(*key, judge)
+        if seen[key]:
+            return True
+    return False
+
+
+def _puts_another_model_on_the_card(role: str, model: str | None, judge) -> bool:
+    try:
+        picked = llm.resolve_for(role, model)
+    except StandFault:
+        raise
+    except Exception:
+        # a role nobody can resolve now may have loaded anything when it ran
+        return True
+    if picked.engine.placement not in engines.CARD:
+        return False
+    return (picked.engine.id, picked.name) != (judge.engine.id, judge.name)
 
 
 # one process holds one model, so passes under the same start share a residency whatever ran beside
 def _by_process_start(job_id, engine) -> Residency:
     started = engines.started_at(engine)
     if started is None:
-        return Residency(job_id, None)
+        # the id is the pass's own; the field names who minted it, and why the server did not
+        return Residency(job_id, None, "the pass, vllm /metrics unreachable")
     last = _last_residency(engine.name, started)
     return Residency(job_id if last is None else last[0], None, "vllm /metrics process start")
 
@@ -552,7 +610,10 @@ def _last_residency(engine_name: str, started_at: str | None = None) -> tuple[in
             else:
                 # a pass that found the judge on the cpu minted a number the card must not inherit
                 asked = asked.where(QuestionLog.metrics[(axis, "on_card")].as_boolean().is_(True))
-            got = session.execute(asked.order_by(desc(QuestionLog.id)).limit(1)).first()
+            # rows are created by the run and judged later, so the order that matters is the judging
+            judged = QuestionLog.metrics[(axis, "judged_at")].as_string()
+            latest = desc(cast(judged, DateTime(timezone=True))).nulls_last()
+            got = session.execute(asked.order_by(latest).limit(1)).first()
             if got is not None:
                 return got[0], got[1]
     return None
@@ -564,7 +625,7 @@ def _card_changed_hands(since: str | None, engine_name: str) -> bool:
         # a row too old to say when it was judged cannot vouch that nothing came between
         return True
     holders = select(Engine.name).where(
-        Engine.name != engine_name, Engine.placement.in_((Placement.gpu, Placement.gpu_and_cpu))
+        Engine.name != engine_name, Engine.placement.in_(engines.CARD)
     )
     when = DateTime(timezone=True)
     with Session() as session:
@@ -610,7 +671,7 @@ def stamp_of(width: int, residency: Residency | None = None, model: str | None =
     }
 
 
-# the owner's rule of 06.09: on a refusal an axis does not apply, so both sides stay silent
+# on a refusal an axis does not apply, so both sides stay silent
 def _refused(metrics) -> bool:
     return (metrics or {}).get("refusal") is True
 
@@ -759,6 +820,8 @@ def _errored_metric(metrics: dict, axis: str, err: str) -> dict:
 def _run_axis(log_id, axis, verdict_fn, *args):
     try:
         return verdict_fn(*args), None
+    except StandFault:
+        raise
     except Exception as e:
         log.error("judge.axis_failed", axis=axis, log_id=log_id, error=str(e))
         # the kind and what it said: a row that failed three times left only an exception name

@@ -1,0 +1,29 @@
+# a host without a card, over the main file: `scripts/up.sh --cpu`, docs/stand_modes.md mode 8
+services:
+  ollama:
+    profiles: ["gpu"]
+  vllm:
+    profiles: ["gpu"]
+  rag-lab:
+    deploy: !reset {}
+    environment:
+      CONFIG_OVERLAY: config.cpu.yaml
+      # a 7-8b answering eight thousand tokens of context on the processor outlives two minutes
+      LLM_TIMEOUT: ${LLM_TIMEOUT_CPU:-600}
+  worker:
+    deploy: !reset {}
+    environment:
+      CONFIG_OVERLAY: config.cpu.yaml
+      LLM_TIMEOUT: ${LLM_TIMEOUT_CPU:-600}
+  bootstrap:
+    # the main file waits for `ollama` and `vllm`, which this layer leaves out
+    depends_on: !override
+      seed:
+        condition: service_completed_successfully
+      ollama-cpu:
+        condition: service_healthy
+    environment:
+      CONFIG_OVERLAY: config.cpu.yaml
+  seed:
+    environment:
+      CONFIG_OVERLAY: config.cpu.yaml

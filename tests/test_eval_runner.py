@@ -1,4 +1,8 @@
+from pathlib import Path
+
+import pytest
 from evals import runner
+from use_cases.run_snapshot import ANSWERING
 
 
 def _spec(**kw):
@@ -27,9 +31,13 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
     monkeypatch.setattr(
         runner.llm, "request_embeddings_batch", lambda texts: [[0.1]] * len(texts)
     )
+    monkeypatch.setattr(runner.llm, "embedder_label", lambda role="embedding": "bge-m3@ollama")
+    monkeypatch.setattr(
+        runner.llm, "embed_labelled", lambda texts: ("bge-m3@ollama", [[0.1]] * len(texts))
+    )
     monkeypatch.setattr(
         runner.db, "hybrid_search",
-        lambda text, vector, category, limit, variant, ef_search=None: (
+        lambda text, vector, category, limit, variant, ef_search=None, embedded_by=None: (
             calls.append(("search", text, limit, variant, ef_search)) or _rows(text)
         ),
     )
@@ -41,10 +49,8 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
         runner, "_release",
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
-    monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
     # the card check is a network call; the tests that care about it override these
-    monkeypatch.setattr(runner.ollama, "warn_if_models_do_not_fit", lambda spec=None: [])
-    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda spec=None: [])
+    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: True)
     monkeypatch.setattr(
         runner.chat, "answer_from_rows",
         lambda text, rows, **kw: calls.append(("generate", text, kw.get("phased"))),
@@ -60,13 +66,13 @@ def test_phases_run_in_order_and_free_vram(monkeypatch):
     assert kinds == [
         "search", "search",
         "unload", "unload",
+        # no unload after it: the cross-encoder sleeps in its own server when the card is handed on
         "rerank",
-        "unload",
         "generate", "generate",
-        # teardown, on every exit: reranker, embedder, generator
-        "unload", "unload", "unload",
+        # teardown, on every exit: embedder, generator; the reranker lives in its own server
+        "unload", "unload",
     ]
-    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+    assert [c[1] for c in calls[-2:]] == ["embedding", "generation"]
 
 
 def test_rerank_runs_once_for_the_whole_set(monkeypatch):
@@ -91,7 +97,7 @@ def test_retrieval_widens_only_when_reranking(monkeypatch):
     assert not [c for c in calls if c[0] == "rerank"]
     # a run without a rerank phase still frees the embedder and gives the card back
     assert [c[1] for c in calls if c[0] == "unload"] == [
-        "embedding", "reranker", "embedding", "generation"
+        "embedding", "embedding", "generation"
     ]
 
 
@@ -122,8 +128,7 @@ def _rerank_by_content(monkeypatch, ranking):
     def fake_predict(pairs):
         return [ranking.get(chunk, 0.0) for _, chunk in pairs]
 
-    monkeypatch.setattr(runner.rerank, "_model", lambda: type("M", (), {"predict": staticmethod(fake_predict)})())
-    monkeypatch.setattr(runner.rerank, "_predict", fake_predict)
+    monkeypatch.setattr(runner.rerank, "score_pairs", fake_predict)
 
 
 def test_rerank_phase_keeps_candidates_with_their_own_question(monkeypatch):
@@ -178,9 +183,9 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
     def flaky(chunk):
         if "boom" in chunk:
             raise RuntimeError("embedder down")
-        return [[0.1]] * len(chunk)
+        return "bge-m3@ollama", [[0.1]] * len(chunk)
 
-    monkeypatch.setattr(runner.llm, "request_embeddings_batch", flaky)
+    monkeypatch.setattr(runner.llm, "embed_labelled", flaky)
 
     out, depth = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], _spec(use_rerank=False, k=3))
 
@@ -192,7 +197,7 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
 def test_search_failure_skips_one_question(monkeypatch):
     _stub_phases(monkeypatch)
 
-    def flaky(text, vector, category, limit, variant, ef_search=None):
+    def flaky(text, vector, category, limit, variant, ef_search=None, embedded_by=None):
         if text == "bad":
             raise RuntimeError("pg down")
         return _rows(text)
@@ -274,14 +279,14 @@ def test_the_card_is_asked_about_before_the_generator_is_paid_for(monkeypatch):
     import pytest
 
     calls = _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda _spec=None: ["bge-m3"])
+    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
     with pytest.raises(RuntimeError, match="not on the GPU"):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
-    assert [c[0] for c in calls] == ["search", "search", "unload", "unload", "unload"], (
+    assert [c[0] for c in calls] == ["search", "search", "unload", "unload"], (
         "nothing after retrieval should have run, and the card goes back anyway"
     )
     # the refusal raised past the unload, so the run left its own generator on the card
-    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+    assert [c[1] for c in calls[-2:]] == ["embedding", "generation"]
 
 
 def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
@@ -289,14 +294,15 @@ def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
     import pytest
 
     _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda _spec=None: ["llama3.1:8b"])
+    # half on the processor counts as off: the one instrument the preflight reads
+    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
     with pytest.raises(RuntimeError, match="not on the GPU"):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2))
 
 
 def test_a_phased_run_measuring_the_cpu_says_so_and_proceeds(monkeypatch):
     calls = _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.ollama, "models_off_the_card", lambda _spec=None: ["llama3.1:8b"])
+    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
     answered, cancelled = runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2), allow_cpu=True)
     assert (answered, cancelled) == (2, False)
     assert [c[0] for c in calls].count("generate") == 2
@@ -314,7 +320,7 @@ def test_a_rerank_that_throws_still_gives_the_card_back(monkeypatch):
     monkeypatch.setattr(runner.rerank, "score_pairs", _boom)
     with pytest.raises(RuntimeError, match="cuda is unhappy"):
         runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))
-    assert [c[1] for c in calls[-3:]] == ["reranker", "embedding", "generation"]
+    assert [c[1] for c in calls[-2:]] == ["embedding", "generation"]
 
 
 def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
@@ -324,9 +330,8 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
         runner, "_release",
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
-    monkeypatch.setattr(runner.rerank, "unload", lambda: calls.append(("unload", "reranker")))
     monkeypatch.setattr(runner, "_answer_one", lambda *a, **kw: calls.append(("answer",)))
-    monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda allow_cpu, use_rerank=False: None)
+    monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda roles, allow_cpu, model: None)
     answered, cancelled = runner._run_sequential(
         ["q1", "q2"],
         "run",
@@ -337,9 +342,7 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
         allow_cpu=False,
     )
     assert (answered, cancelled) == (2, False)
-    assert [c[1] for c in calls if c[0] == "unload"] == [
-        "reranker", "embedding", "generation"
-    ]
+    assert [c[1] for c in calls if c[0] == "unload"] == ["embedding", "generation"]
 
 
 def test_a_run_refuses_when_its_depth_stopped_walking_the_index(monkeypatch):
@@ -354,20 +357,6 @@ def test_a_run_refuses_when_its_depth_stopped_walking_the_index(monkeypatch):
 
     with pytest.raises(RuntimeError, match="no longer walks its index"):
         runner.run("run", set_name="s", pipeline="agent")
-
-
-def test_the_card_guard_sees_the_cross_encoder_before_the_set_is_reranked(monkeypatch):
-    # asked between retrieval and reranking, the model is still None and the guard is blind
-    import pytest
-
-    warmed = []
-    _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.rerank, "warm", lambda: warmed.append(True))
-    monkeypatch.setattr(runner.rerank, "off_the_card", lambda: "reranker on cpu")
-
-    with pytest.raises(RuntimeError, match="not on the GPU"):
-        runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))
-    assert warmed, "the model is loaded before it is asked where it sits"
 
 
 def test_the_answering_knobs_travel_as_one_value_not_as_a_row_of_positions():
@@ -388,3 +377,153 @@ def test_the_answering_knobs_travel_as_one_value_not_as_a_row_of_positions():
             if p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
         ]
         assert len(positional) <= 3, f"{fn.__name__} takes {len(positional)} by position"
+
+
+def test_the_run_gate_refuses_a_spill_and_passes_an_asleep_vllm(monkeypatch):
+    # the embedder took the card for retrieval, and the asleep generator read as off
+    import engines
+    from models.registry import EngineKind, Placement, Role
+    from use_cases import run_snapshot
+
+    vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    gpu = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    cpu = engines.EngineSpec(5, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu)
+    specs = {"generation": vllm, "embedding": gpu}
+    monkeypatch.setattr(run_snapshot.llm, "resolve",
+                        lambda role: engines.Resolved(f"{role}-model", specs[role]))
+    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
+    runner._refuse_a_cpu_run((Role.generation,), allow_cpu=False, model=None)
+    with pytest.raises(RuntimeError, match="embedding=embedding-model"):
+        runner._refuse_a_cpu_run(ANSWERING, allow_cpu=False, model=None)
+    specs["embedding"] = cpu
+    runner._refuse_a_cpu_run(ANSWERING, allow_cpu=False, model=None)
+
+
+def test_the_run_gate_reads_the_arm_s_own_generator_not_the_role_s(monkeypatch):
+    # an arm's `model` may spill while the role's default sits on the card
+    import engines
+    from models.registry import EngineKind, Placement, Role
+    from use_cases import run_snapshot
+
+    gpu = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    monkeypatch.setattr(run_snapshot.llm, "resolve",
+                        lambda role: engines.Resolved("llama3.1:8b", gpu))
+    monkeypatch.setattr(run_snapshot.llm.engines, "find_model",
+                        lambda name, engine_id=None: engines.Resolved(name, gpu))
+    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: name == "llama3.1:8b")
+    runner._refuse_a_cpu_run((Role.generation,), allow_cpu=False, model=None)
+    with pytest.raises(RuntimeError, match="generation=qwen2.5:32b"):
+        runner._refuse_a_cpu_run((Role.generation,), allow_cpu=False, model="qwen2.5:32b")
+
+
+def test_a_stand_fault_ends_the_run_instead_of_one_row(monkeypatch):
+    # a lost card or foreign vectors turned into a run `done` with part of its answers
+    from engines import card
+
+    import db
+
+    calls = _stub_phases(monkeypatch)
+
+    def foreign(*a, **kw):
+        raise db.ForeignVectors("variant holds vectors of another embedder")
+
+    monkeypatch.setattr(runner.db, "hybrid_search", foreign)
+    with pytest.raises(db.ForeignVectors):
+        runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2))
+    assert not [c for c in calls if c[0] == "generate"]
+
+    def lost(texts):
+        raise card.CardNotHanded("vllm is down; the card stays where it is")
+
+    _stub_phases(monkeypatch)
+    monkeypatch.setattr(runner.llm, "embed_labelled", lost)
+    with pytest.raises(card.CardNotHanded):
+        runner.run_phased(["q1"], "run", _spec(use_rerank=False, k=2))
+
+
+# a try here reads or writes the stand and never calls a model or a search, so no fault reaches it
+_FORGIVES_NO_CALL = {
+    ("evals/runner.py", "_release"),
+    ("job_handlers/judging.py", "_count_the_attempt"),
+    ("job_handlers/judging.py", "_merge_guest_scores"),
+    ("job_handlers/judging.py", "_residency"), ("job_handlers/judging.py", "_merge_our_scores"),
+    ("agent_tools.py", "remote_tools"), ("orchestrators/graph.py", "versions"),
+    ("db.py", "fingerprint_or_none"), ("job_handlers/indexing.py", "index_data"),
+}
+# read off the source, not listed: a module that starts calling a model later is guarded from then on
+def _reaches_a_model(app: Path) -> list[str]:
+    calls = ("llm.chat(", "llm.ask(", "llm.embed(", "request_embeddings_batch(", "score_pairs(",
+             "embed_labelled(", "embed_with_label(",
+             "hybrid_search(", "nearest_distance(", "dispatch(", ".invoke(", "guest_axes.score(")
+    return sorted(str(p.relative_to(app)) for p in app.rglob("*.py")
+                  if any(c in p.read_text() for c in calls))
+
+
+def _broad_catches(path: Path):
+    import ast
+
+    def names(h):
+        kinds = h.type.elts if isinstance(h.type, ast.Tuple) else [h.type]
+        return {ast.unparse(k) for k in kinds if k is not None}
+
+    def broad(h):
+        return h.type is None or bool(names(h) & {"Exception", "BaseException"})
+
+    def reraises(h):
+        return isinstance(h.body[-1], ast.Raise) and h.body[-1].exc is None
+
+    def visit(node, fn):
+        for child in ast.iter_child_nodes(node):
+            name = getattr(child, "name", fn) if isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)) else fn
+            if isinstance(child, ast.Try):
+                for i, h in enumerate(child.handlers):
+                    if not broad(h):
+                        continue
+                    # a `StandFault` handler that logs and returns forgives it as surely as a broad one
+                    passed = any(any("StandFault" in n for n in names(e)) and reraises(e)
+                                 for e in child.handlers[:i])
+                    yield name, passed or reraises(h)
+            yield from visit(child, name)
+
+    yield from visit(ast.parse(path.read_text()), "<module>")
+
+
+def test_the_guard_sees_a_fault_logged_away_and_a_broad_catch_in_a_tuple(tmp_path):
+    # a `StandFault` handler must re-raise too, and a tuple with `Exception` is broad
+    source = tmp_path / "m.py"
+    source.write_text(
+        "def swallowed():\n    try:\n        f()\n    except StandFault:\n        log()\n"
+        "    except Exception:\n        pass\n\n"
+        "def tupled():\n    try:\n        f()\n    except (ValueError, Exception):\n        pass\n\n"
+        "def passed():\n    try:\n        f()\n    except StandFault:\n        raise\n"
+        "    except Exception:\n        pass\n"
+    )
+    assert dict(_broad_catches(source)) == {"swallowed": False, "tupled": False, "passed": True}
+
+
+def test_every_catch_that_forgives_a_row_lets_a_stand_fault_through():
+    # a lost card must end the job, not fail row after row
+    app = Path(__file__).resolve().parent.parent / "app"
+    open_, seen = [], set()
+    for rel in _reaches_a_model(app):
+        for fn, safe in _broad_catches(app / rel):
+            seen.add((rel, fn))
+            if not safe and (rel, fn) not in _FORGIVES_NO_CALL:
+                open_.append(f"{rel}:{fn}")
+    assert open_ == []
+    assert _FORGIVES_NO_CALL <= seen
+
+
+def test_a_phased_run_reads_the_embedder_s_placement_before_it_lets_it_go(monkeypatch):
+    # every row is written after the release, and read then the embedder was None
+    calls = _stub_phases(monkeypatch)
+    seen = []
+    monkeypatch.setattr(runner.run_snapshot, "placed",
+                        lambda role: calls.append(("placed", role)) or True)
+    monkeypatch.setattr(runner.chat, "answer_from_rows",
+                        lambda text, rows, **kw: seen.append(kw.get("placed_during")))
+    runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))
+    kinds = [c if c[0] == "placed" else c[0] for c in calls]
+    assert kinds.index(("placed", "embedding")) < kinds.index("unload"), "read before the release"
+    assert seen == [{"embedding": True, "reranking": True}]

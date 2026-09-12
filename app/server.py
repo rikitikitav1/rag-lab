@@ -25,6 +25,8 @@ from fastapi.responses import JSONResponse
 from mcp_ops import mcp_ops
 from mcp_server import mcp
 
+import db
+
 logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
 
 MAX_BODY_BYTES = 6 * 1024 * 1024
@@ -49,6 +51,11 @@ app = FastAPI(lifespan=lifespan)
 @app.exception_handler(job_specs.Refused)
 async def _refused_options(request, bad: job_specs.Refused):
     return JSONResponse(status_code=400, content={"detail": str(bad)})
+
+
+@app.exception_handler(db.ForeignVectors)
+async def _foreign_vectors(request, bad: db.ForeignVectors):
+    return JSONResponse(status_code=409, content={"detail": str(bad)})
 
 
 app.mount("/mcp", mcp_app)

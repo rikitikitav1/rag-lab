@@ -1,9 +1,9 @@
 import engines
 import logging_setup
-from engines import ollama
-from models.registry import Engine, Model, ModelRole, Status, Weights
+from models.registry import Model, ModelRole, Status, Weights
 from orm.sync_db import Session
 from sqlalchemy import select
+from use_cases.weights_rules import refuse_if_the_weights_are_shared, refuse_remote
 
 from .base import register
 
@@ -16,16 +16,16 @@ def _pair(name: str, engine_id: int | None) -> engines.Resolved:
     if found is None:
         raise ValueError(f"no model {name} on engine {engine_id}" if engine_id else
                          f"model {name} is not registered")
-    ollama.refuse_unless_ollama(found.engine, "managing", name)
+    refuse_remote(found.engine.kind, name)
     return found
 
 
 @register("pull_llm_model")
 def pull_llm_model(options: dict) -> None:
     found = _pair(options["name"], options.get("engine_id"))
-    engines.refuse_if_tight(_size_seen_before(found), found.name)
-
-    ollama.pull_model(found.name, found.engine)
+    pulling = engines.driver(found.engine.kind)
+    engines.refuse_if_tight(_size_seen_before(found), found.name, pulling.weights_store())
+    pulling.pull(found.name, found.engine)
     record_what_the_server_holds(found)
 
 
@@ -44,13 +44,15 @@ def _size_seen_before(found) -> int | None:
             .where(Model.name == found.name, Model.size_bytes.isnot(None))
         ).first()
     # nobody has pulled this name yet, so the registry is the only one who knows what it costs
-    return seen or ollama.registry_size(found.name)
+    if seen:
+        return seen
+    return engines.driver(found.engine.kind).expected_size(found.name)
 
 
 # the size is unknown until the weights are here, and then it is what the next estimate reads
 def record_what_the_server_holds(found) -> None:
     try:
-        seen = ollama.artifact_of(found.name, found.engine)
+        seen = engines.driver(found.engine.kind).artifact(found.name, found.engine)
     except Exception as e:
         log.warning("pull.artifact_unread", model=found.name, error=str(e))
         seen = {}
@@ -91,7 +93,7 @@ def _engine_for_delete(name: str, engine_id: int | None) -> engines.EngineSpec:
         if found is None:
             raise ValueError(f"model {name} is not registered")
         spec = found.engine
-    ollama.refuse_unless_ollama(spec, "managing", name)
+    refuse_remote(spec.kind, name)
     return spec
 
 
@@ -100,6 +102,10 @@ def _engine_for_delete(name: str, engine_id: int | None) -> engines.EngineSpec:
 def delete_llm_model(options: dict) -> None:
     name = options["name"]
     spec = _engine_for_delete(name, options.get("engine_id"))
+    # every refusal before the row goes: after it, a refusal left weights with no row to name them
+    refuse_if_the_weights_are_shared(name, spec.id)
+    deleting = engines.driver(spec.kind)
+    deleting.refuse_delete(name)
     with Session() as session:
         model = session.scalars(
             select(Model).where(Model.engine_id == spec.id, Model.name == name)
@@ -111,22 +117,5 @@ def delete_llm_model(options: dict) -> None:
                 raise ValueError(f"{name} is assigned to role {assigned.role}; reassign it first")
             session.delete(model)
             session.commit()
-    _refuse_if_another_row_needs_these_weights(name)
-    ollama.delete_model(name, spec)
+    deleting.delete(name, spec)
 
-
-# two rows can name one artifact, and two engines can share a volume: the row is not the unit
-def _refuse_if_another_row_needs_these_weights(name: str) -> None:
-    wanted = ollama.add_tags([name])[0]
-    with Session() as session:
-        held = session.execute(
-            select(Model.name, Engine.name, ModelRole.role)
-            .join(ModelRole, ModelRole.model_id == Model.id)
-            .join(Engine, Engine.id == Model.engine_id)
-        ).all()
-    for model_name, engine_name, role in held:
-        if ollama.add_tags([model_name])[0] == wanted:
-            raise ValueError(
-                f"{name} is the same artifact as {model_name} on engine {engine_name},"
-                f" which role {role} still uses; reassign that role first"
-            )

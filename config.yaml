@@ -39,12 +39,11 @@ service:
     # off: worth +0.0454 of section MRR, and the 8b the agent needs takes its card room
     # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md
     enabled: false
-    model: BAAI/bge-reranker-v2-m3
     candidates: 20
   agent:
     max_hops: 4
     fallback_policy: corpus_first
-    # both read only at `gate_signal: cross_encoder`; under `distance` they sit unused
+    # both read at `gate_signal: cross_encoder` and `either`; under `distance` they sit unused
     gate_candidates: 5
     # cross-encoder coverage gate: median 0.916 in-corpus against 0.022 outside
     # tuned: file=docs/experiments/2026-08-24_corpus-first-and-the-fallback-that-never.md
@@ -304,10 +303,12 @@ llm:
     embedding:    { model: bge-m3 }
     # 8b: gemma3 reports no tool calling in ollama, so the agent path refuses every question
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
-    # evaluation
-    judging:      { model: qwen2.5:7b,  options: { max_tokens: 1024, temperature: 0, seed: 0 } }
+    # evaluation on vLLM: the same scale without ollama's drift, served by `vllm`
+    judging:      { model: Qwen/Qwen2.5-7B-Instruct-AWQ, engine: vllm, options: { max_tokens: 1024, temperature: 0, seed: 0 } }
     # building the question sets
     paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 } }
+    # the cross-encoder, out of the API and the worker: `vllm-rerank`, `--profile rerank`
+    reranking:    { model: BAAI/bge-reranker-v2-m3, engine: vllm-rerank }
   candidates: []
 
 postgres:

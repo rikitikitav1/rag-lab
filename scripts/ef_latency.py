@@ -5,12 +5,13 @@ import time
 from pathlib import Path
 
 import config
+import llm
 from sqlalchemy import text
 
 import db
 
 SAMPLE = """
-SELECT original_text, embedding::text FROM questions
+SELECT original_text, embedding::text, embedded_by FROM questions
 WHERE set_name = :set_name AND embedding IS NOT NULL
 ORDER BY id LIMIT :limit
 """
@@ -19,9 +20,10 @@ ORDER BY id LIMIT :limit
 def timings(rows, variant: str, ef: int) -> dict:
     # hybrid_search opens its own connection and sets the depth on it, per call
     took = []
-    for question, embedding in rows:
+    for question, embedding, embedded_by in rows:
         started = time.perf_counter()
-        db.hybrid_search(question, embedding, None, limit=20, variant=variant, ef_search=ef)
+        db.hybrid_search(question, embedding, None, limit=20, variant=variant, ef_search=ef,
+                         embedded_by=embedded_by or llm.embedder_label())
         took.append((time.perf_counter() - started) * 1000)
     took.sort()
     return {

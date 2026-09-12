@@ -3,9 +3,10 @@ from typing import Literal
 import config
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from use_cases import chat
+from use_cases import card_wait, chat
 
 import db
+from api.v1.card_door import wait_for_the_card
 from api.v1.schemas import AnswerSource
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -56,6 +57,7 @@ class RetrievalResponse(BaseModel):
 
 @router.post("/question", response_model=QuestionResponse)
 def ask(question: QuestionRequest) -> QuestionResponse:
+    wait_for_the_card(*card_wait.answering_roles(rerank_asked=question.rerank))
     category = question.filter.category if question.filter else None
     res = chat.answer(
         question.text,
@@ -80,6 +82,7 @@ def ask(question: QuestionRequest) -> QuestionResponse:
 
 @router.post("/fast_question", response_model=RetrievalResponse)
 def quick_ask(question: QuestionRequest) -> RetrievalResponse:
+    wait_for_the_card(*card_wait.retrieving_roles(rerank_asked=question.rerank))
     category = question.filter.category if question.filter else None
     res = chat.retrieve(
         question.text, category, variant=config.settings.corpus.variant,

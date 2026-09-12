@@ -74,101 +74,78 @@ def worker_imports() -> tuple[bool, str]:
 
 
 def window_matches_config() -> tuple[bool, str]:
-    configured = sh(
-        "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import config;"
-        " print(config.settings.llm.context_length)",
-    )
-    # whichever generator is loaded: an override left the configured name unloaded
-    out = _in_worker(
-        "import json, llm; from engines import ollama;"
-        # the role names its engine, and with a second ollama a bare ask reads as no residency
-        " picked = llm.resolve('generation');"
-        " print(json.dumps({'loaded': [e['model'] for e in ollama.residency(picked.engine)],"
-        " 'asked': ollama.window_model(picked.name, spec=picked.engine)}))"
-    )
+    # asked of the worker, by the generator's own engine: `/api/ps` on a vLLM read as no answer
+    out = _in_worker("import json; from use_cases import stand_health;"
+                     " print(json.dumps(stand_health.window()))")
     if not out.startswith("{"):
-        return False, f"context window: cannot read the residency ({out[:40] or 'no answer'})"
-    state = json.loads(out)
-    # asked of the worker: the route and the record read the same rule from the same holder
-    asked = state["asked"]
+        return False, f"context window: cannot read it ({out[:40] or 'no answer'})"
+    seen = json.loads(out)
+    declared, asked, served = seen["declared"], seen["asked"], seen["served"]
     if asked is None:
         return True, (
-            f"context window: config {configured or 'unknown'}, no generator loaded"
+            f"context window: config {declared or 'unknown'}, no generator loaded"
             " (descriptive: nothing to compare, ask one a question first)"
         )
-    live = _in_worker(f"from engines import ollama; print(ollama.context_length({asked!r}))")
+    where = f"{asked} on {seen['engine']} says {served or 'unknown'}"
+    if seen["refuses_past_it"]:
+        # vLLM refuses a longer prompt with a 400 rather than cutting it, so room is enough
+        return bool(declared) and bool(served) and served >= declared, (
+            f"context window: config {declared or 'unknown'}, {where} (refuses past it)"
+        )
     # the server is the authority: a stray env var in a running container beat the config once
-    ok = bool(configured) and live == configured
-    return ok, f"context window: config {configured or 'unknown'}, {asked} says {live or 'unknown'}"
+    return bool(declared) and served == declared, f"context window: config {declared}, {where}"
 
 
 # the scheduler keeps reporting free VRAM after the card is gone, so ask what is actually resident
 def models_are_on_the_card() -> tuple[bool, str]:
-    out = sh(
-        "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import json, llm; from engines import ollama;"
-        " picked = {r: llm.resolve(r) for r in"
-        " ('generation', 'embedding', 'judging', 'paraphrasing')};"
-        " roles = {r: p.name for r, p in picked.items()};"
-        # the card of the generator's engine: two ollama rows make a bare ask ambiguous
-        " loaded = ollama.residency(picked['generation'].engine);"
-        " print(json.dumps({'roles': roles, 'loaded': loaded,"
-        " 'off_the_card': [e['model'] for e in loaded if ollama.off_the_card(e)]}))",
-    )
+    out = _in_worker("import json; from use_cases import stand_health;"
+                     " print(json.dumps(stand_health.roles_on_card()))")
     if not out.startswith("{"):
         return False, f"residency: cannot read ({out[:60] or 'no answer'})"
-    state = json.loads(out)
-    loaded = {e["model"]: e for e in state["loaded"]}
-    if not loaded:
+    seen = json.loads(out)
+    if not any(r["on_card"] for r in seen.values()):
         # the card is what a run about to load four models will be given
-        return False, (
-            "no model is loaded: ask one to load before reading the window"
-            f"; {_card()}"
+        return False, f"no model is loaded: ask one to load before reading the window; {_card()}"
+    # per role; an asleep vLLM is not a spill and is not called one
+    lines = [
+        f"{role}={r['model']}@{r['engine']} " + (
+            "spilled to the cpu" if r["spilled"] else
+            {True: "on the card", False: "not on the card now", None: "not resident"}[r["on_card"]]
         )
-    # naming the role matters: a job runs one model, and the others being resident proves nothing
-    lines = []
-    for role, name in state["roles"].items():
-        entry = loaded.get(name)
-        where = f"{entry['vram_mb']}/{entry['size_mb']} MiB" if entry else "not resident"
-        lines.append(f"{role}={name} {where}")
-    off = state["off_the_card"]
-    return not off, (
-        "; ".join(lines) + (f"; ON CPU: {', '.join(off)}" if off else "") + f"; {_card()}"
+        for role, r in seen.items()
+    ]
+    spilled = [f"{role}={r['model']}" for role, r in seen.items() if r["spilled"]]
+    return not spilled, (
+        "; ".join(lines) + (f"; ON CPU: {', '.join(spilled)}" if spilled else "") + f"; {_card()}"
     )
 
 
-# the predicate of `stand_health.drifting_roles`, spelled out because this may not import
-def role_drift(declared: dict, served: dict) -> list[str]:
+# sentences for the roles `stand_health.roles()` names as drift: the rule itself lives there alone
+def role_drift(seen: dict) -> list[str]:
+    declared, served = seen["declared"], seen["served"]
     return [
-        f"{role}: config says {name}, the stand serves {served.get(role, 'nothing')}"
-        for role, name in sorted(declared.items())
-        if served.get(role) != name
-    ] + [
-        f"{role}: the stand serves {name}, the config declares no such role"
-        for role, name in sorted(served.items())
-        if role not in declared
+        f"{role}: config says {declared[role]}, the stand serves {served.get(role, 'nothing')}"
+        if role in declared else
+        f"{role}: the stand serves {served[role]}, the config declares no such role"
+        for role in sorted(seen["drift"])
     ]
 
 
 # the file declares a role's model and the database serves it, and the two drift in silence
 def roles_match_the_config() -> tuple[bool, str]:
-    out = _in_worker(
-        "import json, config; print(json.dumps("
-        "{r: c.model for r, c in config.settings.llm.roles.items()}))"
-    )
+    # one reader with `/v1/stand`, and by engine: a name kept on another engine is drift too
+    out = _in_worker("import json; from use_cases import stand_health;"
+                     " print(json.dumps(stand_health.roles()))")
     if not out.startswith("{"):
-        return False, f"roles: cannot read the config ({out[:60] or 'no answer'})"
-    declared = json.loads(out)
-    models = {m["id"]: m["name"] for m in get("/v1/model?limit=200")}
-    served = {r["role"]: models.get(r["model_id"], f"model {r['model_id']}") for r in get("/v1/role")}
-    drift = role_drift(declared, served)
+        return False, f"roles: cannot read them ({out[:60] or 'no answer'})"
+    seen = json.loads(out)
+    drift = role_drift(seen)
     if drift:
         return False, "; ".join(drift) + ". PUT /v1/role to change it, or edit the file to match"
-    return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(served.items()))
+    return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(seen["served"].items()))
 
 
-# only what the driver says: a `docker compose exec` probe never loaded the reranker
+# only what the driver says
 def _card() -> str:
     out = sh(
         "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
@@ -182,10 +159,17 @@ def _card() -> str:
     seen = json.loads(line[-1])
     if not seen["total"]:
         return "card: no cuda device visible"
-    return (
-        f"card free {seen['free']} of {seen['total']} MiB"
-        " (the reranker's own place on it is checked by the run, not from here)"
-    )
+    return f"card free {seen['free']} of {seen['total']} MiB"
+
+
+# a dead engine read as "not resident" beside the others; this names it
+def role_engines_answer() -> tuple[bool, str]:
+    out = _in_worker("import json; from use_cases import stand_health;"
+                     " print(json.dumps(stand_health.roles_down()))")
+    if not out.startswith("["):
+        return False, f"role engines: cannot read them ({out[:60] or 'no answer'})"
+    down = json.loads(out)
+    return not down, "role engines: " + ("; ".join(down) if down else "every one answers")
 
 
 def queue_is_idle() -> tuple[bool, str]:
@@ -502,7 +486,7 @@ def _alive_thresholds() -> tuple[float, int] | None:
 
 CHECKS = (
     tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config,
-    models_are_on_the_card, roles_match_the_config, queue_is_idle, corpus_variant_is_usable,
+    models_are_on_the_card, roles_match_the_config, role_engines_answer, queue_is_idle, corpus_variant_is_usable,
     every_variant_walks_its_index, tuned_numbers_still_describe_the_corpus,
     table_is_vacuumed, schema_holds_no_variant_indexes, one_question_per_original,
     every_variant_cuts_into_its_own_rows,

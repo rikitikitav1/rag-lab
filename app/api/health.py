@@ -1,4 +1,3 @@
-from engines import ollama
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from orm.async_db import get_session
@@ -26,15 +25,19 @@ async def readiness(session: AsyncSession = Depends(get_session)):
     except Exception:
         checks["postgres"] = "down"
 
-    try:
-        await run_in_threadpool(ollama.list_models)
-        checks["ollama"] = "ok"
-    except Exception:
-        checks["ollama"] = "down"
-
     if checks["postgres"] != "ok":
         raise HTTPException(status_code=503, detail=checks)
 
+    # a judge that died after the start leaves the chat answering, so not a 503; the role is named
+    try:
+        down = await run_in_threadpool(stand_health.roles_down)
+    # the name of the failure, not its text: this answers without a key
+    except Exception as e:
+        down = [f"cannot read the roles: {type(e).__name__}"]
+    # by role, not a probe of the card's ollama: without a card that one is absent on purpose
+    checks["status"] = "degraded" if down else "ok"
+    if down:
+        checks["roles_down"] = down
     return checks
 
 

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 import job_queue
 import limits
@@ -77,6 +77,27 @@ def list_question_sets(
     if not found:
         raise ToolError(f"no question set named {set_name!r}")
     return found
+
+
+@mcp_ops.tool(
+    name="questions",
+    description=(
+        "The questions themselves, one row each, for picking the question_ids of a run: id, set, "
+        "language, pool, the text, whether a reference answer is there, how many sources are "
+        "marked, and which embedder embedded it. The pool is the rule question_sets counts with, "
+        "so the rows of a pool add up to its count there. question_sets says what a set holds; "
+        "this says which rows."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def list_questions(
+    set_name: Annotated[str | None, Field(description="Only this set.")] = None,
+    language: Annotated[str | None, Field(description="Only this language, as stored.")] = None,
+    pool: Annotated[Literal[pools.POOLS] | None, Field(description="Only this pool.")] = None,
+    limit: Annotated[int, Field(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> list[dict]:
+    return question_sets.rows((set_name or "").strip() or None, language, pool, limit, offset)
 
 
 def _named_runs(run_names: list[str]) -> list[str]:
@@ -196,7 +217,9 @@ def language_cost(
         "returns judged counts, the three judged axes, how often the answer "
         "came from a remote tool against the corpus, how often the coverage gate "
         "fired, latency (avg and p50) and the outcome histogram. Per pair of runs "
-        "returns a paired Wilcoxon test over the same questions. Use instead of "
+        "returns a paired Wilcoxon test over the same questions. For exactly two runs, "
+        "verdicts counts the judge's scores that moved on shared questions, per axis, which "
+        "a mean hides when moves cancel. Use instead of "
         "compare_runs when the question is where a difference comes from, not "
         "which run wins on average."
     ),
@@ -270,6 +293,22 @@ def experiment_results(
             for name, body in deltas.items()
         }
         return out
+
+
+@mcp_ops.tool(
+    name="engines",
+    description=(
+        "Which engine holds the GPU right now and which models it has there, whether each vLLM "
+        "on the card is asleep, and whether every registered engine answers. Read from the "
+        "servers, not from a table. Use before a run or a judging pass to see who owns the card."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def engines_on_the_stand() -> dict:
+    from use_cases import stand_health
+
+    # one reader for `/health` and this tool, so the two can never tell different stories
+    return stand_health.engines_section()
 
 
 @mcp_ops.tool(

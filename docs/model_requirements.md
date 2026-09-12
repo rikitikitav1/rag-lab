@@ -77,23 +77,24 @@ paraphrasing model held the card, the reranker fell back to the CPU with a warni
 error, and the run would have been an order of magnitude slower while reporting nothing unusual. A
 role raised for a task releases the card after it, including on the failure path.
 
-## The reranker is not a role
+## The reranker is a role
 
-The cross-encoder is not in ollama, has no entry among the roles, and is loaded in-process through
-sentence-transformers. Two consequences follow, and both have bitten.
+The cross-encoder is the `reranking` role on `vllm-rerank`, a vLLM pooling server under the compose
+profile `rerank`. It takes the card like any other role, through the same handover, and it cannot
+quietly fall back to the processor: a pooling server answers pairs or does not, and a run without the
+profile up is refused with the role named. What used to bite, a reranker loaded in-process that
+residency checks could not see and that ran about thirty times slower on the CPU without a word, went
+with it.
 
-Residency checks that ask ollama what is on the card cannot see it, so any statement about how much
-card is free is an estimate unless the reranker was measured on its own. And when the card is full,
-it does not fail: `RERANK_DEVICE=auto` falls back to CPU with a warning, and the same run then
-takes roughly thirty times longer per question while producing identical output. The guard for this
-is a check that asks the reranker where it actually is, after it has loaded, and refuses the run
-rather than letting it proceed slowly.
+Acceptance holds it to its kind: only a vLLM pooling server may take `reranking`, and a pooling
+server may not take generation.
 
 ## The card decides more than quality does
 
-Every role that points at an ollama model, plus the reranker, competes for one card. Residency is
-capped (`OLLAMA_MAX_LOADED_MODELS`) and resident models are kept alive, so the third arrival evicts
-the first. This is why a role change is an arithmetic problem before it is a quality problem: the
+Every role on an engine of the card competes for it. Ollama's models share it, capped by
+`OLLAMA_MAX_LOADED_MODELS` and kept alive, so the third arrival evicts the first; an awake vLLM (the
+judge, the reranker) holds the share it was started with until the card is handed away and the
+server is put to sleep. This is why a role change is an arithmetic problem before it is a quality problem: the
 model, the embedder, and the reranker if it is on, against the card.
 
 The choice that follows from that arithmetic is a decision, not a fact, and it belongs in the

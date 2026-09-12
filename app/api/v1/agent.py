@@ -2,8 +2,9 @@ from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from use_cases import agent, agent_policy
+from use_cases import agent, agent_policy, card_wait
 
+from api.v1.card_door import wait_for_the_card
 from api.v1.schemas import AnswerSource
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -34,6 +35,8 @@ def _serialize_trace(messages) -> list[dict]:
 
 @router.post("/question", response_model=AgentResponse)
 def ask(request: AgentRequest) -> AgentResponse:
+    # the one answering door without the guard loaded ollama beside an awake judge
+    wait_for_the_card(*card_wait.answering_roles(agent=True, fallback_policy=request.fallback_policy))
     res = agent.run(
         request.text,
         max_hops=request.max_hops,

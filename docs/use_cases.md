@@ -4,8 +4,8 @@ Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthroug
 
 ## Prerequisites
 
-- Docker + an NVIDIA GPU (8 GB is enough).
-- First `docker compose up -d` pulls ~16 GB of models and builds the index (~5-10 min). Wait until `curl localhost:8000/readiness` returns ok; watch progress with `docker compose logs -f worker`.
+- Docker + an NVIDIA GPU (8 GB is enough), given to containers through CDI: the host check is in the README [Quickstart](../README.md#quickstart).
+- The first `docker compose up -d` downloads and indexes for a while; what and how long is in the README [Quickstart](../README.md#quickstart). Wait until `curl localhost:8000/readiness` returns ok; watch progress with `docker compose logs -f worker`.
 - The server answers before indexing finishes, so early requests may refuse until the corpus is populated.
 
 ## Scenario 1: ask a question (RAG live)
@@ -51,7 +51,8 @@ abstain without one; `question_sets` says which sets carry them before a run is 
 Run the same set with the cross-encoder on, then compare against the baseline. Reranking is off by
 default, so `demo_run` from scenario 2 is the arm without it and the run below is the arm with it.
 If the default is ever flipped back, one of the two arms has to say `"rerank": false` explicitly, or
-both arms rerank and the comparison is of a thing against itself.
+both arms rerank and the comparison is of a thing against itself. The reranker needs its server up
+first: [stand mode 2](stand_modes.md#2-with-reranking).
 
 ```bash
 curl -sX POST localhost:8000/v1/eval/run -H 'Content-Type: application/json' \
@@ -97,15 +98,21 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=elapsed&sort_order=desc" | 
 ## Scenario 6: engines, models and roles
 
 ```bash
-# register a second engine; the address comes from VLLM_BASE_URL, never from the row
+# what the seed registered: ollama, vllm (the judge) and vllm-rerank
+curl -s localhost:8000/v1/engine | python3 -m json.tool
+# an engine the seed does not register: vLLM on the processor, up with its profile (stand_modes.md, mode 4)
+curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
+  -d '{"name":"vllm-cpu","kind":"vllm","env_prefix":"VLLM_CPU","placement":"cpu"}'
+# `vllm` again is a 409: one row per engine name, and the seed made this one; the address comes
+# from VLLM_BASE_URL, never from the row
 curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
   -d '{"name":"vllm","kind":"vllm","env_prefix":"VLLM","placement":"gpu"}'
-# ask the engine itself whether it answers
-curl -s localhost:8000/v1/engine/2/live | python3 -m json.tool
+# ask the engine itself whether it answers, by the id the list shows
+curl -s localhost:8000/v1/engine/<id>/live | python3 -m json.tool
 # register a model: an engine that pulls gets a pull job, one that does not is asked whether it serves the name
 curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' -d '{"name":"qwen2.5:14b"}'
 curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' \
-  -d '{"name":"Qwen/Qwen2.5-7B-Instruct-AWQ","engine":"vllm"}'
+  -d '{"name":"Qwen/Qwen2.5-7B-Instruct","engine":"vllm-cpu"}'
 # list models / roles; one name may live on two engines, so the list names the engine
 curl -s localhost:8000/v1/model | python3 -m json.tool
 curl -s localhost:8000/v1/role  | python3 -m json.tool

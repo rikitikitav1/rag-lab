@@ -8,6 +8,7 @@ from evals.pools import (
     ALL_OUTCOMES,
     JOINS_BOTH_JUDGES,
     POOLS,
+    Ambiguous,
     by_question,
     has_remote_evidence,
     joins_both_judges,
@@ -106,11 +107,63 @@ def paired(left, right, axis) -> dict:
     return result
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 p never null; 6 `p`; 7 engine name; 8 determinism
-SCHEMA = 8
+def _judged(ql, axis) -> dict:
+    return (ql.metrics or {}).get(axis) or {}
+
+
+# a mean can hold still while the ruler moves: 1 to 0 on one row and 0 to 1 on another cancel
+def verdicts(left: list, right: list) -> dict:
+    before, after = by_question(left), by_question(right)
+    shared = [q for q in after if q in before]
+    axes = {}
+    for axis in AXES:
+        both = [(before[q], after[q]) for q in shared
+                if getattr(before[q], axis) is not None and getattr(after[q], axis) is not None]
+        tokens = [(_judged(a, axis).get("judge_prompt_tokens"),
+                   _judged(b, axis).get("judge_prompt_tokens")) for a, b in both]
+        pair = paired(left, right, axis)
+        axes[axis] = {
+            "comparable": len(both),
+            "disagree": sum(1 for a, b in both if float(getattr(a, axis)) != float(getattr(b, axis))),
+            # scored on one side only: neither a match nor a clash, and left out of both counts
+            "one_sided": sum(1 for q in shared
+                             if (getattr(before[q], axis) is None) != (getattr(after[q], axis) is None)),
+            # the means `paired` reports for this axis, over the same rows scored on both sides
+            "left": pair["left"],
+            "right": pair["right"],
+            # the judge read fewer tokens on one side: its context was cut, or the tokenizer differs
+            "prompt_tokens_differ": sum(1 for a, b in tokens
+                                        if a is not None and b is not None and a != b),
+            "seconds_left": mean_of((_judged(a, axis).get("elapsed") for a, _ in both), digits=1),
+            "seconds_right": mean_of((_judged(b, axis).get("elapsed") for _, b in both), digits=1),
+        }
+    comparable = sum(a["comparable"] for a in axes.values())
+    disagree = sum(a["disagree"] for a in axes.values())
+    return {
+        "questions": len(shared),
+        "comparable": comparable,
+        "disagree": disagree,
+        "disagree_rate": round(disagree / comparable, 3) if comparable else None,
+        "axes": axes,
+    }
+
+
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts
+SCHEMA = 9
+
+
+class TwoJudges(Ambiguous):
+    pass
 
 
 def compare(runs: dict[str, list]) -> dict:
+    residency = residencies(runs)
+    # two judges are two rulers: a difference of their means measures nothing
+    if residency["one_engine_name"] is False:
+        raise TwoJudges(
+            f"{residency['read_this_first']}: judged on {residency['engine_names_by_run']}."
+            " Read each arm alone through `run_metrics`, or rejudge one arm on the other's engine"
+        )
     by_pool = {name: split(logs) for name, logs in runs.items()}
     names = list(runs)
 
@@ -146,7 +199,9 @@ def compare(runs: dict[str, list]) -> dict:
     return {
         "schema": SCHEMA,
         "runs": names,
-        "residency": residencies(runs),
+        "residency": residency,
+        # the treatment, not a fault: two generators on two engines is what a pair of arms compares
+        "answering_engines_by_run": {name: _answering_engines(logs) for name, logs in runs.items()},
         # the correlation's own predicate, called not restated: one label stood over two selections
         "correlation_population": {
             "predicate": JOINS_BOTH_JUDGES,
@@ -155,6 +210,8 @@ def compare(runs: dict[str, list]) -> dict:
         },
         "pools": pools,
         "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
+        # a pair only: with three runs the question is which pair, and the caller names it
+        "verdicts": verdicts(*runs.values()) if len(runs) == 2 else None,
     }
 
 
@@ -271,6 +328,15 @@ def _one_retrieval(runs: dict[str, list]) -> bool | None:
         if len(set(prints)) != 1:
             return False
     return True if compared else None
+
+
+# read off the run snapshot's `config.engines`, per role; a row older than that key names nothing
+def _answering_engines(logs: list) -> dict[str, list[str]]:
+    seen: dict[str, set] = {}
+    for ql in logs:
+        for role, engine in (((ql.metrics or {}).get("config") or {}).get("engines") or {}).items():
+            seen.setdefault(str(role), set()).add(engine)
+    return {role: sorted(engines) for role, engines in sorted(seen.items())}
 
 
 # two arms judged across a reload are two instruments: 14% of scores move on identical input

@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from enum import StrEnum
 from urllib.parse import urlsplit
 
 import config
@@ -27,6 +28,20 @@ class Unnamed(ValueError):
 
 class Ambiguous(ValueError):
     pass
+
+
+# what a server says about the card: a refused connection is down, a silence is unknown
+class CardState(StrEnum):
+    AWAKE = "awake"
+    ASLEEP = "asleep"
+    HOLDS = "holds"
+    FREE = "free"
+    DOWN = "down"
+    UNKNOWN = "unknown"
+
+
+# gone, or silent past its timeout: nothing is handed to it and no role is seated on it
+SILENT = frozenset({CardState.DOWN, CardState.UNKNOWN})
 
 
 class Unconfigured(RuntimeError):
@@ -84,6 +99,11 @@ def _refuse_unusable(spec: EngineSpec, address: str) -> str:
     return address
 
 
+# `model@engine`: the embedder's mark on every vector, the roles' drift, the migration's backfill
+def label(model: str, engine: str) -> str:
+    return f"{model}@{engine}"
+
+
 # a paid engine refuses here rather than sending a placeholder and reading the server's 401
 def api_key(spec: EngineSpec) -> str:
     seen = os.getenv(f"{spec.env_prefix}_API_KEY")
@@ -131,28 +151,20 @@ def added_by(spec: EngineSpec, model: str) -> dict:
         from . import ollama
 
         return _named({"num_ctx": ollama.context_length(model, spec)})
+    # a paid engine's host is not asked vLLM's routes, and its key goes to nothing but its calls
+    if spec.kind is not EngineKind.vllm:
+        return {}
+    from . import vllm
+
+    started = vllm.started_at(spec)
     return _named({
-        "max_model_len": _served_window(spec, model),
+        "max_model_len": vllm.max_model_len(spec, model),
         "engine_version": _asked(spec, "/version", "version"),
         # the flag every vLLM noise floor rests on, and nothing in the record said whether it was on
         "batch_invariant": _vllm_env(spec).get("VLLM_BATCH_INVARIANT"),
-        "started_at": started_at(spec),
+        "started_at": started,
+        "tool_calls_probed": vllm.known_probe(spec, model, started),
     })
-
-
-# one vLLM process holds one model, so its start opens a residency; `created` is the reply's clock
-def started_at(spec: EngineSpec) -> str | None:
-    try:
-        from datetime import datetime, timezone
-
-        import requests
-
-        for line in requests.get(f"{base_url(spec)}/metrics", timeout=5).text.splitlines():
-            if line.startswith("process_start_time_seconds "):
-                return datetime.fromtimestamp(float(line.split()[1]), timezone.utc).isoformat()
-    except Exception:
-        return None
-    return None
 
 
 # `/server_info` exists only under VLLM_SERVER_DEV_MODE, and its absence is silence, not a false
@@ -166,22 +178,42 @@ def _named(seen: dict) -> dict:
     return {k: v for k, v in seen.items() if v is not None}
 
 
-# the window the server was started with, which is not the one compose asked for when it refused
-def _served_window(spec: EngineSpec, model: str) -> int | None:
-    try:
-        for served in client_for(spec).models.list().data:
-            if served.id == model:
-                extra = getattr(served, "model_extra", None) or {}
-                return getattr(served, "max_model_len", None) or extra.get("max_model_len")
-    except Exception:
-        return None
-    return None
-
-
 def _asked(spec: EngineSpec, path: str, key: str):
     try:
         import requests
 
-        return requests.get(f"{base_url(spec)}{path}", timeout=5).json().get(key)
+        return requests.get(f"{base_url(spec)}{path}", headers=_auth(spec), timeout=5).json().get(key)
+    except Exception:
+        return None
+
+
+# the one header every engine call carries; a missing key raises, as the key itself does
+def bearer(spec: EngineSpec) -> dict:
+    return {"Authorization": f"Bearer {api_key(spec)}"}
+
+
+# a server started with `--api-key` answers nothing without it, and a missing key sends none
+def _auth(spec: EngineSpec) -> dict:
+    try:
+        return bearer(spec)
+    except Unconfigured:
+        return {}
+
+
+# `/v1/models` with the key, raising as requests does, so a caller tells silence from a refusal
+def models_listing(spec: EngineSpec, timeout: float) -> list[dict]:
+    import requests
+
+    seen = requests.get(f"{base_url(spec)}/v1/models", headers=bearer(spec), timeout=timeout)
+    seen.raise_for_status()
+    return seen.json()["data"]
+
+
+# the ids a server lists, asked in seconds; None when it does not answer, and a missing key raises
+def served_models(spec: EngineSpec, timeout: float = 3) -> list[str] | None:
+    try:
+        return [m.get("id") for m in models_listing(spec, timeout)]
+    except Unconfigured:
+        raise
     except Exception:
         return None

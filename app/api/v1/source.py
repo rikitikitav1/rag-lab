@@ -182,4 +182,4 @@ async def analyze_source(
     options = {"source": source.name, "variant": request.variant, "mode": request.mode}
     job = job_queue.add_job(session, "analyze_source", options)
     await commit_and_refresh(session, job)
-    return JobEnqueuedResponse(job_id=job.id, type=job.type, options=job.options)
+    return JobEnqueuedResponse.model_validate(job)

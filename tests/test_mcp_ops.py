@@ -142,3 +142,54 @@ def test_question_sets_names_the_set_that_is_not_there(monkeypatch):
     with pytest.raises(ToolError) as ei:
         mcp_ops.list_question_sets("ghost")
     assert "ghost" in str(ei.value)
+
+
+def test_the_engines_tool_reads_what_health_reads(monkeypatch):
+    from use_cases import stand_health
+
+    seen = {"holder": ["vllm"], "on_card": {"vllm": ["Qwen/Q"]}}
+    monkeypatch.setattr(stand_health, "engines_section", lambda: seen)
+    assert mcp_ops.engines_on_the_stand() is seen, "one reader, so MCP and /health cannot disagree"
+
+
+def test_the_engines_section_says_who_holds_the_card_and_who_answers(monkeypatch):
+    import engines
+    from engines import card
+    from models.registry import EngineKind, Placement
+    from use_cases import stand_health
+
+    vllm_spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    cloud = engines.EngineSpec(9, "cloud", EngineKind.openai_compatible, "CLOUD", Placement.remote)
+    monkeypatch.setattr(card, "on_card", lambda: [card.Holding(vllm_spec, ("Qwen/Q",))])
+    monkeypatch.setattr(stand_health.engines, "card_engines", lambda kind=None: [vllm_spec])
+    monkeypatch.setattr(stand_health.vllm, "is_sleeping", lambda spec: False)
+    monkeypatch.setattr(stand_health.engines, "registered", lambda: [vllm_spec, cloud])
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm:8000")
+    monkeypatch.delenv("CLOUD_BASE_URL", raising=False)
+
+    # the vLLM does not answer; the cloud has no key, and a missing key raises before any request
+    def listing(spec, timeout=3):
+        if spec.name == "cloud":
+            raise engines.Unconfigured("engine cloud: key is not configured")
+        return None
+
+    monkeypatch.setattr(stand_health.engines, "served_models", listing)
+    got = stand_health.engines_section()
+    assert got["holder"] == ["vllm"] and got["on_card"] == {"vllm": ["Qwen/Q"]}
+    assert got["vllm_sleeping"] == {"vllm": False}
+    # an engine with no address is not a dead one: nothing to ask is not a failed answer
+    assert got["answers"] == {"vllm": False, "cloud": None}
+
+
+def test_health_carries_the_engines_section(monkeypatch):
+    import engines
+    from models.registry import EngineKind, Placement
+    from use_cases import stand_health
+
+    spec = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    monkeypatch.setattr(stand_health.llm, "resolve", lambda role: engines.Resolved("llama", spec))
+    monkeypatch.setattr(stand_health.ollama, "residency", lambda spec: [])
+    monkeypatch.setattr(stand_health.ollama, "window_model", lambda name, loaded: None)
+    monkeypatch.setattr(stand_health, "card", lambda: {"cuda": None})
+    monkeypatch.setattr(stand_health, "engines_section", lambda: {"holder": ["vllm"]})
+    assert stand_health.stand()["engines"] == {"holder": ["vllm"]}

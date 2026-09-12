@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from models.registry import Engine, EngineKind, Model, Placement
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,12 +58,23 @@ class EngineCreateRequest(BaseModel):
     placement: Placement
 
 
+# a remote engine on `gpu` joined the card engines and every handover waited for it forever
+def _refuse_a_placement_the_kind_cannot_have(kind: EngineKind, placement: Placement) -> None:
+    remote_kind = kind is EngineKind.openai_compatible
+    if remote_kind != (placement is Placement.remote):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{kind.value} engines are placed {'remote' if remote_kind else 'locally'}, not {placement.value}",
+        )
+
+
 @router.post("", response_model=EngineResponse)
 async def create_engine(
     request: EngineCreateRequest, session: AsyncSession = Depends(get_session)
 ):
     if await session.scalar(select(exists().where(Engine.name == request.name))):
         raise HTTPException(status_code=409, detail=f"engine {request.name} already exists")
+    _refuse_a_placement_the_kind_cannot_have(request.kind, request.placement)
     row = Engine(**request.model_dump())
     # asked before the insert: a misspelt prefix used to leave a row behind and answer 400
     try:
@@ -71,9 +82,37 @@ async def create_engine(
                                                         row.placement))
     except engines.Unconfigured as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    if row.kind is EngineKind.vllm and row.placement in engines.CARD:
+        await run_in_threadpool(_refuse_a_vllm_that_cannot_sleep, row)
     session.add(row)
     await commit_and_refresh(session, row)
     return EngineResponse.of(row, address)
+
+
+# `name` and `env_prefix` never change: stamps name the engine by both; a new address is a new engine
+class EnginePatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    placement: Placement
+
+
+@router.patch("/{id}", response_model=EngineResponse)
+async def patch_engine(
+    id: int, request: EnginePatchRequest, session: AsyncSession = Depends(get_session)
+):
+    row = await get_or_404(Engine, id, session)
+    _refuse_a_placement_the_kind_cannot_have(row.kind, request.placement)
+    # the row describes the process it will start: a live one stays where it is, whatever it says
+    if request.placement != row.placement and await run_in_threadpool(_running, _spec(row)):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{row.name} is running as {row.placement.value}: stop it, change the"
+            " placement, and start it where the new one says",
+        )
+    row.placement = request.placement
+    await commit_and_refresh(session, row)
+    engines.forget_clients(row.id)
+    return EngineResponse.of(row, _address(row))
 
 
 @router.get("/{id}/live", response_model=EngineResponse)
@@ -84,11 +123,42 @@ async def probe_engine(id: int, session: AsyncSession = Depends(get_session)):
     return EngineResponse.of(row, _address(row), reachable)
 
 
+# without VLLM_SERVER_DEV_MODE the sleep routes answer 404, and it would hold the card for good
+def _refuse_a_vllm_that_cannot_sleep(row: Engine) -> None:
+    from engines import vllm
+
+    # None is a server not up yet, as a service under a profile: the start flags are asked later
+    if vllm.has_sleep_routes(_spec(row)) is False:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{row.name} has no sleep routes: start it with VLLM_SERVER_DEV_MODE=1 and"
+            " --enable-sleep-mode, or the card can never be handed away from it",
+        )
+
+
+# seconds, not the completion timeout: a refused connection answers at once, and silence is running
+def _running(spec) -> bool:
+    import requests
+
+    try:
+        requests.get(f"{engines.base_url(spec)}/v1/models", timeout=3)
+        return True
+    except engines.Unconfigured:
+        return False
+    # first: a ConnectTimeout is a ConnectionError too, and a host that did not answer may be running
+    except requests.Timeout:
+        return True
+    except requests.ConnectionError:
+        return False
+    except Exception:
+        return True
+
+
+# seconds, with the key: the completion client waited two minutes and retried once
 def _answers(spec) -> bool:
     try:
-        engines.client_for(spec).models.list()
-        return True
-    except Exception:
+        return engines.served_models(spec) is not None
+    except engines.Unconfigured:
         return False
 
 

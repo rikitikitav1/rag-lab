@@ -4,7 +4,7 @@ from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from sqlalchemy import update
 
-from .base import register, require_model_ready, require_role_ready
+from .base import register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
 
@@ -13,10 +13,12 @@ log = logging_setup.get_logger(__name__)
 def eval_run(options: dict) -> None:
     model = options.get("model")
     if model:
-        require_model_ready(model)
+        require_model_ready(model, "generation")
     else:
-        require_role_ready(Role.generation)
-    require_role_ready(Role.embedding)
+        require_role_ready(Role.generation, take_card=False)
+    # one preamble takes the card: two, on two engines, handed it back and forth and never started
+    require_role_ready(Role.embedding, take_card=False)
+    require_card("generation", model, allow_spill=bool(options.get("allow_cpu")))
     answered = runner.run(
         run_name=options["run_name"],
         set_name=options.get("set_name"),
