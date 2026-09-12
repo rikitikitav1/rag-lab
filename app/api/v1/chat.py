@@ -1,11 +1,12 @@
 from typing import Literal
 
 import config
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from use_cases import card_wait, chat
 
 import db
+from api.v1.card_door import wait_for_the_card
 from api.v1.schemas import AnswerSource
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -54,18 +55,6 @@ class RetrievalResponse(BaseModel):
     elapsed_time_seconds: float
 
 
-# every REST door that answers waits for the card here; a layout it cannot serve is a 409
-def wait_for_the_card(*roles) -> None:
-    try:
-        card_wait.wait_for_the_card(*roles)
-    except card_wait.CardHeld as e:
-        raise HTTPException(
-            status_code=503, detail=e.detail, headers={"Retry-After": str(e.retry_after)}
-        ) from e
-    except card_wait.CannotAnswer as e:
-        raise HTTPException(status_code=409, detail=e.detail) from e
-
-
 @router.post("/question", response_model=QuestionResponse)
 def ask(question: QuestionRequest) -> QuestionResponse:
     wait_for_the_card(*card_wait.answering_roles(rerank_asked=question.rerank))
@@ -93,8 +82,7 @@ def ask(question: QuestionRequest) -> QuestionResponse:
 
 @router.post("/fast_question", response_model=RetrievalResponse)
 def quick_ask(question: QuestionRequest) -> RetrievalResponse:
-    retrieving = ("embedding", "reranking") if card_wait.reranker_needed(question.rerank) else ("embedding",)
-    wait_for_the_card(*retrieving)
+    wait_for_the_card(*card_wait.retrieving_roles(rerank_asked=question.rerank))
     category = question.filter.category if question.filter else None
     res = chat.retrieve(
         question.text, category, variant=config.settings.corpus.variant,

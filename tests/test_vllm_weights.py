@@ -5,8 +5,8 @@ import engines
 import pytest
 from engines import vllm
 from models.registry import EngineKind, Placement
+from stand_specs import VLLM
 
-VLLM = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
 CLOUD = engines.EngineSpec(9, "cloud", EngineKind.openai_compatible, "CLOUD", Placement.remote)
 
 
@@ -97,8 +97,8 @@ def test_pull_and_delete_ask_the_engine_the_model_sits_on(monkeypatch):
     monkeypatch.setattr(model_ops, "_size_seen_before", lambda found: 10)
     monkeypatch.setattr(model_ops.engines, "refuse_if_tight",
                         lambda size, name, path=None: calls.append(("disk", path)))
-    monkeypatch.setattr(model_ops.vllm, "pull_weights", lambda repo: calls.append(("pull", repo)))
-    monkeypatch.setattr(model_ops.ollama, "pull_model", lambda *a: calls.append("ollama pull"))
+    monkeypatch.setattr("engines.vllm.pull_weights", lambda repo: calls.append(("pull", repo)))
+    monkeypatch.setattr("engines.ollama.pull_model", lambda *a: calls.append("ollama pull"))
     monkeypatch.setattr(model_ops, "record_what_the_server_holds", lambda found: None)
     model_ops.pull_llm_model({"name": "Qwen/Q", "engine_id": 3})
     assert calls == [("disk", vllm.weights_cache()), ("pull", "Qwen/Q")]
@@ -116,25 +116,34 @@ def test_weights_a_running_server_reads_are_not_deleted_under_it(monkeypatch):
 
     rerank = engines.EngineSpec(7, "vllm-rerank", EngineKind.vllm, "VLLM_RERANK", Placement.gpu)
     ollama = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
-    monkeypatch.setattr(engines.lookup, "registered", lambda: [ollama, VLLM, rerank])
+    monkeypatch.setattr(engines.drivers, "registered", lambda: [ollama, VLLM, rerank])
+    refuse = engines.driver(EngineKind.vllm).refuse_delete
     serving = {"vllm": ["Qwen/Other"], "vllm-rerank": ["Qwen/Q"]}
     monkeypatch.setattr(vllm, "served", lambda spec: serving[spec.name])
     with pytest.raises(vllm.StillServed, match="served by vllm-rerank"):
-        vllm.refuse_if_served("Qwen/Q")
-    vllm.refuse_if_served("Qwen/Absent")
+        refuse("Qwen/Q")
+    refuse("Qwen/Absent")
 
     def refused(spec):
         raise requests.ConnectionError("refused")
 
     monkeypatch.setattr(vllm, "served", refused)
-    vllm.refuse_if_served("Qwen/Q")
+    refuse("Qwen/Q")
 
     def silent(spec):
         raise requests.Timeout("10 s")
 
     monkeypatch.setattr(vllm, "served", silent)
     with pytest.raises(vllm.StillServed, match="did not answer"):
-        vllm.refuse_if_served("Qwen/Q")
+        refuse("Qwen/Q")
+
+    # a connect timeout is a connection error too, and still a host that may serve it
+    def unreached(spec):
+        raise requests.ConnectTimeout("10 s")
+
+    monkeypatch.setattr(vllm, "served", unreached)
+    with pytest.raises(vllm.StillServed, match="did not answer"):
+        refuse("Qwen/Q")
 
 
 def test_a_refused_delete_keeps_the_row_that_names_the_weights(monkeypatch):
@@ -149,7 +158,7 @@ def test_a_refused_delete_keeps_the_row_that_names_the_weights(monkeypatch):
     def served(name):
         raise vllm.StillServed("served by vllm")
 
-    monkeypatch.setattr(model_ops.vllm, "refuse_if_served", served)
+    monkeypatch.setattr("engines.drivers.Vllm.refuse_delete", lambda self, name: served(name))
     monkeypatch.setattr(model_ops, "Session", lambda: pytest.fail("the row was touched first"))
     with pytest.raises(vllm.StillServed):
         model_ops.delete_llm_model({"name": "Qwen/Q", "engine_id": 3})

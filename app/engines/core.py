@@ -151,7 +151,7 @@ def added_by(spec: EngineSpec, model: str) -> dict:
 
     started = vllm.started_at(spec)
     return _named({
-        "max_model_len": _served_window(spec, model),
+        "max_model_len": vllm.max_model_len(spec, model),
         "engine_version": _asked(spec, "/version", "version"),
         # the flag every vLLM noise floor rests on, and nothing in the record said whether it was on
         "batch_invariant": _vllm_env(spec).get("VLLM_BATCH_INVARIANT"),
@@ -169,18 +169,6 @@ def _vllm_env(spec: EngineSpec) -> dict:
 # absent, not null: a key with no value says the server was asked and answered nothing
 def _named(seen: dict) -> dict:
     return {k: v for k, v in seen.items() if v is not None}
-
-
-# the window the server was started with, which is not the one compose asked for when it refused
-def _served_window(spec: EngineSpec, model: str) -> int | None:
-    try:
-        for served in client_for(spec).models.list().data:
-            if served.id == model:
-                extra = getattr(served, "model_extra", None) or {}
-                return getattr(served, "max_model_len", None) or extra.get("max_model_len")
-    except Exception:
-        return None
-    return None
 
 
 def _asked(spec: EngineSpec, path: str, key: str):

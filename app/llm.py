@@ -1,3 +1,4 @@
+import contextlib
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -25,9 +26,15 @@ def take_the_card_before_calls(hook) -> None:
     _before_call = hook
 
 
-def _card_for(spec, name: str) -> None:
-    if _before_call is not None:
-        _before_call(spec, name)
+# the hook may hand back what ends the call's hold on its engine, called once the answer is in
+@contextlib.contextmanager
+def _card_for(spec, name: str):
+    ended = _before_call(spec, name) if _before_call is not None else None
+    try:
+        yield
+    finally:
+        if ended is not None:
+            ended()
 
 
 @dataclass
@@ -80,15 +87,15 @@ def _without_the_body(e: Exception) -> str:
 
 # one contract for a failed completion: the same log event and error text, written twice
 def _complete(spec, name: str, messages, params):
-    _card_for(spec, name)
-    try:
-        return engines.client_for(spec).chat.completions.create(
-            model=name, messages=messages, **params
-        )
-    except OpenAIError as e:
-        said = _without_the_body(e)
-        log.error("llm.chat_failed", model=name, engine=spec.name, error=said)
-        raise RuntimeError(f"LLM chat failed ({name} on {spec.name}): {said}") from e
+    with _card_for(spec, name):
+        try:
+            return engines.client_for(spec).chat.completions.create(
+                model=name, messages=messages, **params
+            )
+        except OpenAIError as e:
+            said = _without_the_body(e)
+            log.error("llm.chat_failed", model=name, engine=spec.name, error=said)
+            raise RuntimeError(f"LLM chat failed ({name} on {spec.name}): {said}") from e
 
 
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:
@@ -182,15 +189,15 @@ def score_pairs(pairs: list, role="reranking") -> list[float]:
     name, spec = picked.name, picked.engine
     if spec.kind is not EngineKind.vllm:
         raise RuntimeError(f"{name} on {spec.name}: only a vLLM pooling server scores pairs")
-    _card_for(spec, name)
-    try:
-        scores = vllm_engine.score(spec, name, pairs)
-    except StandFault:
-        raise
-    except Exception as e:
-        said = _without_the_body(e)
-        log.error("llm.rerank_failed", model=name, engine=spec.name, error=said)
-        raise RuntimeError(f"LLM rerank failed ({name} on {spec.name}): {said}") from e
+    with _card_for(spec, name):
+        try:
+            scores = vllm_engine.score(spec, name, pairs)
+        except StandFault:
+            raise
+        except Exception as e:
+            said = _without_the_body(e)
+            log.error("llm.rerank_failed", model=name, engine=spec.name, error=said)
+            raise RuntimeError(f"LLM rerank failed ({name} on {spec.name}): {said}") from e
     log.info("llm.rerank", model=name, engine=spec.name, count=len(pairs))
     return scores
 
@@ -206,14 +213,23 @@ def embed(prompt, role="embedding"):
 
 
 def request_embeddings_batch(texts, role="embedding"):
+    return _embeddings(resolve(role), texts)
+
+
+# the label and the vectors from one resolution: read apart, a role seated between them mislabels
+def embed_labelled(texts, role="embedding") -> tuple[str, list]:
     picked = resolve(role)
+    return engines.label(picked.name, picked.engine.name), _embeddings(picked, texts)
+
+
+def _embeddings(picked, texts) -> list:
     name = picked.name
-    _card_for(picked.engine, name)
-    try:
-        resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
-    except OpenAIError as e:
-        said = _without_the_body(e)
-        log.error("llm.embed_failed", model=name, engine=picked.engine.name, error=said)
-        raise RuntimeError(f"LLM embed failed ({name} on {picked.engine.name}): {said}") from e
+    with _card_for(picked.engine, name):
+        try:
+            resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
+        except OpenAIError as e:
+            said = _without_the_body(e)
+            log.error("llm.embed_failed", model=name, engine=picked.engine.name, error=said)
+            raise RuntimeError(f"LLM embed failed ({name} on {picked.engine.name}): {said}") from e
     log.info("llm.embed", model=name, engine=picked.engine.name, count=len(texts))
     return [d.embedding for d in resp.data]

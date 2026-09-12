@@ -8,7 +8,7 @@ import job_queue
 import llm
 import logging_setup
 import rerank
-from engines import card, ollama
+from engines import card
 from errors import StandFault
 from models.eval import Question
 from models.registry import Pipeline, Role
@@ -96,7 +96,7 @@ def _release(role: str, model: str | None = None) -> None:
     except Exception as e:
         log.warning("eval_run.release_skipped", role=role, error=str(e))
         return
-    ollama.unload(picked.name, picked.engine)
+    card.release_model(picked.engine, picked.name)
 
 
 # asked after a role's first call: before it ollama has not loaded, and a spill is not there to see
@@ -264,7 +264,7 @@ def _phased(
     _refuse_a_cpu_run((Role.embedding,), allow_cpu, spec.model)
 
     # read before the release: every row is written after it, and read then the embedder is gone
-    placed_during = {"embedding": _placed("embedding")}
+    placed_during = {"embedding": run_snapshot.placed("embedding")}
     # retrieval is over, and its model is 1.2 GiB the generator wants on a card that holds 8
     _release("embedding")
 
@@ -278,7 +278,7 @@ def _phased(
         log.info("eval_run.phase", name="rerank", n=len(retrieved),
                  elapsed=round(time.perf_counter() - started, 1))
         rerank_device = rerank.device()
-        placed_during["reranking"] = _placed("reranking")
+        placed_during["reranking"] = run_snapshot.placed("reranking")
 
         if job_id is not None and job_queue.is_cancelled(job_id):
             return 0, True
@@ -291,16 +291,6 @@ def _phased(
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))
     return answered, cancelled
-
-
-# by the role's own engine, and a failed read is unknown rather than a reason to stop the run
-def _placed(role: str) -> bool | None:
-    try:
-        picked = llm.resolve(role)
-        return card.model_on_card(picked.engine, picked.name)
-    except Exception as e:
-        log.warning("eval_run.placement_unread", role=role, error=str(e))
-        return None
 
 
 def _walks_the_index(variant: str, depth: int) -> bool:

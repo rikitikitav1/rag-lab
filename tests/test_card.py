@@ -3,10 +3,17 @@ import llm
 import pytest
 from engines import card
 from models.registry import EngineKind, Placement
+from stand_specs import OLLAMA, VLLM
+from stand_specs import OLLAMA_CPU as CPU
 
-OLLAMA = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
-VLLM = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
-CPU = engines.EngineSpec(5, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu)
+
+@pytest.fixture(autouse=True)
+def _no_call_left_in_flight(monkeypatch):
+    # a test that fails mid-call must not leave the next one waiting for a call that never ends
+    from job_handlers import card as handler
+
+    monkeypatch.setattr(handler, "_in_flight", {})
+    monkeypatch.setattr(handler, "_waiting_for", None)
 
 
 @pytest.fixture
@@ -50,16 +57,16 @@ def stand(monkeypatch):
     monkeypatch.setattr(card.vllm, "sleep", sleep)
     monkeypatch.setattr(card.vllm, "wake_up", wake_up)
     monkeypatch.setattr(card.vllm, "served", lambda spec: ["Qwen/Q"])
-    monkeypatch.setattr(card.ollama, "unload", unload)
-    monkeypatch.setattr(card.ollama, "residency", residency)
+    monkeypatch.setattr("engines.ollama.unload", unload)
+    monkeypatch.setattr("engines.ollama.residency", residency)
     def card_reading(spec=None):
         if s.get("ollama_state"):
             return s["ollama_state"], []
         seen = residency(spec)
         return ("holds" if any(m["vram_mb"] > 0 for m in seen) else "free"), seen
 
-    monkeypatch.setattr(card.ollama, "card_reading", card_reading)
-    monkeypatch.setattr(card.ollama, "load_into_memory", load)
+    monkeypatch.setattr("engines.ollama.card_reading", card_reading)
+    monkeypatch.setattr("engines.ollama.load_into_memory", load)
     monkeypatch.setattr(card, "POLL_SECONDS", 0)
     monkeypatch.setattr(card, "WAIT_CEILING", 0.05)
     return s
@@ -152,16 +159,91 @@ def test_a_job_takes_the_card_in_its_own_turn_and_queues_nothing(stand, monkeypa
     assert stand["calls"][-1] == "wake", "an engine off the card never takes it"
 
 
-def test_no_module_but_the_owner_changes_who_holds_the_card():
-    # five places changed the holder once; one road is the whole point
-    import re
+def _calls_in(source: str, hit) -> bool:
+    import ast
+
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if isinstance(fn, ast.Attribute):
+            # the last name before the dot: `card_holder.hand_to` and `engines.vllm.sleep` alike
+            owner = getattr(fn.value, "id", None) or getattr(fn.value, "attr", None)
+            name = fn.attr
+        else:
+            owner, name = None, getattr(fn, "id", None)
+        if hit(owner, name):
+            return True
+    return False
+
+
+# by the call in the tree, not the text: a comment never matches, a bare imported name still does
+def _files_calling(hit) -> set[str]:
     from pathlib import Path
 
     app = Path(__file__).resolve().parent.parent / "app"
-    # by the call, whatever the module is imported as: `card as card_holder` hid one from a prefix
-    change = re.compile(r"\.(hand_to|sleep_every_vllm|clear_for|wake_up)\(|\bvllm\w*\.sleep\(")
-    changing = {str(f.relative_to(app)) for f in app.rglob("*.py") if change.search(f.read_text())}
-    assert changing <= {"engines/card.py", "job_handlers/card.py", "bootstrap.py"}, changing
+    return {str(f.relative_to(app)) for f in app.rglob("*.py") if _calls_in(f.read_text(), hit)}
+
+
+HANDS_THE_CARD = {"hand_to", "sleep_every_vllm", "clear_for", "wake_up", "let_go", "take_once",
+                  "load_off_card", "make_room"}
+
+
+def _hands_the_card(owner, name) -> bool:
+    return name in HANDS_THE_CARD or (name == "sleep" and (owner or "").startswith("vllm"))
+
+
+def test_a_handover_waits_for_the_calls_on_the_engine_it_would_put_to_sleep(stand, monkeypatch):
+    # two threads of one pass on two card engines: the embedder must not sleep the judge mid-request
+    import threading
+
+    from job_handlers import card as handler
+
+    monkeypatch.setattr(handler, "_probe_the_woken_generator", lambda spec: None)
+    stand["awake"] = True
+    judge_call = handler.take_for_call(VLLM, "Qwen/Q")
+
+    def call(spec, name, ends):
+        ends.append(handler.take_for_call(spec, name))
+        stand["calls"].append(f"started on {spec.name}")
+
+    embed_ends, judge_ends = [], []
+    embed = threading.Thread(target=call, args=(OLLAMA, "bge-m3", embed_ends))
+    embed.start()
+    embed.join(0.3)
+    assert embed.is_alive() and "sleep" not in stand["calls"], "the judge's request is still out"
+
+    # a new judge call does not overtake the handover that already waits
+    judge = threading.Thread(target=call, args=(VLLM, "Qwen/Q", judge_ends))
+    judge.start()
+    judge.join(0.3)
+    assert judge.is_alive()
+
+    stand["calls"].append("judge answered")
+    judge_call()
+    embed.join(5)
+    assert not embed.is_alive() and judge.is_alive(), "the embedder's call is out now"
+    embed_ends[0]()
+    judge.join(5)
+    assert not judge.is_alive()
+    calls = stand["calls"]
+    assert calls.index("judge answered") < calls.index("sleep") < calls.index("started on ollama")
+    assert calls.index("started on ollama") < calls.index("wake") < calls.index("started on vllm")
+    judge_ends[0]()
+
+
+def test_the_card_guards_read_calls_not_text():
+    assert _calls_in("from engines.vllm import wake_up\nwake_up(spec)", _hands_the_card)
+    assert _calls_in("import engines.vllm as v\nv.wake_up(spec)", _hands_the_card)
+    assert _calls_in("engines.vllm.sleep(spec)", _hands_the_card)
+    assert not _calls_in("# vllm.wake_up(spec)\nsaid = 'hand_to('\ntime.sleep(1)", _hands_the_card)
+
+
+def test_no_module_but_the_owner_changes_who_holds_the_card():
+    # five places changed the holder once; one road is the whole point
+    owners = {"engines/card.py", "engines/drivers.py", "job_handlers/card.py", "bootstrap.py"}
+    changing = _files_calling(_hands_the_card)
+    assert changing <= owners, changing
 
 
 def test_an_engine_off_the_card_loads_without_taking_it_from_anyone(stand):
@@ -187,24 +269,26 @@ def test_a_job_that_needs_the_card_cannot_be_sent_to_another_lane():
 
 # one road to the card: a load from the API met an awake judge with CUDA OOM
 ALLOWED_TO_TOUCH_THE_CARD = {
-    "engines/card.py", "engines/vllm.py", "engines/ollama.py",
+    "engines/card.py", "engines/drivers.py", "engines/vllm.py", "engines/ollama.py",
     "job_handlers/card.py",
-    # inside jobs of the default lane, which runs one job at a time
-    "evals/runner.py", "job_handlers/dataprep.py",
     # before the stack takes any work: vLLM goes to sleep before ollama loads a role
     "bootstrap.py",
 }
 
+TOUCHES_THE_CARD = {"sleep", "wake_up", "load_into_memory", "unload", "hand_to"}
+
+
+def _touches_the_card(owner, name) -> bool:
+    if name not in TOUCHES_THE_CARD:
+        return False
+    # a bare `sleep` is `time.sleep`, and a bare `unload` could be anyone's
+    if owner is None:
+        return name not in ("sleep", "unload")
+    return owner.startswith(("vllm", "ollama", "card"))
+
 
 def test_nothing_outside_the_default_lane_sleeps_wakes_loads_or_unloads():
-    import re
-    from pathlib import Path
-
-    app = Path(__file__).resolve().parent.parent / "app"
-    call = re.compile(r"\b(vllm|ollama|card)\.(sleep|wake_up|load_into_memory|unload|hand_to)\(")
-    touching = {
-        str(f.relative_to(app)) for f in app.rglob("*.py") if call.search(f.read_text())
-    }
+    touching = _files_calling(_touches_the_card)
     assert touching <= ALLOWED_TO_TOUCH_THE_CARD, touching - ALLOWED_TO_TOUCH_THE_CARD
     assert not any(f.startswith("api/") for f in touching), "the API process never touches the card"
 
@@ -404,16 +488,17 @@ def test_a_second_role_takes_the_card_per_call_and_the_judge_goes_to_sleep(stand
 
     monkeypatch.setattr(handler, "_probe_the_woken_generator", lambda spec: None)
     stand["awake"] = True
-    handler.take_for_call(OLLAMA, "llama3.1:8b")
+    # each call ends before the next, as `llm` ends it once the answer is in
+    handler.take_for_call(OLLAMA, "llama3.1:8b")()
     assert stand["calls"] == ["sleep"], "ollama loads on the call itself, the judge only sleeps"
 
-    handler.take_for_call(OLLAMA, "llama3.1:8b")
+    handler.take_for_call(OLLAMA, "llama3.1:8b")()
     assert stand["calls"] == ["sleep"], "the card already held is not handed again"
 
     stand["ollama"] = ["llama3.1:8b"]
-    handler.take_for_call(VLLM, "Qwen/Q")
+    handler.take_for_call(VLLM, "Qwen/Q")()
     assert stand["calls"][1:] == ["unload llama3.1:8b", "wake"]
-    handler.take_for_call(VLLM, "Qwen/Q")
+    handler.take_for_call(VLLM, "Qwen/Q")()
     assert stand["calls"][1:] == ["unload llama3.1:8b", "wake"], "an awake vLLM is not woken again"
 
     def unread(spec):
@@ -645,7 +730,7 @@ def test_a_model_that_loads_half_on_the_processor_is_not_a_handed_card(stand, mo
         stand["calls"].append(f"load {name}")
         stand["spilled"].append(name)
 
-    monkeypatch.setattr(card.ollama, "load_into_memory", spills)
+    monkeypatch.setattr("engines.ollama.load_into_memory", spills)
     with pytest.raises(card.CardNotHanded, match="not whole on the card"):
         card.hand_to(OLLAMA, "llama3.1:8b")
     # a run with `allow_cpu` asked for the cpu

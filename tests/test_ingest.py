@@ -116,6 +116,6 @@ def test_a_source_is_replaced_in_one_transaction_or_not_at_all(monkeypatch):
     replace = inspect.getsource(index._replace_chunks)
     assert replace.index("delete(DataChunk)") < replace.index("session.add_all")
     assert replace.count("session.commit()") == 1, "one commit, so the pair is atomic"
-    assert replace.index("request_embeddings_batch") < replace.index("delete(DataChunk)"), (
+    assert replace.index("embed_labelled") < replace.index("delete(DataChunk)"), (
         "embed first: the old rows must outlive the slow part"
     )

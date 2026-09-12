@@ -131,7 +131,12 @@ def test_the_bootstrap_fills_the_quant_of_vllm_rows_from_their_weights(judging, 
                 "INSERT INTO models (name, engine_id, status)"
                 " SELECT :n, id, 'ready' FROM engines WHERE name = :e"
             ), {"n": name, "e": engine})
-    monkeypatch.setattr(bootstrap, "Session", sessionmaker(db))
+    from engines import lookup
+    from job_handlers import model_ops
+
+    # the boot fills a row through the pull's own record, which opens its own session
+    for module in (bootstrap, model_ops, lookup):
+        monkeypatch.setattr(module, "Session", sessionmaker(db))
     monkeypatch.setattr(bootstrap.vllm, "weights_check", lambda repo: [])
     monkeypatch.setattr(
         bootstrap.vllm, "artifact_of",
@@ -313,7 +318,12 @@ def test_the_bootstrap_pulls_vllm_weights_that_are_absent_or_broken(judging, mon
                 " SELECT :n, id, 'available', 'AWQ' FROM engines WHERE name = :e"
             ), {"n": name, "e": engine})
     queued = []
-    monkeypatch.setattr(bootstrap, "Session", sessionmaker(db))
+    from engines import lookup
+    from job_handlers import model_ops
+
+    # the boot fills a row through the pull's own record, which opens its own session
+    for module in (bootstrap, model_ops, lookup):
+        monkeypatch.setattr(module, "Session", sessionmaker(db))
     checked = []
 
     def check(repo):

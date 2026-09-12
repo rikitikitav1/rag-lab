@@ -76,10 +76,8 @@ def question_needs_embedding(label: str | None):
 def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_size: int) -> int:
     for i in range(0, len(chunks), embed_size):
         batch = chunks[i : i + embed_size]
-        label = llm.embedder_label()
-        for chunk, vector in zip(
-            batch, llm.request_embeddings_batch([c.content for c in batch]), strict=True
-        ):
+        label, vectors = llm.embed_labelled([c.content for c in batch])
+        for chunk, vector in zip(batch, vectors, strict=True):
             chunk.embedding = vector
             chunk.embedded_by = label
     session.execute(

@@ -440,7 +440,7 @@ def test_a_stand_fault_ends_the_run_instead_of_one_row(monkeypatch):
 
 # a try here reads or writes the stand and never calls a model or a search, so no fault reaches it
 _FORGIVES_NO_CALL = {
-    ("evals/runner.py", "_release"), ("evals/runner.py", "_placed"),
+    ("evals/runner.py", "_release"),
     ("job_handlers/judging.py", "_count_the_attempt"),
     ("job_handlers/judging.py", "_merge_guest_scores"),
     ("job_handlers/judging.py", "_residency"), ("job_handlers/judging.py", "_merge_our_scores"),
@@ -515,7 +515,8 @@ def test_a_phased_run_reads_the_embedder_s_placement_before_it_lets_it_go(monkey
     # every row is written after the release, and read then the embedder was None
     calls = _stub_phases(monkeypatch)
     seen = []
-    monkeypatch.setattr(runner, "_placed", lambda role: calls.append(("placed", role)) or True)
+    monkeypatch.setattr(runner.run_snapshot, "placed",
+                        lambda role: calls.append(("placed", role)) or True)
     monkeypatch.setattr(runner.chat, "answer_from_rows",
                         lambda text, rows, **kw: seen.append(kw.get("placed_during")))
     runner.run_phased(["q1"], "run", _spec(use_rerank=True, k=2))

@@ -6,10 +6,9 @@ import engines
 import httpx
 import llm
 from engines import core
-from models.registry import EngineKind, Placement
+from stand_specs import OLLAMA as SPEC
 
 GOLDEN = Path(__file__).parent / "fixtures" / "wire_before_engines.json"
-SPEC = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
 
 NAMES = {
     "generation": "llama3.1:8b",

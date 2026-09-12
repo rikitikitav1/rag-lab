@@ -210,7 +210,7 @@ def test_deleting_a_model_still_removes_the_weights_after_the_row_is_gone(monkey
     removed = []
     monkeypatch.setattr(model_ops.engines, "spec_of_id", lambda _id: spec)
     monkeypatch.setattr(model_ops, "refuse_if_the_weights_are_shared", lambda n, engine_id: None)
-    monkeypatch.setattr(model_ops.ollama, "delete_model", lambda n, s: removed.append(n))
+    monkeypatch.setattr("engines.ollama.delete_model", lambda n, s: removed.append(n))
 
     class _Session:
         def __enter__(self):
@@ -386,7 +386,7 @@ def test_a_vllm_model_is_deleted_through_the_door_unless_a_server_reads_it(door,
         if serving[0]:
             raise llm_model.vllm.StillServed(f"{name} is served by vllm right now")
 
-    monkeypatch.setattr(llm_model.vllm, "refuse_if_served", refuse)
+    monkeypatch.setattr("engines.drivers.Vllm.refuse_delete", lambda self, name: refuse(name))
     session = FakeAsyncSession(
         engines=[_engine(2, "vllm", EngineKind.vllm)],
         model=Model(id=5, name="Qwen/Q", engine_id=2, status=Status.ready),
@@ -471,7 +471,7 @@ def test_a_vllm_on_the_card_without_sleep_routes_is_refused(door, monkeypatch):
     monkeypatch.setenv("VLLM_X_BASE_URL", "http://vllm-x:8000")
     codes = [404]
 
-    def get(url, timeout):
+    def get(url, timeout, **kw):
         if codes[0] is None:
             raise requests.ConnectionError("refused")
         return SimpleNamespace(status_code=codes[0])

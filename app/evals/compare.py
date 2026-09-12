@@ -121,14 +121,16 @@ def verdicts(left: list, right: list) -> dict:
                 if getattr(before[q], axis) is not None and getattr(after[q], axis) is not None]
         tokens = [(_judged(a, axis).get("judge_prompt_tokens"),
                    _judged(b, axis).get("judge_prompt_tokens")) for a, b in both]
+        pair = paired(left, right, axis)
         axes[axis] = {
             "comparable": len(both),
             "disagree": sum(1 for a, b in both if float(getattr(a, axis)) != float(getattr(b, axis))),
             # scored on one side only: neither a match nor a clash, and left out of both counts
             "one_sided": sum(1 for q in shared
                              if (getattr(before[q], axis) is None) != (getattr(after[q], axis) is None)),
-            "left": mean_of(getattr(a, axis) for a, _ in both),
-            "right": mean_of(getattr(b, axis) for _, b in both),
+            # the means `paired` reports for this axis, over the same rows scored on both sides
+            "left": pair["left"],
+            "right": pair["right"],
             # the judge read fewer tokens on one side: its context was cut, or the tokenizer differs
             "prompt_tokens_differ": sum(1 for a, b in tokens
                                         if a is not None and b is not None and a != b),

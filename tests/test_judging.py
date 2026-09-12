@@ -583,7 +583,7 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     monkeypatch.setattr(
         j, "_last_residency", lambda name, started=None: asked.append(name) or last[0]
     )
-    monkeypatch.setattr(j, "_loaded_since", lambda prev, job_id: disturbed[0])
+    monkeypatch.setattr(j, "_loaded_since", lambda prev, job_id, judge: disturbed[0])
     monkeypatch.setattr(j, "_card_changed_hands", lambda since, name: handed[0])
     queue = "ollama /api/ps and the queue"
 
@@ -681,15 +681,63 @@ def test_the_judge_settles_the_outcome_it_alone_can_know():
     assert "settled_outcome" not in row("answered", None)
 
 
-def test_a_job_type_nobody_classified_is_assumed_to_evict_the_judge():
-    # the safe way round: a new type is a stranger, and a stranger is assumed to take the card
+def _one_ollama_stand(monkeypatch, j, rest_on=None):
+    import engines
+    from models.registry import EngineKind, Placement
+
+    gpu = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    cpu = engines.EngineSpec(2, "ollama-cpu", EngineKind.ollama, "OLLAMA_CPU", Placement.cpu)
+    vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    where = {"cpu": cpu, "vllm": vllm, None: gpu}[rest_on]
+    names = {"judging": "qwen2.5:7b", "generation": "llama3.1:8b", "embedding": "bge-m3",
+             "paraphrasing": "qwen2.5:7b", "reranking": "bge-reranker"}
+
+    def resolve(role, model=None):
+        if role == "judging":
+            return engines.Resolved(model or names[role], gpu)
+        return engines.Resolved(model or names[role], where)
+
+    monkeypatch.setattr(j.llm, "resolve_for", resolve)
+    return engines.Resolved("qwen2.5:7b", gpu)
+
+
+def test_the_judge_is_evicted_by_what_a_job_loads_not_by_its_name(monkeypatch):
+    import job_handlers.judging as j
+
+    judge = _one_ollama_stand(monkeypatch, j)
+    evicts = lambda t, o={}: j.evicts_the_judge(t, o, judge)  # noqa: E731
+    assert not evicts("judge_answers")
+    assert evicts("judge_answers", {"judge_model": "gemma3:4b"}), "another judge on the same memory"
+    assert evicts("eval_run") and evicts("index_data") and evicts("judge_guest_axes")
+    assert not evicts("paraphrase_questions"), "the paraphraser is the judge's own model here"
+    assert not evicts("pull_llm_model") and not evicts("check_mcp_health")
+    assert evicts("a_type_invented_next_year"), "a stranger is assumed to take the card"
+    assert not evicts("hand_card", {"engine_id": 1}) and evicts("hand_card", {"engine_id": 3})
+    assert evicts("hand_card", {"engine_id": 1, "model": "llama3.1:8b"})
+
+    # on the processor the rest of the roles leave the judge's memory alone
+    judge = _one_ollama_stand(monkeypatch, j, rest_on="cpu")
+    assert not j.evicts_the_judge("eval_run", {}, judge)
+    assert not j.evicts_the_judge("judge_language", {}, judge)
+    # another engine on the card takes the whole card, the judge with it
+    judge = _one_ollama_stand(monkeypatch, j, rest_on="vllm")
+    assert j.evicts_the_judge("embed_questions", {}, judge)
+
+
+def test_a_role_that_cannot_be_resolved_is_assumed_to_have_evicted(monkeypatch):
+    import job_handlers.judging as j
+
+    judge = _one_ollama_stand(monkeypatch, j)
+    monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: (_ for _ in ()).throw(
+        LookupError("no model holds the role")))
+    assert j.evicts_the_judge("embed_questions", {}, judge)
+
+
+def test_every_job_type_declares_the_roles_it_loads():
+    # a type left out of the map would read as loading nothing and keep the judge on paper
     import job_specs
 
-    assert not job_specs.disturbs_the_judge("judge_answers")
-    assert job_specs.disturbs_the_judge("judge_guest_axes"), "relevancy loads the embedder too"
-    assert job_specs.disturbs_the_judge("eval_run")
-    assert job_specs.disturbs_the_judge("judge_language"), "the probe answers on the generator"
-    assert job_specs.disturbs_the_judge("a_type_invented_next_year")
+    assert set(job_specs.LOADS) == set(job_specs.SPECS)
 
 
 def test_a_pass_walks_the_rows_in_the_order_it_was_given():
@@ -804,7 +852,7 @@ def test_a_vllm_judge_is_read_by_its_own_door_and_never_by_ollama_s(monkeypatch)
 
     spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
     asked = []
-    monkeypatch.setattr(judging.card.ollama, "residency", lambda s: asked.append(s) or [])
+    monkeypatch.setattr("engines.ollama.residency", lambda s: asked.append(s) or [])
     monkeypatch.setattr(judging.card.vllm, "card_state", lambda s: "awake")
     monkeypatch.setattr(judging.card.vllm, "served", lambda s: ["Qwen/Qwen2.5-7B-Instruct-AWQ"])
     monkeypatch.setattr(

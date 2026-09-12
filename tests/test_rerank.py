@@ -4,8 +4,7 @@ import pytest
 import rerank
 from engines import vllm
 from models.registry import EngineKind, Placement
-
-RERANK = engines.EngineSpec(7, "vllm-rerank", EngineKind.vllm, "VLLM_RERANK", Placement.gpu)
+from stand_specs import VLLM_RERANK as RERANK
 
 
 def test_rerank_orders_by_score_and_takes_top(monkeypatch):

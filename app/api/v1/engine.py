@@ -125,14 +125,10 @@ async def probe_engine(id: int, session: AsyncSession = Depends(get_session)):
 
 # without VLLM_SERVER_DEV_MODE the sleep routes answer 404, and it would hold the card for good
 def _refuse_a_vllm_that_cannot_sleep(row: Engine) -> None:
-    import requests
+    from engines import vllm
 
-    try:
-        seen = requests.get(f"{engines.base_url(_spec(row))}/is_sleeping", timeout=3)
-    except Exception:
-        # not up yet, as a service under a profile: the start flags are compose's, asked later
-        return
-    if seen.status_code == 404:
+    # None is a server not up yet, as a service under a profile: the start flags are asked later
+    if vllm.has_sleep_routes(_spec(row)) is False:
         raise HTTPException(
             status_code=422,
             detail=f"{row.name} has no sleep routes: start it with VLLM_SERVER_DEV_MODE=1 and"

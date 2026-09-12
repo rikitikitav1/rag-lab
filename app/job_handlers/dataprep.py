@@ -3,7 +3,7 @@ import contextlib
 import job_queue
 import llm
 import logging_setup
-from engines import ollama
+from engines import card
 from evals import build_paraphrased, build_veto
 from models.registry import Role
 
@@ -18,9 +18,8 @@ def _released(role: Role):
     try:
         yield
     finally:
-        # `ollama.unload` swallows and logs its own failures, so a job never dies here
         picked = llm.resolve_for(str(role))
-        ollama.unload(picked.name, picked.engine)
+        card.release_model(picked.engine, picked.name)
 
 
 @register("paraphrase_questions")

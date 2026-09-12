@@ -90,7 +90,7 @@ def search_corpus(
 ) -> str:
     _check_text(query, "query")
     category = _safe_category(category)
-    _wait_for_the_card("embedding", *(("reranking",) if card_wait.reranker_needed() else ()))
+    _wait_for_the_card(*card_wait.retrieving_roles())
     try:
         content, _texts, _sources, _depth, _chunks = chat.search_chunks(
             query, category, variant=config.settings.corpus.variant

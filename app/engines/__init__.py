@@ -20,6 +20,7 @@ from .core import (
     translate,
 )
 from .disk import NotEnoughDisk, free_bytes, refuse_if_tight
+from .drivers import Driver, driver
 from .lookup import (
     CARD,
     Resolved,
@@ -38,9 +39,10 @@ from .vllm import WakeFailed, started_at
 __all__ = [
     "ACCEPTS", "CARD", "DANGLING", "LLM_TIMEOUT", "NAMED", "SAMPLER_KEYS", "SEEDED_PREFIX",
     "UNNAMED",
-    "Ambiguous", "CardState", "EngineSpec", "NotEnoughDisk", "NotSupported", "Resolved", "Sampler",
+    "Ambiguous", "CardState", "Driver", "EngineSpec", "NotEnoughDisk", "NotSupported", "Resolved", "Sampler",
     "Stamped", "Unconfigured", "Unnamed", "WakeFailed",
-    "added_by", "address_of", "api_key", "base_url", "card_engines", "client_for", "engine_of",
+    "added_by", "address_of", "api_key", "base_url", "card_engines", "client_for", "driver",
+    "engine_of",
     "find_model", "forget_clients", "free_bytes", "label", "refuse_if_tight", "registered",
     "registered_names", "seeded_ollama", "spec_of_id", "spec_of_name", "spec_of_role",
     "started_at", "translate",
