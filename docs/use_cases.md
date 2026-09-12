@@ -4,7 +4,7 @@ Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthroug
 
 ## Prerequisites
 
-- Docker + an NVIDIA GPU (8 GB is enough).
+- Docker + an NVIDIA GPU (8 GB is enough), given to containers through CDI: the host check is in the README [Quickstart](../README.md#quickstart).
 - The first `docker compose up -d` downloads and indexes for a while; what and how long is in the README [Quickstart](../README.md#quickstart). Wait until `curl localhost:8000/readiness` returns ok; watch progress with `docker compose logs -f worker`.
 - The server answers before indexing finishes, so early requests may refuse until the corpus is populated.
 

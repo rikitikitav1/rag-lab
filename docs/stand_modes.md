@@ -160,6 +160,11 @@ curl -s "localhost:8000/v1/job?type=hand_card&status=error&limit=5" | python3 -m
   restarted with `docker compose restart vllm`, and it comes back awake on the card.
 - `... loaded on ollama, but not whole on the card`: the model landed half on the processor; the
   card is short of memory, and `engines` with `nvidia-smi` say who holds it.
+- `nvidia-smi` inside a container answers `Failed to initialize NVML: Unknown Error`, and jobs end
+  with `not whole on the card`: the container lost the card. With the card given through CDI a
+  `systemctl daemon-reload` no longer does this; if it happens anyway, `docker compose restart
+  <service>` gives the card back, and `docker info` should list the NVIDIA CDI devices (README,
+  Quickstart).
 - `vllm` exits at start with `Free memory on device ... is less than desired GPU memory
   utilization`, and the API and the worker stay `Created` behind it: the stack was recreated while
   ollama still held a model, since the ollama container is not recreated with it and keeps its

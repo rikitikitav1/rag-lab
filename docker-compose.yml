@@ -16,12 +16,13 @@ x-engine-env: &engine-env
 # pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
 x-vllm-image: &vllm-image vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
 
+# CDI, not the runtime hook: a `systemctl daemon-reload` took the card from running containers
 x-gpu: &gpu
   resources:
     reservations:
       devices:
-        - driver: nvidia
-          count: all
+        - driver: cdi
+          device_ids: ["nvidia.com/gpu=all"]
           capabilities: [gpu]
 
 # the host's user: the worker writes the weight cache and /repos as it, and `repos-owner` hands /repos over
