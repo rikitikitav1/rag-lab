@@ -24,6 +24,9 @@ x-gpu: &gpu
           count: all
           capabilities: [gpu]
 
+# the host's user: the worker writes the weight cache and /repos as it, and `repos-owner` hands /repos over
+x-host-user: &host-user "${UID:-1000}:${GID:-1000}"
+
 services:
   rag-lab:
     depends_on:
@@ -72,7 +75,7 @@ services:
   dbmate:
     image: ghcr.io/amacneil/dbmate:2.34.1
     command: ["up"]
-    user: "${UID:-1000}:${GID:-1000}"
+    user: *host-user
     depends_on:
       postgresql:
         condition: service_healthy
@@ -117,12 +120,21 @@ services:
     volumes:
       - .:/app
 
+  # the volume is root's and the worker clones as the host's user; not -R: old clones stay readable
+  repos-owner:
+    build:
+      dockerfile: Dockerfile
+    user: "0:0"
+    command: ["chown", *host-user, "/repos"]
+    volumes:
+      - repos_data:/repos
+
   worker:
     build:
       dockerfile: Dockerfile
     command: ["python", "app/worker.py"]
     # the worker writes pulled weights into the host's cache, and as root they were not the host's
-    user: "${UID:-1000}:${GID:-1000}"
+    user: *host-user
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       HOME: /tmp
@@ -140,6 +152,8 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       bootstrap:
+        condition: service_completed_successfully
+      repos-owner:
         condition: service_completed_successfully
     volumes:
       - .:/app
@@ -182,8 +196,7 @@ services:
        "--enable-sleep-mode",
        # a generator on this vLLM must return tool calls; the judge sends no tools and never meets it
        "--enable-auto-tool-choice", "--tool-call-parser", "hermes"]
-    ports:
-      - "127.0.0.1:8001:8000"
+    # no port on the host: dev mode opens `/collective_rpc` and `/pause` without a key
     environment:
       # the sleep routes and `/server_info` exist only in dev mode
       VLLM_SERVER_DEV_MODE: "1"
@@ -202,7 +215,7 @@ services:
       timeout: 5s
       retries: 20
     volumes:
-      # the weights live in the host cache, where step 0 downloaded them
+      # the weights live in the host cache, where the server downloads them on its first start
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     deploy: *gpu
 
@@ -277,8 +290,7 @@ services:
        "--max-model-len", "8192",
        "--gpu-memory-utilization", "${VLLM_RERANK_GPU_UTIL:-0.3}",
        "--enforce-eager", "--enable-sleep-mode"]
-    ports:
-      - "127.0.0.1:8003:8000"
+    # no port on the host, as for `vllm`: the stand reaches it over the compose network
     environment:
       VLLM_SERVER_DEV_MODE: "1"
       HF_HUB_OFFLINE: "${VLLM_HF_OFFLINE:-0}"

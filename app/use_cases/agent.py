@@ -24,6 +24,7 @@ from use_cases.agent_policy import (
     GateSignal,
     Orchestrator,
     Topic,
+    gates_with_cross_encoder,
     required_values,
     signatures,
 )
@@ -160,7 +161,7 @@ def run(
         gate.drop_weak_context = True
     if policy == FallbackPolicy.corpus_first_weak:
         gate.signal = GateSignal(gate_signal or config.settings.agent.gate_signal)
-        if gate.signal != GateSignal.distance:
+        if gates_with_cross_encoder(policy, gate.signal):
             gate.top = config.settings.agent.gate_candidates
             gate.threshold = config.settings.agent.weak_threshold
         if gate.signal != GateSignal.cross_encoder:
@@ -281,8 +282,8 @@ def _admissible(
 
 def _topic_score(question: str, variant: str) -> float | None:
     try:
-        return db.nearest_distance(llm.embed(question), variant=variant,
-                                   embedded_by=llm.embedder_label())
+        label, vector = llm.embed_with_label(question)
+        return db.nearest_distance(vector, variant=variant, embedded_by=label)
     except StandFault:
         raise
     except Exception as e:

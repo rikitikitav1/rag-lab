@@ -167,10 +167,13 @@ def test_the_engines_section_says_who_holds_the_card_and_who_answers(monkeypatch
     monkeypatch.setenv("VLLM_BASE_URL", "http://vllm:8000")
     monkeypatch.delenv("CLOUD_BASE_URL", raising=False)
 
-    def down(url, timeout):
-        raise OSError("refused")
+    # the vLLM does not answer; the cloud has no key, and a missing key raises before any request
+    def listing(spec, timeout=3):
+        if spec.name == "cloud":
+            raise engines.Unconfigured("engine cloud: key is not configured")
+        return None
 
-    monkeypatch.setattr(stand_health.requests, "get", down)
+    monkeypatch.setattr(stand_health.engines, "served_models", listing)
     got = stand_health.engines_section()
     assert got["holder"] == ["vllm"] and got["on_card"] == {"vllm": ["Qwen/Q"]}
     assert got["vllm_sleeping"] == {"vllm": False}

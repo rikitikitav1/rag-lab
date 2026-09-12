@@ -121,7 +121,7 @@ def _run_sequential(
         for text in texts:
             if job_id is not None and job_queue.is_cancelled(job_id):
                 return answered, True
-            # after the first answer both roles have been called, so a spill is finally visible
+            # a spill shows once roles answered; an agent reply without a search loaded no embedder
             if answered == 1:
                 _refuse_a_cpu_run(ANSWERING, allow_cpu, spec.model)
             try:
@@ -136,28 +136,29 @@ def _run_sequential(
         _free_the_card(spec.model)
 
 
-def _embed_in_batches(texts: list[str]) -> list:
+# each vector with the label of the embedder that made it: a role moved mid-run mislabels none
+def _embed_in_batches(texts: list[str]) -> list[tuple[str | None, list | None]]:
     size = config.settings.ingestion.batch_size
-    vectors: list = []
+    embedded: list = []
     for start in range(0, len(texts), size):
         chunk = texts[start : start + size]
         try:
-            vectors.extend(llm.request_embeddings_batch(chunk))
+            label, vectors = llm.embed_labelled(chunk)
+            embedded.extend((label, vector) for vector in vectors)
         except StandFault:
             raise
         except Exception as e:
             log.error("eval_run.embed_failed", start=start, n=len(chunk), error=str(e))
-            vectors.extend([None] * len(chunk))
-    return vectors
+            embedded.extend([(None, None)] * len(chunk))
+    return embedded
 
 
 def _phase_retrieve(texts: list[str], spec: RunSpec) -> tuple[list, int]:
     limit = config.settings.rerank.candidates if spec.use_rerank else spec.k
     # resolved once and carried: a phased run recorded `ef_search: null`, and phased is default
     depth = search_depth.resolve(spec.variant)
-    label = llm.embedder_label()
     retrieved = []
-    for text, vector in zip(texts, _embed_in_batches(texts), strict=True):
+    for text, (label, vector) in zip(texts, _embed_in_batches(texts), strict=True):
         if vector is None:
             continue
         try:

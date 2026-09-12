@@ -32,6 +32,9 @@ def refuse_unknown_registry(name: str) -> None:
     parts = name.split("/")
     if any(part in ("", ".", "..") for part in parts) or len(parts) > 3:
         raise ValueError(f"invalid model name: {name!r}")
+    # the hub cache spells `/` as `--`, so `a--b` would share the weights directory of `a/b`
+    if "--" in name:
+        raise ValueError(f"invalid model name: {name!r}: `--` would share another name's weights")
     if len(parts) == 3 and parts[0].lower() not in ALLOWED_REGISTRIES:
         raise ValueError(f"model registry host not allowed: {parts[0]!r}")
 

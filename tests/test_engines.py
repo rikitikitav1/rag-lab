@@ -183,6 +183,48 @@ def test_an_unreadable_table_never_calls_a_live_engine_deleted():
     assert got.state == engines.NAMED
 
 
+def test_a_name_on_two_engines_is_taken_from_the_role_s_engine_or_refused(monkeypatch):
+    # the fallback registered the name again on the seeded ollama and hit the unique key
+    from job_handlers import base
+    from models.registry import Status
+
+    def find(name, engine_id=None):
+        if engine_id is None:
+            raise engines.Ambiguous(f"{name} sits on two engines")
+        return engines.Resolved(name, OLLAMA) if engine_id == OLLAMA.id else None
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def scalar(self, _stmt):
+            return Status.ready
+
+        def add(self, _row):
+            pytest.fail("an ambiguous name is never registered again")
+
+    monkeypatch.setattr(engines, "find_model", find)
+    monkeypatch.setattr(llm, "resolve", lambda role: engines.Resolved(
+        "m", {"generation": OLLAMA, "judging": VLLM}[role]))
+    monkeypatch.setattr(base, "Session", _Session)
+    base.require_model_ready("bge-m3", "generation")
+    with pytest.raises(engines.Ambiguous):
+        base.require_model_ready("bge-m3", "judging")
+    with pytest.raises(engines.Ambiguous):
+        base.require_model_ready("bge-m3")
+
+
+def test_a_name_with_a_double_dash_is_refused_at_every_door():
+    # `a--b` would share the hub cache directory of `a/b`, and the boot died on such a row
+    from models.registry import refuse_unknown_registry
+
+    with pytest.raises(ValueError, match="share"):
+        refuse_unknown_registry("org--x/model")
+
+
 def test_ollama_adds_the_window_it_was_started_with(monkeypatch):
     from engines import ollama
 

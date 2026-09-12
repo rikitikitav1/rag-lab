@@ -117,7 +117,7 @@ class CheckMcpHealth(Spec):
 
 class HandCard(Spec):
     engine_id: int = Field(ge=1)
-    # only the API queues this now (chat, `/load`): who asked, for the reader, not for the turn
+    # the API queues this (the chat, `/load`, a role seat): who asked, for the reader, not the turn
     asked_by: str | None = Field(default=None, max_length=64)
     # for ollama the model to load once the card is free; vLLM serves one model and needs no name
     model: str | None = Field(
@@ -203,7 +203,7 @@ LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "
 # lower first; judging waits for runs, and the API's `hand_card` overtakes what waits
 PRIORITY = {"hand_card": -2, "judge_answers": 10, "judge_guest_axes": 10, "judge_language": 10}
 
-# a flow of runs must not hold the judge back forever: a job this old is taken before any priority
+# a flow of runs must not hold the judge back forever: a job this old goes before all but a handover
 STARVED_AFTER_MINUTES = 30
 
 

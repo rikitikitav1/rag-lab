@@ -422,7 +422,7 @@ def test_verdicts_count_a_moved_ruler_that_the_means_hide():
 
 
 def test_a_verdict_scored_on_one_side_is_neither_a_match_nor_a_clash():
-    # the script before this door counted it as a clash and left it out of the denominator
+    # one side unscored is no clash, and it stays out of the denominator too
     left = [_scored(1, 1, None), _scored(2, 1, 1)]
     right = [_scored(1, 1, 1), _scored(2, 1, 0)]
     rel = compare.verdicts(left, right)["axes"]["relevance"]

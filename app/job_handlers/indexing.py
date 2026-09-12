@@ -98,9 +98,10 @@ def embed_questions(options: dict) -> None:
         pending = session.scalars(select(Question).where(question_needs_embedding(label))).all()
         for i in range(0, len(pending), size):
             batch = pending[i : i + size]
-            vectors = llm.request_embeddings_batch([q.original_text for q in batch])
+            # the label of the embedder that made these vectors, even if the role moved mid-job
+            made_by, vectors = llm.embed_labelled([q.original_text for q in batch])
             for question, vector in zip(batch, vectors, strict=True):
                 question.embedding = vector
-                question.embedded_by = label
+                question.embedded_by = made_by
             session.commit()
     log.info("worker.embed_questions", embedded=len(pending))

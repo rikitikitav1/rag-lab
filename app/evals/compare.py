@@ -330,7 +330,7 @@ def _one_retrieval(runs: dict[str, list]) -> bool | None:
     return True if compared else None
 
 
-# read off the run snapshot (schema 9), per role; a row from before it names nothing
+# read off the run snapshot's `config.engines`, per role; a row older than that key names nothing
 def _answering_engines(logs: list) -> dict[str, list[str]]:
     seen: dict[str, set] = {}
     for ql in logs:

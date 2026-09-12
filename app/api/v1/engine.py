@@ -145,17 +145,20 @@ def _running(spec) -> bool:
         return True
     except engines.Unconfigured:
         return False
+    # first: a ConnectTimeout is a ConnectionError too, and a host that did not answer may be running
+    except requests.Timeout:
+        return True
     except requests.ConnectionError:
         return False
     except Exception:
         return True
 
 
+# seconds, with the key: the completion client waited two minutes and retried once
 def _answers(spec) -> bool:
     try:
-        engines.client_for(spec).models.list()
-        return True
-    except Exception:
+        return engines.served_models(spec) is not None
+    except engines.Unconfigured:
         return False
 
 

@@ -13,7 +13,7 @@ log = logging_setup.get_logger(__name__)
 def eval_run(options: dict) -> None:
     model = options.get("model")
     if model:
-        require_model_ready(model)
+        require_model_ready(model, "generation")
     else:
         require_role_ready(Role.generation, take_card=False)
     # one preamble takes the card: two, on two engines, handed it back and forth and never started

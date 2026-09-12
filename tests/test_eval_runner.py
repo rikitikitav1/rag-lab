@@ -33,6 +33,9 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
     )
     monkeypatch.setattr(runner.llm, "embedder_label", lambda role="embedding": "bge-m3@ollama")
     monkeypatch.setattr(
+        runner.llm, "embed_labelled", lambda texts: ("bge-m3@ollama", [[0.1]] * len(texts))
+    )
+    monkeypatch.setattr(
         runner.db, "hybrid_search",
         lambda text, vector, category, limit, variant, ef_search=None, embedded_by=None: (
             calls.append(("search", text, limit, variant, ef_search)) or _rows(text)
@@ -180,9 +183,9 @@ def test_embedding_failure_drops_only_its_batch(monkeypatch):
     def flaky(chunk):
         if "boom" in chunk:
             raise RuntimeError("embedder down")
-        return [[0.1]] * len(chunk)
+        return "bge-m3@ollama", [[0.1]] * len(chunk)
 
-    monkeypatch.setattr(runner.llm, "request_embeddings_batch", flaky)
+    monkeypatch.setattr(runner.llm, "embed_labelled", flaky)
 
     out, depth = runner._phase_retrieve(["ok1", "ok2", "boom", "ok3"], _spec(use_rerank=False, k=3))
 
@@ -433,7 +436,7 @@ def test_a_stand_fault_ends_the_run_instead_of_one_row(monkeypatch):
         raise card.CardNotHanded("vllm is down; the card stays where it is")
 
     _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.llm, "request_embeddings_batch", lost)
+    monkeypatch.setattr(runner.llm, "embed_labelled", lost)
     with pytest.raises(card.CardNotHanded):
         runner.run_phased(["q1"], "run", _spec(use_rerank=False, k=2))
 
@@ -450,6 +453,7 @@ _FORGIVES_NO_CALL = {
 # read off the source, not listed: a module that starts calling a model later is guarded from then on
 def _reaches_a_model(app: Path) -> list[str]:
     calls = ("llm.chat(", "llm.ask(", "llm.embed(", "request_embeddings_batch(", "score_pairs(",
+             "embed_labelled(", "embed_with_label(",
              "hybrid_search(", "nearest_distance(", "dispatch(", ".invoke(", "guest_axes.score(")
     return sorted(str(p.relative_to(app)) for p in app.rglob("*.py")
                   if any(c in p.read_text() for c in calls))

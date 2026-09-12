@@ -40,6 +40,10 @@ class CardState(StrEnum):
     UNKNOWN = "unknown"
 
 
+# gone, or silent past its timeout: nothing is handed to it and no role is seated on it
+SILENT = frozenset({CardState.DOWN, CardState.UNKNOWN})
+
+
 class Unconfigured(RuntimeError):
     pass
 
@@ -147,6 +151,9 @@ def added_by(spec: EngineSpec, model: str) -> dict:
         from . import ollama
 
         return _named({"num_ctx": ollama.context_length(model, spec)})
+    # a paid engine's host is not asked vLLM's routes, and its key goes to nothing but its calls
+    if spec.kind is not EngineKind.vllm:
+        return {}
     from . import vllm
 
     started = vllm.started_at(spec)
@@ -175,6 +182,34 @@ def _asked(spec: EngineSpec, path: str, key: str):
     try:
         import requests
 
-        return requests.get(f"{base_url(spec)}{path}", timeout=5).json().get(key)
+        return requests.get(f"{base_url(spec)}{path}", headers=_auth(spec), timeout=5).json().get(key)
+    except Exception:
+        return None
+
+
+# a server started with `--api-key` answers nothing without it, and a missing key sends none
+def _auth(spec: EngineSpec) -> dict:
+    try:
+        return {"Authorization": f"Bearer {api_key(spec)}"}
+    except Unconfigured:
+        return {}
+
+
+# `/v1/models` with the key, raising as requests does, so a caller tells silence from a refusal
+def models_listing(spec: EngineSpec, timeout: float) -> list[dict]:
+    import requests
+
+    headers = {"Authorization": f"Bearer {api_key(spec)}"}
+    seen = requests.get(f"{base_url(spec)}/v1/models", headers=headers, timeout=timeout)
+    seen.raise_for_status()
+    return seen.json()["data"]
+
+
+# the ids a server lists, asked in seconds; None when it does not answer, and a missing key raises
+def served_models(spec: EngineSpec, timeout: float = 3) -> list[str] | None:
+    try:
+        return [m.get("id") for m in models_listing(spec, timeout)]
+    except Unconfigured:
+        raise
     except Exception:
         return None

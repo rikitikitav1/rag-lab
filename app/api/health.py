@@ -38,8 +38,9 @@ async def readiness(session: AsyncSession = Depends(get_session)):
     # a judge that died after the start leaves the chat answering, so not a 503; the role is named
     try:
         down = await run_in_threadpool(stand_health.roles_down)
+    # the name of the failure, not its text: this answers without a key
     except Exception as e:
-        down = [f"cannot read the roles: {str(e)[:80]}"]
+        down = [f"cannot read the roles: {type(e).__name__}"]
     if down:
         checks["status"] = "degraded"
         checks["roles_down"] = down

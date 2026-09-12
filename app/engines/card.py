@@ -2,11 +2,12 @@ import time
 from dataclasses import dataclass
 
 import logging_setup
+import requests
 from errors import StandFault
 from models.registry import EngineKind
 
 from . import vllm
-from .core import CardState, EngineSpec
+from .core import SILENT, CardState, EngineSpec
 from .drivers import driver
 from .lookup import CARD, card_engines
 
@@ -43,7 +44,12 @@ def sleep_every_vllm() -> None:
         state = vllm.card_state(spec)
         if state in (CardState.AWAKE, CardState.UNKNOWN):
             # a silent one may be awake, and a refusal to sleep stops the boot rather than hides
-            vllm.sleep(spec)
+            try:
+                vllm.sleep(spec)
+            except requests.Timeout as e:
+                raise CardNotHanded(
+                    f"{spec.name} did not go to sleep in {vllm.WAKE_TIMEOUT}s; the boot stops here"
+                ) from e
             log.info("card.vllm_asleep", engine=spec.name, was=state)
 
 
@@ -63,8 +69,16 @@ def model_on_card(spec: EngineSpec, model: str) -> bool | None:
 
 # half on the processor answers with other kernels; only ollama spills, an asleep vLLM wakes whole
 def spilled(spec: EngineSpec, model: str) -> bool:
-    return (driver(spec.kind).spills and spec.placement in CARD
-            and model_on_card(spec, model) is False)
+    return _can_spill(spec) and model_on_card(spec, model) is False
+
+
+# the same rule over a reading already taken, so one role is not asked twice
+def spilled_reading(spec: EngineSpec, on: bool | None) -> bool:
+    return _can_spill(spec) and on is False
+
+
+def _can_spill(spec: EngineSpec) -> bool:
+    return driver(spec.kind).spills and spec.placement in CARD
 
 
 def holds_for(spec: EngineSpec) -> bool:
@@ -93,7 +107,7 @@ def hand_to(target: EngineSpec, model: str | None = None, allow_spill: bool = Fa
 # asked before anything lets go: a handover to a server that is gone left the card with nobody
 def _refuse_a_silent_target(target: EngineSpec) -> None:
     state = driver(target.kind).state(target)
-    if state in (CardState.DOWN, CardState.UNKNOWN):
+    if state in SILENT:
         raise CardNotHanded(f"{target.name} is {state}; the card stays where it is")
 
 

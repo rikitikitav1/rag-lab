@@ -68,6 +68,8 @@ def test_a_pull_goes_online_for_itself_only_and_lands_in_the_engines_cache(cache
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     monkeypatch.setattr(vllm.subprocess, "run", run)
     monkeypatch.setattr(vllm, "_siblings", lambda repo: [{"rfilename": "model.safetensors"}])
+    # the download is faked, so what it leaves is checked by the tests on a real cache
+    monkeypatch.setattr(vllm, "weights_check", lambda repo, young_partials_ok=False: [])
     vllm.pull_weights("Qwen/Q")
     assert seen["env"]["HF_HUB_OFFLINE"] == "0", "the worker's offline switch would refuse the pull"
     assert seen["env"]["HF_HOME"] == vllm.weights_cache()
@@ -221,13 +223,28 @@ def test_a_pull_skips_intact_weights_and_drops_broken_ones_before_fetching(tmp_p
     real = vllm._intact
     monkeypatch.setattr(vllm, "_intact", lambda blob: hashed.append(blob.name) or real(blob))
     monkeypatch.setattr(vllm, "_siblings", lambda repo: None)
-    monkeypatch.setattr(vllm.subprocess, "run", lambda *a, **kw: ran.append(a) or at_the_pull.append(
-        partial.exists()) or SimpleNamespace(returncode=0, stderr=""))
+    dropped = []
+
+    def fetch(*a, **kw):
+        ran.append(a)
+        at_the_pull.append(partial.exists())
+        dropped.append(not big.exists())
+        # the download brings the right bytes back, as the hub would
+        big.write_bytes(b"w" * 5000)
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(vllm.subprocess, "run", fetch)
     vllm.pull_weights("Qwen/Q")
-    assert len(ran) == 1 and not big.exists(), "a broken blob keeps its name, so it must go first"
+    assert len(ran) == 1 and dropped == [True], "a broken blob keeps its name, so it must go first"
     assert at_the_pull == [True], "a partial download is kept for the resume"
-    assert len(hashed) == len(set(hashed)), "each blob is hashed once per pull"
+    assert len([h for h in hashed if h == big.name]) <= 2, "hashed before the pull and in its check"
     assert "allow_patterns" in ran[0][0][2], "only what a server loads is pulled"
+
+    # a download that exits zero and leaves broken bytes does not turn the row ready
+    big.write_bytes(b"x" * 5000)
+    monkeypatch.setattr(vllm.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=0, stderr=""))
+    with pytest.raises(RuntimeError, match="still not whole"):
+        vllm.pull_weights("Qwen/Q")
 
 
 def test_a_pull_cut_short_is_not_whole_and_the_next_pull_resumes_it(tmp_path, monkeypatch):
@@ -238,12 +255,23 @@ def test_a_pull_cut_short_is_not_whole_and_the_next_pull_resumes_it(tmp_path, mo
     monkeypatch.setattr(vllm.subprocess, "run", lambda *a, **kw: at_the_pull.append(
         partial.exists()) or SimpleNamespace(returncode=0, stderr=""))
     monkeypatch.setattr(vllm, "_siblings", lambda repo: None)
+    import os
+
     partial.write_bytes(b"half")
     assert vllm.weights_check("Qwen/Q") == ["abc.incomplete"]
+    # old enough that no sibling service is still writing it
+    os.utime(partial, (0, 0))
     vllm.pull_weights("Qwen/Q")
     assert at_the_pull == [True], "resumed, not restarted"
     # a partial blob left after a finished pull is an orphan and goes
     assert not partial.exists() and vllm.weights_check("Qwen/Q") == [], "left after a pull, an orphan"
+
+    # a fresh one may be another service's download into the shared cache, and it stays
+    fresh = root / "blobs" / "def.incomplete"
+    fresh.write_bytes(b"half")
+    vllm.pull_weights("Qwen/Q")
+    assert fresh.exists(), "a partial another service may be writing right now is left alone"
+    fresh.unlink()
 
     (root / "snapshots" / "abc" / "model.safetensors").unlink()
     assert vllm.weights_check("Qwen/Q") == ["model.safetensors"], "a weights file never linked"
@@ -271,4 +299,11 @@ def test_a_repo_without_safetensors_pulls_its_bin_and_one_with_both_pulls_one_fo
                                                          {"rfilename": "model.safetensors"}])
     assert "*.safetensors" in vllm._patterns("x") and "*.bin" not in vllm._patterns("x")
     monkeypatch.setattr(vllm, "_siblings", lambda repo: None)
-    assert {"*.safetensors", "*.bin"} <= set(vllm._patterns("x")), "unlisted, neither is left behind"
+    blind = vllm._patterns("x")
+    assert "*.safetensors" in blind and "*.bin" not in blind, "the hub silent: no pickle pulled blind"
+
+
+def test_a_repository_name_with_a_double_dash_is_refused():
+    # the hub spells `/` as `--` on disk, so `a--b` would share the directory of `a/b`
+    with pytest.raises(ValueError, match="share"):
+        vllm.weights_check("a--b")

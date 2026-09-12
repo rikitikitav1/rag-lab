@@ -212,6 +212,7 @@ def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
 
 
+# unlabelled, for vectors nobody stores, as the guest's; a writer of vectors takes `embed_labelled`
 def request_embeddings_batch(texts, role="embedding"):
     return _embeddings(resolve(role), texts)
 
@@ -220,6 +221,12 @@ def request_embeddings_batch(texts, role="embedding"):
 def embed_labelled(texts, role="embedding") -> tuple[str, list]:
     picked = resolve(role)
     return engines.label(picked.name, picked.engine.name), _embeddings(picked, texts)
+
+
+# one text: the vector a search asks with and the label the rows it meets must carry
+def embed_with_label(text, role="embedding") -> tuple[str, list]:
+    label, vectors = embed_labelled([text], role)
+    return label, vectors[0]
 
 
 def _embeddings(picked, texts) -> list:
