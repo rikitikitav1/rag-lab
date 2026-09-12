@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from use_cases import agent, agent_policy, card_wait
 
-from api.v1.chat import wait_for_the_card
+from api.v1.card_door import wait_for_the_card
 from api.v1.schemas import AnswerSource
 
 router = APIRouter(prefix="/agent", tags=["agent"])

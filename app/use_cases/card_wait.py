@@ -40,8 +40,16 @@ def reranker_needed(rerank_asked: bool | None = None, agent: bool = False,
     )
 
 
+def _reranking(**asked) -> tuple[str, ...]:
+    return ("reranking",) if reranker_needed(**asked) else ()
+
+
 def answering_roles(**asked) -> tuple[str, ...]:
-    return ("embedding", "generation", *(("reranking",) if reranker_needed(**asked) else ()))
+    return ("embedding", "generation", *_reranking(**asked))
+
+
+def retrieving_roles(**asked) -> tuple[str, ...]:
+    return ("embedding", *_reranking(**asked))
 
 
 # the API never hands the card: it asks the queue and names who holds it, or says why it never will

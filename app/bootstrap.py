@@ -126,9 +126,9 @@ def _register_what_vllm_serves(session, spec, role: str, name: str):
     return model
 
 
-# like ollama's reconcile: weights on disk and intact are ready, absent or broken ones are pulled
+# every vLLM reads this host's HF cache: intact weights are ready, others pulled; a remote one is not
 def _fill_vllm_rows() -> None:
-    to_pull = []
+    to_pull, to_fill = [], {}
     with Session() as session:
         rows = session.execute(
             select(Model, Engine.id)
@@ -147,12 +147,12 @@ def _fill_vllm_rows() -> None:
                 to_pull.append((model.name, engine_id))
                 continue
             model.status = Status.ready
-            # each field on its own: a quant typed by hand left the size empty for good
-            if model.quant is None or model.size_bytes is None:
-                seen = vllm.artifact_of(model.name)
-                model.quant = model.quant or seen.get("quant")
-                model.size_bytes = model.size_bytes or seen.get("size_bytes")
+            # the pull's own record fills each field on its own, and the weights row with them
+            if None in (model.weights_id, model.quant, model.size_bytes):
+                to_fill.setdefault(engine_id, []).append(model.name)
         session.commit()
+    for engine_id, names in to_fill.items():
+        _fill_from_the_server(engines.spec_of_id(engine_id), names)
     for name, engine_id in to_pull:
         if not job_queue.pending_of_type("pull_llm_model", name=name, engine_id=engine_id):
             job_queue.enqueue("pull_llm_model", {"name": name, "engine_id": engine_id})

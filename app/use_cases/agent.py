@@ -485,4 +485,4 @@ def _log_answer(
         log_id = log_row.id
 
     # the chat's own rule: a pass per answer, as the agent had, took the card from the next question
-    chat._judge_later(result, run_name, log_id)
+    chat.judge_later(result, run_name, log_id)

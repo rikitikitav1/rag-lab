@@ -300,11 +300,10 @@ async def delete_model(id: int, session: AsyncSession = Depends(get_session)):
         await run_in_threadpool(model_ops.refuse_if_the_weights_are_shared, model.name, engine.id)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
-    if engine.kind is EngineKind.vllm:
-        try:
-            await run_in_threadpool(vllm.refuse_if_served, model.name)
-        except vllm.StillServed as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
+    try:
+        await run_in_threadpool(engines.driver(engine.kind).refuse_delete, model.name)
+    except vllm.StillServed as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     name = model.name
     await session.delete(model)

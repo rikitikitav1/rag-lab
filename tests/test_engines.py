@@ -5,10 +5,9 @@ import llm
 import pytest
 from engines import core, lookup
 from models.registry import EngineKind, Placement
+from stand_specs import OLLAMA, VLLM
 
-OLLAMA = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
 SECOND = engines.EngineSpec(2, "ollama2", EngineKind.ollama, "OLLAMA2", Placement.gpu)
-VLLM = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
 CLOUD = engines.EngineSpec(4, "cloud", EngineKind.openai_compatible, "CLOUD", Placement.remote)
 
 
@@ -200,23 +199,18 @@ def test_a_server_that_answers_nothing_leaves_the_key_out(monkeypatch):
 
 
 def test_vllm_adds_its_window_and_its_version(monkeypatch):
-    from types import SimpleNamespace
+    from engines import vllm
 
-    served = SimpleNamespace(id="m", max_model_len=8192, model_extra={})
-    monkeypatch.setattr(core, "client_for", lambda _spec: SimpleNamespace(
-        models=SimpleNamespace(list=lambda: SimpleNamespace(data=[served]))
-    ))
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: 8192)
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: "0.29.1")
     assert engines.added_by(VLLM, "m") == {"max_model_len": 8192, "engine_version": "0.29.1"}
 
 
 def test_the_stamp_says_whether_the_server_had_batch_invariance_on(monkeypatch):
     # measured on 0.29.1: `max_num_seqs` is nowhere in the server's answers, this flag is
-    from types import SimpleNamespace
+    from engines import vllm
 
-    monkeypatch.setattr(core, "client_for", lambda _spec: SimpleNamespace(
-        models=SimpleNamespace(list=lambda: SimpleNamespace(data=[]))
-    ))
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: None)
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: (
         {"VLLM_BATCH_INVARIANT": True} if path == "/server_info" else None
     ))
@@ -224,21 +218,21 @@ def test_the_stamp_says_whether_the_server_had_batch_invariance_on(monkeypatch):
 
 
 def test_a_server_without_dev_mode_leaves_the_flag_out_rather_than_calling_it_off(monkeypatch):
-    from types import SimpleNamespace
+    from engines import vllm
 
-    monkeypatch.setattr(core, "client_for", lambda _spec: SimpleNamespace(
-        models=SimpleNamespace(list=lambda: SimpleNamespace(data=[]))
-    ))
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: None)
     # `/server_info` answers 404 unless VLLM_SERVER_DEV_MODE is set, and absent is not False
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: None)
     assert "batch_invariant" not in engines.added_by(VLLM, "m")
 
 
 def test_an_unreachable_engine_adds_nothing_rather_than_failing_the_pass(monkeypatch):
-    def boom(_spec):
-        raise RuntimeError("down")
+    from engines import vllm
 
-    monkeypatch.setattr(core, "client_for", boom)
+    def boom(*a, **kw):
+        raise vllm.requests.ConnectionError("down")
+
+    monkeypatch.setattr(vllm.requests, "get", boom)
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: None)
     assert engines.added_by(VLLM, "m") == {}
 

@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Literal
 
 import limits
-from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline
+from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
@@ -207,17 +207,28 @@ PRIORITY = {"hand_card": -2, "judge_answers": 10, "judge_guest_axes": 10, "judge
 STARVED_AFTER_MINUTES = 30
 
 
-# the safe way round: an unclassified type evicts. `judge_guest_axes` left when relevancy arrived
-KEEPS_THE_JUDGE = ("judge_answers", "check_mcp_health", "build_vector_index")
+# the roles a type answers with; `hand_card` names its engine and model in the options instead
+LOADS: dict[str, tuple[Role, ...]] = {
+    "paraphrase_questions": (Role.paraphrasing,),
+    "build_veto_set": (Role.paraphrasing,),
+    "index_data": (Role.embedding,),
+    "embed_questions": (Role.embedding,),
+    "build_vector_index": (),
+    "analyze_source": (),
+    "eval_run": (Role.generation, Role.embedding, Role.reranking),
+    "compare_retrieval": (Role.reranking,),
+    "judge_answers": (Role.judging,),
+    "judge_guest_axes": (Role.judging, Role.embedding),
+    "judge_language": (Role.judging, Role.generation),
+    "check_mcp_health": (),
+    "pull_llm_model": (),
+    "hand_card": (),
+    "delete_llm_model": (),
+}
 
-
-def disturbs_the_judge(job_type: str) -> bool:
-    return job_type not in KEEPS_THE_JUDGE
-
-
-# a renamed type would leave a dead entry here and quietly start evicting the judge on paper
-if not set(KEEPS_THE_JUDGE) <= set(SPECS):
-    raise RuntimeError(f"no such job type: {sorted(set(KEEPS_THE_JUDGE) - set(SPECS))}")
+# a type left out would read as loading nothing and never evict the judge
+if set(LOADS) != set(SPECS):
+    raise RuntimeError(f"roles not declared for: {sorted(set(LOADS) ^ set(SPECS))}")
 
 
 # a type that takes whatever it is given; the universal door made the empty list the safe state

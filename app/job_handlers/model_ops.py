@@ -1,6 +1,5 @@
 import engines
 import logging_setup
-from engines import ollama, vllm
 from models.registry import Engine, EngineKind, Model, ModelRole, Status, Weights
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -29,12 +28,9 @@ def refuse_remote(kind: EngineKind, name: str) -> None:
 @register("pull_llm_model")
 def pull_llm_model(options: dict) -> None:
     found = _pair(options["name"], options.get("engine_id"))
-    if found.engine.kind is EngineKind.vllm:
-        engines.refuse_if_tight(_size_seen_before(found), found.name, vllm.weights_cache())
-        vllm.pull_weights(found.name)
-    else:
-        engines.refuse_if_tight(_size_seen_before(found), found.name)
-        ollama.pull_model(found.name, found.engine)
+    pulling = engines.driver(found.engine.kind)
+    engines.refuse_if_tight(_size_seen_before(found), found.name, pulling.weights_store())
+    pulling.pull(found.name, found.engine)
     record_what_the_server_holds(found)
 
 
@@ -55,18 +51,13 @@ def _size_seen_before(found) -> int | None:
     # nobody has pulled this name yet, so the registry is the only one who knows what it costs
     if seen:
         return seen
-    if found.engine.kind is EngineKind.vllm:
-        return vllm.repo_size(found.name)
-    return ollama.registry_size(found.name)
+    return engines.driver(found.engine.kind).expected_size(found.name)
 
 
 # the size is unknown until the weights are here, and then it is what the next estimate reads
 def record_what_the_server_holds(found) -> None:
     try:
-        if found.engine.kind is EngineKind.vllm:
-            seen = vllm.artifact_of(found.name)
-        else:
-            seen = ollama.artifact_of(found.name, found.engine)
+        seen = engines.driver(found.engine.kind).artifact(found.name, found.engine)
     except Exception as e:
         log.warning("pull.artifact_unread", model=found.name, error=str(e))
         seen = {}
@@ -118,8 +109,8 @@ def delete_llm_model(options: dict) -> None:
     spec = _engine_for_delete(name, options.get("engine_id"))
     # every refusal before the row goes: after it, a refusal left weights with no row to name them
     refuse_if_the_weights_are_shared(name, spec.id)
-    if spec.kind is EngineKind.vllm:
-        vllm.refuse_if_served(name)
+    deleting = engines.driver(spec.kind)
+    deleting.refuse_delete(name)
     with Session() as session:
         model = session.scalars(
             select(Model).where(Model.engine_id == spec.id, Model.name == name)
@@ -131,10 +122,7 @@ def delete_llm_model(options: dict) -> None:
                 raise ValueError(f"{name} is assigned to role {assigned.role}; reassign it first")
             session.delete(model)
             session.commit()
-    if spec.kind is EngineKind.vllm:
-        vllm.delete_weights(name)
-    else:
-        ollama.delete_model(name, spec)
+    deleting.delete(name, spec)
 
 
 # engines of one kind read one store (ollama a volume, vLLM the HF cache) the stand cannot see
@@ -146,7 +134,7 @@ def refuse_if_the_weights_are_shared(name: str, engine_id: int) -> None:
             .where(Engine.kind == kind)
             .where(~((Model.engine_id == engine_id) & (Model.name == name)))
         ).all()
-    same = (lambda n: ollama.add_tags([n])[0]) if kind is EngineKind.ollama else (lambda n: n)
+    same = engines.driver(kind).weights_key
     for model_name, engine_name in others:
         if same(model_name) == same(name):
             raise ValueError(

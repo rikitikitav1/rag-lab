@@ -1,3 +1,4 @@
+import functools
 import threading
 
 import engines
@@ -64,11 +65,39 @@ def _probe_the_woken_generator(spec) -> None:
         vllm.tool_calls_probed(spec, picked.name)
 
 
-# a second role on another card engine is allowed at its cost: the same road, per call
-def take_for_call(spec, _model: str) -> None:
-    if spec.placement in engines.CARD:
+_calls = threading.Condition()
+_in_flight: dict[int, int] = {}
+# the engine a handover waits to drain the card for; new calls elsewhere queue behind it
+_waiting_for: int | None = None
+
+
+def _drained_for(spec) -> bool:
+    elsewhere = any(n for engine_id, n in _in_flight.items() if engine_id != spec.id)
+    return not elsewhere and _waiting_for in (None, spec.id)
+
+
+# per call, and held until the callable it returns: a parallel thread never sleeps it mid-request
+def take_for_call(spec, _model: str):
+    global _waiting_for
+    if spec.placement not in engines.CARD:
+        return None
+    with _calls:
+        while not _drained_for(spec):
+            _waiting_for = _waiting_for or spec.id
+            _calls.wait()
+        if _waiting_for == spec.id:
+            _waiting_for = None
+            _calls.notify_all()
         # no model: ollama loads on the call itself, and an embedder cannot be loaded by a generate
         take(spec)
+        _in_flight[spec.id] = _in_flight.get(spec.id, 0) + 1
+    return functools.partial(_call_ended, spec.id)
+
+
+def _call_ended(engine_id: int) -> None:
+    with _calls:
+        _in_flight[engine_id] -= 1
+        _calls.notify_all()
 
 
 def clear_the_engine_for(role: str) -> None:

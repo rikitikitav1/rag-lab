@@ -513,7 +513,8 @@ class LateResidency:
 # a residency is read by the instrument its own engine has, and the engines have different ones
 def _residency(job_id, model: str | None = None) -> Residency:
     try:
-        engine = llm.resolve_for("judging", model).engine
+        judge = llm.resolve_for("judging", model)
+        engine = judge.engine
         if engine.kind is EngineKind.vllm:
             return _by_process_start(job_id, engine)
         on_card = judge_on_card(model)
@@ -524,7 +525,7 @@ def _residency(job_id, model: str | None = None) -> Residency:
         source = f"{residency_instrument(engine)} and the queue"
         last = _last_residency(engine.name)
         # `/api/ps` cannot say who loaded what between two passes, but the queue and the card can
-        fresh = last is None or _loaded_since(last[0], job_id)
+        fresh = last is None or _loaded_since(last[0], job_id, judge)
         if fresh or _card_changed_hands(last[1], engine.name):
             return Residency(job_id, on_card, source)
         return Residency(last[0], on_card, source)
@@ -534,17 +535,52 @@ def _residency(job_id, model: str | None = None) -> Residency:
         return Residency(None, None)
 
 
-def _loaded_since(prev: int, job_id) -> bool:
-    import job_specs
+def _loaded_since(prev: int, job_id, judge) -> bool:
     from models.jobs import Job, JobStatus
 
     # `running` and the ones that died after loading evict the judge exactly as `done` ones do
     ours = {JobStatus.new}
     with Session() as session:
-        asked = select(Job.type).where(Job.id > prev, Job.status.notin_(ours))
+        asked = select(Job.type, Job.options).where(Job.id > prev, Job.status.notin_(ours))
         # `Job.id != None` renders as a no-op, and an ad hoc pass then never inherits a residency
-        types = session.scalars(asked if job_id is None else asked.where(Job.id != job_id))
-        return any(job_specs.disturbs_the_judge(t) for t in types)
+        jobs = session.execute(asked if job_id is None else asked.where(Job.id != job_id)).all()
+    seen = {}
+    return any(evicts_the_judge(t, o or {}, judge, seen) for t, o in jobs)
+
+
+# any other model on the card evicts: on the judge's engine it shares memory, on another it takes it
+def evicts_the_judge(job_type: str, options: dict, judge, seen: dict | None = None) -> bool:
+    import job_specs
+
+    if job_type == "hand_card":
+        return (options.get("engine_id"), options.get("model") or judge.name) != (
+            judge.engine.id, judge.name
+        )
+    roles = job_specs.LOADS.get(job_type)
+    if roles is None:
+        return True
+    overrides = {"generation": options.get("model"), "judging": options.get("judge_model")}
+    seen = {} if seen is None else seen
+    for role in roles:
+        key = (str(role), overrides.get(role))
+        if key not in seen:
+            seen[key] = _puts_another_model_on_the_card(*key, judge)
+        if seen[key]:
+            return True
+    return False
+
+
+def _puts_another_model_on_the_card(role: str, model: str | None, judge) -> bool:
+    try:
+        picked = llm.resolve_for(role, model)
+    except StandFault:
+        raise
+    except Exception:
+        # a role nobody can resolve now may have loaded anything when it ran
+        return True
+    if picked.engine.placement not in engines.CARD:
+        return False
+    return (picked.engine.id, picked.name) != (judge.engine.id, judge.name)
 
 
 # one process holds one model, so passes under the same start share a residency whatever ran beside

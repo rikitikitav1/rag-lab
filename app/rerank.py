@@ -9,7 +9,7 @@ def score_pairs(pairs: list) -> list:
     return llm.score_pairs(pairs)
 
 
-# what a run's record calls the device, read from where the reranking role's engine sits
+# the placement the reranking engine declares, not a reading of where its weights answered
 def device() -> str:
     return "cuda" if llm.resolve("reranking").engine.placement in engines.CARD else "cpu"
 

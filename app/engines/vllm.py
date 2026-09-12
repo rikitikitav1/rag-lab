@@ -94,6 +94,10 @@ def max_model_len(spec: EngineSpec, model: str) -> int | None:
 def card_state(spec: EngineSpec) -> CardState:
     try:
         seen = requests.get(_url(spec, "/is_sleeping"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
+        # no sleep routes without VLLM_SERVER_DEV_MODE: such a server is awake for good
+        if seen.status_code == 404:
+            log.warning("vllm.no_sleep_routes", engine=spec.name)
+            return CardState.AWAKE
         seen.raise_for_status()
         return CardState.ASLEEP if seen.json()["is_sleeping"] else CardState.AWAKE
     except requests.Timeout as e:
@@ -107,15 +111,18 @@ def card_state(spec: EngineSpec) -> CardState:
         return CardState.UNKNOWN
 
 
-# None when the server cannot say: the sleep routes exist only under VLLM_SERVER_DEV_MODE
+# None when the server cannot say; one without sleep routes is awake, so False
 def is_sleeping(spec: EngineSpec) -> bool | None:
+    return {CardState.ASLEEP: True, CardState.AWAKE: False}.get(card_state(spec))
+
+
+# None when nobody answers: a service under a profile may simply not be up yet
+def has_sleep_routes(spec: EngineSpec) -> bool | None:
     try:
-        seen = requests.get(_url(spec, "/is_sleeping"), headers=_headers(spec), timeout=HTTP_TIMEOUT)
-        seen.raise_for_status()
-        return bool(seen.json()["is_sleeping"])
-    except Exception as e:
-        log.warning("vllm.sleep_state_unknown", engine=spec.name, error=str(e))
+        seen = requests.get(_url(spec, "/is_sleeping"), headers=_headers(spec), timeout=3)
+    except Exception:
         return None
+    return seen.status_code != 404
 
 
 # level 1 keeps the weights in host memory, so the next wake reads nothing from disk
@@ -230,7 +237,7 @@ def _probe(spec: EngineSpec, model: str) -> bool | None:
         return None
 
 
-# the engines' weights live in the host cache the `vllm` service mounts, not in the `hf_cache` volume
+# every vLLM mounts this host cache, not the `hf_cache` volume; a vLLM on another host is unsupported
 def weights_cache() -> str:
     return os.getenv("ENGINE_HF_CACHE") or os.path.expanduser("~/.cache/huggingface")
 
@@ -402,27 +409,6 @@ def artifact_of(repo: str) -> dict:
 
 class StillServed(ValueError):
     pass
-
-
-# the weights sit in one host cache every vLLM service reads, so each one is asked, and silence is no
-def refuse_if_served(repo: str) -> None:
-    from models.registry import EngineKind
-
-    from .lookup import registered
-
-    for spec in registered():
-        if spec.kind is not EngineKind.vllm:
-            continue
-        try:
-            names = served(spec)
-        except requests.Timeout as e:
-            raise StillServed(f"{spec.name} did not answer, so whether it serves {repo} is unknown: {e}") from e
-        except (requests.ConnectionError, Unconfigured):
-            continue
-        except Exception as e:
-            raise StillServed(f"{spec.name} did not answer, so whether it serves {repo} is unknown: {e}") from e
-        if repo in names:
-            raise StillServed(f"{repo} is served by {spec.name} right now; stop that server first")
 
 
 def delete_weights(repo: str) -> None:

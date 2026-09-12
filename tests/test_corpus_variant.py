@@ -39,7 +39,7 @@ def test_the_single_shot_snapshot_names_the_variant_it_read(monkeypatch):
     from use_cases import run_snapshot
 
     monkeypatch.setattr(run_snapshot.db, "corpus_fingerprint", lambda *, variant: {"chunks": 7})
-    monkeypatch.setattr(run_snapshot.ollama, "context_length", lambda model, spec=None: None)
+    monkeypatch.setattr("engines.ollama.context_length", lambda model, spec=None: None)
     stub_engines(monkeypatch, run_snapshot)
     snapshot = chat._config_snapshot(False, 5, True, 0.55, None, "baseline")
     assert snapshot["variant"] == "baseline"
@@ -263,6 +263,8 @@ def test_the_index_and_the_questions_write_which_embedder_made_their_vectors(mon
 
     monkeypatch.setattr(llm, "embedder_label", lambda role="embedding": "bge-m3@ollama")
     monkeypatch.setattr(llm, "request_embeddings_batch", lambda texts: [[0.0]] * len(texts))
+    monkeypatch.setattr(llm, "embed_labelled",
+                        lambda texts: ("bge-m3@ollama", [[0.0]] * len(texts)))
 
     class _Session:
         def execute(self, _stmt):

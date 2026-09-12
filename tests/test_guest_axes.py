@@ -157,16 +157,16 @@ def test_the_card_is_read_from_the_one_holder_that_already_answers_it(monkeypatc
 
     monkeypatch.setattr(judging.llm, "resolve", lambda role: engines.Resolved("q:7b", stub_engine()))
     monkeypatch.setattr(
-        judging.card.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
+        "engines.ollama.residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
     )
     assert judging.judge_on_card() is True
 
     monkeypatch.setattr(
-        judging.card.ollama, "residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
+        "engines.ollama.residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
     )
     assert judging.judge_on_card() is False
 
-    monkeypatch.setattr(judging.card.ollama, "residency", lambda spec=None: [])
+    monkeypatch.setattr("engines.ollama.residency", lambda spec=None: [])
     assert judging.judge_on_card() is None
 
 

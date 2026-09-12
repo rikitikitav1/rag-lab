@@ -186,14 +186,11 @@ def _answers(spec) -> bool | None:
 # the generator's window from its own engine: `/api/ps` on a vLLM failed the whole stand read
 def window() -> dict:
     picked = llm.resolve("generation")
-    declared = config.settings.llm.context_length
-    if picked.engine.kind is EngineKind.vllm:
-        return {"engine": picked.engine.name, "declared": declared, "asked": picked.name,
-                "served": vllm.max_model_len(picked.engine, picked.name), "refuses_past_it": True}
-    asked = ollama.window_model(picked.name, spec=picked.engine)
-    return {"engine": picked.engine.name, "declared": declared, "asked": asked,
-            "served": ollama.context_length(asked, picked.engine) if asked else None,
-            "refuses_past_it": False}
+    reading = engines.driver(picked.engine.kind)
+    asked = reading.window_model(picked.engine, picked.name)
+    return {"engine": picked.engine.name, "declared": config.settings.llm.context_length,
+            "asked": asked, "served": reading.window(picked.engine, asked) if asked else None,
+            "refuses_past_it": reading.refuses_past_the_window}
 
 
 # every role by its own engine's instrument; only ollama spills, an asleep vLLM is just asleep

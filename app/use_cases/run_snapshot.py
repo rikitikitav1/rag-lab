@@ -2,8 +2,9 @@ import config
 import llm
 import logging_setup
 import version
-from engines import card, ollama, vllm
-from models.registry import EngineKind, Role
+from engines import card
+from errors import StandFault
+from models.registry import Role
 
 import db
 
@@ -71,6 +72,18 @@ def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict]:
     return named, dropped, placed
 
 
+# by the role's own engine, and a failed read is unknown rather than a reason to stop the run
+def placed(role: str) -> bool | None:
+    try:
+        picked = model_of(Role(role))
+        return card.model_on_card(picked.engine, picked.name)
+    except StandFault:
+        raise
+    except Exception as e:
+        log.warning("run_snapshot.placement_unread", role=role, error=str(e))
+        return None
+
+
 # the model a role of this run answers with: the snapshot and the run's gate read one resolution
 def model_of(role: Role, model: str | None = None) -> llm.Resolved:
     return llm.resolve_for(role, model) if role is Role.generation else llm.resolve(role)
@@ -87,9 +100,11 @@ def _generator(model: str | None):
 
 # by the generator's own engine: a vLLM generator recorded a null, since `/api/ps` is ollama's
 def _window(picked) -> int | None:
-    if picked.engine is not None and picked.engine.kind is EngineKind.vllm:
-        return vllm.max_model_len(picked.engine, picked.name)
-    return ollama.context_length(picked.name, picked.engine)
+    import engines
+
+    if picked.engine is None:
+        return None
+    return engines.driver(picked.engine.kind).window(picked.engine, picked.name)
 
 
 def _rerank_device() -> str | None:

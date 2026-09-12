@@ -2,8 +2,7 @@ import engines
 import pytest
 from engines import vllm
 from models.registry import EngineKind, Placement
-
-SPEC = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+from stand_specs import VLLM as SPEC
 
 
 class _Reply:
@@ -50,9 +49,10 @@ def test_the_sleep_state_is_read_and_silence_is_not_a_no(server):
     assert vllm.is_sleeping(SPEC) is True
     server["replies"][("get", "/is_sleeping")] = _Reply(body={"is_sleeping": False})
     assert vllm.is_sleeping(SPEC) is False
-    # without VLLM_SERVER_DEV_MODE the route is absent, which says nothing about the card
+    # without VLLM_SERVER_DEV_MODE the route is absent: such a server never sleeps, so it is awake
     server["replies"][("get", "/is_sleeping")] = _Reply(404)
-    assert vllm.is_sleeping(SPEC) is None
+    assert vllm.is_sleeping(SPEC) is False
+    assert vllm.card_state(SPEC) == "awake" and vllm.has_sleep_routes(SPEC) is False
 
 
 def test_a_wake_that_the_server_refused_is_an_error_not_a_quiet_retry(server):
@@ -257,8 +257,8 @@ def test_a_run_records_the_window_of_a_vllm_generator_from_the_server(monkeypatc
     # the first run with the generator on vLLM recorded `context_length: null`
     from use_cases import run_snapshot
 
-    monkeypatch.setattr(run_snapshot.vllm, "max_model_len", lambda spec, name: 8192)
-    monkeypatch.setattr(run_snapshot.ollama, "context_length",
+    monkeypatch.setattr("engines.vllm.max_model_len", lambda spec, name: 8192)
+    monkeypatch.setattr("engines.ollama.context_length",
                         lambda *a, **kw: pytest.fail("ollama asked about a vLLM generator"))
     assert run_snapshot._window(engines.Resolved("Qwen/Q", SPEC)) == 8192
 

@@ -120,16 +120,14 @@ def models_are_on_the_card() -> tuple[bool, str]:
     )
 
 
-# the predicate of `stand_health.drifting_roles`, spelled out because this may not import
-def role_drift(declared: dict, served: dict) -> list[str]:
+# sentences for the roles `stand_health.roles()` names as drift: the rule itself lives there alone
+def role_drift(seen: dict) -> list[str]:
+    declared, served = seen["declared"], seen["served"]
     return [
-        f"{role}: config says {name}, the stand serves {served.get(role, 'nothing')}"
-        for role, name in sorted(declared.items())
-        if served.get(role) != name
-    ] + [
-        f"{role}: the stand serves {name}, the config declares no such role"
-        for role, name in sorted(served.items())
-        if role not in declared
+        f"{role}: config says {declared[role]}, the stand serves {served.get(role, 'nothing')}"
+        if role in declared else
+        f"{role}: the stand serves {served[role]}, the config declares no such role"
+        for role in sorted(seen["drift"])
     ]
 
 
@@ -141,7 +139,7 @@ def roles_match_the_config() -> tuple[bool, str]:
     if not out.startswith("{"):
         return False, f"roles: cannot read them ({out[:60] or 'no answer'})"
     seen = json.loads(out)
-    drift = role_drift(seen["declared"], seen["served"])
+    drift = role_drift(seen)
     if drift:
         return False, "; ".join(drift) + ". PUT /v1/role to change it, or edit the file to match"
     return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(seen["served"].items()))
