@@ -1,7 +1,9 @@
 import time
+from typing import Literal
 
 import job_queue
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from evals import pools, question_sets
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from models.eval import Question, text_hash
 from orm.async_db import get_session
 from pydantic import BaseModel
@@ -34,6 +36,30 @@ def _parse(content: str) -> list[tuple[str, str, list[str]]]:
             marked = [x.strip() for x in raw.split(",") if x.strip()]
         rows.append((h, question, marked))
     return rows
+
+
+class QuestionRow(BaseModel):
+    id: int
+    set_name: str | None
+    language: str | None
+    pool: str
+    text: str
+    has_reference: bool
+    marked_sources: int
+    embedded_by: str | None
+    paraphrase_of: int | None
+
+
+# where a run's question_ids come from; the MCP tool `questions` answers the same
+@router.get("", response_model=list[QuestionRow])
+def list_questions(
+    set_name: str | None = Query(default=None, max_length=200),
+    language: str | None = Query(default=None, max_length=16),
+    pool: Literal[pools.POOLS] | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
+    return question_sets.rows(set_name, language, pool, limit, offset)
 
 
 class ImportResponse(BaseModel):
