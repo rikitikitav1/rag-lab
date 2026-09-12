@@ -98,14 +98,17 @@ services:
     depends_on:
       seed:
         condition: service_completed_successfully
+      # not required: a host without a card leaves `ollama` and `vllm` out (`docker-compose.cpu.yml`)
       ollama:
         condition: service_healthy
+        required: false
       # the bootstrap reads every ollama, and a cpu one that is still starting reads as absent
       ollama-cpu:
         condition: service_healthy
       # vLLM takes the card first and the bootstrap puts it to sleep before ollama loads a role
       vllm:
         condition: service_healthy
+        required: false
     volumes:
       - .:/app
       # the bootstrap checks vLLM weights by their hashes in the same host cache the server reads

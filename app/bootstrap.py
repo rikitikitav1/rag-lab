@@ -21,7 +21,8 @@ def bootstrap_models() -> None:
     _ensure_roles(seeded)
     # every ollama: the rows on `ollama-cpu` got neither a status nor a pull while only one was read
     for spec in engines.registered():
-        if spec.kind is EngineKind.ollama:
+        # the card's ollama holds nothing without a card and is not started, so it is not asked
+        if spec.kind is EngineKind.ollama and _holds_models(spec):
             _reconcile_with_ollama(spec, pull_when_silent=spec == seeded)
     _fill_vllm_rows()
     _ensure_index()
@@ -49,6 +50,11 @@ def _seeded() -> engines.EngineSpec | None:
         # a second ollama is a thing to fix, not a reason to stop the stack from booting
         log.error("bootstrap.no_seeded_engine", error=str(e))
         return None
+
+
+def _holds_models(spec) -> bool:
+    with Session() as session:
+        return bool(session.scalar(select(exists().where(Model.engine_id == spec.id))))
 
 
 def _ensure_models(spec) -> None:
@@ -88,6 +94,11 @@ def _ensure_roles(seeded) -> None:
             )
             if model is None and spec.kind is EngineKind.vllm:
                 model = _register_what_vllm_serves(session, spec, role, cfg.model)
+            # a role on an ollama the pull list does not cover: its row here, pulled by the reconcile
+            if model is None and spec.kind is EngineKind.ollama:
+                model = Model(name=cfg.model, engine_id=spec.id)
+                session.add(model)
+                session.flush()
             if model is None:
                 log.error("bootstrap.role_model_absent", role=role, model=cfg.model,
                           engine=spec.name)

@@ -72,6 +72,8 @@ curl -X POST localhost:8000/v1/chat/question \
 
 Хосту нужны Docker Compose v2, драйвер NVIDIA и NVIDIA Container Toolkit со спецификацией CDI: `docker info` должен перечислять `nvidia.com/gpu=all` среди найденных устройств CDI (проверено на Docker Engine 29.0, Compose 2.40, toolkit 1.20). Если нет, спецификацию пишет `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml`, а служба `nvidia-cdi-refresh` из toolkit держит её свежей после смены драйвера. Карта приходит в контейнеры через CDI, а не через хук рантайма, потому что на хосте с cgroup v2 и драйвером systemd каждый `systemctl daemon-reload` (snapd и автообновления делают его сами) отбирал карту у работающих контейнеров.
 
+`scripts/up.sh` проверяет карту до `docker compose up -d` и на хосте без неё говорит, почему стенд не поднимется, вместо «unresolvable CDI devices» от Docker. `scripts/up.sh --cpu` поднимает стенд без карты, все роли на процессорной ollama: [stand_modes.md](stand_modes.md), режим 8.
+
 Аутентификации нет намеренно (REST, `/mcp`, `/mcp-ops` открыты): это локальная лаборатория, порты привязаны к 127.0.0.1. Не выставляйте её в сеть как есть.
 
 Первый `up` тянет модели ролей (на ollama около 10.7 GiB: `llama3.1:8b`, `gemma2:9b`, `bge-m3`; судья на vLLM около 5.2 GiB) и образ vLLM (около 21.5 ГБ диска), потом строит индекс (~5-10 мин, следи за `docker compose logs -f worker`). Сервер дожидается `bootstrap`, а тот ждёт healthy у `vllm` (на первом старте до часа, пока тот качает судью) и у ollama; скачивания и индексации, которые те шаги ставят в очередь, он **не** ждёт, поэтому первые запросы могут вернуть отказ, пока корпус наполняется.

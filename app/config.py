@@ -5,6 +5,8 @@ import yaml
 from pydantic import BaseModel, Field
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
+# a file that replaces `llm.roles`, as the layout of a host without a card does
+CONFIG_OVERLAY = os.getenv("CONFIG_OVERLAY")
 
 
 class RoleCfg(BaseModel):
@@ -213,9 +215,28 @@ class AppConfig(BaseModel):
     mcp_integrations: McpIntegrationsCfg
 
 
-def _load(path: str) -> AppConfig:
+# the roles a stand cannot answer without: a layer that drops one fails at load, not on the first call
+REQUIRED_ROLES = ("generation", "embedding", "judging")
+
+
+# a layer replaces the whole role table: merged, a judge without `engine` would inherit `vllm`
+def _roles_of(overlay: str) -> dict:
+    with open(overlay) as f:
+        layer = yaml.safe_load(f) or {}
+    llm = layer.get("llm") if isinstance(layer, dict) else None
+    if set(layer or {}) != {"llm"} or not isinstance(llm, dict) or set(llm) != {"roles"}:
+        raise ValueError(f"{overlay}: a layer carries `llm.roles` and nothing else")
+    missing = [role for role in REQUIRED_ROLES if role not in (llm["roles"] or {})]
+    if missing:
+        raise ValueError(f"{overlay}: the layer drops {missing}, and the stand cannot answer without them")
+    return llm["roles"]
+
+
+def _load(path: str, overlay: str | None = None) -> AppConfig:
     with open(path) as f:
         raw = yaml.safe_load(f)
+    if overlay:
+        raw["llm"]["roles"] = _roles_of(overlay)
     # the keys under `service` are the field names, so a new one needs no second edit
     return AppConfig(
         **raw["service"],
@@ -225,7 +246,7 @@ def _load(path: str) -> AppConfig:
     )
 
 
-settings = _load(CONFIG_PATH)
+settings = _load(CONFIG_PATH, CONFIG_OVERLAY)
 
 
 # the keyword leg by the name the record uses: five places wrote this set out

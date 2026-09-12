@@ -70,6 +70,8 @@ curl -X POST localhost:8000/v1/chat/question \
 
 The host needs Docker Compose v2, an NVIDIA driver and the NVIDIA Container Toolkit with a CDI spec: `docker info` must list `nvidia.com/gpu=all` among the discovered CDI devices (tested on Docker Engine 29.0, Compose 2.40, toolkit 1.20). Without it, `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml` writes the spec, and the toolkit's `nvidia-cdi-refresh` unit keeps it current after a driver update. The card goes to the containers through CDI rather than the runtime hook because on a cgroup v2 host with the systemd driver every `systemctl daemon-reload` (snapd and unattended upgrades run one on their own) took the card from the running containers.
 
+`scripts/up.sh` checks the card before `docker compose up -d` and, on a host without one, says why the stand would not start instead of Docker's "unresolvable CDI devices". `scripts/up.sh --cpu` brings the stand up without a card, every role on the processor ollama: [docs/stand_modes.md](docs/stand_modes.md), mode 8.
+
 No authentication by design (REST, `/mcp`, `/mcp-ops` are all open): this is a local lab bound to 127.0.0.1. Do not expose it to a network as is.
 
 The first `up` pulls the models of the roles (on ollama about 10.7 GiB: `llama3.1:8b`, `gemma2:9b`, `bge-m3`; the judge on vLLM about 5.2 GiB) and the vLLM image (about 21.5 GB of disk), then builds the index (~5-10 min, watch `docker compose logs -f worker`). The server waits for `bootstrap`, which waits for `vllm` to report healthy (up to an hour on a first start, while it downloads the judge) and for ollama; it does **not** wait for the pulls and the indexing those steps queue, so the first requests may refuse until the corpus fills up.

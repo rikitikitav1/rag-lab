@@ -249,8 +249,17 @@ SEEDED_VLLM_RERANK = {
 }
 
 
+# the processor ollama: the `ollama-cpu` service, always up, and every role's engine on a host without a card
+SEEDED_OLLAMA_CPU = {
+    "name": "ollama-cpu",
+    "kind": EngineKind.ollama,
+    "env_prefix": "OLLAMA_CPU",
+    "placement": Placement.cpu,
+}
+
+
 def seed_engines() -> None:
-    for row in (SEEDED_ENGINE, SEEDED_VLLM, SEEDED_VLLM_RERANK):
+    for row in (SEEDED_ENGINE, SEEDED_VLLM, SEEDED_VLLM_RERANK, SEEDED_OLLAMA_CPU):
         with Session() as session:
             if session.scalar(select(exists().where(Engine.name == row["name"]))):
                 continue

@@ -126,6 +126,9 @@ def engines_section() -> dict:
     held = card_holder.on_card()
     return {
         "holder": [h.engine.name for h in held],
+        # in words: an empty holder list read as a fault on a host that has no card at all
+        "summary": (f"the card is held by {', '.join(h.engine.name for h in held)}" if held
+                    else "no engine holds the card"),
         "on_card": {h.engine.name: list(h.models) for h in held},
         "vllm_sleeping": {
             spec.name: vllm.is_sleeping(spec) for spec in engines.card_engines(EngineKind.vllm)
@@ -157,10 +160,17 @@ def roles_down() -> list[str]:
         if picked is None:
             down.append(f"{role}: no model is seated")
         elif _answers(picked.engine) is not True:
-            down.append(f"{role}: {picked.engine.name} does not answer")
+            down.append(f"{role}: {picked.engine.name} does not answer{_no_card_hint(picked.engine)}")
         elif role == Role.generation and _parserless(picked):
             down.append(f"{role}: {engines.label(picked.name, picked.engine.name)} returns no tool calls")
     return down
+
+
+# an engine of the card that is down is often a host with no card, and the way out is a mode
+def _no_card_hint(spec) -> str:
+    if spec.placement not in engines.CARD:
+        return ""
+    return "; a host without a card runs `scripts/up.sh --cpu` (docs/stand_modes.md)"
 
 
 # a boot seats the generator unasked; the worker's probe after the wake is what names it here
