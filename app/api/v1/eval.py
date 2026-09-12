@@ -25,6 +25,9 @@ from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrato
 from use_cases.chat import resolve_rerank
 from use_cases.index import VARIANT_RE
 
+# a door that queues a job answers with the whole row, the same one `POST /v1/job` answers with
+from api.v1.job import JobResponse as JobEnqueuedResponse
+
 # what a run may ask for is not what a log may hold: both retired arms stay queryable
 RunnableOrchestrator = StrEnum(
     "RunnableOrchestrator",
@@ -34,12 +37,6 @@ RunnableOrchestrator = StrEnum(
 log = logging_setup.get_logger(__name__)
 
 router = APIRouter(prefix="/eval", tags=["eval"])
-
-
-class JobEnqueuedResponse(BaseModel):
-    job_id: int
-    type: str
-    options: dict
 
 
 class RejudgeRequest(BaseModel):
@@ -121,7 +118,7 @@ def _debts_or_none(run_name: str):
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
     job = job_queue.add_job(session, type, options)
     await commit_and_refresh(session, job)
-    return JobEnqueuedResponse(job_id=job.id, type=job.type, options=job.options)
+    return JobEnqueuedResponse.model_validate(job)
 
 
 @router.post("/paraphrase", response_model=JobEnqueuedResponse)

@@ -230,7 +230,7 @@ first-against-the-rest once it does not, the A/B halves, and an `answers_digest`
 per arm beside the source's, so "the arms judged the same answers" is a fact of the record
 rather than a claim in its description.
 
-Any job type can be queued through one door: `POST /v1/job` with `{"type": ..., "options": {...}}`.
+Any job type can be queued through one door: `POST /v1/job` with `{"type": ..., "options": {...}}`. It and every door that queues a job of its own (`/v1/eval/*`, `/v1/source/{id}/analyze`) answer with the whole job row: `job_id`, `type`, `queue`, `status`, `options`, `apply_since`, `created_at`.
 What each type accepts is a model per type in `app/job_specs.py`, checked when the job is queued,
 whichever door or script queues it, and again when the worker takes it, so a row written straight
 into the table meets the same refusal. A door of its own is for work done before the enqueue rather

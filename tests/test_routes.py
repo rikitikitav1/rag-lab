@@ -2,6 +2,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+# the whole row a queued job answers with, as the door reads it back after the commit
+def _queued_job(type: str, options: dict):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    now = datetime.now(UTC)
+    return SimpleNamespace(id=1, type=type, options=options, queue="default", status="new",
+                           error=None, elapsed=None, apply_since=now, created_at=now, updated_at=now)
+
+
 def test_agent_max_hops_zero_422(client):
     r = client.post("/v1/agent/question", json={"text": "x", "max_hops": 0})
     assert r.status_code == 422
@@ -39,12 +49,10 @@ def test_eval_run_pipeline_invalid_422(client):
 
 
 def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
-    from types import SimpleNamespace
-
     import api.v1.eval as eval_mod
 
     monkeypatch.setattr(
-        eval_mod.job_queue, "add_job", lambda s, t, o: SimpleNamespace(id=1, type=t, options=o)
+        eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o)
     )
 
     async def _refresh(session, obj):
@@ -59,12 +67,10 @@ def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
 
 def test_every_field_a_run_declares_reaches_the_queue(client, monkeypatch):
     # the options dict is copied field by field, so a new field is accepted and never carried
-    from types import SimpleNamespace
-
     import api.v1.eval as eval_mod
 
     monkeypatch.setattr(
-        eval_mod.job_queue, "add_job", lambda s, t, o: SimpleNamespace(id=1, type=t, options=o)
+        eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o)
     )
 
     async def _refresh(session, obj):
