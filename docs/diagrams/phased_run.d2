@@ -18,7 +18,7 @@ card: GPU (8 GB) {
   p2: "PHASE 2 - rerank" {
     style.fill: "#fff3cd"
     flat: "flatten to pairs:\n100 questions x 20 candidates = 2000"
-    once: "one predict for all of them,\nfp16 on the card"
+    once: "one scoring call for all of them,\nvllm-rerank takes the card"
     back: "slice scores back per question,\nkeep top k"
     flat -> once -> back
   }
@@ -33,12 +33,12 @@ card: GPU (8 GB) {
   p1 -> p2: "is the card still there? asked here,\nbefore the generator is paid for\nembedder unloaded, and the generator with it" {
     style.stroke-width: 2
   }
-  p2 -> p3: "reranker unloaded,\ncuda cache emptied" {
+  p2 -> p3: "the card handed back:\nvllm-rerank put to sleep" {
     style.stroke-width: 2
   }
 }
 
-done: "on EVERY exit, not only the last line:\nreranker, embedder and generator freed,\nso a refusal does not leave its own\ngenerator on the card for the retry"
+done: "on EVERY exit, not only the last line:\nembedder and generator unloaded,\nso a refusal does not leave its own\ngenerator on the card for the retry"
 
 card.p3 -> done
 

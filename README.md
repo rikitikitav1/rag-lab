@@ -23,7 +23,7 @@ This is a **showcase lab**: a bench for practicing LLM/RAG engineering approache
 
 ## Stack
 
-Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg) · Ollama (GPU, OpenAI-compatible API) · FastAPI · dbmate (migrations) · uv/pyproject · Docker Compose.
+Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg) · Ollama and vLLM (OpenAI-compatible APIs, one GPU handed between them) · FastAPI · dbmate (migrations) · uv/pyproject · Docker Compose.
 
 From the LangChain family, five packages: **langgraph** runs the agent as a `StateGraph`, **langchain** provides `create_agent` for the arm that answers "what does the idiomatic version cost", **langchain-text-splitters** decides what counts as a markdown heading, and **langchain-core** with **langchain-ollama** are what the idiomatic arm imports directly. Retrieval, the queue, the eval bench and the corpus policies are ours; the version of the splitter travels in the ingest report, because the cut is external code now and a lock refresh would otherwise move it silently.
 
@@ -36,7 +36,7 @@ From the LangChain family, five packages: **langgraph** runs the agent as a `Sta
 - **Prompt**: versioned in the DB (`purpose` + `version`, exactly one `active` per purpose). Sources are files in `prompts/`, named by the enum member rather than the purpose string (`agent_fallback.v1.txt` carries the purpose `agent.fallback`). The seed loads them in, and a new version becomes active only when the purpose has no active prompt yet; otherwise it lands inactive with a warning, and `POST /v1/prompt/{id}/activate` is the deliberate step that switches it.
 - **Bench**: what one judging pass actually used, as an object rather than an assumption: a model and a pinned prompt version per axis. The live path uses the active versions; a rejudge arm carries its own, which is how two arms can score the same answers differently on purpose.
 - **What a run records about its own instruments**: `question_logs.models` and `question_logs.prompts`, filled by the answering path and extended by the judge with its model and `judge_*` versions. The arm says what was asked for, these two columns say what ran, and on a rejudge that difference is the whole measurement.
-- **The reranker is not among the roles**: the cross-encoder is not in ollama and not in `llm.roles`, it is loaded in-process from `service.rerank`, and residency checks that ask ollama cannot see it.
+- **The reranker is a role like the others**: `reranking` in `llm.roles` points at `BAAI/bge-reranker-v2-m3` on the `vllm-rerank` engine, a vLLM pooling server under the compose profile `rerank`. Nothing loads a cross-encoder in-process any more, so the API and the worker carry no torch, and a run that asks for reranking without the profile up is refused with the role named.
 - **What a role requires of a model** (tool calling for the agent's generator, no reasoning-only judge, the card arithmetic, and why the role's name is served from the database rather than the file): [docs/model_requirements.md](docs/model_requirements.md).
 - **Bootstrap** (a one-shot compose service, idempotent): ensure Model rows from config → seed roles → reconcile with Ollama (not pulled → status `loading` + a pull job) → enqueue indexing only if the database holds no corpus variant at all → build a partial vector index for every variant that has rows and none → repair the served variant's index if it is missing → enqueue embedding of questions without a vector, unless such a job is already queued. A named but empty variant is logged, not indexed: indexing a variant is a deliberate, measured step.
 
@@ -62,7 +62,7 @@ Source-specific category trees stay in code.
 
 ```bash
 docker compose up -d
-curl localhost:8000/readiness            # pg required, ollama soft
+curl localhost:8000/readiness            # pg required; a role whose engine is down is named, not a 503
 curl -X POST localhost:8000/v1/chat/question \
   -H 'Content-Type: application/json' -d '{"text": "What is a hash table?"}'
 # Swagger: http://localhost:8000/docs
@@ -70,9 +70,11 @@ curl -X POST localhost:8000/v1/chat/question \
 
 No authentication by design (REST, `/mcp`, `/mcp-ops` are all open): this is a local lab bound to 127.0.0.1. Do not expose it to a network as is.
 
-The first `up` pulls ~16 GB of models and builds the index (~5-10 min, watch `docker compose logs -f worker`). The server waits for `bootstrap` to finish and for ollama to report healthy, which is most of that time; it does **not** wait for the pulls and the indexing those steps queue, so the first requests may refuse until the corpus fills up.
+The first `up` pulls the models of the roles (on ollama about 10.7 GiB: `llama3.1:8b`, `gemma2:9b`, `bge-m3`; the judge on vLLM about 5.2 GiB) and the vLLM image (about 21.5 GB of disk), then builds the index (~5-10 min, watch `docker compose logs -f worker`). The server waits for `bootstrap`, which waits for `vllm` to report healthy (up to an hour on a first start, while it downloads the judge) and for ollama; it does **not** wait for the pulls and the indexing those steps queue, so the first requests may refuse until the corpus fills up.
 
 Hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own questions, browsing logs): **[docs/use_cases.md](docs/use_cases.md)**. It is a walkthrough of nine scenarios, not a route index; the complete reference is Swagger at `/docs`, which is generated from the code and cannot fall behind it.
+
+Other layouts of the stand (reranking, an embedder or the generator on vLLM, the processor, the judge on ollama, a stuck card), step by step and with the way back: **[docs/stand_modes.md](docs/stand_modes.md)**.
 
 ## Architecture
 
@@ -92,10 +94,14 @@ Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagram
 | `postgresql` | Postgres + pgvector, the only hard dependency |
 | `dbmate` | applies migrations, runs to completion before the rest |
 | `seed` | loads prompts and the question bank, runs once after migrations |
-| `bootstrap` | prepares models, roles and indexing jobs, runs to completion before the rest |
+| `bootstrap` | prepares models, roles and indexing jobs, runs to completion before the rest; waits for `vllm` and puts it to sleep before ollama loads a role |
 | `rag-lab` | FastAPI server (uvicorn) |
-| `worker` | processes the job queue, fourteen types: pull/delete a model, index the corpus, build a vector index, analyze a source, embed questions, paraphrase questions, build the veto set, eval run, judge answers, judge the guest axes, the language probe, compare retrieval, mcp health |
-| `ollama` | local inference on GPU |
+| `repos-owner` | hands the `repos_data` volume to the host's user before the worker starts, runs once |
+| `worker` | processes the job queue as the host's user, fifteen types: pull/delete a model, index the corpus, build a vector index, analyze a source, embed questions, paraphrase questions, build the veto set, eval run, judge answers, judge the guest axes, the language probe, compare retrieval, mcp health, hand the card to an engine |
+| `ollama` | local inference on GPU: the generator and the embedder |
+| `ollama-cpu` | a second ollama on the processor, for a role that should not take the card |
+| `vllm` | the judge (`Qwen/Qwen2.5-7B-Instruct-AWQ`); takes the card first at start and is put to sleep whenever another engine needs it; its port is not published on the host |
+| `vllm-rerank`, `vllm-embed`, `vllm-cpu` | under the compose profiles `rerank`, `embed` and `cpu`: the reranking role, an embedder on vLLM, vLLM on the processor; started only with `--profile`; how to switch: [docs/stand_modes.md](docs/stand_modes.md) |
 
 ### Environment knobs
 
@@ -103,9 +109,12 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
-| `RERANK_DEVICE` | `cuda` | Where the cross-encoder runs for the API, set through `API_RERANK_DEVICE`; the worker takes `WORKER_RERANK_DEVICE`. Both became worth setting once a second engine could own the whole card, which the default assumed was free. The card is why the default moved: `bge-m3` at 851 MiB, `bge-reranker-v2-m3` at 1728 MiB measured and `gemma3:4b` at 4248 MiB fit on an 8188 MiB card, but `llama3.1:8b` in place of the 4b does not, and the agent path needs it because gemma3 has no tool calling at all. So reranking is off by default and asked for per run. `auto` picks cuda when a card is visible; CUDA OOM falls back to CPU with a warning. |
 | `LLM_TIMEOUT` | `120` | Seconds per completion. A 70b model on CPU needs minutes; the default kills such runs mid-flight. |
-| `WORKER_RERANK_DEVICE` | `cuda` | Where the worker runs the cross-encoder. A phased eval run reranks in a batch that owns the card, and the corpus-first gate scores a handful of pairs per question. Set it to `cpu` only when something else needs the whole card. |
+| `VLLM_GPU_UTIL` | `0.9` | The judge's share of the card. Every sleeping vLLM beside it keeps about 200 MiB, which is why it is not higher. |
+| `VLLM_RERANK_GPU_UTIL`, `VLLM_EMBED_GPU_UTIL` | `0.3`, `0.45` | The card share of the reranker and of the vLLM embedder, the profiles `rerank` and `embed`. |
+| `VLLM_CPU_MODEL`, `VLLM_CPU_DTYPE`, `VLLM_CPU_KVCACHE_SPACE` | `Qwen/Qwen2.5-7B-Instruct`, `float16`, `4` | vLLM on the processor, the profile `cpu`. It holds its whole model in host memory, so check `free` before starting it. |
+| `OLLAMA_CPU_KEEP_ALIVE` | `10m` | How long the processor ollama keeps a model loaded. |
+| `UID`, `GID` | `1000` | The host user the worker runs as and `repos-owner` hands `/repos` to: the worker writes the host's weight cache, and its files stay the host's. Set them to `id -u` and `id -g`. |
 | `OLLAMA_CONTEXT_LENGTH` | `8192` | Context window the server loads models with. Ollama defaults to 4096 and silently drops whole messages to fit, so an over-long prompt never shows up as a number above the window; the longest hop logged here is 4075 tokens. Raising it costs VRAM the embedder shares, and at 14336 the two evict each other on every switch. After a change, check `llm.model_spilled_to_cpu`; the run snapshot records the window the server reports, not this value. |
 | `WORKER_QUEUES` | `default,io` | Queue lanes the worker serves, one thread each. Network and disk jobs (model pulls, MCP health) live on `io` so they never wait behind GPU work. |
 | `JUDGE_WIDTH` | `1` | Rows the judge scores in flight. Over 1 it is a different instrument, not a faster one: the same rows come back with different scores, so a measured arm stays at 1 and only smokes are widened. Capped by the slots the server has and by the connection pool. |
@@ -113,7 +122,7 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 | `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
 | `RAGAS_DO_NOT_TRACK` | `true` | Turns off the usage event `ragas` posts per generation. It is sent synchronously, inside the window the guest pass measures, so leaving it on prices the network into the axis. |
 | `POSTGRES_HOST`, `OLLAMA_BASE_URL` | empty | Only for a script run on the host. Inside compose the service names resolve and both stay unset. |
-| `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY` | see compose | One pair per engine row, named by its `env_prefix` (`VLLM_BASE_URL`, `CLOUD_API_KEY`). The address and the key never live in the database: a row you can read a key out of leaks through any report. Compose ships defaults for `VLLM`, `VLLM_CPU` and `OLLAMA_CPU`, and those names belong to containers the step-0 scripts start **outside** compose and attach to its network, so a `<PREFIX>_BASE_URL` can name a host nothing serves until one is started. |
+| `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY` | see compose | One pair per engine row, named by its `env_prefix` (`VLLM_BASE_URL`, `CLOUD_API_KEY`). The address and the key never live in the database: a row you can read a key out of leaks through any report. Compose ships defaults for `VLLM`, `VLLM_CPU`, `VLLM_EMBED`, `VLLM_RERANK` and `OLLAMA_CPU`, all pointing at compose services; those under a profile answer only once started with `--profile`, and until then their engine reads as down. |
 
 ## REST API
 
@@ -122,13 +131,14 @@ Full interactive reference in Swagger at `/docs`.
 List endpoints (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) share pagination: `limit` (default 100, max 1000), `offset`, `sort_by`, `sort_order` (`asc`/`desc`, default `desc`).
 
 Health:
-- `GET /liveness`, `GET /readiness`
+- `GET /liveness`, `GET /readiness` (names each role whose engine does not answer), `GET /v1/health/stand` (who holds the card, where each role's model sits, the engines, the queue)
 - `GET /v1/health/stand` (what the stand is right now: the card, which models are resident and how much VRAM each holds, the window the server actually serves against the declared one, the live queue, role drift between config and database, the corpus variant and the search depth per variant. Readable while a run competes with it, so a run that answers slowly can be diagnosed without stopping it)
 
 Chat and search:
 - `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
 - `POST /v1/chat/fast_question` (retrieval only, no generation)
 - `POST /v1/agent/question` (agent answer; optional `max_hops`, `language`, `fallback_policy`, and `debug` for the full message trace)
+- The answering doors never hand the card themselves: while another engine holds it they queue the handover and answer 503 with `Retry-After`; an answer that would need two engines of the card is a 409.
 - `GET /v1/categories` (category tree with chunk counts)
 
 <details>
@@ -139,9 +149,9 @@ Chat and search:
 </details>
 
 Engines and models:
-- `GET /v1/engine`, `POST /v1/engine` (name, `kind` (`ollama`/`vllm`/`openai_compatible`), `env_prefix`, `placement` (`gpu`/`cpu`/`gpu+cpu`/`remote`)), `GET /v1/engine/{id}/live` (asks the engine itself), `DELETE /v1/engine/{id}` (409 while models point at it). The response shows the address resolved from the environment; a prefix with no address is a 400 before the row is written.
-- `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (`engine_id` optional while one ollama engine is registered; an engine that pulls gets a pull job, one that does not is asked whether it already serves the name and the row is `ready` or the door answers 400), `POST /v1/model/{id}/load` and `DELETE /v1/model/{id}` (501 on an engine whose management half is not implemented, 409 if the model is assigned to a role). One name may live on two engines, so the list and the response name the engine, along with `quant`, `size_bytes` and the weights row, all read off the server on the pull rather than typed.
-- `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role; the model is asked whether it can do the job first, and a 400 says what it lacks. `anyway: true` insists, which is how a model the server describes wrongly is still seated)
+- `GET /v1/engine`, `POST /v1/engine` (name, `kind` (`ollama`/`vllm`/`openai_compatible`), `env_prefix`, `placement` (`gpu`/`cpu`/`gpu+cpu`/`remote`); a vLLM on the card without sleep routes is a 422), `PATCH /v1/engine/{id}` (placement only, 409 while the server runs where the row said), `GET /v1/engine/{id}/live` (asks the engine itself, in seconds), `DELETE /v1/engine/{id}` (409 while models point at it). The response shows the address resolved from the environment; a prefix with no address is a 400 before the row is written.
+- `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (`engine_id` optional while one ollama engine is registered; an engine that pulls gets a pull job, one that does not is asked whether it already serves the name: `ready`, 422 if it serves another, 503 if it does not answer), `PATCH /v1/model/{id}` (`quant` and the hub key of the `weights`, when the server cannot say them), `POST /v1/model/{id}/load` (202 with the queued `hand_card` job, and a load already waiting answers a second ask with its job; 422 when a vLLM serves another model, 409 for a vLLM on the processor), `DELETE /v1/model/{id}` (501 on a remote engine; 409 if the model is assigned to a role, shares its weights with another row, or is served by a running vLLM). One name may live on two engines, so the list and the response name the engine, along with `quant`, `size_bytes` and the weights row, all read off the server on the pull rather than typed.
+- `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role; the model is asked whether it can do the job first, and a 400 says what it lacks. An asleep vLLM with no tool-call probe recorded answers 202 with a `hand_card` job that wakes it, probes it and then seats the role; an engine that does not answer is a 503. `anyway: true` insists, which is how a model the server describes wrongly is still seated)
 - `GET /v1/source`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index - ablation / source-of-truth scoping)
 
 Prompts:
@@ -291,6 +301,7 @@ A second, separate ops server is mounted at `/mcp-ops` - an eval control plane k
 - `run_metrics(run_name)` - aggregated eval metrics for one run (generation axes + retrieval hit@k/MRR) plus `debts`: how many rows still owe each axis, what the others are missing, what finishing the debt costs at this run's own measured price, and whether a replay can drive each row at all.
 - `compare_runs(run_names)` - side-by-side metrics with an RRF composite ranking over the five judged-and-behavioural axes, retrieval excluded.
 - `compare_pools(run_names)` - the same runs split by pool (in-corpus / out-of-corpus / off-domain) with gate firings, latency, outcome histogram and a paired Wilcoxon per pair of runs.
+- `engines()` - who holds the GPU now and which models it has there, whether each vLLM on the card is asleep, and whether every registered engine answers; read from the servers, not from a table.
 - `judge_correlation(run_name?)` - our judge against the standard's on the same rows: spearman, the overlap covariate, the partial correlation behind it, and the strata by code share.
 - `question_sets(set_name?)` - what each question set holds and therefore which axes a run over it can be scored on: pools, languages, how many carry marked sources (the retrieval axes) and how many carry a reference answer (the two guest context axes).
 - `experiment_results(id, pair?)` - one experiment's report, whatever its kind: the arms with their n, the paired deltas per axis with interval and p, and whether each survives the correction over the family the record names.
@@ -433,8 +444,9 @@ One implementation note worth stealing: under `corpus_first` the withheld extern
 - `app/config.py` - `config.yaml` loader.
 - `app/orm/` - SQLAlchemy: `base` (declarative), `sync_db` (psycopg), `async_db` (asyncpg).
 - `app/models/` - ORM models: `registry` (Model/ModelRole/Prompt), `eval` (Question/QuestionLog), `jobs` (Job), `corpus` (DataSource/DataChunk), `experiment` (Experiment + state machine), `mcp_integration` (the remote-tool registry).
-- `app/llm.py` - Ollama client via the OpenAI SDK (generation / embeddings / structured output) + role→model resolver.
-- `app/rerank.py` - cross-encoder reranker (sentence-transformers, lazy-loaded, on the card by default and refusing a run that finds it on the CPU).
+- `app/llm.py` - one OpenAI-SDK client per engine (generation / embeddings / structured output / pair scoring) + role→model resolver; in the worker every call takes the card for its engine first.
+- `app/engines/` - the engine layer: rows and lookups, one driver per kind (`drivers.py`: ollama, vLLM), the card owner (`card.py`: who holds the GPU, read from the servers, and the only road that hands it over), vLLM weights in the host's HF cache.
+- `app/rerank.py` - reranking over the `reranking` role: pairs scored by a vLLM pooling server (`vllm-rerank`).
 - `app/job_queue.py`, `app/worker.py`, `app/job_handlers/` - Postgres queue (FOR UPDATE SKIP LOCKED) and worker with retries/defer; handlers split by theme.
 - `app/job_specs.py` - what each job type accepts, one model per type. Checked when a job is queued, by whichever door or script queues it, and again when the worker takes it; the queue lane belongs to the type rather than to the caller.
 - `app/bootstrap.py` - idempotent startup init.
@@ -446,7 +458,7 @@ One implementation note worth stealing: under `corpus_first` the withheld extern
 - `app/orchestrators/` - adapters to the framework: `graph` (StateGraph), `react` (bare `create_agent`). No langchain import reaches `use_cases`.
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
-- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `language_cost` over the eval platform.
+- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `engines` / `language_cost` over the eval platform.
 - `app/evals/pools.py`, `app/evals/compare.py` - one place that decides which pool a question belongs to and what the run's outcome was, shared by the metrics, the comparison report and both MCP tools.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
