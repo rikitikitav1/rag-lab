@@ -50,7 +50,6 @@ services:
       - .:/app
       - ${HOME}/working_docs/notes:/notes:ro
       - repos_data:/repos
-      - hf_cache:/root/.cache/huggingface
       # the role gate reads a vLLM model's quant from its weights, before a handover is wasted on it
       - ${HOME}/.cache/huggingface:/engine_weights:ro
 
@@ -105,7 +104,6 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - hf_cache:/root/.cache/huggingface
       # the bootstrap checks vLLM weights by their hashes in the same host cache the server reads
       - ${HOME}/.cache/huggingface:/engine_weights:ro
 
@@ -147,7 +145,6 @@ services:
       - .:/app
       - repos_data:/repos
       - ${HOME}/working_docs/notes:/notes:ro
-      - hf_cache:/root/.cache/huggingface
       # where `pull_llm_model` puts vLLM weights: the same host cache the `vllm` service reads
       - ${HOME}/.cache/huggingface:/engine_weights
     deploy: *gpu
@@ -205,7 +202,7 @@ services:
       timeout: 5s
       retries: 20
     volumes:
-      # the weights live in the host cache, where step 0 downloaded them, not in the `hf_cache` volume
+      # the weights live in the host cache, where step 0 downloaded them
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     deploy: *gpu
 
@@ -304,4 +301,3 @@ volumes:
   ollama_data:
   repos_data:
   pg_data:
-  hf_cache:

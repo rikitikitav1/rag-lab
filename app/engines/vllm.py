@@ -237,7 +237,7 @@ def _probe(spec: EngineSpec, model: str) -> bool | None:
         return None
 
 
-# every vLLM mounts this host cache, not the `hf_cache` volume; a vLLM on another host is unsupported
+# every vLLM mounts this host cache; a vLLM on another host is unsupported
 def weights_cache() -> str:
     return os.getenv("ENGINE_HF_CACHE") or os.path.expanduser("~/.cache/huggingface")
 
