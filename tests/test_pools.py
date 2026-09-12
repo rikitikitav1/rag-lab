@@ -163,6 +163,64 @@ def test_the_inventory_counts_what_each_axis_needs_before_a_pass_is_spent():
     assert out["with_reference_answer"] == 1
 
 
+def test_the_rows_of_a_pool_add_up_to_its_count_in_the_inventory(monkeypatch):
+    # a smoke run's ids came from SQL: nothing listed the rows, and the stand is read through its doors
+    from evals import question_sets
+
+    stored = [
+        _question(id=1, original_text="a", marked_sources=["a.md"], reference_answer="ref",
+                  embedded_by="bge-m3@ollama"),
+        _question(id=2, original_text="b", kind="off_domain", embedded_by=None),
+        _question(id=3, original_text="c", marked_sources=["b.md", "c.md"], embedded_by=None),
+    ]
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def scalars(self, _stmt):
+            return iter(stored)
+
+    monkeypatch.setattr(question_sets, "Session", _Session)
+    in_corpus = question_sets.rows(pool="in_corpus")
+    assert [r["id"] for r in in_corpus] == [1, 3]
+    assert len(in_corpus) == question_sets._of(stored)["pools"]["in_corpus"]
+    assert in_corpus[1] == {"id": 3, "set_name": "s", "language": "en", "pool": "in_corpus",
+                            "text": "c", "has_reference": False, "marked_sources": 2,
+                            "embedded_by": None, "paraphrase_of": None}
+    assert [r["id"] for r in question_sets.rows(pool="in_corpus", limit=1, offset=1)] == [3]
+
+
+def test_the_rest_door_and_the_mcp_tool_read_the_same_rows(monkeypatch):
+    import bootstrap
+
+    monkeypatch.setattr(bootstrap, "bootstrap_models", lambda: None)
+    import mcp_ops
+    import server
+    from evals import question_sets
+    from fastapi.testclient import TestClient
+
+    asked = []
+
+    def rows(*args):
+        asked.append(args)
+        return [{"id": 7, "set_name": "s", "language": "en", "pool": "in_corpus", "text": "q",
+                 "has_reference": True, "marked_sources": 1, "embedded_by": None,
+                 "paraphrase_of": None}]
+
+    monkeypatch.setattr(question_sets, "rows", rows)
+    with TestClient(server.app) as client:
+        got = client.get("/v1/questions", params={"set_name": "s", "pool": "in_corpus", "limit": 5})
+        unknown = client.get("/v1/questions", params={"pool": "corpus"})
+    assert got.status_code == 200 and got.json()[0]["id"] == 7
+    assert unknown.status_code == 422, "a pool the rule does not know is refused, not read as empty"
+    assert mcp_ops.list_questions(set_name=" s ", pool="in_corpus", limit=5) == got.json()
+    assert asked == [("s", None, "in_corpus", 5, 0)] * 2
+
+
 def test_the_pool_rule_has_one_holder_for_a_row_and_for_a_question():
     # the inventory asks it of a question, `split` asks it of a log, and they parted once already
     from types import SimpleNamespace

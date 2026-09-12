@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 import job_queue
 import limits
@@ -77,6 +77,27 @@ def list_question_sets(
     if not found:
         raise ToolError(f"no question set named {set_name!r}")
     return found
+
+
+@mcp_ops.tool(
+    name="questions",
+    description=(
+        "The questions themselves, one row each, for picking the question_ids of a run: id, set, "
+        "language, pool, the text, whether a reference answer is there, how many sources are "
+        "marked, and which embedder embedded it. The pool is the rule question_sets counts with, "
+        "so the rows of a pool add up to its count there. question_sets says what a set holds; "
+        "this says which rows."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def list_questions(
+    set_name: Annotated[str | None, Field(description="Only this set.")] = None,
+    language: Annotated[str | None, Field(description="Only this language, as stored.")] = None,
+    pool: Annotated[Literal[pools.POOLS] | None, Field(description="Only this pool.")] = None,
+    limit: Annotated[int, Field(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> list[dict]:
+    return question_sets.rows((set_name or "").strip() or None, language, pool, limit, offset)
 
 
 def _named_runs(run_names: list[str]) -> list[str]:

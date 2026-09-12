@@ -171,6 +171,7 @@ Eval-платформа:
 - `GET /v1/eval/misses?run_name=X` (retrieval-промахи прогона: in-corpus вопросы, где ожидаемый источник не найден, expected vs retrieved)
 - `GET /v1/eval/compare?runs=A&runs=B` (руки рядом, с разбивкой по пулам: in-corpus, out-of-corpus, off-domain, rejected; по каждой руке судейские оси, доля ответов из внешнего тула против корпуса, сколько раз сработал гейт покрытия, латентность avg/p50 и гистограмма исходов; на каждую пару рук парный тест Уилкоксона плюс бутстрап-интервал по одним и тем же вопросам, то есть разница отдаётся вместе с размером и неопределённостью, а не двумя средними)
 - `POST /v1/questions/import` (залить файл вопросов, ≤5 МБ; опц. цепочка run)
+- `GET /v1/questions?set_name=&language=&pool=&limit=&offset=` (сами вопросы, по строке на каждый: id, пул, текст, эталон и размеченные источники; отсюда берутся `question_ids` прогона)
 
 <details>
 <summary>Схема: Eval-конвейер</summary>
@@ -308,6 +309,7 @@ MCP-сервер (Model Context Protocol) примонтирован на `/mcp`
 - `engines()` - кто держит GPU сейчас и какие модели на нём, спит ли каждый vLLM на карте и отвечает ли каждый зарегистрированный движок; читается с серверов, а не из таблицы.
 - `judge_correlation(run_name?)` - наш судья против судьи стандарта на тех же строках: спирмен, ковариата перекрытия, частная корреляция под ней и страты по доле кода.
 - `question_sets(set_name?)` - что несёт каждый набор вопросов и по каким осям поэтому можно судить прогон по нему: пулы, языки, у скольких есть размеченные источники (ретривальные оси) и у скольких эталонный ответ (две гостевые контекстные оси).
+- `questions(set_name?, language?, pool?, limit?, offset?)` - строки набора, чтобы выбрать `question_ids` прогона; пул считается тем же правилом, что в `question_sets`.
 - `experiment_results(id, pair?)` - отчёт одного эксперимента любого вида: руки с их n, парные дельты по осям с интервалом и p, и пережила ли каждая поправку на то семейство, которое запись называет.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - управление очередью джоб, cancel снимает и зависимый judge.
 - `holm_over(tests, family, alpha?)` - поправка на то семейство, которое объявляет читатель, а не на то, которое случайно оказалось в одной записи: даёшь p-значения по именам, получаешь каждое с его порогом Холма и признаком, пережило ли оно. Отчёт поправляет по своей записи, а чтение рук из двух экспериментов это семейство шире.
@@ -462,7 +464,7 @@ Auth интеграции описывается как `{"type": "bearer", "tok
 - `app/orchestrators/` - адаптеры к фреймворку: `graph` (StateGraph), `react` (голый `create_agent`). Ни одного импорта langchain в `use_cases`.
 - `app/agent_tools.py` - реестр тулов + `dispatch` + тул `search_corpus` поверх гибридного поиска.
 - `app/mcp_server.py` - FastMCP-сервер (примонтирован на `/mcp`): тулы `search_corpus` / `answer_question` / `list_categories` поверх примитивов поиска.
-- `app/mcp_ops.py` - ops MCP-сервер (примонтирован на `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `engines` / `language_cost` поверх eval-платформы.
+- `app/mcp_ops.py` - ops MCP-сервер (примонтирован на `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `questions` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `engines` / `language_cost` поверх eval-платформы.
 - `app/evals/pools.py`, `app/evals/compare.py` - одно место, которое решает, в какой пул попал вопрос и чем закончился прогон: им пользуются метрики, сравнительный отчёт и оба MCP-инструмента.
 - `app/api/` - REST-адаптеры (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - сид промптов/банка вопросов; REPL-консоль.

@@ -167,6 +167,7 @@ Eval platform:
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `GET /v1/eval/compare?runs=A&runs=B` (arms side by side split by pool: in-corpus, out-of-corpus, off-domain, rejected; per arm the judged axes, how often the answer came from a remote tool against the corpus, how often the coverage gate fired, latency avg/p50 and the outcome histogram; per pair of arms a paired Wilcoxon plus a bootstrap interval over the same questions, so a difference is reported with its size and its uncertainty instead of two averages)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
+- `GET /v1/questions?set_name=&language=&pool=&limit=&offset=` (the questions themselves, one row each: id, pool, text, reference and marked sources; where a run's `question_ids` come from)
 
 <details>
 <summary>Diagram: Eval pipeline</summary>
@@ -308,6 +309,7 @@ A second, separate ops server is mounted at `/mcp-ops` - an eval control plane k
 - `engines()` - who holds the GPU now and which models it has there, whether each vLLM on the card is asleep, and whether every registered engine answers; read from the servers, not from a table.
 - `judge_correlation(run_name?)` - our judge against the standard's on the same rows: spearman, the overlap covariate, the partial correlation behind it, and the strata by code share.
 - `question_sets(set_name?)` - what each question set holds and therefore which axes a run over it can be scored on: pools, languages, how many carry marked sources (the retrieval axes) and how many carry a reference answer (the two guest context axes).
+- `questions(set_name?, language?, pool?, limit?, offset?)` - the rows of a set, for picking a run's `question_ids`; the pool is the rule `question_sets` counts with.
 - `experiment_results(id, pair?)` - one experiment's report, whatever its kind: the arms with their n, the paired deltas per axis with interval and p, and whether each survives the correction over the family the record names.
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - job queue control, cancel takes the dependent judge down with the run.
 - `holm_over(tests, family, alpha?)` - correct a family the reader declares rather than the one a single record happens to hold: give the p-values by name, get each with its Holm threshold and whether it survives. A report corrects over its own record, and reading arms from two experiments is a wider family.
@@ -462,7 +464,7 @@ One implementation note worth stealing: under `corpus_first` the withheld extern
 - `app/orchestrators/` - adapters to the framework: `graph` (StateGraph), `react` (bare `create_agent`). No langchain import reaches `use_cases`.
 - `app/agent_tools.py` - tool registry + `dispatch` + the `search_corpus` tool over hybrid retrieval.
 - `app/mcp_server.py` - FastMCP server (mounted at `/mcp`): `search_corpus` / `answer_question` / `list_categories` tools reusing the retrieval primitives.
-- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `engines` / `language_cost` over the eval platform.
+- `app/mcp_ops.py` - ops MCP server (mounted at `/mcp-ops`): `run_metrics` / `compare_runs` / `compare_pools` / `judge_correlation` / `question_sets` / `questions` / `experiment_results` / `list_jobs` / `cancel_job` / `holm_over` / `engines` / `language_cost` over the eval platform.
 - `app/evals/pools.py`, `app/evals/compare.py` - one place that decides which pool a question belongs to and what the run's outcome was, shared by the metrics, the comparison report and both MCP tools.
 - `app/api/` - REST adapters (health + v1: chat / agent / categories / model / role / source / prompt / eval / experiment / questions / question-log / job).
 - `app/seed.py`, `app/console.py` - prompt/question-bank seed; REPL console.
