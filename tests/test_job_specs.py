@@ -145,3 +145,21 @@ def test_the_bookkeeping_of_a_retry_is_not_accepted_from_a_caller():
 
     with pytest.raises(job_specs.Refused, match="attempts"):
         job_specs.check("pull_llm_model", {"name": "qwen2.5:7b", "attempts": 99})
+
+
+def test_every_door_that_queues_a_job_answers_with_the_whole_row():
+    # the eval doors answered three fields and the job door had no `job_id`: a client read ids two ways
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from api.v1.eval import JobEnqueuedResponse
+    from api.v1.job import JobResponse
+
+    now = datetime.now(UTC)
+    row = SimpleNamespace(id=7, type="eval_run", queue="default", status="new",
+                          options={"run_name": "r"}, error=None, elapsed=None,
+                          apply_since=now, created_at=now, updated_at=now)
+    seen = JobResponse.model_validate(row).model_dump()
+    assert seen["job_id"] == seen["id"] == 7
+    assert seen["queue"] == "default" and seen["status"] == "new"
+    assert JobEnqueuedResponse is JobResponse, "one answer for one event"

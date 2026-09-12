@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.jobs import Job, JobStatus
 from orm.async_db import get_session
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from query_utils import (
     Page,
     apply_created_between,
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/job", tags=["jobs"])
 class JobResponse(BaseModel):
     id: int
     type: str
+    queue: str
     status: JobStatus
     options: dict
     error: dict | None
@@ -32,6 +33,12 @@ class JobResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    # the field every door that queues a job answers with, so a client reads the id one way
+    @computed_field
+    @property
+    def job_id(self) -> int:
+        return self.id
 
 
 SORT_MAP = {
