@@ -105,9 +105,10 @@ services:
       # the bootstrap reads every ollama, and a cpu one that is still starting reads as absent
       ollama-cpu:
         condition: service_healthy
-      # vLLM takes the card first and the bootstrap puts it to sleep before ollama loads a role
+      # asleep before ollama loads a role; optional: compose waits while it starts, a dead one holds nothing
       vllm:
         condition: service_healthy
+        required: false
     volumes:
       - .:/app
       # the bootstrap checks vLLM weights by their hashes in the same host cache the server reads
@@ -191,6 +192,7 @@ services:
   vllm:
     image: *vllm-image
     command:
+      # the judge is named in config.yaml and scripts/up.sh passes it; this default only mirrors it
       ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}",
        "--max-model-len", "${VLLM_MAX_MODEL_LEN:-8192}",
        # 0.95 died of CUDA OOM beside a sleeping `vllm-rerank`: every sleeper keeps ~200 MiB

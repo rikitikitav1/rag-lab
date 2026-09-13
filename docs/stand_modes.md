@@ -166,12 +166,14 @@ curl -s "localhost:8000/v1/job?type=hand_card&status=error&limit=5" | python3 -m
   <service>` gives the card back, and `docker info` should list the NVIDIA CDI devices (README,
   Quickstart).
 - `vllm` exits at start with `Free memory on device ... is less than desired GPU memory
-  utilization`, and the API and the worker stay `Created` behind it: the stack was recreated while
-  ollama still held a model, since the ollama container is not recreated with it and keeps its
-  models loaded. The API is down, so the queue cannot hand anything: unload ollama's models through
-  its own port (`curl localhost:11434/api/generate -d '{"model":"<name>","keep_alive":0}'` for each
-  name in `curl localhost:11434/api/ps`), then `docker compose up -d` again. `scripts/up.sh` does
+  utilization`: the stack was recreated while ollama still held a model, since the ollama container
+  is not recreated with it and keeps its models loaded. The rest of the stack comes up without the
+  judge, and `/readiness` names it. Unload ollama's models through its own port (`curl
+  localhost:11434/api/generate -d '{"model":"<name>","keep_alive":0}'` for each name in `curl
+  localhost:11434/api/ps`), then `docker compose up -d vllm`. `scripts/up.sh` does
   this itself whenever `vllm` is about to start; a bare `docker compose up -d` does not.
+- `vllm` neither dies nor turns healthy: the bootstrap waits for it up to its healthcheck's
+  `start_period`, an hour (the first start downloads the weights); `docker compose logs vllm` says why.
 
 Back to the default: `POST /v1/model/{id of the judge}/load` hands the card to the judge through the
 queue, and the next job that needs ollama takes it back the same way.
