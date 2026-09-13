@@ -3,6 +3,7 @@ import sys
 
 import limits
 from engines import DANGLING, answer_parsers, engine_of, registered_names
+from engines.card import NO_RESIDENCY
 from evals.loaders import load_logs
 from evals.pools import (
     ALL_OUTCOMES,
@@ -148,8 +149,8 @@ def verdicts(left: list, right: list) -> dict:
     }
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 judge parser
-SCHEMA = 10
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote
+SCHEMA = 11
 
 
 class TwoJudges(Ambiguous):
@@ -223,6 +224,7 @@ def _what_to_read_first(
     one_engine_name: bool | None,
     one_deterministic: bool | None,
     one_parser: bool | None = None,
+    remote_judge: bool = False,
 ) -> str | None:
     if one_engine_name is False:
         return (
@@ -255,6 +257,11 @@ def _what_to_read_first(
             "arms judged across a reload are not comparable directly: measured on ollama, the same "
             "judge moves 14% of its scores and 58% of its reason texts on byte-identical input, and "
             "a pair whose own floor was never measured cannot borrow that one"
+        )
+    if one_residency is None and remote_judge:
+        return (
+            "a remote judge has no residency: two passes are one instrument only while the broker "
+            "keeps serving the same weights, and nothing the stand reads can tell"
         )
     if one_residency is None:
         return "rows judged before this was recorded carry no residency, so nothing can be said"
@@ -352,6 +359,7 @@ def residencies(runs: dict[str, list]) -> dict:
     live = registered_names()
     seen, engines_seen, names_seen, prompts_seen, parsers_seen = {}, {}, {}, {}, {}
     gone = set()
+    remote_judge = False
     for name, logs in runs.items():
         ids, addresses, named = set(), set(), set()
         versions = {axis: set() for axis in rejudge.AXES}
@@ -361,6 +369,7 @@ def residencies(runs: dict[str, list]) -> dict:
                 stamp = ((ql.metrics or {}).get(axis) or {})
                 if stamp.get("residency_id") is not None:
                     ids.add(stamp["residency_id"])
+                remote_judge = remote_judge or stamp.get("residency_source") == NO_RESIDENCY
                 read = engine_of(stamp, live)
                 if read.address:
                     addresses.add(read.address)
@@ -402,8 +411,10 @@ def residencies(runs: dict[str, list]) -> dict:
         "one_judge_parser": one_parser,
         # the sources and their ranks on the questions both arms answered, equal or not at all
         "one_deterministic": one_retrieval,
+        "remote_judge": remote_judge,
         "read_this_first": _what_to_read_first(
-            one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser
+            one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser,
+            remote_judge=remote_judge,
         ),
     }
 

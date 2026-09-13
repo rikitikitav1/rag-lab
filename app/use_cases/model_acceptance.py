@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 # what each role needs of a model, in the terms the server answers in
 REQUIRED_CAPABILITY = {Role.generation: "tools"}
-REFUSED_CAPABILITY = {Role.judging: "thinking", Role.paraphrasing: "thinking"}
+REFUSED_CAPABILITY = {Role.judging: "thinking", Role.paraphrasing: "thinking", Role.ragas: "thinking"}
 NEEDS_SYSTEM = (Role.generation, Role.judging, Role.paraphrasing)
 
 log = logging_setup.get_logger(__name__)
@@ -108,7 +108,7 @@ class NeedsProbe(Exception):
     pass
 
 
-POOLING_ROLES = (Role.embedding, Role.reranking)
+POOLING_ROLES = (Role.embedding, Role.reranking, Role.ragas_embedding)
 
 
 def _refuse_unfit_on_vllm(role: Role, model_name: str, spec) -> None:

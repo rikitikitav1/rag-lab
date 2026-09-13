@@ -96,11 +96,14 @@ def test_the_tool_reads_the_report_rather_than_computing_a_second_one():
 
 def test_a_probe_reports_an_interval_and_names_its_instrument(monkeypatch):
     # a point estimate on ten rows was read as a refutation once, and the interval said otherwise
+    import engines
+    from conftest import stub_engine
     from evals import guest_llm
     from evals import guest_probes as probes
 
-    # the stamp reads the role from the base, and a unit test of the report shape has no base
     monkeypatch.setattr(guest_llm.llm, "resolve_name", lambda role: "q:7b")
+    monkeypatch.setattr(guest_llm.llm, "resolve", lambda role: engines.Resolved("q:7b", stub_engine()))
+    monkeypatch.setattr(guest_llm.llm, "sampler_of", lambda role, spec=None: {})
 
     done = [
         {"row": i, "arm": "copy", "score": 1.0, "n_statements": 2, "error": None, "overlap": 1.0}

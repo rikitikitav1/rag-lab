@@ -1,10 +1,9 @@
 import re
 from datetime import datetime
-from decimal import Decimal
 from enum import StrEnum
 
 from orm import Base
-from sqlalchemy import BigInteger, Enum, ForeignKey, Numeric, UniqueConstraint, func
+from sqlalchemy import BigInteger, Enum, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -14,6 +13,10 @@ class Role(StrEnum):
     judging = "judging"
     paraphrasing = "paraphrasing"
     reranking = "reranking"
+    # the standard's judge: its own prompts, so its own seat rather than the judge's
+    ragas = "ragas"
+    # the one guest that measures with vectors, off the card so the guest's model has it whole
+    ragas_embedding = "ragas_embedding"
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
@@ -93,10 +96,6 @@ class Engine(Base):
     placement: Mapped[Placement] = mapped_column(Enum(Placement, native_enum=False))
     # which reader in `engines.balances` asks this cloud's broker what is left on the key
     balance_reader: Mapped[str] = mapped_column(default="none")
-    budget: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
-    spent: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
-    # the second MR reserves at the door and releases at the end; today nothing writes these
-    reserved: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     def __repr__(self) -> str:

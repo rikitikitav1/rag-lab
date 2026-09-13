@@ -16,7 +16,9 @@ _taking = threading.Lock()
 def take(spec, model: str | None = None, allow_spill: bool = False) -> None:
     with _taking:
         try:
-            if spec.placement in engines.CARD and card.holds_for(spec) and not _to_load(spec, model):
+            # a model already partly on the card is no reason to skip the check the handover makes
+            if (spec.placement in engines.CARD and card.holds_for(spec) and not _to_load(spec, model)
+                    and (allow_spill or not (model and card.spilled(spec, model)))):
                 return
             card.hand_to(spec, model, allow_spill=allow_spill)
         except card.CardNotHanded:

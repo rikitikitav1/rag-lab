@@ -88,21 +88,28 @@ class Tally:
         self._lock = threading.Lock()
         self._seen: dict[tuple[str, str, str], list[int]] = {}
 
-    def add(self, role: str, engine: str, model: str, prompt: int | None, completion: int | None) -> None:
+    # the longest input against the window, and the calls the output limit cut: a sum hides both
+    def add(self, role: str, engine: str, model: str, prompt: int | None, completion: int | None,
+            cut: bool = False) -> None:
         with self._lock:
-            got = self._seen.setdefault((role, engine, model), [0, 0, 0, 0])
+            got = self._seen.setdefault((role, engine, model), [0, 0, 0, 0, 0, 0])
             got[0] += prompt or 0
             got[1] += completion or 0
             got[2] += 1
             got[3] += prompt is None
+            got[4] = max(got[4], prompt or 0)
+            got[5] += cut
 
     def record(self) -> dict | None:
         with self._lock:
             out: dict[str, list[dict]] = {}
-            for (role, engine, model), (prompt, completion, calls, uncounted) in sorted(self._seen.items()):
+            for (role, engine, model), seen in sorted(self._seen.items()):
+                prompt, completion, calls, uncounted, longest, cut = seen
                 out.setdefault(role, []).append({
                     "engine": engine, "model": model, "prompt": prompt, "completion": completion,
-                    "calls": calls, **({"uncounted": uncounted} if uncounted else {}),
+                    "calls": calls, "max_prompt": longest,
+                    **({"uncounted": uncounted} if uncounted else {}),
+                    **({"cut_by_length": cut} if cut else {}),
                 })
             return out or None
 
@@ -160,16 +167,19 @@ def carried(fn):
     return run
 
 
-def _count(role, engine, model: str, prompt: int | None, completion: int | None) -> None:
+def _count(role, engine, model: str, prompt: int | None, completion: int | None,
+           finish_reason: str | None = None) -> None:
     for tally in _tallies.get():
-        tally.add(str(getattr(role, "value", role)), engine.name, model, prompt, completion)
+        tally.add(str(getattr(role, "value", role)), engine.name, model, prompt, completion,
+                  cut=finish_reason == "length")
 
 
 # a call by engine and name, for a model no role holds yet: the probe before a seat
 def complete_on(spec, name: str, messages, params, role):
     resp = _complete(spec, name, messages, params)
     usage = _usage(resp, spec)
-    _count(role, spec, name, usage.prompt_tokens, usage.completion_tokens)
+    _count(role, spec, name, usage.prompt_tokens, usage.completion_tokens,
+           getattr(resp.choices[0], "finish_reason", None) if resp.choices else None)
     log.info("llm.chat", role=str(getattr(role, "value", role)), model=name, engine=spec.name,
              prompt_tokens=usage.prompt_tokens, completion_tokens=usage.completion_tokens)
     return resp
@@ -238,18 +248,13 @@ def _complete(spec, name: str, messages, params):
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:
     picked = resolve_for(role, model)
     name = picked.name
-    resp = _complete(
-        picked.engine,
-        name,
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        _params(role, schema, picked.engine),
-    )
+    # no system at all is not an empty one: a template drops its default only for a system it was given
+    messages = ([] if system is None else [{"role": "system", "content": system}]) + [{"role": "user", "content": user}]
+    resp = _complete(picked.engine, name, messages, _params(role, schema, picked.engine))
 
     usage = _usage(resp, picked.engine)
-    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens)
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens,
+           getattr(resp.choices[0], "finish_reason", None))
     log.info(
         "llm.chat",
         role=role,
@@ -279,7 +284,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     choice = resp.choices[0]
     message = choice.message
     usage = _usage(resp, picked.engine)
-    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens)
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens, choice.finish_reason)
     log.info(
         "llm.chat_tools",
         role=role,

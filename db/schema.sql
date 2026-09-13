@@ -158,9 +158,6 @@ CREATE TABLE public.engines (
     kind text NOT NULL,
     env_prefix text NOT NULL,
     placement text NOT NULL,
-    budget numeric(12,6),
-    spent numeric(12,6) DEFAULT 0 NOT NULL,
-    reserved numeric(12,6) DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     balance_reader text DEFAULT 'none'::text NOT NULL,
     CONSTRAINT engines_env_prefix_shape CHECK ((env_prefix ~ '^[A-Z][A-Z0-9_]{0,31}$'::text))
@@ -949,4 +946,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260911000003'),
     ('20260912000001'),
     ('20260912000002'),
-    ('20260912000003');
+    ('20260912000003'),
+    ('20260912000004');

@@ -56,6 +56,7 @@ class GuestAxesRequest(BaseModel):
     # the guests calibrate on a subsample, they are not an axis
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
+    messages: Literal["user_only", "empty_system"] = "user_only"
 
 
 class JudgeRequest(BaseModel):
@@ -503,7 +504,7 @@ async def enqueue_guest_axes(
         session,
         "judge_guest_axes",
         {"run_name": request.run_name, "judge_width": request.judge_width,
-         "sample": request.sample, "seed": request.seed},
+         "sample": request.sample, "seed": request.seed, "messages": request.messages},
     )
 
 

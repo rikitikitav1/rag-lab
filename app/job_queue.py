@@ -164,9 +164,11 @@ def merged_tokens(was: dict | None, more: dict) -> dict:
             if same is None:
                 held.append(dict(entry))
                 continue
-            for key in ("prompt", "completion", "calls", "uncounted"):
+            for key in ("prompt", "completion", "calls", "uncounted", "cut_by_length"):
                 if key in entry or key in same:
                     same[key] = same.get(key, 0) + entry.get(key, 0)
+            if "max_prompt" in entry or "max_prompt" in same:
+                same["max_prompt"] = max(same.get("max_prompt", 0), entry.get("max_prompt", 0))
     return out
 
 
