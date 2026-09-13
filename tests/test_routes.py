@@ -300,3 +300,81 @@ def test_the_compare_path_is_not_read_as_a_source_id(client):
     # `/compare` has to be declared before `/{id}`, or FastAPI matches the id route first
     out = client.get("/v1/source/compare?variants=baseline")
     assert out.status_code == 422, "one variant is not a comparison"
+
+
+def _door_that_queues(monkeypatch, *, rows=0, jobs=()):
+    import api.v1.eval as eval_mod
+
+    async def _rows(session, run_name):
+        return rows
+
+    async def _named(session, run_name):
+        return list(jobs)
+
+    async def _refresh(session, obj):
+        return obj
+
+    monkeypatch.setattr(eval_mod, "_rows_of", _rows)
+    monkeypatch.setattr(eval_mod, "_eval_runs_named", _named)
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
+    monkeypatch.setattr(eval_mod, "commit_and_refresh", _refresh)
+
+
+def test_a_taken_run_name_is_refused_unless_the_run_is_resumed(client, monkeypatch):
+    # a second run under the same name wrote its rows beside the first, one question twice
+    from types import SimpleNamespace
+
+    from models import JobStatus
+
+    _door_that_queues(monkeypatch, rows=3)
+    r = client.post("/v1/eval/run", json={"run_name": "r", "set_name": "s"})
+    assert r.status_code == 409 and "pass resume" in r.json()["detail"]
+    # stopped on its first call, as a broker's 502 did: no row, and the name is taken all the same
+    _door_that_queues(monkeypatch, jobs=[SimpleNamespace(status=JobStatus.done, options={"run_name": "r"})])
+    assert client.post("/v1/eval/run", json={"run_name": "r", "set_name": "s"}).status_code == 409
+
+
+def test_a_resumed_run_changes_nothing_and_runs_on_the_stopped_jobs_options(client, monkeypatch):
+    from types import SimpleNamespace
+
+    from models import JobStatus
+
+    stopped = SimpleNamespace(status=JobStatus.error, options={
+        "run_name": "r", "set_name": "s", "model": "MiniMaxAI/MiniMax-M2.7", "pipeline": "single_shot",
+        "attempts": 3, "resume": False,
+    })
+    _door_that_queues(monkeypatch, rows=3, jobs=[stopped])
+    edited = client.post("/v1/eval/run", json={"run_name": "r", "resume": True, "model": "other"})
+    assert edited.status_code == 422 and "model" in edited.json()["detail"]
+    resumed = client.post("/v1/eval/run", json={"run_name": "r", "resume": True})
+    assert resumed.status_code == 200
+    assert resumed.json()["options"] == {
+        "run_name": "r", "set_name": "s", "model": "MiniMaxAI/MiniMax-M2.7", "pipeline": "single_shot", "resume": True,
+    }
+
+
+def test_a_run_is_resumed_only_when_it_exists_and_has_stopped(client, monkeypatch):
+    from types import SimpleNamespace
+
+    from models import JobStatus
+
+    _door_that_queues(monkeypatch)
+    assert client.post("/v1/eval/run", json={"run_name": "r", "resume": True}).status_code == 404
+    running = SimpleNamespace(status=JobStatus.running, options={"run_name": "r", "set_name": "s"})
+    _door_that_queues(monkeypatch, jobs=[running])
+    assert client.post("/v1/eval/run", json={"run_name": "r", "resume": True}).status_code == 409
+
+
+def test_the_door_refuses_question_ids_that_repeat_or_are_not_in_the_stand(client, monkeypatch):
+    import api.v1.eval as eval_mod
+
+    async def _found(session, ids):
+        return {34, 35}
+
+    _door_that_queues(monkeypatch)
+    monkeypatch.setattr(eval_mod, "_question_ids_in", _found)
+    missing = client.post("/v1/eval/run", json={"question_ids": [34, 35, 99]})
+    assert missing.status_code == 422 and "1 of 3 question ids are not in the stand: [99]" in missing.json()["detail"]
+    repeated = client.post("/v1/eval/run", json={"question_ids": [34, 34]})
+    assert repeated.status_code == 422 and "repeat" in repeated.json()["detail"]
+    assert client.post("/v1/eval/run", json={"question_ids": [34, 35]}).status_code == 200

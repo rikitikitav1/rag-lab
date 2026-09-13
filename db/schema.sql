@@ -250,7 +250,8 @@ CREATE TABLE public.jobs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     elapsed double precision,
-    queue text DEFAULT 'default'::text NOT NULL
+    queue text DEFAULT 'default'::text NOT NULL,
+    tokens jsonb
 );
 
 
@@ -947,4 +948,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260911000002'),
     ('20260911000003'),
     ('20260912000001'),
-    ('20260912000002');
+    ('20260912000002'),
+    ('20260912000003');

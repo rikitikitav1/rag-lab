@@ -1,5 +1,7 @@
 import contextlib
+import contextvars
 import os
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,11 +70,109 @@ class BrokerRefused(StandFault):
     pass
 
 
+# after the client's own retry a 5xx is the server saying it is broken, and the next row meets the same
+class ServerFailed(StandFault):
+    pass
+
+
 # the stand counts tokens on every call, so a broker that sends no usage is named, not read as zero
 def _usage(resp, engine):
     if resp.usage is None:
         raise NoUsage(f"{engine.name} returned no token usage")
     return resp.usage
+
+
+# what a job or a row spent, per role and per engine and model; pool threads add to it under the lock
+class Tally:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._seen: dict[tuple[str, str, str], list[int]] = {}
+
+    def add(self, role: str, engine: str, model: str, prompt: int | None, completion: int | None) -> None:
+        with self._lock:
+            got = self._seen.setdefault((role, engine, model), [0, 0, 0, 0])
+            got[0] += prompt or 0
+            got[1] += completion or 0
+            got[2] += 1
+            got[3] += prompt is None
+
+    def record(self) -> dict | None:
+        with self._lock:
+            out: dict[str, list[dict]] = {}
+            for (role, engine, model), (prompt, completion, calls, uncounted) in sorted(self._seen.items()):
+                out.setdefault(role, []).append({
+                    "engine": engine, "model": model, "prompt": prompt, "completion": completion,
+                    "calls": calls, **({"uncounted": uncounted} if uncounted else {}),
+                })
+            return out or None
+
+
+# a context, not a global: the worker runs two lanes as two threads of one process
+_tallies: contextvars.ContextVar[tuple] = contextvars.ContextVar("llm_tallies", default=())
+
+# a broker answers a repeated body from its cache, so a cloud call carries the run's name in `user`
+_cache_key: contextvars.ContextVar[str | None] = contextvars.ContextVar("llm_cache_key", default=None)
+CACHE_KEY = "user=run_name"
+
+
+@contextlib.contextmanager
+def cache_keyed(run_name: str | None):
+    token = _cache_key.set(run_name)
+    try:
+        yield
+    finally:
+        _cache_key.reset(token)
+
+
+# only a broker keeps such a cache, and the model never sees the field
+def cache_key_of(spec) -> str | None:
+    return CACHE_KEY if spec.kind is EngineKind.openai_compatible else None
+
+
+def _keyed(spec) -> dict:
+    key = _cache_key.get()
+    return {"user": key} if key and cache_key_of(spec) else {}
+
+
+# scopes nest: a guest row counts into its own tally and into the job's at once
+@contextlib.contextmanager
+def accounting(tally: Tally | None = None):
+    tally = tally or Tally()
+    token = _tallies.set((*_tallies.get(), tally))
+    try:
+        yield tally
+    finally:
+        _tallies.reset(token)
+
+
+# a pool thread starts with an empty context, so the task takes the caller's tallies and key along
+def carried(fn):
+    tallies, key = _tallies.get(), _cache_key.get()
+
+    def run(*args, **kwargs):
+        counted, keyed = _tallies.set(tallies), _cache_key.set(key)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _cache_key.reset(keyed)
+            _tallies.reset(counted)
+
+    return run
+
+
+def _count(role, engine, model: str, prompt: int | None, completion: int | None) -> None:
+    for tally in _tallies.get():
+        tally.add(str(getattr(role, "value", role)), engine.name, model, prompt, completion)
+
+
+# a call by engine and name, for a model no role holds yet: the probe before a seat
+def complete_on(spec, name: str, messages, params, role):
+    resp = _complete(spec, name, messages, params)
+    usage = _usage(resp, spec)
+    _count(role, spec, name, usage.prompt_tokens, usage.completion_tokens)
+    log.info("llm.chat", role=str(getattr(role, "value", role)), model=name, engine=spec.name,
+             prompt_tokens=usage.prompt_tokens, completion_tokens=usage.completion_tokens)
+    return resp
 
 
 # one cut for every answer, after the call and before the judge, the guest or the agent reads it
@@ -121,13 +221,16 @@ def _complete(spec, name: str, messages, params):
     with _card_for(spec, name):
         try:
             return engines.client_for(spec).chat.completions.create(
-                model=name, messages=messages, **params
+                model=name, messages=messages, **params, **_keyed(spec)
             )
         except OpenAIError as e:
             said = _without_the_body(e)
             if isinstance(e, APIStatusError) and e.status_code in (402, 429):
                 log.error("llm.broker_refused", model=name, engine=spec.name, status=e.status_code)
                 raise BrokerRefused(f"{spec.name} refused {name}: {said}, a quota or a rate limit") from e
+            if isinstance(e, APIStatusError) and e.status_code >= 500:
+                log.error("llm.server_failed", model=name, engine=spec.name, status=e.status_code)
+                raise ServerFailed(f"{spec.name} failed {name}: {said}, the server says it is broken") from e
             log.error("llm.chat_failed", model=name, engine=spec.name, error=said)
             raise RuntimeError(f"LLM chat failed ({name} on {spec.name}): {said}") from e
 
@@ -146,8 +249,10 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
     )
 
     usage = _usage(resp, picked.engine)
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens)
     log.info(
         "llm.chat",
+        role=role,
         model=name,
         engine=picked.engine.name,
         prompt_tokens=usage.prompt_tokens,
@@ -174,8 +279,10 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     choice = resp.choices[0]
     message = choice.message
     usage = _usage(resp, picked.engine)
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens)
     log.info(
         "llm.chat_tools",
+        role=role,
         model=name,
         engine=picked.engine.name,
         tool_calls=len(message.tool_calls or []),
@@ -253,13 +360,13 @@ def embed(prompt, role="embedding"):
 
 # unlabelled, for vectors nobody stores, as the guest's; a writer of vectors takes `embed_labelled`
 def request_embeddings_batch(texts, role="embedding"):
-    return _embeddings(resolve(role), texts)
+    return _embeddings(resolve(role), texts, role)
 
 
 # the label and the vectors from one resolution: read apart, a role seated between them mislabels
 def embed_labelled(texts, role="embedding") -> tuple[str, list]:
     picked = resolve(role)
-    return engines.label(picked.name, picked.engine.name), _embeddings(picked, texts)
+    return engines.label(picked.name, picked.engine.name), _embeddings(picked, texts, role)
 
 
 # one text: the vector a search asks with and the label the rows it meets must carry
@@ -268,7 +375,7 @@ def embed_with_label(text, role="embedding") -> tuple[str, list]:
     return label, vectors[0]
 
 
-def _embeddings(picked, texts) -> list:
+def _embeddings(picked, texts, role="embedding") -> list:
     name = picked.name
     with _card_for(picked.engine, name):
         try:
@@ -278,7 +385,14 @@ def _embeddings(picked, texts) -> list:
             if isinstance(e, APIStatusError) and e.status_code in (402, 429):
                 log.error("llm.broker_refused", model=name, engine=picked.engine.name, status=e.status_code)
                 raise BrokerRefused(f"{picked.engine.name} refused {name}: {said}, a quota or a rate limit") from e
+            if isinstance(e, APIStatusError) and e.status_code >= 500:
+                log.error("llm.server_failed", model=name, engine=picked.engine.name, status=e.status_code)
+                raise ServerFailed(f"{picked.engine.name} failed {name}: {said}, the server says it is broken") from e
             log.error("llm.embed_failed", model=name, engine=picked.engine.name, error=said)
             raise RuntimeError(f"LLM embed failed ({name} on {picked.engine.name}): {said}") from e
-    log.info("llm.embed", model=name, engine=picked.engine.name, count=len(texts))
+    # on a cloud the tokens are the quota, so a reply without them stops the run; locally it is a gap
+    usage = _usage(resp, picked.engine) if picked.engine.kind is EngineKind.openai_compatible else getattr(resp, "usage", None)
+    prompt = getattr(usage, "prompt_tokens", None)
+    _count(role, picked.engine, name, prompt, 0)
+    log.info("llm.embed", role=role, model=name, engine=picked.engine.name, count=len(texts), prompt_tokens=prompt)
     return [d.embedding for d in resp.data]

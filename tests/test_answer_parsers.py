@@ -65,10 +65,11 @@ def test_ask_hands_on_the_cut_text_and_what_was_cut(monkeypatch):
     assert got.text.startswith("A Docker image is") and got.parsed.reasoning_chars > 100
 
 
-def _probe(monkeypatch, parser: str, fixture: str | None = None, raises: Exception | None = None):
+def _probe(monkeypatch, parser: str, fixture: str | None = None, raises: Exception | None = None, counted: bool = True):
     from use_cases import model_acceptance
 
-    reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=fixture and _content(fixture)))])
+    reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=fixture and _content(fixture)))],
+                            usage=SimpleNamespace(prompt_tokens=40, completion_tokens=12) if counted else None)
 
     def create(**kw):
         if raises is not None:
@@ -175,3 +176,9 @@ def test_the_run_snapshot_names_the_parser_of_each_answering_role(monkeypatch):
     monkeypatch.setattr(run_snapshot.llm, "sampler", lambda role, spec: SimpleNamespace(dropped={}))
     *_, parsers = run_snapshot._by_role(engines.Resolved("MiniMaxAI/MiniMax-M2.7", CLOUD, "think_tags+minimax_tools"))
     assert parsers == {Role.generation: "minimax_tools@1+think_tags@1", Role.embedding: "none@1"}
+
+
+def test_acceptance_refuses_a_cloud_row_that_sends_no_token_usage(monkeypatch):
+    # it would sit on the role, and the first run on it would stop on its first call
+    with pytest.raises(ValueError, match="sends no token usage"):
+        _probe(monkeypatch, "think_tags", "minimax_tool_long", counted=False)()

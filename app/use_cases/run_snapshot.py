@@ -10,8 +10,8 @@ import db
 
 log = logging_setup.get_logger(__name__)
 
-# 5 engine per role; 6 engine refused; 7 renamed; 8 where each role sat; 9 reranker as a role; 10 parser
-SCHEMA = 10
+# 5 engine per role; 6 engine refused; 7 renamed; 8 where each role sat; 9 reranker; 10 parser; 11 cache key
+SCHEMA = 11
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -50,6 +50,8 @@ KEYS = (
     "on_card",
     # per role, the parser that cut its answers: a broker writes thinking and call markup into the text
     "answer_parsers",
+    # per cloud role, what keyed the broker's cache: a second pass without it could have read the first
+    "cache_keys",
 )
 
 
@@ -58,8 +60,8 @@ ANSWERING = (Role.generation, Role.embedding)
 
 
 # a report must not die on an unreachable registry: the engine is extra, the run is the record
-def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict]:
-    named, dropped, placed, parsers = {}, {}, {}, {}
+def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict, dict]:
+    named, dropped, placed, cache_keys, parsers = {}, {}, {}, {}, {}
     for role in roles:
         try:
             chosen = picked if role is Role.generation else model_of(role)
@@ -69,10 +71,12 @@ def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict]:
             named[role] = spec.name
             dropped[role] = llm.sampler(role, spec).dropped
             placed[role] = card.model_on_card(spec, chosen.name)
+            if key := llm.cache_key_of(spec):
+                cache_keys[role] = key
             parsers[role] = answer_parsers.label(getattr(chosen, "parser", "none"))
         except Exception as e:
             log.warning("run_snapshot.engine_unread", role=role, error=str(e))
-    return named, dropped, placed, parsers
+    return named, dropped, placed, cache_keys, parsers
 
 
 # by the role's own engine, and a failed read is unknown rather than a reason to stop the run
@@ -140,7 +144,7 @@ def of_run(
     # the agent's gate can call the reranker without `use_rerank`, and the record names it then too
     reranked = use_rerank if cross_encoder_used is None else cross_encoder_used
     roles = (*ANSWERING, Role.reranking) if reranked else ANSWERING
-    named, dropped, placed, parsers = _by_role(picked, roles)
+    named, dropped, placed, cache_keys, parsers = _by_role(picked, roles)
     # read while the role worked: a phased run writes its rows after the embedder has left the card
     placed |= placed_during or {}
     common = {
@@ -163,6 +167,7 @@ def of_run(
         "engine_refused": dropped,
         "on_card": placed,
         "answer_parsers": parsers,
+        "cache_keys": cache_keys,
     }
     return {key: None for key in KEYS} | common | filled
 

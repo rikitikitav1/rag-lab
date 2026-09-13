@@ -67,3 +67,15 @@ def test_a_new_cloud_reaches_the_containers_without_editing_compose():
     for name in ("rag-lab", "bootstrap", "worker"):
         assert compose["services"][name]["env_file"] == [{"path": ".env", "required": False}], name
     assert not [k for k in compose["x-engine-env"] if k.startswith("CLOUD_")]
+
+
+def test_a_cloud_client_retries_more_than_a_local_one(monkeypatch):
+    # gonka held a call 92 s and answered 503, and the same call went through 20 s later
+    from engines import core
+
+    monkeypatch.setattr(core, "_clients", {})
+    monkeypatch.setenv("GONKA_BASE_URL", "https://gonka.example/v1")
+    monkeypatch.setenv("GONKA_API_KEY", "g-key")
+    assert core.client_for(_cloud(15, "GONKA")).max_retries == core.CLOUD_RETRIES > 1
+    local = engines.EngineSpec(2, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    assert core._retries(local) == 1

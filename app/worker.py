@@ -49,12 +49,17 @@ def run_once(queues: list[str]) -> bool:
         return True
 
     start = time.perf_counter()
+    tally = llm.Tally()
     try:
-        handler(claimed.options | {"_job_id": claimed.id})
+        with llm.accounting(tally), llm.cache_keyed((claimed.options or {}).get("run_name")):
+            handler(claimed.options | {"_job_id": claimed.id})
+        # written before the status: a reader of a finished job found it done and its count still empty
+        _record_tokens(claimed.id, tally)
         elapsed = round(time.perf_counter() - start, 3)
         job_queue.complete(claimed.id, elapsed=elapsed)
         log.info("worker.done", id=claimed.id, type=claimed.type, elapsed=elapsed)
     except Deferred as d:
+        _record_tokens(claimed.id, tally)
         # without a ceiling of its own a job waiting for what never arrives holds its lane
         waited = claimed.options.get("deferred_seconds", 0) + d.delay_seconds
         if waited > MAX_DEFERRED_SECONDS:
@@ -84,6 +89,8 @@ def run_once(queues: list[str]) -> bool:
             deferred_seconds=waited,
         )
     except Exception as e:
+        # the quota is spent by calls, and a failed attempt spent it as well
+        _record_tokens(claimed.id, tally)
         elapsed = round(time.perf_counter() - start, 3)
         attempts = claimed.options.get("attempts", 0) + 1
         if attempts < MAX_ATTEMPTS and not isinstance(e, Final):
@@ -101,6 +108,13 @@ def run_once(queues: list[str]) -> bool:
             log.error("worker.failed", id=claimed.id, error=str(e))
             _fail_the_experiment_waiting_on(claimed)
     return True
+
+
+def _record_tokens(job_id: int, tally) -> None:
+    try:
+        job_queue.add_tokens(job_id, tally.record())
+    except Exception as e:
+        log.error("worker.tokens_not_recorded", id=job_id, error=str(e))
 
 
 # judging counts as the experiment's work too: aggregation is reachable only through it

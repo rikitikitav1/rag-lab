@@ -10,10 +10,10 @@ import logging_setup
 import rerank
 from engines import card
 from errors import StandFault
-from models.eval import Question
+from models.eval import Question, QuestionLog
 from models.registry import Pipeline, Role
 from orm.sync_db import Session
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from use_cases import agent, chat, run_snapshot, search_depth
 
 # the same resolver every other caller asks: a default is one default only if one decides
@@ -30,12 +30,26 @@ def _target_texts(set_name: str | None, question_ids: list[int] | None) -> list[
     if not question_ids and not set_name:
         raise ValueError("a run needs a target: name a set or the question ids, not neither")
     with Session() as session:
-        stmt = select(Question.original_text)
         if question_ids:
-            stmt = stmt.where(Question.id.in_(question_ids))
-        else:
-            stmt = stmt.where(Question.set_name == set_name)
-        return list(session.scalars(stmt))
+            found = session.execute(
+                select(Question.id, Question.original_text).where(Question.id.in_(question_ids))
+            ).all()
+            _refuse_missing(question_ids, {qid for qid, _ in found})
+            return [text for _, text in found]
+        return list(session.scalars(select(Question.original_text).where(Question.set_name == set_name)))
+
+
+class MissingQuestions(StandFault):
+    pass
+
+
+# a floor measured on 50 questions that quietly became 48 is read as a floor on 50
+def _refuse_missing(asked: list[int], found: set[int]) -> None:
+    missing = sorted(set(asked) - found)
+    if missing:
+        raise MissingQuestions(
+            f"{len(missing)} of {len(set(asked))} question ids are not in the stand: {missing[:20]}"
+        )
 
 
 # the knobs a run answers with, carried whole: fourteen positional arguments, then sixteen
@@ -299,6 +313,68 @@ def _walks_the_index(variant: str, depth: int) -> bool:
         return search_depth.uses_index(conn, variant, depth)
 
 
+class NoAnswers(StandFault):
+    pass
+
+
+# a row that is not an error answered its question; an error row is replaced, and the new one says so
+def _split_answered(texts: list[str], rows: list[tuple]) -> tuple[list[str], dict[str, dict]]:
+    answered = {text for _, text, metrics in rows if (metrics or {}).get("outcome") != "error"}
+    replaced: dict[str, dict] = {}
+    for log_id, text, metrics in rows:
+        if text not in answered:
+            held = replaced.setdefault(text, {"log_ids": [], "outcome": "error", "failed": None})
+            held["log_ids"].append(log_id)
+            held["failed"] = (metrics or {}).get("failed") or held["failed"]
+    return [t for t in texts if t not in answered], replaced
+
+
+# one row per question stays true: `requeued_stale` duplicates are caught by that count
+def _still_to_answer(run_name: str, texts: list[str]):
+    with Session() as session:
+        since = session.scalar(select(func.now()))
+        rows = session.execute(
+            select(QuestionLog.id, Question.original_text, QuestionLog.metrics)
+            .join(Question, Question.id == QuestionLog.question_id)
+            .where(QuestionLog.run_name == run_name)
+        ).all()
+        todo, replaced = _split_answered(texts, [tuple(r) for r in rows])
+        gone = [log_id for held in replaced.values() for log_id in held["log_ids"]]
+        if gone:
+            session.execute(delete(QuestionLog).where(QuestionLog.id.in_(gone)))
+            session.commit()
+    log.info("eval_run.resumed", run_name=run_name, still_to_answer=len(todo), of=len(texts), replaced=len(gone))
+    return todo, replaced, since
+
+
+# the rows a resumed run wrote say so, and one that replaced an error row keeps what it replaced
+def _mark_resumed(run_name: str, texts: list[str], *, replaced: dict[str, dict], since) -> None:
+    if not texts:
+        return
+    with Session() as session:
+        rows = session.execute(
+            select(QuestionLog, Question.original_text)
+            .join(Question, Question.id == QuestionLog.question_id)
+            .where(
+                QuestionLog.run_name == run_name,
+                QuestionLog.created_at >= since,
+                Question.original_text.in_(texts),
+            )
+        ).all()
+        for ql, text in rows:
+            ql.metrics = {
+                **(ql.metrics or {}), "resumed": True,
+                **({"resumed_from": replaced[text]} if text in replaced else {}),
+            }
+        session.commit()
+
+
+# a broker down for the whole run left no row, and the job still read done
+def _refuse_a_run_that_answered_nothing(run_name: str, *, answered: int, total: int, cancelled: bool) -> None:
+    if total and not answered and not cancelled:
+        raise NoAnswers(f"{run_name}: 0 of {total} questions answered; each row's error is in the worker log")
+
+
 def run(
     run_name: str,
     set_name: str | None = None,
@@ -319,6 +395,7 @@ def run(
     phased: bool | None = None,
     allow_cpu: bool = False,
     variant: str | None = None,
+    resume: bool = False,
 ) -> int:
     pipeline = Pipeline(pipeline)
     variant = variant or config.settings.corpus.variant
@@ -339,6 +416,9 @@ def run(
         )
     log.info("eval_run.corpus", variant=variant, known=known, ef_search=depth)
     texts = _target_texts(set_name, question_ids)
+    replaced, since = {}, None
+    if resume:
+        texts, replaced, since = _still_to_answer(run_name, texts)
     use_rerank = resolve_rerank(use_rerank)
     if phased is None:
         phased = pipeline == Pipeline.single_shot
@@ -366,6 +446,9 @@ def run(
         answered, cancelled = _run_sequential(
             texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
         )
+    if resume:
+        _mark_resumed(run_name, texts, replaced=replaced, since=since)
+    _refuse_a_run_that_answered_nothing(run_name, answered=answered, total=len(texts), cancelled=cancelled)
     if not cancelled:
         job_queue.enqueue("judge_answers", {"run_name": run_name})
     log.info(

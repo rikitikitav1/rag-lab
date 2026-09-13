@@ -11,10 +11,11 @@ def test_run_metrics_merges_gen_retrieval_and_the_debt(monkeypatch):
     monkeypatch.setattr(mcp_ops.generation_metrics, "evaluate", lambda rn: {"faithfulness": 7})
     monkeypatch.setattr(mcp_ops.retrieval_metrics, "evaluate", lambda rn: {"hit_at_k": 0.9})
     monkeypatch.setattr(mcp_ops.run_debts, "of", lambda rn: {"ours_still_to_judge": 3})
+    monkeypatch.setattr(mcp_ops.run_tokens, "of", lambda rn: {"spent": None})
     out = mcp_ops.run_metrics("some_run")
     assert out == {
         "run_name": "some_run", "faithfulness": 7, "hit_at_k": 0.9,
-        "debts": {"ours_still_to_judge": 3},
+        "debts": {"ours_still_to_judge": 3}, "tokens": {"spent": None},
     }
 
 

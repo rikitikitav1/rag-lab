@@ -117,7 +117,7 @@ def main() -> None:
     args = parser.parse_args()
     _load_env(args.prefix)
     _refuse_a_busy_stand()
-    spec =EngineSpec(0, args.prefix.lower(), EngineKind.openai_compatible, args.prefix, Placement.remote)
+    spec = EngineSpec(0, args.prefix.lower(), EngineKind.openai_compatible, args.prefix, Placement.remote)
     # one call at a time, and no other client on the key, or the debits mix
     for model in args.model:
         print(json.dumps(solve(measure(spec, model))), flush=True)
