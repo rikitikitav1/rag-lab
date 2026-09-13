@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 # a paid engine keeps the weights itself; the doors and the worker refuse the same way
 def refuse_remote(kind: EngineKind, name: str) -> None:
-    if kind is EngineKind.openai_compatible:
+    if engines.is_cloud(kind):
         raise engines.NotSupported(f"{name} lives on a remote {kind} engine: no weights here to manage")
 
 

@@ -1,3 +1,4 @@
+import token_fields
 from evals.guest_axes import PREFIX
 from job_queue import merged_tokens
 from models import Job, JobStatus
@@ -6,10 +7,14 @@ from orm.sync_db import Session
 from sqlalchemy import select
 from use_cases.rejudge import AXES
 
-SCHEMA = 1
+SCHEMA = 2
 READS = (
-    "spent is what the run's jobs paid, retries and failed attempts included, and is what a broker's "
-    "quota sees; per_question is the price of one row, read from the rows; neither is derived from the other"
+    "spent is the sum over the run's jobs per role, engine and model, retries and failed attempts included, "
+    "and is what a broker's quota sees; per_question is the price of one row per role, read from the rows, with "
+    "the rows that carry no count named rather than read as zero; neither is derived from the other; "
+    "spent_by_engine sums spent per engine; jobs counts the jobs read and those from before the count; "
+    "debited is each broker's balance before less after every job, in the broker's unit: the balance is the key's, "
+    "so a chat, another session or the worker's second lane on the same key lands in it too"
 )
 FINISHED = (JobStatus.done, JobStatus.error, JobStatus.cancelled)
 
@@ -17,16 +22,21 @@ FINISHED = (JobStatus.done, JobStatus.error, JobStatus.cancelled)
 def of(run_name: str) -> dict:
     with Session() as session:
         jobs = session.execute(
-            select(Job.tokens, Job.status).where(Job.options["run_name"].astext == run_name)
+            select(Job.tokens, Job.status, Job.balances).where(Job.options["run_name"].astext == run_name)
         ).all()
         rows = session.execute(
             select(QuestionLog.prompt_tokens, QuestionLog.completion_tokens, QuestionLog.metrics)
             .where(QuestionLog.run_name == run_name)
         ).all()
-    return summarize([(tokens, status) for tokens, status in jobs], [tuple(r) for r in rows])
+    return summarize(
+        [(tokens, status) for tokens, status, _ in jobs], [tuple(r) for r in rows], [b for _, _, b in jobs]
+    )
 
 
-def summarize(jobs: list[tuple[dict | None, str]], rows: list[tuple[int | None, int | None, dict | None]]) -> dict:
+def summarize(
+    jobs: list[tuple[dict | None, str]], rows: list[tuple[int | None, int | None, dict | None]],
+    balances: list[dict | None] = (),
+) -> dict:
     spent = None
     for tokens, _ in jobs:
         if tokens is not None:
@@ -41,6 +51,7 @@ def summarize(jobs: list[tuple[dict | None, str]], rows: list[tuple[int | None, 
         "schema": SCHEMA,
         "spent": spent or None,
         "spent_by_engine": by_engine or None,
+        "debited": _debited(balances),
         "jobs": {
             "counted": sum(1 for tokens, _ in jobs if tokens is not None),
             # null is a job from before the count; one that spent nothing wrote {}
@@ -59,15 +70,31 @@ def summarize(jobs: list[tuple[dict | None, str]], rows: list[tuple[int | None, 
 _UNJUDGED = object()
 
 
+# a job whose balance was not read on both sides is counted apart, never as a zero debit
+def _debited(balances: list[dict | None]) -> dict | None:
+    out: dict[str, dict] = {}
+    for job in balances:
+        for engine, seen in (job or {}).items():
+            held = out.setdefault(engine, {"debited": 0.0, "unit": seen.get("unit"), "jobs_read": 0, "jobs_unread": 0})
+            try:
+                held["debited"] += float(seen["before"]) - float(seen["after"])
+                held["jobs_read"] += 1
+            except (KeyError, TypeError, ValueError):
+                held["jobs_unread"] += 1
+    for held in out.values():
+        held["debited"] = round(held["debited"], 8)
+    return out or None
+
+
 # a verdict from before the output was counted carries the input alone, and the row is a named gap
 def _judged(metrics: dict | None):
     stamps = [(metrics or {}).get(axis) for axis in AXES]
-    stamps = [s for s in stamps if isinstance(s, dict) and "judge_prompt_tokens" in s]
+    stamps = [s for s in stamps if isinstance(s, dict) and token_fields.JUDGE_PROMPT in s]
     if not stamps:
         return _UNJUDGED
-    if any(s.get("judge_prompt_tokens") is None or s.get("judge_completion_tokens") is None for s in stamps):
+    if any(s.get(token_fields.JUDGE_PROMPT) is None or s.get(token_fields.JUDGE_COMPLETION) is None for s in stamps):
         return None, None
-    return sum(s["judge_prompt_tokens"] for s in stamps), sum(s["judge_completion_tokens"] for s in stamps)
+    return sum(s[token_fields.JUDGE_PROMPT] for s in stamps), sum(s[token_fields.JUDGE_COMPLETION] for s in stamps)
 
 
 def _guested(metrics: dict | None):

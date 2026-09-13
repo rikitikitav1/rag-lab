@@ -126,7 +126,8 @@ def test_the_guest_cap_counts_the_rows_the_pass_will_walk():
     from job_handlers import judging
 
     door = inspect.getsource(eval_mod.enqueue_guest_axes)
-    assert "min(owed, request.sample)" in door, "the door still caps the whole debt"
+    assert "guest_pass_refusal" in door and "request.sample" in door, "the door no longer asks the shared refusal"
+    assert "min(owed, sample)" in inspect.getsource(judging.guest_pass_refusal), "the refusal caps the whole debt"
     assert "MAX_GUEST_ROWS" in inspect.getsource(judging.judge_guest_axes)
 
 

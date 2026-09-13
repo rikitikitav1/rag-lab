@@ -376,5 +376,5 @@ def test_the_door_refuses_question_ids_that_repeat_or_are_not_in_the_stand(clien
     missing = client.post("/v1/eval/run", json={"question_ids": [34, 35, 99]})
     assert missing.status_code == 422 and "1 of 3 question ids are not in the stand: [99]" in missing.json()["detail"]
     repeated = client.post("/v1/eval/run", json={"question_ids": [34, 34]})
-    assert repeated.status_code == 422 and "repeat" in repeated.json()["detail"]
+    assert repeated.status_code == 422 and "question ids repeat: [34]" in str(repeated.json()["detail"])
     assert client.post("/v1/eval/run", json={"question_ids": [34, 35]}).status_code == 200

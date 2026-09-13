@@ -10,12 +10,13 @@ import limits
 import logging_setup
 from evals import compare as compare_uc
 from evals import retrieval_metrics
+from evals.guest_axes import MESSAGE_FORMS
 from evals.pools import Ambiguous
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models import Job
 from models.eval import Question, QuestionLog
-from models.registry import Pipeline, refuse_unknown_registry
+from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, refuse_unknown_registry
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -56,7 +57,8 @@ class GuestAxesRequest(BaseModel):
     # the guests calibrate on a subsample, they are not an axis
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
-    messages: Literal["user_only", "empty_system"] = "user_only"
+    messages: Literal[*MESSAGE_FORMS] = MESSAGE_FORMS[0]
+    guest_model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
 
 
 class JudgeRequest(BaseModel):
@@ -89,7 +91,7 @@ class EvalRunRequest(job_specs.EvalRunFields):
 class ExperimentRequest(BaseModel):
     run_name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
     set_name: str | None = None
-    question_ids: list[int] | None = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
+    question_ids: limits.QuestionIds = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
@@ -335,9 +337,6 @@ async def _question_ids_in(session, ids: list[int]) -> set[int]:
 
 # refused at the door, not an hour in: a run over fewer questions than named reads as the named set
 async def _refuse_missing_questions(session, ids: list[int]) -> None:
-    repeated = sorted({i for i in ids if ids.count(i) > 1})
-    if repeated:
-        raise HTTPException(status_code=422, detail=f"question ids repeat: {repeated[:20]}")
     missing = sorted(set(ids) - await _question_ids_in(session, ids))
     if missing:
         raise HTTPException(
@@ -367,7 +366,7 @@ async def _resume(session, request: EvalRunRequest) -> JobEnqueuedResponse:
     if any(job.status in job_queue.ACTIVE for job in jobs):
         raise HTTPException(status_code=409, detail=f"run {request.run_name} is still queued or running")
     # the worker's own bookkeeping belongs to the attempt that stopped, not to the resumed one
-    options = {k: v for k, v in jobs[0].options.items() if k not in ("attempts", "deferred_seconds")}
+    options = {k: v for k, v in jobs[0].options.items() if k not in job_specs.WORKER_KEYS}
     return await _enqueue(session, "eval_run", {**options, "resume": True})
 
 
@@ -480,31 +479,17 @@ async def enqueue_guest_axes(
     request: GuestAxesRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    from job_handlers.judging import guest_rows_of, guests_available
+    from job_handlers.judging import guest_pass_refusal
 
-    if not guests_available():
-        raise HTTPException(
-            status_code=409,
-            detail="this runtime carries no `ragas`, the guest axes cannot be scored",
-        )
-    # a typo in the name used to be a job over nothing, and no cap stood where `/rejudge` has one
-    owed = await run_in_threadpool(guest_rows_of, request.run_name)
-    if not owed:
-        raise HTTPException(
-            status_code=404, detail=f"run {request.run_name} owes no guest axis"
-        )
-    # the pass walks the drawn subsample, so the cap is read over the same rows the handler counts
-    will_walk = min(owed, request.sample) if request.sample else owed
-    if will_walk > limits.MAX_GUEST_ROWS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{will_walk} rows would be walked, over the cap of {limits.MAX_GUEST_ROWS}",
-        )
+    refused = await run_in_threadpool(guest_pass_refusal, request.run_name, request.sample)
+    if refused:
+        raise HTTPException(status_code=refused[0], detail=refused[1])
     return await _enqueue(
         session,
         "judge_guest_axes",
         {"run_name": request.run_name, "judge_width": request.judge_width,
-         "sample": request.sample, "seed": request.seed, "messages": request.messages},
+         "sample": request.sample, "seed": request.seed, "messages": request.messages,
+         "guest_model": request.guest_model},
     )
 
 

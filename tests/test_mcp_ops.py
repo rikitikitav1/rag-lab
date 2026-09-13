@@ -85,11 +85,16 @@ class _SessionWith:
     def get(self, _model, _id):
         return self._row
 
+    # no guest pass was queued on these arms
+    def execute(self, *_):
+        return type("R", (), {"scalars": lambda self: type("S", (), {"all": lambda self: []})()})()
+
 
 def _experiment():
     from types import SimpleNamespace
 
     return SimpleNamespace(
+        run_names=[],
         id=36, name="judge_clause_language", kind="rejudge", status="concluded",
         conclusion="the clause that works is the one about meaning",
         results={

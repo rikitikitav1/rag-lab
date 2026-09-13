@@ -29,6 +29,7 @@ class JobResponse(BaseModel):
     error: dict | None
     elapsed: float | None
     tokens: dict | None = None
+    balances: dict | None = None
     apply_since: datetime
     created_at: datetime
     updated_at: datetime

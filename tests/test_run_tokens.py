@@ -56,3 +56,13 @@ def test_a_guest_row_is_priced_by_its_own_stamp():
     ragas = run_tokens.summarize([], rows)["per_question"]["ragas"]
     assert (ragas["rows_counted"], ragas["rows_missing"], ragas["prompt"], ragas["completion"]) == (1, 1, 930, 40)
     assert run_tokens.summarize([], [])["spent"] is None
+
+
+def test_debited_is_before_less_after_per_cloud_and_an_unread_job_is_counted_apart():
+    out = run_tokens.summarize([], [], [
+        {"gonka": {"before": 1.5, "after": 1.4, "unit": "usd"}},
+        {"gonka": {"before": None, "after": 1.39, "unit": "usd", "why": "gonka answered http 503"}},
+        None,
+    ])
+    assert out["debited"] == {"gonka": {"debited": 0.1, "unit": "usd", "jobs_read": 1, "jobs_unread": 1}}
+    assert run_tokens.summarize([], [])["debited"] is None

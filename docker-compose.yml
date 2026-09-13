@@ -9,6 +9,9 @@ x-engine-env: &engine-env
   VLLM_RERANK_BASE_URL: ${VLLM_RERANK_BASE_URL:-http://vllm-rerank:8000}
   VLLM_RERANK_API_KEY: ${VLLM_RERANK_API_KEY:-}
   OLLAMA_CPU_BASE_URL: ${OLLAMA_CPU_BASE_URL:-http://ollama-cpu:11434}
+  # for a script on the host through .env; empty here, so the containers keep the in-network defaults
+  POSTGRES_HOST: ""
+  OLLAMA_BASE_URL: ""
   ENGINE_HF_CACHE: /engine_weights
 
 # pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
@@ -101,6 +104,8 @@ services:
     environment:
       <<: *engine-env
       HF_TOKEN: ${HF_TOKEN:-}
+      # as root on the mounted tree, it left bytecode the host could not remove
+      PYTHONDONTWRITEBYTECODE: "1"
     depends_on:
       seed:
         condition: service_completed_successfully
@@ -122,6 +127,8 @@ services:
     build:
       dockerfile: Dockerfile
     command: ["python", "app/seed.py"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
     depends_on:
       dbmate:
         condition: service_completed_successfully

@@ -1,5 +1,6 @@
 import engines
 import job_queue
+import samplers
 from crud import get_or_404
 from engines import answer_parsers, vllm
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -44,6 +45,7 @@ class ModelResponse(BaseModel):
     # one base set behind two rows, which is what a comparison across engines joins on
     weights: str | None = None
     answer_parser: str | None = None
+    options: dict = {}
 
     model_config = {"from_attributes": True}
 
@@ -59,7 +61,19 @@ class ModelResponse(BaseModel):
             size_bytes=model.size_bytes,
             weights=weights,
             answer_parser=model.answer_parser,
+            options=model.options or {},
         )
+
+
+# ollama's num_ctx and vLLM's max-model-len count the output too: a budget the size of the window leaves no input
+def refuse_a_budget_over_the_window(engine_id: int, name: str, options: dict) -> None:
+    budget = (options or {}).get("max_tokens")
+    spec = engines.spec_of_id(engine_id) if budget else None
+    if spec is None:
+        return
+    window = engines.window_or_configured(spec, name)
+    if window is not None and budget >= window:
+        raise ValueError(f"max_tokens {budget} fills the {window}-token window of {name} on {spec.name}: no room for the input")
 
 
 def _refuse_remote(engine: Engine, name: str) -> None:
@@ -266,6 +280,13 @@ class ModelPatchRequest(BaseModel):
 
     # how this model's answers are cut on this engine, one of the parsers the stand has
     answer_parser: str | None = Field(default=None, max_length=100)
+    # the model's own sampler over the role's, whole: `{}` clears it
+    options: dict | None = None
+
+    @field_validator("options")
+    @classmethod
+    def _sampler_keys_only(cls, v: dict | None) -> dict | None:
+        return v if v is None else samplers.check(v)
 
     @field_validator("answer_parser")
     @classmethod
@@ -279,14 +300,20 @@ class ModelPatchRequest(BaseModel):
 async def patch_model(
     id: int, request: ModelPatchRequest, session: AsyncSession = Depends(get_session)
 ):
-    if request.quant is None and request.weights is None and request.answer_parser is None:
-        raise HTTPException(status_code=422, detail="nothing to change: name a quant, weights or answer_parser")
+    if request.quant is None and request.weights is None and request.answer_parser is None and request.options is None:
+        raise HTTPException(status_code=422, detail="nothing to change: name a quant, weights, answer_parser or options")
     model = await get_or_404(Model, id, session)
     engine = await _engine_of(session, model)
     if request.quant is not None:
         model.quant = request.quant
     if request.answer_parser is not None:
         model.answer_parser = request.answer_parser
+    if request.options is not None:
+        try:
+            await run_in_threadpool(refuse_a_budget_over_the_window, model.engine_id, model.name, request.options)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        model.options = request.options
     # a quant-only patch answered `weights: null` for a row that had them
     weights = await session.scalar(select(Weights.name).where(Weights.id == model.weights_id))
     if request.weights is not None:

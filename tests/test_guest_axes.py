@@ -63,7 +63,7 @@ def test_a_row_without_the_material_is_never_owed_the_axis():
 def test_a_guest_that_throws_records_the_try_and_moves_on(monkeypatch):
     from job_handlers import judging
 
-    def boom(axis, ql, messages=None):
+    def boom(axis, ql, messages=None, **kw):
         raise RuntimeError("ragas is not installed here")
 
     monkeypatch.setattr(guest_axes, "score", boom)
@@ -80,7 +80,7 @@ def test_a_lost_card_on_a_guest_ends_the_pass_and_writes_no_error_into_the_row(m
     from engines.card import CardNotHanded
     from job_handlers import judging
 
-    def lost(axis, ql, messages=None):
+    def lost(axis, ql, messages=None, **kw):
         raise CardNotHanded("ollama did not let go of the card in 60s")
 
     monkeypatch.setattr(guest_axes, "score", lost)
@@ -95,7 +95,7 @@ def test_a_guest_stops_being_tried_after_the_same_cap_our_axes_have(monkeypatch)
     from job_handlers import judging
 
     tried = []
-    monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None: tried.append(axis) or {})
+    monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None, **kw: tried.append(axis) or {})
     ql = _row(metrics={axis: {"attempts": judging._MAX_JUDGE_ATTEMPTS} for axis in guest_axes.NAMES})
     monkeypatch.setattr(judging, "Session", _session_of(ql))
     judging._score_guests(1, {})
@@ -124,18 +124,17 @@ def test_a_guest_pass_that_cannot_score_says_so_instead_of_walking(monkeypatch):
     from job_handlers import judging
 
     monkeypatch.setattr(judging, "guests_available", lambda: False)
-    with pytest.raises(ValueError, match="ragas"):
+    with pytest.raises(judging.Final, match="ragas"):
         judging.judge_guest_axes({"run_name": "r"})
 
 
 def test_a_guest_number_says_at_which_width_and_on_what_card_it_was_taken(monkeypatch):
     from job_handlers import judging
 
-    monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None: {"score": 1.0, "abstained": False})
-    monkeypatch.setattr(judging, "judge_on_card", lambda *a, **kw: False)
+    monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None, **kw: {"score": 1.0, "abstained": False})
     ql = _row()
     monkeypatch.setattr(judging, "Session", _session_of(ql))
-    judging._score_guests(1, {"seed": 0, "width": 4})
+    judging._score_guests(1, {"seed": 0, "width": 4}, on_card=False)
     written = ql.metrics["ragas_faithfulness"]
     assert written["width"] == 4 and written["seed"] == 0 and written["score"] == 1.0
     assert written["on_card_at_this_row"] is False, "the row's own reading, beside the pass's"
@@ -615,18 +614,75 @@ def test_the_old_ruler_stays_callable_for_a_bridge_and_says_so_in_the_stamp(monk
         job_specs.JudgeGuestAxes(run_name="r", messages="bogus")
 
 
-def test_a_guest_model_half_on_the_processor_stops_the_pass_instead_of_scoring(monkeypatch):
-    # gemma2:9b scored an axis at 15% on the processor, and the row only wrote `false` beside the score
+
+def test_a_guest_bench_is_its_own_client_and_its_own_stamp(monkeypatch):
+    # the metric was cached per axis alone, so a second pass with another model scored with the first client
+    from evals import guest_llm
+
+    one = guest_axes._metric("ragas_faithfulness", "user_only", "qwen2.5:7b")
+    other = guest_axes._metric("ragas_faithfulness", "user_only", "deepseek-ai/DeepSeek-V4-Flash-0731")
+    assert one is not other and (one.llm.model, other.llm.model) == ("qwen2.5:7b", "deepseek-ai/DeepSeek-V4-Flash-0731")
+    asked = []
+    monkeypatch.setattr(guest_llm.llm, "resolve_for", lambda role, model=None: asked.append(model)
+                        or engines.Resolved(model or "q:7b", stub_engine()))
+    monkeypatch.setattr(guest_llm.llm, "resolve_name", lambda role: "bge-m3")
+    monkeypatch.setattr(guest_llm.llm, "resolve", lambda role: engines.Resolved("bge-m3", stub_engine()))
+    monkeypatch.setattr(guest_llm.llm, "sampler_of", lambda role, spec=None: {})
+    assert guest_llm.stamp("user_only", "m2")["model"] == "m2" and asked == ["m2"]
+
+
+def test_a_second_guest_model_on_one_run_is_refused(monkeypatch):
+    # a run scored by two guests is two rulers in one record; a copy through a rejudge arm is the way
     import pytest
-    from engines.card import CardNotHanded
     from job_handlers import judging
 
-    asked = []
-    monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None: asked.append(axis) or {})
-    monkeypatch.setattr(judging, "judge_on_card", lambda *a, **kw: False)
-    monkeypatch.setattr(judging, "_guest_seat_on_the_card", lambda: True)
-    ql = _row()
-    monkeypatch.setattr(judging, "Session", _session_of(ql))
-    with pytest.raises(CardNotHanded, match="not whole on the card"):
-        judging._score_guests(1, {})
-    assert asked == [] and not any(k.startswith("ragas_") for k in ql.metrics)
+    width = 2 * len(guest_axes.NAMES)
+    rows = [("qwen2.5:7b", "ollama") * len(guest_axes.NAMES), (None,) * width]
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, *_):
+            return SimpleNamespace(all=lambda: rows)
+
+    monkeypatch.setattr(judging, "Session", _Session)
+    monkeypatch.setattr(judging.llm, "resolve_for", lambda role, model=None: engines.Resolved(
+        model or "qwen2.5:7b", SimpleNamespace(name="gonka" if model else "ollama")))
+    judging._refuse_a_second_guest("r", None)
+    with pytest.raises(judging.Final, match="qwen2.5:7b@ollama"):
+        judging._refuse_a_second_guest("r", "deepseek-ai/DeepSeek-V4-Flash-0731")
+
+
+def test_a_rejudge_arm_may_name_the_guest_s_model_and_queues_its_pass():
+    import job_specs
+    from use_cases import rejudge
+
+    rejudge.validate_axes({"repeat": [1, 2], "guest_model": ["deepseek-ai/DeepSeek-V4-Flash-0731"]})
+    arm = {"repeat": 1, "guest_model": "deepseek-ai/DeepSeek-V4-Flash-0731"}
+    assert "guest_model" not in rejudge._prompt_axes(arm)
+    assert rejudge.guest_options(arm, "copy") == {"run_name": "copy", "guest_model": arm["guest_model"]}
+    assert rejudge.guest_options({"repeat": 1}, "copy") is None
+    assert job_specs.JudgeGuestAxes(**rejudge.guest_options(arm, "copy")).guest_model == arm["guest_model"]
+    # the override map reads the guest's key for the guest's role, not the generator's `model`
+    assert job_specs.MODEL_OVERRIDES["ragas"] == "guest_model"
+
+
+def test_a_guest_pass_is_refused_before_the_queue_at_both_doors(monkeypatch):
+    # an experiment's arm queued its guest past every check the guest's own door makes
+    import inspect
+
+    import limits
+    from api.v1 import experiment
+    from job_handlers import judging
+
+    monkeypatch.setattr(judging, "guests_available", lambda: True)
+    monkeypatch.setattr(judging, "guest_rows_of", lambda run_name: 0)
+    assert judging.guest_pass_refusal("r")[0] == 404
+    monkeypatch.setattr(judging, "guest_rows_of", lambda run_name: limits.MAX_GUEST_ROWS + 1)
+    assert judging.guest_pass_refusal("r")[0] == 400
+    assert judging.guest_pass_refusal("r", sample=50) is None
+    assert "guest_pass_refusal" in inspect.getsource(experiment._queue_arm)

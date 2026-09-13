@@ -1,4 +1,9 @@
+import sys
+
 import pytest
+
+# the stand imports this tree, and a host-written .pyc of the same length once outlived a revert
+sys.dont_write_bytecode = True
 
 
 @pytest.fixture

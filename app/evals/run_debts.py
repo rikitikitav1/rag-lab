@@ -14,6 +14,7 @@ from evals import guest_axes
 from evals.replay import REPLAYABLE_ARMS
 from models.eval import Question, QuestionLog
 from orm.sync_db import Session
+from redaction import redact
 from sqlalchemy import and_, func, not_, or_, select
 
 log = logging_setup.get_logger(__name__)
@@ -163,4 +164,4 @@ def safely(run_name: str) -> dict:
         return of(run_name)
     except Exception as e:
         log.error("run_debts.unavailable", run_name=run_name, error=str(e))
-        return {"unavailable": f"{type(e).__name__}: {e}"}
+        return {"unavailable": f"{type(e).__name__}: {redact(str(e))}"}

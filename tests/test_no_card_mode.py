@@ -199,6 +199,25 @@ def _compose(name: str) -> dict:
     return yaml.load((ROOT / name).read_text(), Loader=Loader)
 
 
+def test_a_env_filled_for_a_host_script_cannot_move_the_containers():
+    # POSTGRES_HOST=localhost written as .env.example says would have sent three services to themselves
+    main = _compose("docker-compose.yml")["services"]
+    reading = {name for name, svc in main.items() if svc.get("env_file")}
+    assert {"rag-lab", "bootstrap", "worker"} <= reading
+    for name in reading:
+        env = main[name].get("environment") or {}
+        assert env.get("POSTGRES_HOST") == "" and env.get("OLLAMA_BASE_URL") == "", name
+
+
+def test_every_service_that_mounts_the_tree_writes_no_bytecode():
+    # the bootstrap ran as root on the mounted tree and left bytecode the host could not remove
+    main = _compose("docker-compose.yml")["services"]
+    mounting = {name for name, svc in main.items() if any(str(v).startswith(".:") for v in svc.get("volumes") or [])}
+    assert {"bootstrap", "seed", "worker"} <= mounting
+    for name in mounting:
+        assert (main[name].get("environment") or {}).get("PYTHONDONTWRITEBYTECODE") == "1", name
+
+
 def test_every_service_that_reserves_the_card_is_let_go_by_the_no_card_layer():
     # a new service with the card's reservation and no line in the layer would break `up.sh --cpu`
     main = _compose("docker-compose.yml")["services"]

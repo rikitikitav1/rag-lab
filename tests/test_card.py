@@ -442,7 +442,7 @@ def test_the_run_snapshot_stamps_each_answering_role_placement(monkeypatch):
     assert placed == {Role.generation: False, Role.embedding: True}
     assert parsers == {Role.generation: "none@1", Role.embedding: "none@1"}
     assert cache_keys == {}, "a local engine keeps no broker cache"
-    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 11
+    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 12
 
 
 def test_a_run_that_reranks_names_the_reranker_and_keeps_what_was_read_while_roles_worked(monkeypatch):

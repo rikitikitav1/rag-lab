@@ -42,10 +42,8 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
         "its rows cannot owe it: per guest axis the rows owed, scored and abstained, "
         "which of question_text/answer/contexts/reference the others lack, the seconds "
         "one row of this run costs on that axis, and what finishing the debt would cost. "
-        "Read debts before spending a judge or a guest pass on a run. tokens says what the run "
-        "cost: spent is the sum over the run's jobs per role, engine and model, retries included, "
-        "and is what a broker's quota sees; per_question is the price of one row per role, from "
-        "the rows, with the rows that carry no count named rather than read as zero."
+        "Read debts before spending a judge or a guest pass on a run. tokens says what the run cost: "
+        + run_tokens.READS + "."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -289,6 +287,17 @@ def experiment_results(
             "conclusion": exp.conclusion,
             **{k: v for k, v in read.items() if k != "deltas"},
         }
+        guests = session.execute(
+            select(Job.status).where(
+                Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])
+            )
+        ).scalars().all()
+        if guests:
+            out["guest_passes"] = {
+                "done": sum(1 for status in guests if status == JobStatus.done), "of": len(guests),
+                "reads": "guest numbers are read per question_id, not compared here; "
+                         "run_metrics debts.guests says what a copy still owes",
+            }
         deltas = read["deltas"]
         if pair is not None:
             if pair not in deltas:
@@ -367,6 +376,8 @@ def list_jobs(
                 "elapsed": j.elapsed,
                 # per role, per engine and model; null for a job from before the count
                 "tokens": j.tokens,
+                # per cloud, the broker's balance before and after; null for a job that called no cloud
+                "balances": j.balances,
             }
             for j in session.scalars(stmt)
         ]

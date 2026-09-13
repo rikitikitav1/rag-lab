@@ -114,8 +114,8 @@ def test_todays_engine_carries_the_whole_sampler():
 
 def test_a_name_on_two_engines_refuses_instead_of_picking_one(monkeypatch):
     _rows_are(monkeypatch, [
-        ("none", 1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
-        ("none", 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu),
+        ("none", {}, 1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
+        ("none", {}, 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu),
     ])
     with pytest.raises(engines.Ambiguous, match="ollama, vllm"):
         engines.find_model("qwen2.5:7b")
@@ -123,7 +123,7 @@ def test_a_name_on_two_engines_refuses_instead_of_picking_one(monkeypatch):
 
 def test_a_name_on_one_engine_takes_that_engine(monkeypatch):
     # the row's parser comes first and rides along, so every call cuts the answer the row's way
-    _rows_are(monkeypatch, [("think_tags", 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)])
+    _rows_are(monkeypatch, [("think_tags", {}, 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)])
     found = engines.find_model("qwen2.5:7b")
     assert (found.engine.name, found.parser) == ("vllm", "think_tags")
 
@@ -209,6 +209,7 @@ def test_a_name_on_two_engines_is_taken_from_the_role_s_engine_or_refused(monkey
             pytest.fail("an ambiguous name is never registered again")
 
     monkeypatch.setattr(engines, "find_model", find)
+    monkeypatch.setattr(engines.lookup, "find_model", find)
     monkeypatch.setattr(llm, "resolve", lambda role: engines.Resolved(
         "m", {"generation": OLLAMA, "judging": VLLM}[role]))
     monkeypatch.setattr(base, "Session", _Session)
@@ -297,7 +298,7 @@ def test_an_override_naming_a_model_on_two_engines_takes_the_role_own_engine(mon
             raise engines.Ambiguous("two engines")
         return engines.Resolved(name, SECOND)
 
-    monkeypatch.setattr(llm.engines, "find_model", _one)
+    monkeypatch.setattr(llm.engines.lookup, "find_model", _one)
     picked = llm.resolve_for("judging", "qwen2.5:7b")
 
     # the second ask names the role's engine, and its answer is what the pass must use

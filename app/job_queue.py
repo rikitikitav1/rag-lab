@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import job_specs
 import logging_setup
+import token_fields
 from models import Job, JobStatus
 from orm.sync_db import Session
 from sqlalchemy import case, func, select, text
@@ -155,6 +156,30 @@ def add_tokens(id: int, record: dict | None) -> None:
         session.commit()
 
 
+def add_balances(id: int, before: dict, after: dict) -> None:
+    with Session() as session:
+        job = session.get(Job, id)
+        if job is None:
+            return
+        job.balances = merged_balances(job.balances, before, after)
+        session.commit()
+
+
+# the first attempt's before and the last one's after: what the whole job took off the key, retries included
+def merged_balances(was: dict | None, before: dict, after: dict) -> dict:
+    out = {name: dict(entry) for name, entry in (was or {}).items()}
+    for name, seen in after.items():
+        held = out.setdefault(name, {})
+        why = None
+        if "before" not in held:
+            start = before.get(name)
+            held.update(before=(start or {}).get("balance"), before_at=(start or {}).get("read_at"))
+            why = start.get("why") if start else "not read before the attempt"
+        held.update(after=seen.get("balance"), after_at=seen.get("read_at"), unit=seen.get("unit") or held.get("unit"))
+        held["why"] = seen.get("why") or why or held.get("why")
+    return out
+
+
 def merged_tokens(was: dict | None, more: dict) -> dict:
     out = {role: [dict(entry) for entry in entries] for role, entries in (was or {}).items()}
     for role, entries in more.items():
@@ -164,11 +189,12 @@ def merged_tokens(was: dict | None, more: dict) -> dict:
             if same is None:
                 held.append(dict(entry))
                 continue
-            for key in ("prompt", "completion", "calls", "uncounted", "cut_by_length"):
+            for key in token_fields.SUMMED:
                 if key in entry or key in same:
                     same[key] = same.get(key, 0) + entry.get(key, 0)
-            if "max_prompt" in entry or "max_prompt" in same:
-                same["max_prompt"] = max(same.get("max_prompt", 0), entry.get("max_prompt", 0))
+            for key in token_fields.MAXED:
+                if key in entry or key in same:
+                    same[key] = max(same.get(key, 0), entry.get(key, 0))
     return out
 
 
@@ -237,6 +263,8 @@ def cancel(ids: list[int]) -> list[int]:
             if j.type in EXPERIMENT_JOBS and (j.options or {}).get("run_name")
         ]
         for job in jobs:
+            if job.status == JobStatus.new and job.tokens is None:
+                job.tokens = {}
             job.status = JobStatus.cancelled
         session.commit()
     # after the commit: an experiment waiting on a cancelled arm waits for ever

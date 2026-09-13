@@ -7,6 +7,7 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
+import token_fields
 from engines import answer_parsers
 from errors import StandFault
 from langgraph.graph import END, StateGraph
@@ -123,7 +124,7 @@ def model_node(state: State, config) -> dict:
     update["messages"] = [turn.message or {"role": "assistant", "content": turn.text or ""}]
     update["text"] = turn.text or ""
     update["finished"] = True
-    if turn.finish_reason == "length":
+    if token_fields.cut(turn.finish_reason):
         log.warning("graph.truncated", hops=hop)
     return update
 
@@ -316,7 +317,7 @@ def final_node(state: State, config) -> dict:
         max_prompt_tokens=final.prompt_tokens,
         text=final.text or "",
     )
-    if final.finish_reason == "length":
+    if token_fields.cut(final.finish_reason):
         log.warning("graph.truncated", hops=state["hops"] + 1)
     return update
 
