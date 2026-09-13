@@ -4,13 +4,14 @@ from enum import StrEnum
 from urllib.parse import urlsplit
 
 import config
+import samplers
 from models.registry import EngineKind, Placement
 from openai import OpenAI
 from redaction import redact
 
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 
-SAMPLER_KEYS = ("temperature", "max_tokens", "seed")
+SAMPLER_KEYS = samplers.KEYS
 
 # full in every row today, so nothing is dropped: a real limit belongs to an engine, not a kind
 ACCEPTS = {
@@ -93,6 +94,11 @@ def base_url(spec: EngineSpec) -> str:
     return _refuse_unusable(spec, seen)
 
 
+# a broker, not a server of ours: the one kind that bills, caches and keeps no residency
+def is_cloud(kind: EngineKind) -> bool:
+    return kind is EngineKind.openai_compatible
+
+
 # a scheme we do not speak, or a key smuggled in the address, is a refusal before the first call
 def _refuse_unusable(spec: EngineSpec, address: str) -> str:
     seen = urlsplit(address)
@@ -100,6 +106,8 @@ def _refuse_unusable(spec: EngineSpec, address: str) -> str:
         raise Unconfigured(f"engine {spec.name}: address is not an http url")
     if seen.username or seen.password:
         raise Unconfigured(f"engine {spec.name}: address carries credentials")
+    if spec.placement is Placement.remote and seen.scheme != "https":
+        raise Unconfigured(f"engine {spec.name}: a remote engine takes https, or its key travels in the clear")
     if redact(address) != address:
         raise Unconfigured(f"engine {spec.name}: address carries a key; put it in {spec.env_prefix}_API_KEY")
     return address
@@ -115,7 +123,7 @@ def api_key(spec: EngineSpec) -> str:
     seen = os.getenv(f"{spec.env_prefix}_API_KEY")
     if seen:
         return seen
-    if spec.kind is EngineKind.openai_compatible:
+    if is_cloud(spec.kind):
         raise Unconfigured(f"engine {spec.name}: key is not configured")
     # deliberately the kind's name: a local server ignores it, and changing it would move the wire
     return spec.kind.value
@@ -135,7 +143,7 @@ CLOUD_RETRIES = 4
 
 
 def _retries(spec: EngineSpec) -> int:
-    return CLOUD_RETRIES if spec.kind is EngineKind.openai_compatible else 1
+    return CLOUD_RETRIES if is_cloud(spec.kind) else 1
 
 
 def client_for(spec: EngineSpec) -> OpenAI:

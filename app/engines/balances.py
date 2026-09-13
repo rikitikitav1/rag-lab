@@ -1,3 +1,4 @@
+import time
 from datetime import UTC, datetime
 
 import requests
@@ -18,7 +19,9 @@ def _gonka_key(spec: EngineSpec) -> dict:
 
 
 # each broker shapes its service route its own way, so the row names a reader and the code keeps it
-READERS = {"none": None, "gonka_key": _gonka_key}
+NO_READER = "none"
+GONKA = "gonka_key"
+READERS = {NO_READER: None, GONKA: _gonka_key}
 
 
 def refuse_unknown(name: str) -> None:
@@ -38,16 +41,36 @@ def read(spec: EngineSpec, reader: str) -> dict:
         return {**out, "why": str(e)}
     except requests.HTTPError as e:
         return {**out, "why": f"{spec.name} answered http {e.response.status_code}"}
-    except (requests.RequestException, KeyError, ValueError) as e:
+    except Exception as e:
         return {**out, "why": f"{spec.name} did not say its balance: {type(e).__name__}"}
 
 
 # only a cloud has a broker with a quota to ask
-def summary() -> list[dict]:
+def _clouds() -> list[tuple[EngineSpec, str]]:
     with Session() as session:
         rows = session.execute(
             select(*COLUMNS, Engine.balance_reader)
             .where(Engine.kind == EngineKind.openai_compatible)
             .order_by(Engine.id)
         ).all()
-    return [read(EngineSpec(*row[:-1]), row[-1]) for row in rows]
+    return [(EngineSpec(*row[:-1]), row[-1]) for row in rows]
+
+
+_HELD: dict[int, tuple[float, dict]] = {}
+HELD_SECONDS = 10
+
+
+# the door's answer is held a few seconds: a loop on it spent the rate limit a running job needs
+def summary() -> list[dict]:
+    now, out = time.monotonic(), []
+    for spec, reader in _clouds():
+        held = _HELD.get(spec.id)
+        if held is None or now - held[0] > HELD_SECONDS:
+            held = _HELD[spec.id] = (now, read(spec, reader))
+        out.append(held[1])
+    return out
+
+
+# every cloud that can say its balance, not the job's roles: a map of roles drifts and a new override goes unread
+def readable() -> list[tuple[EngineSpec, str]]:
+    return [(spec, reader) for spec, reader in _clouds() if READERS.get(reader) is not None]

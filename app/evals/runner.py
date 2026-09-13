@@ -7,18 +7,20 @@ import config
 import job_queue
 import llm
 import logging_setup
+import passes
 import rerank
 from engines import card
 from errors import StandFault
 from models.eval import Question, QuestionLog
 from models.registry import Pipeline, Role
 from orm.sync_db import Session
+from outcomes import Outcome
+from passes import Pass, Seat
 from sqlalchemy import delete, func, select
 from use_cases import agent, chat, run_snapshot, search_depth
 
 # the same resolver every other caller asks: a default is one default only if one decides
 from use_cases.chat import resolve_rerank
-from use_cases.run_snapshot import ANSWERING
 
 import db
 
@@ -70,9 +72,10 @@ class RunSpec:
     orchestrator: str | None = None
 
 
-def _answer_one(text: str, run_name: str, spec: RunSpec) -> None:
+# answered is a row that answered: the agent writes a row for a hop that failed and returns normally
+def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
     if spec.pipeline == Pipeline.agent:
-        agent.run(
+        result = agent.run(
             text,
             run_name=run_name,
             language=spec.language,
@@ -88,7 +91,8 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> None:
             orchestrator=spec.orchestrator,
             variant=spec.variant,
         )
-    elif spec.pipeline == Pipeline.single_shot:
+        return not result.failed and result.outcome != Outcome.error
+    if spec.pipeline == Pipeline.single_shot:
         chat.answer(
             text,
             add_context=True,
@@ -99,8 +103,8 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> None:
             model=spec.model,
             variant=spec.variant,
         )
-    else:
-        raise ValueError(f"unknown pipeline: {spec.pipeline}")
+        return True
+    raise ValueError(f"unknown pipeline: {spec.pipeline}")
 
 
 # the role names a model and the model names its engine: releasing the card asks that engine
@@ -113,38 +117,30 @@ def _release(role: str, model: str | None = None) -> None:
     card.release_model(picked.engine, picked.name)
 
 
-# asked after a role's first call: before it ollama has not loaded, and a spill is not there to see
+# the pass's own spill rule, asked where a phase ends: a batch of vectors has no rows to stop between
 def _refuse_a_cpu_run(roles: tuple[Role, ...], allow_cpu: bool, model: str | None) -> None:
-    picked = {role: run_snapshot.model_of(role, model) for role in roles}
-    off_card = [f"{role}={p.name}" for role, p in picked.items() if card.spilled(p.engine, p.name)]
-    if off_card and not allow_cpu:
-        raise RuntimeError(
-            f"models are not on the GPU: {', '.join(off_card)}."
-            " Pass allow_cpu if this run is meant to measure the CPU"
-        )
-    if off_card:
-        log.warning("eval_run.cpu_allowed", models=off_card)
+    passes.refuse_spill([Seat(role, model if role == Role.generation else None) for role in roles], allow_cpu)
 
 
 def _run_sequential(
     texts: list[str], run_name: str, spec: RunSpec, *, job_id: int | None, allow_cpu: bool
 ) -> tuple[int, bool]:
     answered = 0
+    # the generator took the card at the door; the embedder loads on the first search, so a row later
+    walk = Pass(job_id, (Seat(Role.generation, spec.model), Seat(Role.embedding, spill_from=1)),
+                allow_spill=allow_cpu)
     # without giving the card back, arm two loads its generator beside arm one's
     try:
         for text in texts:
-            if job_id is not None and job_queue.is_cancelled(job_id):
+            if not walk.before_row():
                 return answered, True
-            # a spill shows once roles answered; an agent reply without a search loaded no embedder
-            if answered == 1:
-                _refuse_a_cpu_run(ANSWERING, allow_cpu, spec.model)
             try:
-                _answer_one(text, run_name, spec)
-                answered += 1
+                answered += _answer_one(text, run_name, spec)
             except StandFault:
                 raise
             except Exception as e:
                 log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
+        walk.close(owed=len(texts), done=answered, nothing=NoAnswers)
         return answered, False
     finally:
         _free_the_card(spec.model)
@@ -211,15 +207,14 @@ def _phase_generate(
     run_name: str,
     spec: RunSpec,
     *,
-    job_id: int | None = None,
-    allow_cpu: bool = False,
+    walk: Pass,
     rerank_device: str | None = None,
     ef_search: int | None = None,
     placed_during: dict | None = None,
 ) -> tuple[int, bool]:
     answered = 0
     for text, rows, rerank_scores in retrieved:
-        if job_id is not None and job_queue.is_cancelled(job_id):
+        if not walk.before_row():
             return answered, True
         try:
             chat.answer_from_rows(
@@ -243,9 +238,6 @@ def _phase_generate(
             raise
         except Exception as e:
             log.error("eval_run.answer_failed", run_name=run_name, error=str(e))
-        # outside the try: a guard whose refusal the loop swallows is not a guard
-        if answered == 1:
-            _refuse_a_cpu_run((Role.generation,), allow_cpu, spec.model)
     return answered, False
 
 
@@ -270,6 +262,8 @@ def _phased(
     texts: list[str], run_name: str, spec: RunSpec, *, job_id: int | None, allow_cpu: bool
 ) -> tuple[int, bool]:
     rerank_device = None
+    # the embedder was given back after retrieval, and the generator loads on its first answer
+    walk = Pass(job_id, (Seat(Role.generation, spec.model, spill_from=1),), allow_spill=allow_cpu)
     started = time.perf_counter()
     retrieved, ef_search = _phase_retrieve(texts, spec)
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
@@ -283,7 +277,7 @@ def _phased(
     # retrieval is over, and its model is 1.2 GiB the generator wants on a card that holds 8
     _release("embedding")
 
-    if job_id is not None and job_queue.is_cancelled(job_id):
+    if walk.cancelled():
         return 0, True
 
     if spec.use_rerank:
@@ -295,14 +289,16 @@ def _phased(
         rerank_device = rerank.device()
         placed_during["reranking"] = run_snapshot.placed("reranking")
 
-        if job_id is not None and job_queue.is_cancelled(job_id):
+        if walk.cancelled():
             return 0, True
 
     started = time.perf_counter()
     answered, cancelled = _phase_generate(
-        retrieved, run_name, spec, job_id=job_id, allow_cpu=allow_cpu,
+        retrieved, run_name, spec, walk=walk,
         rerank_device=rerank_device, ef_search=ef_search, placed_during=placed_during,
     )
+    if not cancelled:
+        walk.close(owed=len(texts), done=answered, nothing=NoAnswers)
     log.info("eval_run.phase", name="generate", n=answered,
              elapsed=round(time.perf_counter() - started, 1))
     return answered, cancelled
@@ -313,20 +309,44 @@ def _walks_the_index(variant: str, depth: int) -> bool:
         return search_depth.uses_index(conn, variant, depth)
 
 
-class NoAnswers(StandFault):
+# the runner's exit guard is the pass's own, named for what a run owes
+class NoAnswers(passes.NothingDone):
     pass
 
 
 # a row that is not an error answered its question; an error row is replaced, and the new one says so
 def _split_answered(texts: list[str], rows: list[tuple]) -> tuple[list[str], dict[str, dict]]:
-    answered = {text for _, text, metrics in rows if (metrics or {}).get("outcome") != "error"}
-    replaced: dict[str, dict] = {}
+    answered = _answered(rows)
+    return [t for t in texts if t not in answered], _errors_of(rows, {text for _, text, _ in rows} - answered)
+
+
+def _answered(rows: list[tuple]) -> set[str]:
+    return {text for _, text, metrics in rows if (metrics or {}).get("outcome") != "error"}
+
+
+def _errors_of(rows: list[tuple], texts: set[str]) -> dict[str, dict]:
+    held: dict[str, dict] = {}
     for log_id, text, metrics in rows:
-        if text not in answered:
-            held = replaced.setdefault(text, {"log_ids": [], "outcome": "error", "failed": None})
-            held["log_ids"].append(log_id)
-            held["failed"] = (metrics or {}).get("failed") or held["failed"]
-    return [t for t in texts if t not in answered], replaced
+        if text in texts and (metrics or {}).get("outcome") == "error":
+            one = held.setdefault(text, {"log_ids": [], "outcome": "error", "failed": None})
+            one["log_ids"].append(log_id)
+            one["failed"] = (metrics or {}).get("failed") or one["failed"]
+    return held
+
+
+# a worker that died mid-resume left the question answered and its error rows in place
+def _settle_left_behind(session, run_name: str, left: dict[str, dict]) -> None:
+    rows = session.execute(
+        select(QuestionLog, Question.original_text)
+        .join(Question, Question.id == QuestionLog.question_id)
+        .where(QuestionLog.run_name == run_name, Question.original_text.in_(list(left)))
+    ).all()
+    for ql, text in rows:
+        if (ql.metrics or {}).get("outcome") != "error":
+            ql.metrics = {**(ql.metrics or {}), "resumed": True, "resumed_from": left[text]}
+    session.execute(delete(QuestionLog).where(QuestionLog.id.in_([i for one in left.values() for i in one["log_ids"]])))
+    session.commit()
+    log.warning("eval_run.settled_left_behind", run_name=run_name, questions=len(left))
 
 
 # one row per question stays true: `requeued_stale` duplicates are caught by that count
@@ -338,16 +358,16 @@ def _still_to_answer(run_name: str, texts: list[str]):
             .join(Question, Question.id == QuestionLog.question_id)
             .where(QuestionLog.run_name == run_name)
         ).all()
-        todo, replaced = _split_answered(texts, [tuple(r) for r in rows])
-        gone = [log_id for held in replaced.values() for log_id in held["log_ids"]]
-        if gone:
-            session.execute(delete(QuestionLog).where(QuestionLog.id.in_(gone)))
-            session.commit()
-    log.info("eval_run.resumed", run_name=run_name, still_to_answer=len(todo), of=len(texts), replaced=len(gone))
+        rows = [tuple(r) for r in rows]
+        todo, replaced = _split_answered(texts, rows)
+        left = _errors_of(rows, _answered(rows))
+        if left:
+            _settle_left_behind(session, run_name, left)
+    log.info("eval_run.resumed", run_name=run_name, still_to_answer=len(todo), of=len(texts), to_replace=len(replaced))
     return todo, replaced, since
 
 
-# the rows a resumed run wrote say so, and one that replaced an error row keeps what it replaced
+# only a question that got a new row is marked and loses its error rows: a resume stopped again keeps the rest
 def _mark_resumed(run_name: str, texts: list[str], *, replaced: dict[str, dict], since) -> None:
     if not texts:
         return
@@ -366,13 +386,10 @@ def _mark_resumed(run_name: str, texts: list[str], *, replaced: dict[str, dict],
                 **(ql.metrics or {}), "resumed": True,
                 **({"resumed_from": replaced[text]} if text in replaced else {}),
             }
+        gone = [log_id for text in {text for _, text in rows} & set(replaced) for log_id in replaced[text]["log_ids"]]
+        if gone:
+            session.execute(delete(QuestionLog).where(QuestionLog.id.in_(gone)))
         session.commit()
-
-
-# a broker down for the whole run left no row, and the job still read done
-def _refuse_a_run_that_answered_nothing(run_name: str, *, answered: int, total: int, cancelled: bool) -> None:
-    if total and not answered and not cancelled:
-        raise NoAnswers(f"{run_name}: 0 of {total} questions answered; each row's error is in the worker log")
 
 
 def run(
@@ -438,17 +455,28 @@ def run(
         orchestrator=orchestrator,
     )
 
-    if phased and pipeline == Pipeline.single_shot:
-        answered, cancelled = run_phased(
-            texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
-        )
-    else:
-        answered, cancelled = _run_sequential(
-            texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
-        )
+    try:
+        if phased and pipeline == Pipeline.single_shot:
+            answered, cancelled = run_phased(
+                texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
+            )
+        else:
+            answered, cancelled = _run_sequential(
+                texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
+            )
+    except BaseException:
+        # a resume is stopped again for the reasons it is resumed, and what it wrote by then still says so
+        if resume:
+            try:
+                _mark_resumed(run_name, texts, replaced=replaced, since=since)
+            except StandFault:
+                raise
+            except Exception as e:
+                # the stop is what the caller must see, not a mark that failed on its way out
+                log.error("eval_run.mark_failed", run_name=run_name, error=str(e))
+        raise
     if resume:
         _mark_resumed(run_name, texts, replaced=replaced, since=since)
-    _refuse_a_run_that_answered_nothing(run_name, answered=answered, total=len(texts), cancelled=cancelled)
     if not cancelled:
         job_queue.enqueue("judge_answers", {"run_name": run_name})
     log.info(

@@ -62,8 +62,8 @@ def test_a_quota_or_a_rate_limit_stops_the_run(monkeypatch, status):
 
 
 @pytest.mark.parametrize("status", [500, 502, 503])
-def test_a_server_that_says_it_is_broken_stops_the_run_on_any_engine(monkeypatch, status):
-    # a 502 from the broker was forgiven row by row, and the run read done with no answer at all
+def test_a_broker_that_says_it_is_broken_stops_the_run_and_a_local_server_fails_one_row(monkeypatch, status):
+    # a 502 from the broker was forgiven row by row; ollama's 500 on one broken tool call is that row's alone
     import llm
 
     request = httpx.Request("POST", "https://b.example/v1/chat/completions")
@@ -78,21 +78,25 @@ def test_a_server_that_says_it_is_broken_stops_the_run_on_any_engine(monkeypatch
     local = engines.EngineSpec(2, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
     monkeypatch.setattr(llm.engines, "client_for", lambda spec: chat)
     with pytest.raises(llm.ServerFailed, match=f"http {status}") as caught:
-        llm._complete(local, "m", [], {})
+        llm._complete(CLOUD, "m", [], {})
     assert isinstance(caught.value, StandFault)
+    with pytest.raises(RuntimeError) as caught:
+        llm._complete(local, "m", [], {})
+    assert not isinstance(caught.value, StandFault)
     monkeypatch.setattr(llm.engines, "client_for", lambda spec: embed)
     with pytest.raises(llm.ServerFailed):
         llm._embeddings(engines.Resolved("m", CLOUD), ["a"], "embedding")
 
 
 def test_a_run_that_answered_nothing_stops_for_good_and_is_not_answered_again(monkeypatch):
+    import passes
     from evals import runner
     from job_handlers import base, evaluation
 
+    walk = passes.Pass(None, ())
     with pytest.raises(runner.NoAnswers, match="0 of 3"):
-        runner._refuse_a_run_that_answered_nothing("r", answered=0, total=3, cancelled=False)
-    runner._refuse_a_run_that_answered_nothing("r", answered=0, total=3, cancelled=True)
-    runner._refuse_a_run_that_answered_nothing("r", answered=1, total=3, cancelled=False)
+        walk.close(owed=3, done=0, nothing=runner.NoAnswers)
+    walk.close(owed=3, done=1, nothing=runner.NoAnswers)
 
     def stopped(**kw):
         raise runner.NoAnswers("r: 0 of 3 questions answered")
@@ -103,3 +107,23 @@ def test_a_run_that_answered_nothing_stops_for_good_and_is_not_answered_again(mo
     # the worker retries anything but Final, and a retry answers every question again
     with pytest.raises(base.Final, match="0 of 3"):
         evaluation.eval_run({"run_name": "r"})
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_refused_key_stops_the_run_instead_of_failing_every_row(monkeypatch, status):
+    # a key revoked mid-run failed each row alone, and on the agent path the run read done
+    import llm
+
+    request = httpx.Request("POST", "https://b.example/v1/chat/completions")
+    kind = {401: openai.AuthenticationError, 403: openai.PermissionDeniedError}[status]
+    failure = kind("no", response=httpx.Response(status, request=request), body=None)
+
+    def create(**kw):
+        raise failure
+
+    chat = type("C", (), {"chat": type("Ch", (), {"completions": type("Co", (), {"create": staticmethod(create)})})})
+    monkeypatch.setattr(llm, "_card_for", lambda spec, name: __import__("contextlib").nullcontext())
+    monkeypatch.setattr(llm.engines, "client_for", lambda spec: chat)
+    with pytest.raises(llm.KeyRefused, match=f"http {status}") as caught:
+        llm._complete(CLOUD, "m", [], {})
+    assert isinstance(caught.value, StandFault)

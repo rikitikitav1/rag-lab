@@ -13,6 +13,7 @@ from enum import StrEnum
 from typing import Literal
 
 import limits
+from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from use_cases import agent_policy
@@ -31,7 +32,7 @@ class Spec(BaseModel):
 class EvalRunFields(Spec):
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
     set_name: str | None = None
-    question_ids: list[int] | None = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
+    question_ids: limits.QuestionIds = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
@@ -71,7 +72,7 @@ class JudgeAnswers(Spec):
     # a counter, not a flag: the sweep carries how many times it has swept, and it reaches three
     sweep: int | bool | None = None
     judge_width: int | None = Field(default=None, ge=1, le=limits.MAX_RUNS)
-    judge_model: str | None = None
+    judge_model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
     judge_prompts: dict | None = None
     control_axes: list | tuple | None = None
     control_sample: int | None = None
@@ -95,7 +96,9 @@ class JudgeGuestAxes(Spec):
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
     # the old ruler, an empty system beside the prompt, kept for a bridge to numbers taken with it
-    messages: Literal["user_only", "empty_system"] = "user_only"
+    messages: Literal[*MESSAGE_FORMS] = MESSAGE_FORMS[0]
+    # the guest's own bench, as `judge_model` is the judge's: a copy scored by another model, no reseat
+    guest_model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
 
 
 class JudgeLanguage(Spec):
@@ -245,6 +248,9 @@ def lane(job_type: str) -> str:
 
 # the stand's own bookkeeping on a job: `_job_id` carries a prefix and these two never did
 WORKER_KEYS = ("deferred_seconds", "attempts")
+
+# the options by which a job names a model beside its roles' own
+MODEL_OVERRIDES = {"generation": "model", "judging": "judge_model", "ragas": "guest_model"}
 
 
 class Refused(ValueError):

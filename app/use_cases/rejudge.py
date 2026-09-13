@@ -2,6 +2,7 @@ import hashlib
 import itertools
 import re
 
+import job_specs
 import prompt_repo
 from evals import guest_axes, sampling
 from evals.stats import annotate_holm, deltas_over, mean_of, tally, wilcoxon_p
@@ -133,7 +134,9 @@ def copy_statement(source: str, target: str, question_ids=None):
 
 # what an arm may move. `repeat` moves nothing: its delta is the judge's own noise
 REPEAT = "repeat"
-AXES_ALLOWED = (REPEAT, "judge_model", *[f"judge_{axis}" for axis in AXES])
+# a model an arm names: our judge's bench, or the guest's that scores the copy after it, never the generator
+MODEL_AXES = (job_specs.MODEL_OVERRIDES["judging"], job_specs.MODEL_OVERRIDES["ragas"])
+AXES_ALLOWED = (REPEAT, *MODEL_AXES, *[f"judge_{axis}" for axis in AXES])
 # one request over the 823-question sets can copy 26k rows and queue 79k judge calls
 MAX_ARM_ROWS = 4000
 # what a `repeat` label may look like: it becomes part of a run name on every copied row
@@ -167,7 +170,7 @@ def unseeded_prompt_versions(axes: dict) -> list[str]:
     missing = []
     with Session() as session:
         for name, versions in axes.items():
-            if name in (REPEAT, "judge_model"):
+            if name in (REPEAT, *MODEL_AXES):
                 continue
             purpose = Purpose[name]
             known = set(
@@ -180,7 +183,7 @@ def unseeded_prompt_versions(axes: dict) -> list[str]:
 
 
 def judges_not_ready(axes: dict) -> list[str]:
-    named = axes.get("judge_model") or []
+    named = [name for axis in MODEL_AXES for name in axes.get(axis) or []]
     if not named:
         return []
     with Session() as session:
@@ -264,7 +267,7 @@ def validate_axes(axes: dict) -> None:
     for name, values in axes.items():
         if not values:
             raise ValueError(f"axis {name} has no values")
-        if name == "judge_model":
+        if name in MODEL_AXES:
             # without it a 300-character value with a newline reached psycopg as a 500
             bad = [
                 v for v in values
@@ -272,7 +275,7 @@ def validate_axes(axes: dict) -> None:
                 or not MODEL_NAME_RE.fullmatch(v)
             ]
             if bad:
-                raise ValueError(f"judge_model takes model names, got {bad}")
+                raise ValueError(f"{name} takes model names, got {bad}")
             continue
         if name == REPEAT:
             labels = [v if isinstance(v, str | int) and not isinstance(v, bool) else None
@@ -337,7 +340,7 @@ def refuse_repeated_names(arms: list[dict]) -> None:
 
 
 def _prompt_axes(arm: dict) -> dict:
-    return {k: v for k, v in arm.items() if k not in ("judge_model", REPEAT)}
+    return {k: v for k, v in arm.items() if k not in (*MODEL_AXES, REPEAT)}
 
 
 def arm_bench(arm: dict) -> judge.Bench:
@@ -365,6 +368,13 @@ def arm_options(
         # without the seed no reader can say which questions the control was judged on
         out["control_seed"] = control_seed
     return out
+
+
+# queued after the arm's judge, on the same copy; the report stays about our judge, the guest is read per row
+def guest_options(arm: dict, run_name: str) -> dict | None:
+    if not arm.get("guest_model"):
+        return None
+    return {"run_name": run_name, "guest_model": arm["guest_model"]}
 
 
 # `question_ids` narrows it to the shared rows: whole-run digests of two sizes differ

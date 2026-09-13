@@ -99,10 +99,10 @@ def test_a_cloud_call_carries_its_run_as_the_cache_key_and_a_local_one_is_left_a
             list(pool.map(llm.carried(lambda i: llm._complete(CLOUD, "m", [], {})), [0]))
     llm._complete(CLOUD, "m", [], {})
     assert seen == ["arm_a", None, "arm_a", None]
-    assert (llm.cache_key_of(CLOUD), llm.cache_key_of(LOCAL)) == ("user=run_name", None)
+    assert (llm.cache_key_of(CLOUD), llm.cache_key_of(LOCAL)) == ("user=job", None)
 
 
-def test_the_worker_keys_every_call_of_a_job_by_its_run(monkeypatch):
+def test_the_worker_keys_every_call_by_its_job_so_two_passes_over_a_run_share_no_cache(monkeypatch):
     import worker
 
     keyed = []
@@ -113,7 +113,7 @@ def test_the_worker_keys_every_call_of_a_job_by_its_run(monkeypatch):
     monkeypatch.setattr(worker.job_queue, "complete", lambda id, elapsed=None: None)
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: None)
     assert worker.run_once(["default"])
-    assert keyed == ["arm_b"] and llm._cache_key.get() is None
+    assert keyed == ["job-6"] and llm._cache_key.get() is None
 
 
 def test_the_run_snapshot_says_a_cloud_role_was_keyed_by_the_run(monkeypatch):
@@ -125,8 +125,8 @@ def test_the_run_snapshot_says_a_cloud_role_was_keyed_by_the_run(monkeypatch):
     monkeypatch.setattr(run_snapshot.llm, "sampler", lambda role, spec: engines.Sampler({}, {}))
     monkeypatch.setattr(run_snapshot.card, "model_on_card", lambda spec, name: None)
     *_, cache_keys, _ = run_snapshot._by_role(engines.Resolved("m", CLOUD))
-    assert cache_keys == {Role.generation: "user=run_name"}
-    assert "cache_keys" in run_snapshot.KEYS and run_snapshot.SCHEMA == 11
+    assert cache_keys == {Role.generation: "user=job"}
+    assert "cache_keys" in run_snapshot.KEYS and run_snapshot.SCHEMA == 12
 
 
 def test_a_finished_job_has_its_count_before_it_reads_done(monkeypatch):

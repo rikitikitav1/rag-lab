@@ -45,6 +45,8 @@ class OurClient(BaseRagasLLM):
     def __init__(self, role: str = ROLE, model: str | None = None, messages: str = MESSAGES):
         self.role = role
         self.model = model
+        if messages not in MESSAGE_FORMS:
+            raise ValueError(f"unknown guest message form {messages!r}; known: {', '.join(MESSAGE_FORMS)}")
         self.messages = messages
         self.set_run_config(_one_try())
 
@@ -95,12 +97,13 @@ def _runtime() -> str:
 
 
 # two guest numbers compare only when every field here agrees; a row stamped `role: judging` sat on the judge
-def stamp(messages: str = MESSAGES) -> dict:
+def stamp(messages: str = MESSAGES, model: str | None = None) -> dict:
     from importlib.metadata import version
 
     from engines import answer_parsers
 
-    picked = llm.resolve(ROLE)
+    # the model the calls went to: a bench on the job, or the seat when the job names none
+    picked = llm.resolve_for(ROLE, model)
     return {
         "ragas": version("ragas"),
         "model": picked.name,
@@ -108,7 +111,7 @@ def stamp(messages: str = MESSAGES) -> dict:
         # a row without it sent an empty system beside the prompt: another ruler for the same axis
         "messages": messages,
         "engine": picked.engine.name,
-        "sampler": llm.sampler_of(ROLE, picked.engine),
+        "sampler": llm.sampler_of(ROLE, picked),
         "parser": answer_parsers.label(picked.parser),
         "cache_key": llm.cache_key_of(picked.engine),
         # one guest measures with vectors, and its embedder never reached the record

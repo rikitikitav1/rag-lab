@@ -8,6 +8,7 @@ from typing import Any
 import config
 import engines
 import logging_setup
+import token_fields
 from engines import answer_parsers
 from engines import vllm as vllm_engine
 from engines.lookup import Resolved
@@ -47,6 +48,7 @@ class Completion:
     completion_tokens: int
     parsed: answer_parsers.Parsed | None = None
     parser: str = answer_parsers.NO_PARSER
+    finish_reason: str | None = None
 
 
 @dataclass
@@ -70,9 +72,32 @@ class BrokerRefused(StandFault):
     pass
 
 
+# a revoked or wrong key refuses every later row alike, and a seat on it is refused at acceptance
+class KeyRefused(BrokerRefused):
+    pass
+
+
 # after the client's own retry a 5xx is the server saying it is broken, and the next row meets the same
 class ServerFailed(StandFault):
     pass
+
+
+# one reading of a failed call for chat and embeddings: which failures stop the run and which fail one row
+def _failed(e: OpenAIError, spec, name: str, what: str) -> Exception:
+    said = _without_the_body(e)
+    status = e.status_code if isinstance(e, APIStatusError) else None
+    if status in (401, 403):
+        log.error("llm.key_refused", model=name, engine=spec.name, status=status)
+        return KeyRefused(f"{spec.name} refused the key for {name}: {said}")
+    if status in (402, 429):
+        log.error("llm.broker_refused", model=name, engine=spec.name, status=status)
+        return BrokerRefused(f"{spec.name} refused {name}: {said}, a quota or a rate limit")
+    # a local 500 can be one reply the server could not build, as ollama's on a broken tool call
+    if status is not None and status >= 500 and engines.is_cloud(spec.kind):
+        log.error("llm.server_failed", model=name, engine=spec.name, status=status)
+        return ServerFailed(f"{spec.name} failed {name}: {said}, the server says it is broken")
+    log.error(f"llm.{what}_failed", model=name, engine=spec.name, error=said)
+    return RuntimeError(f"LLM {what} failed ({name} on {spec.name}): {said}")
 
 
 # the stand counts tokens on every call, so a broker that sends no usage is named, not read as zero
@@ -86,30 +111,27 @@ def _usage(resp, engine):
 class Tally:
     def __init__(self):
         self._lock = threading.Lock()
-        self._seen: dict[tuple[str, str, str], list[int]] = {}
+        self._seen: dict[tuple[str, str, str], dict[str, int]] = {}
 
     # the longest input against the window, and the calls the output limit cut: a sum hides both
     def add(self, role: str, engine: str, model: str, prompt: int | None, completion: int | None,
             cut: bool = False) -> None:
         with self._lock:
-            got = self._seen.setdefault((role, engine, model), [0, 0, 0, 0, 0, 0])
-            got[0] += prompt or 0
-            got[1] += completion or 0
-            got[2] += 1
-            got[3] += prompt is None
-            got[4] = max(got[4], prompt or 0)
-            got[5] += cut
+            got = self._seen.setdefault((role, engine, model), dict.fromkeys(token_fields.FIELDS, 0))
+            got["prompt"] += prompt or 0
+            got["completion"] += completion or 0
+            got["calls"] += 1
+            got["uncounted"] += prompt is None
+            got["max_prompt"] = max(got["max_prompt"], prompt or 0)
+            got["cut_by_length"] += cut
 
     def record(self) -> dict | None:
         with self._lock:
             out: dict[str, list[dict]] = {}
-            for (role, engine, model), seen in sorted(self._seen.items()):
-                prompt, completion, calls, uncounted, longest, cut = seen
+            for (role, engine, model), counts in sorted(self._seen.items()):
                 out.setdefault(role, []).append({
-                    "engine": engine, "model": model, "prompt": prompt, "completion": completion,
-                    "calls": calls, "max_prompt": longest,
-                    **({"uncounted": uncounted} if uncounted else {}),
-                    **({"cut_by_length": cut} if cut else {}),
+                    "engine": engine, "model": model,
+                    **{k: v for k, v in counts.items() if v or k not in token_fields.OPTIONAL},
                 })
             return out or None
 
@@ -117,14 +139,14 @@ class Tally:
 # a context, not a global: the worker runs two lanes as two threads of one process
 _tallies: contextvars.ContextVar[tuple] = contextvars.ContextVar("llm_tallies", default=())
 
-# a broker answers a repeated body from its cache, so a cloud call carries the run's name in `user`
+# a broker answers a repeated body from its cache, so a cloud call carries its job in `user`: a second pass is another job
 _cache_key: contextvars.ContextVar[str | None] = contextvars.ContextVar("llm_cache_key", default=None)
-CACHE_KEY = "user=run_name"
+CACHE_KEY = "user=job"
 
 
 @contextlib.contextmanager
-def cache_keyed(run_name: str | None):
-    token = _cache_key.set(run_name)
+def cache_keyed(key: str | None):
+    token = _cache_key.set(key)
     try:
         yield
     finally:
@@ -133,7 +155,7 @@ def cache_keyed(run_name: str | None):
 
 # only a broker keeps such a cache, and the model never sees the field
 def cache_key_of(spec) -> str | None:
-    return CACHE_KEY if spec.kind is EngineKind.openai_compatible else None
+    return CACHE_KEY if engines.is_cloud(spec.kind) else None
 
 
 def _keyed(spec) -> dict:
@@ -171,7 +193,7 @@ def _count(role, engine, model: str, prompt: int | None, completion: int | None,
            finish_reason: str | None = None) -> None:
     for tally in _tallies.get():
         tally.add(str(getattr(role, "value", role)), engine.name, model, prompt, completion,
-                  cut=finish_reason == "length")
+                  cut=token_fields.cut(finish_reason))
 
 
 # a call by engine and name, for a model no role holds yet: the probe before a seat
@@ -208,13 +230,8 @@ def resolve_for(role: str, model: str | None = None) -> Resolved:
     if model is None:
         return resolve(role)
     mine = resolve(role)
-    try:
-        found = engines.find_model(model)
-    except engines.Ambiguous:
-        # the override names a model, not an engine: the role's own engine answers if it has it
-        found = engines.find_model(model, mine.engine.id)
-        if found is None:
-            raise
+    # the override names a model, not an engine: the role's own engine answers if it has it
+    found = engines.find_model_on(model, lambda: mine.engine.id)
     # a name the registry never saw still runs, on the engine the role would have used
     return found or Resolved(model, mine.engine)
 
@@ -234,15 +251,7 @@ def _complete(spec, name: str, messages, params):
                 model=name, messages=messages, **params, **_keyed(spec)
             )
         except OpenAIError as e:
-            said = _without_the_body(e)
-            if isinstance(e, APIStatusError) and e.status_code in (402, 429):
-                log.error("llm.broker_refused", model=name, engine=spec.name, status=e.status_code)
-                raise BrokerRefused(f"{spec.name} refused {name}: {said}, a quota or a rate limit") from e
-            if isinstance(e, APIStatusError) and e.status_code >= 500:
-                log.error("llm.server_failed", model=name, engine=spec.name, status=e.status_code)
-                raise ServerFailed(f"{spec.name} failed {name}: {said}, the server says it is broken") from e
-            log.error("llm.chat_failed", model=name, engine=spec.name, error=said)
-            raise RuntimeError(f"LLM chat failed ({name} on {spec.name}): {said}") from e
+            raise _failed(e, spec, name, "chat") from e
 
 
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:
@@ -250,7 +259,7 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
     name = picked.name
     # no system at all is not an empty one: a template drops its default only for a system it was given
     messages = ([] if system is None else [{"role": "system", "content": system}]) + [{"role": "user", "content": user}]
-    resp = _complete(picked.engine, name, messages, _params(role, schema, picked.engine))
+    resp = _complete(picked.engine, name, messages, _params(role, schema, picked))
 
     usage = _usage(resp, picked.engine)
     _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens,
@@ -270,13 +279,14 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
         completion_tokens=usage.completion_tokens,
         parsed=parsed,
         parser=answer_parsers.label(picked.parser),
+        finish_reason=getattr(resp.choices[0], "finish_reason", None),
     )
 
 
 def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     picked = resolve_for(role, model)
     name = picked.name
-    params = _params(role, None, picked.engine)
+    params = _params(role, None, picked)
     if tools:
         params["tools"] = tools
     resp = _complete(picked.engine, name, messages, params)
@@ -308,21 +318,22 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
 
 
 # the same dict the call is made with, so a stamp cannot drift from what was sent
-def sampler_of(role, spec=None) -> dict:
-    return sampler(role, spec).sent
+def sampler_of(role, picked=None) -> dict:
+    return sampler(role, picked).sent
 
 
-# both halves in one read: what went out, and what the role asked for and the engine refused
-def sampler(role, spec=None) -> engines.Sampler:
-    opts = config.settings.llm.roles[role].options
+# both halves in one read: what went out, and what the role and the model asked for and the engine refused
+def sampler(role, picked=None) -> engines.Sampler:
+    picked = picked or resolve(role)
+    opts = {**config.settings.llm.roles[role].options, **(getattr(picked, "options", None) or {})}
     # at temperature 0 the sampler does not roll, but a batching server needs the run to say
     wanted = {k: opts[k] for k in engines.SAMPLER_KEYS if k in opts}
-    return engines.translate(spec or resolve(role).engine, wanted)
+    return engines.translate(picked.engine, wanted)
 
 
 # `response_format` and `tools` bypass `translate`: an engine that cannot do them refuses loudly
-def _params(role, schema, spec) -> dict:
-    params = sampler(role, spec).sent
+def _params(role, schema, picked) -> dict:
+    params = sampler(role, picked).sent
     if schema:
         params["response_format"] = {
             "type": "json_schema",
@@ -386,17 +397,9 @@ def _embeddings(picked, texts, role="embedding") -> list:
         try:
             resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
         except OpenAIError as e:
-            said = _without_the_body(e)
-            if isinstance(e, APIStatusError) and e.status_code in (402, 429):
-                log.error("llm.broker_refused", model=name, engine=picked.engine.name, status=e.status_code)
-                raise BrokerRefused(f"{picked.engine.name} refused {name}: {said}, a quota or a rate limit") from e
-            if isinstance(e, APIStatusError) and e.status_code >= 500:
-                log.error("llm.server_failed", model=name, engine=picked.engine.name, status=e.status_code)
-                raise ServerFailed(f"{picked.engine.name} failed {name}: {said}, the server says it is broken") from e
-            log.error("llm.embed_failed", model=name, engine=picked.engine.name, error=said)
-            raise RuntimeError(f"LLM embed failed ({name} on {picked.engine.name}): {said}") from e
+            raise _failed(e, picked.engine, name, "embed") from e
     # on a cloud the tokens are the quota, so a reply without them stops the run; locally it is a gap
-    usage = _usage(resp, picked.engine) if picked.engine.kind is EngineKind.openai_compatible else getattr(resp, "usage", None)
+    usage = _usage(resp, picked.engine) if engines.is_cloud(picked.engine.kind) else getattr(resp, "usage", None)
     prompt = getattr(usage, "prompt_tokens", None)
     _count(role, picked.engine, name, prompt, 0)
     log.info("llm.embed", role=role, model=name, engine=picked.engine.name, count=len(texts), prompt_tokens=prompt)

@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from orm import Base
 from sqlalchemy import BigInteger, Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -137,6 +138,8 @@ class Model(Base):
     tool_probe_start: Mapped[str | None] = mapped_column(default=None)
     # how this model's answers on this engine are cut; `none` passes the text as it came
     answer_parser: Mapped[str] = mapped_column(default="none")
+    # laid over the role's options when this model answers: a verbose model asks a larger budget anywhere
+    options: Mapped[dict] = mapped_column(JSONB, default=dict)
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )

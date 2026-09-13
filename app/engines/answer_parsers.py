@@ -1,6 +1,8 @@
 import re
 from dataclasses import dataclass
 
+import token_fields
+
 
 # what a broker left in an answer's text, cut before the judge, the guest or the agent reads it
 @dataclass(frozen=True)
@@ -47,14 +49,15 @@ def _think_tags(text: str, seen: dict) -> str:
 
 
 # each has a version, and the stamp carries it: a changed cut is a changed reading of the answer
+NONE = "none"
 PARSERS = {
-    "none": (1, lambda text, seen: text),
+    NONE: (1, lambda text, seen: text),
     "deepseek_tools": (1, _calls(_DEEPSEEK_CALLS)),
     "minimax_tools": (1, _calls(_MINIMAX_CALLS)),
     "think_tags": (1, _think_tags),
 }
 # the call markup comes out first, or an open `<think>` would swallow the call with it
-_ORDER = ("deepseek_tools", "minimax_tools", "think_tags", "none")
+_ORDER = ("deepseek_tools", "minimax_tools", "think_tags", NONE)
 
 
 def names(spec: str) -> tuple[str, ...]:
@@ -75,7 +78,7 @@ def label(spec: str) -> str:
     return "+".join(f"{name}@{PARSERS[name][0]}" for name in names(spec))
 
 
-NO_PARSER = label("none")
+NO_PARSER = label(NONE)
 
 
 def parse(spec: str, content: str | None, reasoning_content: str | None = None,
@@ -95,7 +98,7 @@ def parse(spec: str, content: str | None, reasoning_content: str | None = None,
         reasoning_unclosed=seen["unclosed"],
         call_markup_in_content=seen["call"],
         leftover_markers=tuple(m for m in MARKERS if m in text),
-        reasoning_cut_by_length=seen["unclosed"] and finish_reason == "length",
+        reasoning_cut_by_length=seen["unclosed"] and token_fields.cut(finish_reason),
     )
 
 

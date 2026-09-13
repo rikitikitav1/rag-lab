@@ -510,13 +510,17 @@ def _rows(run_name: str) -> list:
 
 # checked on what a run asked for: ollama truncates and answers from what is left
 def _prompts_over_the_window(logs: list) -> list:
-    # the generation role, not the max: the judge never shares a window with these rows
+    # the generation role's budget as sent, the model's own over the role's: the judge never shares this window
     out = _in_worker(
-        "import config; print(f'{config.settings.llm.context_length}"
-        " {config.settings.llm.roles[\'generation\'].options.get(\'max_tokens\', 0)}')"
+        "import engines, llm; p = llm.resolve('generation');"
+        " print(engines.window_or_configured(p.engine, p.name), llm.sampler_of('generation', p).get('max_tokens', 0))"
     )
+    parts = out.split()
+    if parts[:1] == ["None"]:
+        # a broker states no window to guard
+        return []
     try:
-        window, reserved = (int(part) for part in out.split())
+        window, reserved = (int(part) for part in parts)
     except ValueError:
         # a down worker and an empty roles map both land here, and "no rows over" is a pass
         return [f"cannot read the window from the worker ({out[:40] or 'no answer'})"]

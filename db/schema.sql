@@ -248,7 +248,8 @@ CREATE TABLE public.jobs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     elapsed double precision,
     queue text DEFAULT 'default'::text NOT NULL,
-    tokens jsonb
+    tokens jsonb,
+    balances jsonb
 );
 
 
@@ -337,7 +338,8 @@ CREATE TABLE public.models (
     size_bytes bigint,
     tool_probe boolean,
     tool_probe_start text,
-    answer_parser text DEFAULT 'none'::text NOT NULL
+    answer_parser text DEFAULT 'none'::text NOT NULL,
+    options jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -947,4 +949,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260912000001'),
     ('20260912000002'),
     ('20260912000003'),
-    ('20260912000004');
+    ('20260912000004'),
+    ('20260912000005'),
+    ('20260912000006');

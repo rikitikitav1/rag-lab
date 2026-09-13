@@ -1,7 +1,6 @@
 import logging_setup
-from engines import CARD, CardState, ollama
+from engines import CARD, CardState, is_cloud, ollama
 from models.registry import EngineKind, Model, ModelRole, Placement, Role
-from openai import AuthenticationError, PermissionDeniedError
 from orm.sync_db import Session
 from sqlalchemy import select
 
@@ -54,7 +53,7 @@ def refuse_unfit_model(role: Role, model_name: str, engine_id: int | None = None
         raise ValueError(f"{model_name} cannot rerank: the role lives on a vLLM pooling server")
     if spec is not None and spec.kind is EngineKind.vllm:
         return _refuse_unfit_on_vllm(role, model_name, spec)
-    if spec is not None and spec.kind is EngineKind.openai_compatible:
+    if spec is not None and is_cloud(spec.kind):
         return _refuse_markup_the_parser_leaves(role, model_name, spec)
     # only ollama describes its models, so an engine that cannot be asked is not a failed probe
     if spec is not None and spec.kind is not EngineKind.ollama:
@@ -174,8 +173,11 @@ def _refuse_markup_the_parser_leaves(role: Role, model_name: str, spec) -> None:
     import llm
     from engines import answer_parsers
 
+    # an embedder writes no text and calls no tool: the probe would spend a call to learn nothing
+    if role in POOLING_ROLES:
+        return None
     found = engines.find_model(model_name, spec.id)
-    parser = found.parser if found else "none"
+    parser = found.parser if found else answer_parsers.NONE
     try:
         # through `llm`, so the probe's tokens land in the job's count and its errors read as every call's
         reply = llm.complete_on(
@@ -188,13 +190,12 @@ def _refuse_markup_the_parser_leaves(role: Role, model_name: str, spec) -> None:
     # a property of the row, like a missing key: every run on it would stop on its first call
     except llm.NoUsage as e:
         raise ValueError(f"{model_name} on {spec.name} sends no token usage: {e}") from e
-    except RuntimeError as e:
-        refused = e.__cause__
-        if isinstance(refused, (AuthenticationError, PermissionDeniedError)):
-            raise ValueError(f"{model_name} on {spec.name} cannot be called: http {refused.status_code}") from e
-        return _unknown(role, model_name, e)
+    except llm.KeyRefused as e:
+        raise ValueError(f"{model_name} on {spec.name} cannot be called: {e}") from e
     except Exception as e:  # a probe must not become the reason a role cannot be assigned
         return _unknown(role, model_name, e)
+    if not reply.choices:
+        return _unknown(role, model_name, ValueError("the probe came back without a choice"))
     left = answer_parsers.parse(parser, reply.choices[0].message.content).leftover_markers
     if left:
         raise ValueError(

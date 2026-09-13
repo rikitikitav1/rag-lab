@@ -2,6 +2,7 @@ import statistics
 import sys
 
 import limits
+import token_fields
 from engines import DANGLING, answer_parsers, engine_of, registered_names
 from engines.card import NO_RESIDENCY
 from evals.loaders import load_logs
@@ -120,8 +121,8 @@ def verdicts(left: list, right: list) -> dict:
     for axis in AXES:
         both = [(before[q], after[q]) for q in shared
                 if getattr(before[q], axis) is not None and getattr(after[q], axis) is not None]
-        tokens = [(_judged(a, axis).get("judge_prompt_tokens"),
-                   _judged(b, axis).get("judge_prompt_tokens")) for a, b in both]
+        tokens = [(_judged(a, axis).get(token_fields.JUDGE_PROMPT),
+                   _judged(b, axis).get(token_fields.JUDGE_PROMPT)) for a, b in both]
         pair = paired(left, right, axis)
         axes[axis] = {
             "comparable": len(both),
@@ -149,8 +150,8 @@ def verdicts(left: list, right: list) -> dict:
     }
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote
-SCHEMA = 11
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote; 12 sampler
+SCHEMA = 12
 
 
 class TwoJudges(Ambiguous):
@@ -225,6 +226,9 @@ def _what_to_read_first(
     one_deterministic: bool | None,
     one_parser: bool | None = None,
     remote_judge: bool = False,
+    one_sampler: bool | None = None,
+    one_budget: bool | None = None,
+    cut: int = 0,
 ) -> str | None:
     if one_engine_name is False:
         return (
@@ -251,6 +255,16 @@ def _what_to_read_first(
         return (
             "arms whose judge answers were cut by different parsers read different texts: the cut "
             "shapes what the score is read from, so this contrast measures the parser"
+        )
+    if one_sampler is False:
+        return (
+            "arms whose judge sampled by a different temperature or seed chose their tokens by "
+            "different rules, so this contrast measures the sampler"
+        )
+    if one_budget is False and cut:
+        return (
+            f"arms whose judge had different output budgets differ where a budget cut: {cut} verdicts "
+            "ended on the limit, and there this contrast measures the budget"
         )
     if one_residency is False:
         return (
@@ -284,6 +298,11 @@ def _what_to_read_first(
         return (
             "no question was retrieved by both arms with its sources recorded, so whether the "
             "deterministic half of the pipeline held still cannot be said"
+        )
+    if one_budget is False:
+        return (
+            "the arms' judge had different output budgets and no verdict reached either limit, so the "
+            "budget changed nothing here; the rest of the reading holds as for one residency"
         )
     return (
         "one residency is necessary, not sufficient: two arms with identical rows, order and "
@@ -358,12 +377,18 @@ def residencies(runs: dict[str, list]) -> dict:
 
     live = registered_names()
     seen, engines_seen, names_seen, prompts_seen, parsers_seen = {}, {}, {}, {}, {}
+    choices_seen, budgets_seen, cuts_seen = {}, {}, {}
     gone = set()
     remote_judge = False
     for name, logs in runs.items():
         ids, addresses, named = set(), set(), set()
         versions = {axis: set() for axis in rejudge.AXES}
         parsers = {axis: set() for axis in rejudge.AXES}
+        choices = {axis: set() for axis in rejudge.AXES}
+        budgets = {axis: set() for axis in rejudge.AXES}
+        # judged before the sampler was stamped: beside stamped rows the arm cannot say it held one sampler
+        bare = set()
+        cuts = 0
         for ql in logs:
             for axis in rejudge.AXES:
                 stamp = ((ql.metrics or {}).get(axis) or {})
@@ -384,16 +409,28 @@ def residencies(runs: dict[str, list]) -> dict:
                 # a verdict stamped before the parser was recorded came from a local judge: no cut
                 if stamp.get("model"):
                     parsers[axis].add(stamp.get("judge_parser") or answer_parsers.NO_PARSER)
+                # a verdict from before the sampler was stamped says nothing, and silence is not a match
+                sent = stamp.get("sampler")
+                if isinstance(sent, dict):
+                    choices[axis].add((sent.get("temperature"), sent.get("seed")))
+                    budgets[axis].add(sent.get("max_tokens"))
+                elif stamp.get("engine"):
+                    bare.add(axis)
+                cuts += bool(stamp.get(token_fields.JUDGE_CUT))
         seen[name] = sorted(ids)
         # the address, because it is the one field every era of this record carries
         engines_seen[name] = sorted(addresses)
         names_seen[name] = sorted(named)
         prompts_seen[name] = {axis: sorted(v) for axis, v in versions.items() if v}
         parsers_seen[name] = {axis: sorted(v) for axis, v in parsers.items() if v}
+        choices_seen[name] = {axis: sorted(v, key=str) for axis, v in choices.items() if v and axis not in bare}
+        budgets_seen[name] = {axis: sorted(v, key=str) for axis, v in budgets.items() if v and axis not in bare}
+        cuts_seen[name] = cuts
     # an arm that recorded nothing cannot agree with one that did: silence is not a match
     one = _all_agree(seen)
     one_engine, one_prompt = _all_agree(engines_seen), _one_ruler(prompts_seen)
     one_parser = _one_ruler(parsers_seen)
+    one_sampler, one_budget = _one_ruler(choices_seen), _one_ruler(budgets_seen)
     one_name = _all_agree(names_seen)
     one_retrieval = _one_retrieval(runs)
     return {
@@ -409,12 +446,18 @@ def residencies(runs: dict[str, list]) -> dict:
         "one_judge_prompt": one_prompt,
         "judge_parsers_by_run": parsers_seen,
         "one_judge_parser": one_parser,
+        "judge_samplers_by_run": choices_seen,
+        "one_judge_sampler": one_sampler,
+        "judge_budgets_by_run": budgets_seen,
+        "one_judge_budget": one_budget,
+        "judge_cut_by_run": cuts_seen,
         # the sources and their ranks on the questions both arms answered, equal or not at all
         "one_deterministic": one_retrieval,
         "remote_judge": remote_judge,
         "read_this_first": _what_to_read_first(
             one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser,
-            remote_judge=remote_judge,
+            remote_judge=remote_judge, one_sampler=one_sampler, one_budget=one_budget,
+            cut=sum(cuts_seen.values()),
         ),
     }
 

@@ -1,8 +1,9 @@
 import os
 from typing import Literal
 
+import samplers
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
 # a file that replaces `llm.roles`, as the layout of a host without a card does
@@ -14,6 +15,11 @@ class RoleCfg(BaseModel):
     # unnamed means the seeded ollama, which is a default only while every config model is pulled
     engine: str | None = None
     options: dict = {}
+
+    @field_validator("options")
+    @classmethod
+    def _sampler_keys_only(cls, v: dict) -> dict:
+        return samplers.check(v)
 
 
 class RetrievalCfg(BaseModel):

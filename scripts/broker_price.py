@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 import requests
-from engines import EngineSpec, core
+from engines import EngineSpec, balances, core
 from models.registry import EngineKind, Placement
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +25,9 @@ CASES = (
 
 
 # the containers get the pair through `.env`; the host reads the same file
+READER = balances.GONKA
+
+
 def _load_env(prefix: str) -> None:
     path = ROOT / ".env"
     if not path.exists():
@@ -56,12 +59,12 @@ def _refuse_a_busy_stand() -> None:
         raise SystemExit(f"the stand has jobs running or queued ({', '.join(busy)}); measure on a quiet stand")
 
 
+# the stand's own reader, so the script and the door cannot disagree about one route
 def _balance(spec: EngineSpec) -> float:
-    seen = requests.get(f"{core.base_url(spec)}/v1/auth/key", headers=core.bearer(spec), timeout=30)
-    if seen.status_code == 404:
-        raise SystemExit(f"{spec.name} does not report a balance at /v1/auth/key")
-    seen.raise_for_status()
-    return round(seen.json()["data"]["balance"], 7)
+    seen = balances.read(spec, READER)
+    if seen["balance"] is None:
+        raise SystemExit(f"{spec.name} did not say its balance: {seen['why']}")
+    return round(float(seen["balance"]), 7)
 
 
 # the broker may debit after the answer: wait until the balance moves and then holds

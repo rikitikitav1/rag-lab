@@ -32,7 +32,7 @@ class EngineResponse(BaseModel):
     def of(cls, row: Engine, address: str | None, reachable: bool | None = None):
         return cls(
             id=row.id, name=row.name, kind=row.kind, env_prefix=row.env_prefix,
-            placement=row.placement, balance_reader=row.balance_reader or "none",
+            placement=row.placement, balance_reader=row.balance_reader or balances.NO_READER,
             address=address, reachable=reachable,
         )
 
@@ -80,20 +80,20 @@ class EngineCreateRequest(BaseModel):
     kind: EngineKind
     env_prefix: str = Field(pattern=PREFIX)
     placement: Placement
-    balance_reader: str = "none"
+    balance_reader: str = balances.NO_READER
 
     _reader = field_validator("balance_reader")(_known_reader)
 
 
 # a reader on a local engine would never be asked, and the summary would not show it
 def _refuse_a_reader_off_the_cloud(kind: EngineKind, reader: str | None) -> None:
-    if reader not in (None, "none") and kind is not EngineKind.openai_compatible:
+    if reader not in (None, balances.NO_READER) and not engines.is_cloud(kind):
         raise HTTPException(status_code=422, detail=f"only a cloud has a broker to ask; {kind.value} has none")
 
 
 # a remote engine on `gpu` joined the card engines and every handover waited for it forever
 def _refuse_a_placement_the_kind_cannot_have(kind: EngineKind, placement: Placement) -> None:
-    remote_kind = kind is EngineKind.openai_compatible
+    remote_kind = engines.is_cloud(kind)
     if remote_kind != (placement is Placement.remote):
         raise HTTPException(
             status_code=422,

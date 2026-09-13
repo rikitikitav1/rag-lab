@@ -182,3 +182,58 @@ def test_acceptance_refuses_a_cloud_row_that_sends_no_token_usage(monkeypatch):
     # it would sit on the role, and the first run on it would stop on its first call
     with pytest.raises(ValueError, match="sends no token usage"):
         _probe(monkeypatch, "think_tags", "minimax_tool_long", counted=False)()
+
+
+def test_a_model_s_own_sampler_is_laid_over_its_role_s_and_the_door_takes_sampler_keys_only(monkeypatch):
+    # the cloud guest cut a third of its calls at the role's 1024, and the budget is the model's property
+    import llm
+    from api.v1.llm_model import ModelPatchRequest
+    from models.registry import EngineKind, Placement
+    from pydantic import ValidationError
+
+    cloud = engines.EngineSpec(8, "gonka", EngineKind.openai_compatible, "GONKA", Placement.remote)
+    long = engines.Resolved("deepseek", cloud, "none", {"max_tokens": 8192})
+    sent = llm.sampler("ragas", long).sent
+    assert sent["max_tokens"] == 8192 and sent.get("temperature") == 0
+    assert llm.sampler("ragas", engines.Resolved("deepseek", cloud)).sent["max_tokens"] == 1024
+    assert ModelPatchRequest(options={"max_tokens": 8192}).options == {"max_tokens": 8192}
+    assert ModelPatchRequest(options={}).options == {}
+    for bad in ({"bogus": 1}, {"max_tokens": 0}, {"max_tokens": "8k"}):
+        with pytest.raises(ValidationError):
+            ModelPatchRequest(options=bad)
+
+
+def test_compare_reads_the_judge_s_sampler_by_key():
+    # temperature and seed choose tokens; a budget is a ceiling and matters only where it cut
+    from evals import compare
+
+    said = compare._what_to_read_first(True, True, True, True, True, one_sampler=False)
+    assert "temperature or seed" in said
+    cut = compare._what_to_read_first(True, True, True, True, True, one_sampler=True, one_budget=False, cut=3)
+    assert "3 verdicts ended on the limit" in cut
+    held = compare._what_to_read_first(True, True, True, True, True, one_sampler=True, one_budget=False, cut=0)
+    assert "changed nothing here" in held
+
+
+def test_a_budget_that_fills_the_model_s_window_is_refused_at_the_door(monkeypatch):
+    from api.v1 import llm_model
+    from models.registry import EngineKind, Placement
+
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    monkeypatch.setattr(llm_model.engines, "spec_of_id", lambda engine_id: local)
+    monkeypatch.setattr(llm_model.engines, "driver", lambda kind: type("D", (), {"window": lambda self, spec, name: 8192})())
+    with pytest.raises(ValueError, match="fills the 8192-token window"):
+        llm_model.refuse_a_budget_over_the_window(1, "qwen2.5:7b", {"max_tokens": 8192})
+    llm_model.refuse_a_budget_over_the_window(1, "qwen2.5:7b", {"max_tokens": 4096})
+    llm_model.refuse_a_budget_over_the_window(1, "qwen2.5:7b", {"temperature": 0})
+
+
+def test_a_verdict_the_limit_cut_says_so_on_its_row():
+    from types import SimpleNamespace
+
+    from job_handlers import judging
+
+    cut = SimpleNamespace(reason="r", elapsed=1.0, model="m", prompt_tokens=1, completion_tokens=1024, cut_by_length=True)
+    whole = SimpleNamespace(reason="r", elapsed=1.0, model="m", prompt_tokens=1, completion_tokens=10)
+    assert judging._axis_metric(cut)["judge_cut_by_length"] is True
+    assert "judge_cut_by_length" not in judging._axis_metric(whole)

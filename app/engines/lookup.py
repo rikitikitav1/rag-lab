@@ -1,9 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from models.registry import Engine, EngineKind, Model, ModelRole, Placement
 from orm.sync_db import Session
 from sqlalchemy import select, update
 
+from . import answer_parsers
 from .core import SEEDED_PREFIX, Ambiguous, EngineSpec, Unnamed
 
 # the columns an `EngineSpec` takes, in its order: one place, so the two readers cannot drift
@@ -15,7 +16,9 @@ class Resolved:
     name: str
     engine: EngineSpec
     # what cuts this model's answers on this engine; `none` passes the text as it came
-    parser: str = "none"
+    parser: str = answer_parsers.NONE
+    # the model's own sampler, over the role's
+    options: dict = field(default_factory=dict, hash=False)
 
 
 def _spec(row) -> EngineSpec:
@@ -25,27 +28,39 @@ def _spec(row) -> EngineSpec:
 def spec_of_role(role: str) -> Resolved:
     with Session() as session:
         row = session.execute(
-            select(Model.name, Model.answer_parser, *COLUMNS)
+            select(Model.name, Model.answer_parser, Model.options, *COLUMNS)
             .join(ModelRole, ModelRole.model_id == Model.id)
             .join(Engine, Engine.id == Model.engine_id)
             .where(ModelRole.role == role)
         ).first()
     if row is None:
         raise Unnamed(f"no model assigned to role {role}")
-    return Resolved(row[0], _spec(row[2:]), row[1])
+    return Resolved(row[0], _spec(row[3:]), row[1], row[2] or {})
+
+
+# one name on two engines, as on `ollama` and `ollama-cpu`: the caller's engine answers, read only then
+def find_model_on(name: str, engine_id) -> Resolved | None:
+    try:
+        return find_model(name)
+    except Ambiguous:
+        preferred = engine_id()
+        found = find_model(name, preferred) if preferred is not None else None
+        if found is None:
+            raise
+        return found
 
 
 # one rule for a bare name: look across every engine unless the caller named one
 def find_model(name: str, engine_id: int | None = None) -> Resolved | None:
-    stmt = select(Model.answer_parser, *COLUMNS).join(Model, Model.engine_id == Engine.id).where(Model.name == name)
+    stmt = select(Model.answer_parser, Model.options, *COLUMNS).join(Model, Model.engine_id == Engine.id).where(Model.name == name)
     if engine_id is not None:
         stmt = stmt.where(Engine.id == engine_id)
     with Session() as session:
         rows = session.execute(stmt).all()
     if len(rows) > 1:
-        seen = ", ".join(sorted(_spec(r[1:]).name for r in rows))
+        seen = ", ".join(sorted(_spec(r[2:]).name for r in rows))
         raise Ambiguous(f"model {name} lives on engines {seen}; name the engine")
-    return Resolved(name, _spec(rows[0][1:]), rows[0][0]) if rows else None
+    return Resolved(name, _spec(rows[0][2:]), rows[0][0], rows[0][1] or {}) if rows else None
 
 
 # a role may name its engine, and a name that matches nothing is a refusal rather than a default

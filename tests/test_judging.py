@@ -150,7 +150,7 @@ def test_every_row_is_judged_once_whatever_the_width(monkeypatch):
     seen = []
     monkeypatch.setattr(judging, "_target_log_ids", lambda session, options: list(range(20)))
     monkeypatch.setattr(
-        judging, "_judge_log", lambda log_id, **kw: seen.append(log_id)
+        judging, "_judge_log", lambda log_id, **kw: seen.append(log_id) or True
     )
     monkeypatch.setattr(judging, "Session", FakeSession)
     monkeypatch.setattr(judging.experiment, "try_aggregate_for_run", lambda run: None)
@@ -185,6 +185,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     assert written.pop("residency_id") is None, "no pass named it, so the stamp says so"
     assert written == {
         "reason": "because", "elapsed": 1.5, "model": "qwen2.5:7b", "seed": 0, "width": 4,
+        "sampler": {"temperature": 0, "seed": 0},
         "slots_believed": 4, "on_card": None, "engine": "ollama:11434",
         # null with no instrument named would mean nowhere to ask, and ollama is where we ask
         "on_card_read_from": "ollama /api/ps",
@@ -208,7 +209,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     bare.pop("judged_at")
     bare.pop("residency_id")
     assert bare == {
-        "seed": None, "width": 1, "slots_believed": 4, "on_card": None,
+        "seed": None, "sampler": {"temperature": 0}, "width": 1, "slots_believed": 4, "on_card": None,
         "engine": "ollama:11434", "engine_name": "ollama", "engine_refused": {},
         "engine_added": {}, "on_card_read_from": "ollama /api/ps", "residency_source": None,
     }
@@ -814,7 +815,7 @@ def test_the_card_is_read_after_the_judge_answered_and_not_before(monkeypatch):
     monkeypatch.setattr(judging, "_residency", lambda job_id, model=None: order.append("probe")
                         or judging.Residency(job_id, True))
 
-    late = judging.LateResidency(7)
+    late = judging.Pass(7, (), residency=lambda: judging._residency(7))
     assert order == [], "building the holder must not touch the card"
 
     class _Session:
