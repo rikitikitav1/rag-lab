@@ -454,6 +454,9 @@ def _score_guests(log_id: int, stamp: dict, messages: str = guest_axes.MESSAGE_F
         except Exception as e:
             log.error("guest_axes.failed", axis=axis, log_id=log_id, error=str(e))
             scored[axis] = _errored_metric(metrics, axis, _error_text(e))
+            # the same input overflows on every retry: the axis is dropped here, and the row says why
+            if _chain_has(e, llm.InputOverWindow):
+                scored[axis] |= {"attempts": _MAX_JUDGE_ATTEMPTS, "input_over_window": True}
     return _merge_guest_scores(log_id, scored) and wrote
 
 
@@ -835,6 +838,17 @@ def _errored(metrics: dict, axis: str) -> bool:
 
 # an exception's text can carry a whole statement, and `metrics` is returned by the API
 _ERROR_CHARS = 300
+
+
+# ragas wraps what our client raised, so the cause is looked for down the chain
+def _chain_has(e: BaseException | None, kind: type) -> bool:
+    seen = set()
+    while e is not None and id(e) not in seen:
+        if isinstance(e, kind):
+            return True
+        seen.add(id(e))
+        e = e.__cause__ or e.__context__
+    return False
 
 
 # the kind and what it said, with known keys cut: a row that failed three times left only an exception name

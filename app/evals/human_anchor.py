@@ -55,7 +55,7 @@ def _covariates(left, right) -> dict:
         "B": {"log_id": right.id, "run": right.run_name, "lang": langs["B"], "leak": leaks["B"]},
         "cross_language": langs["A"] != langs["B"],
         # the detector reads a config mode, so the record names the one that produced these
-        "detector": config.settings.retrieval.query_lang,
+        "detector": config.settings.retrieval.keyword.query_lang,
         # neither side found the gold file: both are ungrounded by construction
         "neither_hit_gold": not _hit_gold(left) and not _hit_gold(right),
         "template_leak": bool(leaks["A"]) or bool(leaks["B"]),

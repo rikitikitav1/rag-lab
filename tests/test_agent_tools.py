@@ -113,7 +113,7 @@ def test_the_corpus_tool_carries_the_depth_it_searched_at(monkeypatch):
 def test_the_topic_threshold_is_resolved_per_language():
     from config import AgentCfg
 
-    cfg = AgentCfg(topic_threshold={"ru": 0.4962, "en": 0.4712})
+    cfg = AgentCfg.model_construct(topic_threshold={"ru": 0.4962, "en": 0.4712})
     assert cfg.topic_threshold_for("ru") == 0.4962
     assert cfg.topic_threshold_for("en") == 0.4712
 
@@ -122,7 +122,7 @@ def test_an_unmeasured_language_gets_the_most_permissive_threshold():
     # we refuse only where refusing was shown not to cost a real question
     from config import AgentCfg
 
-    cfg = AgentCfg(topic_threshold={"ru": 0.4962, "en": 0.4712})
+    cfg = AgentCfg.model_construct(topic_threshold={"ru": 0.4962, "en": 0.4712})
     assert cfg.topic_threshold_for("de") == 0.4962
     assert cfg.topic_threshold_for(None) == 0.4962
 
@@ -130,6 +130,6 @@ def test_an_unmeasured_language_gets_the_most_permissive_threshold():
 def test_a_single_number_and_a_disabled_axis_still_work():
     from config import AgentCfg
 
-    assert AgentCfg(topic_threshold=0.5).topic_threshold_for("en") == 0.5
-    assert AgentCfg(topic_threshold=None).topic_threshold_for("en") is None
-    assert AgentCfg(topic_threshold={}).topic_threshold_for("en") is None
+    assert AgentCfg.model_construct(topic_threshold=0.5).topic_threshold_for("en") == 0.5
+    assert AgentCfg.model_construct(topic_threshold=None).topic_threshold_for("en") is None
+    assert AgentCfg.model_construct(topic_threshold={}).topic_threshold_for("en") is None

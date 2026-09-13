@@ -410,7 +410,7 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
 @lru_cache(maxsize=1)
 def criterion_sets() -> tuple[str, ...]:
     out = _in_worker(
-        "import config; print(','.join(config.settings.retrieval.criterion_sets))"
+        "import config; print(','.join(config.settings.verdict.criterion_sets))"
     )
     return tuple(name for name in out.split(",") if name) or ("paraphrased_v2_ru",)
 
@@ -418,7 +418,7 @@ def criterion_sets() -> tuple[str, ...]:
 # a veto set can only veto, but an unreachable label in one still reads as a regression
 @lru_cache(maxsize=1)
 def veto_sets() -> tuple[str, ...]:
-    out = _in_worker("import config; print(','.join(config.settings.retrieval.veto_sets))")
+    out = _in_worker("import config; print(','.join(config.settings.verdict.veto_sets))")
     return tuple(name for name in out.split(",") if name)
 
 
@@ -474,8 +474,8 @@ def _alive_thresholds() -> tuple[float, int] | None:
     # sh() returns "" on any non-zero exit, which is what a downed worker looks like
     out = _in_worker(
         "import config;"
-        " r = config.settings.retrieval;"
-        " print(f'{r.index_alive_recall} {r.index_alive_questions}')"
+        " r = config.settings.verdict.index_alive;"
+        " print(f'{r.recall} {r.questions}')"
     )
     try:
         floor, asked = out.split()

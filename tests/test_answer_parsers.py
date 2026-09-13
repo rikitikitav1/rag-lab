@@ -195,7 +195,8 @@ def test_a_model_s_own_sampler_is_laid_over_its_role_s_and_the_door_takes_sample
     long = engines.Resolved("deepseek", cloud, "none", {"max_tokens": 8192})
     sent = llm.sampler("ragas", long).sent
     assert sent["max_tokens"] == 8192 and sent.get("temperature") == 0
-    assert llm.sampler("ragas", engines.Resolved("deepseek", cloud)).sent["max_tokens"] == 1024
+    role = llm.config.settings.llm.roles["ragas"].options["max_tokens"]
+    assert llm.sampler("ragas", engines.Resolved("deepseek", cloud)).sent["max_tokens"] == role
     assert ModelPatchRequest(options={"max_tokens": 8192}).options == {"max_tokens": 8192}
     assert ModelPatchRequest(options={}).options == {}
     for bad in ({"bogus": 1}, {"max_tokens": 0}, {"max_tokens": "8k"}):

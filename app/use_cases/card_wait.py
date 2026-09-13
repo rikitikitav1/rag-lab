@@ -36,7 +36,7 @@ def reranker_needed(rerank_asked: bool | None = None, agent: bool = False,
         return True
     settings = config.settings.agent
     return agent and agent_policy.gates_with_cross_encoder(
-        fallback_policy or settings.fallback_policy, gate_signal or settings.gate_signal
+        fallback_policy or settings.fallback_policy, gate_signal or settings.gate.signal
     )
 
 

@@ -51,16 +51,18 @@ def ef_ladder() -> tuple[int, ...]:
     return tuple(search_depth.ladder())
 
 
+KEYWORD_FLAGS = ("keyword_query", "keyword_rank", "keyword_norm", "query_lang")
+
 def recall_gate() -> float:
-    return config.settings.retrieval.recall_gate
+    return config.settings.verdict.search_depth.recall_gate
 
 
 def mrr_loss_gate() -> float:
-    return config.settings.retrieval.max_mrr_loss
+    return config.settings.verdict.search_depth.max_mrr_loss
 
 
 def lost_questions_gate() -> int:
-    return config.settings.retrieval.max_questions_lost
+    return config.settings.verdict.search_depth.max_questions_lost
 
 
 # a neighbour lost at rank 18 does not move where the right section lands
@@ -146,7 +148,7 @@ def main() -> int:
     ap.add_argument("--variant", default=None)
     ap.add_argument(
         "--set", dest="set_name",
-        default=config.settings.retrieval.criterion_sets[0],
+        default=config.settings.verdict.criterion_sets[0],
         help="defaults to the first criterion set declared in config",
     )
     ap.add_argument("--limit", type=int, default=1000)
@@ -221,10 +223,11 @@ def main() -> int:
     if args.ef is None:
         args.ef = search_depth.resolve(variant_for_depth)
 
-    for name in config.KEYWORD_SWITCHES.values():
-        chosen = getattr(args, name)
+    # the flags keep their names; the config names the switches as the record does
+    for switch, flag in zip(config.KEYWORD_SWITCHES, KEYWORD_FLAGS, strict=True):
+        chosen = getattr(args, flag)
         if chosen is not None:
-            setattr(config.settings.retrieval, name, chosen)
+            setattr(config.settings.retrieval.keyword, switch, chosen)
 
     variant = check_variant(args.variant or config.settings.corpus.variant)
     if args.production_limits:

@@ -7,6 +7,7 @@ no width stamp, which would make it the only number on this stand that cannot sa
 import asyncio
 import os
 
+import engines
 import llm
 
 # a synchronous POST to the library's own server sat inside every measured call
@@ -112,6 +113,8 @@ def stamp(messages: str = MESSAGES, model: str | None = None) -> dict:
         "messages": messages,
         "engine": picked.engine.name,
         "sampler": llm.sampler_of(ROLE, picked),
+        # the window the calls ran in: an input past it is dropped, and the budget sits in the sampler
+        "window": engines.window_or_configured(picked.engine, picked.name),
         "parser": answer_parsers.label(picked.parser),
         "cache_key": llm.cache_key_of(picked.engine),
         # one guest measures with vectors, and its embedder never reached the record

@@ -82,7 +82,7 @@ def measure(before_run: str, after_run: str, floor_against: str | None = None) -
         "population": POPULATION,
         # the judge's scale is spelled two ways across records and no field said which
         "scale": "0..10, the judge's own",
-        "detector": config.settings.retrieval.query_lang,
+        "detector": config.settings.retrieval.keyword.query_lang,
         "n_pairs": len(pairs),
         # two arms are one instrument only under one engine, one ruler and one residency
         "comparability": residencies({before_run: before_logs, after_run: after_logs}),

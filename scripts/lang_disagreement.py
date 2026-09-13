@@ -41,7 +41,7 @@ with engine.connect() as conn:
         cell[1] += 1
         lengths[bool(differs)].append(len(question))
 
-    print(f"each rule against the configured default ({config.settings.retrieval.query_lang})")
+    print(f"each rule against the configured default ({config.settings.retrieval.keyword.query_lang})")
     for rule, (differ, total) in against_default.items():
         print(f"  {rule:16} {differ:5} of {total:5} ({differ / total:.1%})")
 

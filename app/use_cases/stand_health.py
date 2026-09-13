@@ -229,6 +229,19 @@ def roles_on_card() -> dict:
     return seen
 
 
+# what each seated role's calls send: a model row overriding its role is the design, not drift
+def samplers() -> dict:
+    out = {}
+    for role, picked in _roles():
+        if picked is None or role not in config.settings.llm.roles:
+            continue
+        out[role] = {
+            "sampler": llm.sampler(role, picked).sent,
+            "overrides": sorted(k for k in (picked.options or {}) if k in engines.SAMPLER_KEYS),
+        }
+    return out
+
+
 def stand() -> dict:
     # the card of the generator's engine: with a second ollama a bare ask reads as no residency
     picked = llm.resolve("generation")
@@ -242,6 +255,7 @@ def stand() -> dict:
         "engines": _or_error("engines", engines_section),
         "queue": _or_error("queue", queue),
         "roles": _or_error("roles", roles),
+        "samplers": _or_error("samplers", samplers),
         "corpus": _or_error("corpus", corpus),
         "ef_search": _or_error("ef_search", depth),
     }

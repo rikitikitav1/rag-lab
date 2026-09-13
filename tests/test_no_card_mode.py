@@ -66,7 +66,9 @@ def test_the_seed_registers_the_processor_ollama():
     finally:
         seed.Session = original
     assert "ollama-cpu" in added
-    assert seed.SEEDED_OLLAMA_CPU["placement"] is Placement.cpu
+    import config
+
+    assert {e.name: e.placement for e in config.settings.engines}["ollama-cpu"] == Placement.cpu
 
 
 def test_a_role_on_an_ollama_the_pull_list_misses_gets_its_row(monkeypatch):

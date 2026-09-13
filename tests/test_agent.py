@@ -985,7 +985,7 @@ def test_an_answer_whose_gate_scored_with_the_cross_encoder_names_the_reranker(m
                       variant="baseline")
     assert session.added[-1].models["reranking"] is None, "the row is written, the name is unknown"
     monkeypatch.setattr(agent.llm, "resolve_name", lambda role: f"{role}-model")
-    monkeypatch.setattr(agent.config.settings.agent, "gate_signal", "cross_encoder")
+    monkeypatch.setattr(agent.config.settings.agent.gate, "signal", "cross_encoder")
     agent._log_answer("q", agent.AgentResult(), "run", use_rerank=False,
                       fallback_policy="corpus_first_weak", gate=None, variant="baseline")
     assert "reranking" not in session.added[-1].models, "the idiomatic arm runs no gate"

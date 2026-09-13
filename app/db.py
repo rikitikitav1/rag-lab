@@ -65,7 +65,7 @@ def _by_function_words(text_, fts) -> str | None:
 
 def detect_language(text_, mode=None) -> str:
     """One rule for the search config and for the language the answer comes back in."""
-    return _detect(text_, mode or config.settings.retrieval.query_lang)
+    return _detect(text_, mode or config.settings.retrieval.keyword.query_lang)
 
 
 # a hop asks for the same question several times, and function_words costs a round trip
@@ -264,10 +264,10 @@ def hybrid_search(
     limit = limit or retrieval.results_limit
     if distance_threshold is None:
         distance_threshold = retrieval.distance_threshold
-    rank_fn = retrieval.keyword_rank
+    rank_fn = retrieval.keyword.rank
     if rank_fn not in RANK_FUNCTIONS:
         raise ValueError(f"keyword_rank must be one of {sorted(RANK_FUNCTIONS)}")
-    keyword_query = _keyword_query_sql(retrieval.keyword_query)
+    keyword_query = _keyword_query_sql(retrieval.keyword.query)
     cat_filter = "AND category ~ (:category)::lquery" if category else ""
     src_filter = f"AND {live_rows()}"
     query = f"""WITH vector_search AS (
@@ -314,7 +314,7 @@ def hybrid_search(
         "variant": variant,
         "rrf_k": config.settings.retrieval.rrf_k,
         "ts_config": _ts_config(question),
-        "keyword_norm": retrieval.keyword_norm,
+        "keyword_norm": retrieval.keyword.norm,
     }
     if category:
         params["category"] = f"*.{category}.*"
