@@ -252,3 +252,46 @@ def test_up_sh_frees_the_card_before_a_vllm_start_and_leaves_ollama_alone_otherw
     calls = _run_up_sh(quiet, "Container rag-lab-vllm-1  Running")
     assert not [c for c in calls if "ollama" in c], "a running vLLM takes nothing from ollama"
     assert calls[-1] == "compose up -d"
+
+
+def _judge_model() -> str:
+    import config
+
+    return config._load(str(ROOT / "config.yaml")).llm.roles["judging"].model
+
+
+def test_up_sh_starts_vllm_with_the_judge_config_yaml_names(tmp_path):
+    # the judge was named twice, in config.yaml and in compose, and only the boot noticed they differed
+    import os
+    import subprocess
+
+    fake = tmp_path / "bin" / "docker"
+    fake.parent.mkdir()
+    seen = tmp_path / "seen"
+    fake.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  info*) echo ' nvidia.com/gpu=all' ;;\n"
+        f"  'compose up -d'*) echo \"$VLLM_MODEL\" > {seen} ;;\n"
+        "esac\n"
+    )
+    fake.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "VLLM_MODEL"}
+    env["PATH"] = f"{fake.parent}:{env['PATH']}"
+    subprocess.run(["bash", str(ROOT / "scripts/up.sh")], env=env, check=True, capture_output=True)
+    assert seen.read_text().strip() == _judge_model()
+
+
+def test_the_compose_default_mirrors_the_judge_config_yaml_names():
+    import re
+
+    text = (ROOT / "docker-compose.yml").read_text()
+    (default,) = re.findall(r'"--model", "\$\{VLLM_MODEL:-([^}]+)\}"', text)
+    assert default == _judge_model(), "a bare `docker compose up` would start another judge"
+
+
+def test_the_judge_is_an_optional_dependency_of_the_boot_and_ollama_is_not():
+    # compose waits for an optional healthy dependency while it starts and goes on once it has died
+    main = _compose("docker-compose.yml")["services"]["bootstrap"]["depends_on"]
+    assert main["vllm"] == {"condition": "service_healthy", "required": False}
+    assert main["ollama"].get("required", True) is True, "the generator and the embedder live there"
