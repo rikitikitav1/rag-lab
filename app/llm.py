@@ -6,6 +6,7 @@ from typing import Any
 import config
 import engines
 import logging_setup
+from engines import answer_parsers
 from engines import vllm as vllm_engine
 from engines.lookup import Resolved
 from errors import StandFault
@@ -42,6 +43,8 @@ class Completion:
     text: str
     prompt_tokens: int
     completion_tokens: int
+    parsed: answer_parsers.Parsed | None = None
+    parser: str = answer_parsers.NO_PARSER
 
 
 @dataclass
@@ -52,6 +55,34 @@ class ChatTurn:
     prompt_tokens: int
     completion_tokens: int
     finish_reason: str | None = None
+    parsed: answer_parsers.Parsed | None = None
+
+
+# a broker without usage fails every later row the same way, so the run stops on the first one
+class NoUsage(StandFault):
+    pass
+
+
+# the client already asked once more; past that, a quota or a rate limit refuses every row alike
+class BrokerRefused(StandFault):
+    pass
+
+
+# the stand counts tokens on every call, so a broker that sends no usage is named, not read as zero
+def _usage(resp, engine):
+    if resp.usage is None:
+        raise NoUsage(f"{engine.name} returned no token usage")
+    return resp.usage
+
+
+# one cut for every answer, after the call and before the judge, the guest or the agent reads it
+def _parsed(picked, message, finish_reason=None) -> answer_parsers.Parsed:
+    parsed = answer_parsers.parse(picked.parser, message.content,
+                                  getattr(message, "reasoning_content", None), finish_reason)
+    if parsed.leftover_markers:
+        log.warning("llm.leftover_markers", model=picked.name, engine=picked.engine.name,
+                    parser=picked.parser, markers=list(parsed.leftover_markers))
+    return parsed
 
 
 def resolve(role: str) -> Resolved:
@@ -94,6 +125,9 @@ def _complete(spec, name: str, messages, params):
             )
         except OpenAIError as e:
             said = _without_the_body(e)
+            if isinstance(e, APIStatusError) and e.status_code in (402, 429):
+                log.error("llm.broker_refused", model=name, engine=spec.name, status=e.status_code)
+                raise BrokerRefused(f"{spec.name} refused {name}: {said}, a quota or a rate limit") from e
             log.error("llm.chat_failed", model=name, engine=spec.name, error=said)
             raise RuntimeError(f"LLM chat failed ({name} on {spec.name}): {said}") from e
 
@@ -111,7 +145,7 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
         _params(role, schema, picked.engine),
     )
 
-    usage = resp.usage
+    usage = _usage(resp, picked.engine)
     log.info(
         "llm.chat",
         model=name,
@@ -119,10 +153,13 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
     )
+    parsed = _parsed(picked, resp.choices[0].message, getattr(resp.choices[0], "finish_reason", None))
     return Completion(
-        text=resp.choices[0].message.content,
+        text=parsed.text,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
+        parsed=parsed,
+        parser=answer_parsers.label(picked.parser),
     )
 
 
@@ -136,7 +173,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
 
     choice = resp.choices[0]
     message = choice.message
-    usage = resp.usage
+    usage = _usage(resp, picked.engine)
     log.info(
         "llm.chat_tools",
         model=name,
@@ -146,13 +183,15 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
     )
+    parsed = _parsed(picked, message, choice.finish_reason)
     return ChatTurn(
-        text=message.content,
+        text=parsed.text,
         tool_calls=message.tool_calls or [],
         message=message,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
         finish_reason=choice.finish_reason,
+        parsed=parsed,
     )
 
 
@@ -236,6 +275,9 @@ def _embeddings(picked, texts) -> list:
             resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
         except OpenAIError as e:
             said = _without_the_body(e)
+            if isinstance(e, APIStatusError) and e.status_code in (402, 429):
+                log.error("llm.broker_refused", model=name, engine=picked.engine.name, status=e.status_code)
+                raise BrokerRefused(f"{picked.engine.name} refused {name}: {said}, a quota or a rate limit") from e
             log.error("llm.embed_failed", model=name, engine=picked.engine.name, error=said)
             raise RuntimeError(f"LLM embed failed ({name} on {picked.engine.name}): {said}") from e
     log.info("llm.embed", model=name, engine=picked.engine.name, count=len(texts))

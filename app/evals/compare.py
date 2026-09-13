@@ -2,7 +2,7 @@ import statistics
 import sys
 
 import limits
-from engines import DANGLING, engine_of, registered_names
+from engines import DANGLING, answer_parsers, engine_of, registered_names
 from evals.loaders import load_logs
 from evals.pools import (
     ALL_OUTCOMES,
@@ -148,8 +148,8 @@ def verdicts(left: list, right: list) -> dict:
     }
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts
-SCHEMA = 9
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 judge parser
+SCHEMA = 10
 
 
 class TwoJudges(Ambiguous):
@@ -222,6 +222,7 @@ def _what_to_read_first(
     one_residency: bool | None,
     one_engine_name: bool | None,
     one_deterministic: bool | None,
+    one_parser: bool | None = None,
 ) -> str | None:
     if one_engine_name is False:
         return (
@@ -243,6 +244,11 @@ def _what_to_read_first(
         return (
             "arms scored by different judge prompt versions are two rulers, not one instrument "
             "read twice: unless the prompt is the treatment, this contrast measures the prompt"
+        )
+    if one_parser is False:
+        return (
+            "arms whose judge answers were cut by different parsers read different texts: the cut "
+            "shapes what the score is read from, so this contrast measures the parser"
         )
     if one_residency is False:
         return (
@@ -344,11 +350,12 @@ def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
 
     live = registered_names()
-    seen, engines_seen, names_seen, prompts_seen = {}, {}, {}, {}
+    seen, engines_seen, names_seen, prompts_seen, parsers_seen = {}, {}, {}, {}, {}
     gone = set()
     for name, logs in runs.items():
         ids, addresses, named = set(), set(), set()
         versions = {axis: set() for axis in rejudge.AXES}
+        parsers = {axis: set() for axis in rejudge.AXES}
         for ql in logs:
             for axis in rejudge.AXES:
                 stamp = ((ql.metrics or {}).get(axis) or {})
@@ -365,14 +372,19 @@ def residencies(runs: dict[str, list]) -> dict:
                 version = (ql.prompts or {}).get(f"judge_{axis}")
                 if version is not None:
                     versions[axis].add(version)
+                # a verdict stamped before the parser was recorded came from a local judge: no cut
+                if stamp.get("model"):
+                    parsers[axis].add(stamp.get("judge_parser") or answer_parsers.NO_PARSER)
         seen[name] = sorted(ids)
         # the address, because it is the one field every era of this record carries
         engines_seen[name] = sorted(addresses)
         names_seen[name] = sorted(named)
         prompts_seen[name] = {axis: sorted(v) for axis, v in versions.items() if v}
+        parsers_seen[name] = {axis: sorted(v) for axis, v in parsers.items() if v}
     # an arm that recorded nothing cannot agree with one that did: silence is not a match
     one = _all_agree(seen)
     one_engine, one_prompt = _all_agree(engines_seen), _one_ruler(prompts_seen)
+    one_parser = _one_ruler(parsers_seen)
     one_name = _all_agree(names_seen)
     one_retrieval = _one_retrieval(runs)
     return {
@@ -386,10 +398,12 @@ def residencies(runs: dict[str, list]) -> dict:
         **({} if live is None else {"engines_gone": sorted(gone)}),
         "judge_prompts_by_run": prompts_seen,
         "one_judge_prompt": one_prompt,
+        "judge_parsers_by_run": parsers_seen,
+        "one_judge_parser": one_parser,
         # the sources and their ranks on the questions both arms answered, equal or not at all
         "one_deterministic": one_retrieval,
         "read_this_first": _what_to_read_first(
-            one_engine, one_prompt, one, one_name, one_retrieval
+            one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser
         ),
     }
 

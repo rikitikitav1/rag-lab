@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 import llm
 import prompt_repo
+from engines import answer_parsers
 from models.registry import Purpose
 from pydantic import BaseModel, Field, ValidationError
 from timing_wrappers import measure_elapsed
@@ -63,6 +64,10 @@ class Verdict:
     prompt_version: int | None = None
     # ollama drops whole messages to fit its window and says nothing: this count is the only witness
     prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    # the cut shapes the text the score is read from, so it is part of the ruler like the prompt
+    parser: str | None = None
+    answer_parse: dict | None = None
 
     def __str__(self) -> str:
         return f"score: {self.score}, reason: {self.reason}, model: {self.model}, elapsed: {self.elapsed}"
@@ -116,6 +121,9 @@ def judge(system_prompt, user_prompt, purpose=None, prompt_version=None, model=N
         purpose=purpose,
         prompt_version=prompt_version,
         prompt_tokens=completion.prompt_tokens,
+        completion_tokens=completion.completion_tokens,
+        parser=getattr(completion, "parser", None),
+        answer_parse=answer_parsers.record(getattr(completion, "parsed", None)),
     )
 
 

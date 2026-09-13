@@ -312,6 +312,22 @@ def engines_on_the_stand() -> dict:
 
 
 @mcp_ops.tool(
+    name="broker_balances",
+    description=(
+        "What is left on each cloud engine's key, read from the broker's own service route: the "
+        "balance in the broker's unit, which reader read it and when. A cloud with no reader named, "
+        "or one that did not answer, says why instead of dropping out. Free to call: nothing is "
+        "generated. Read it before and after a cloud run to see what the run cost."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def broker_balances() -> list[dict]:
+    from engines import balances
+
+    return balances.summary()
+
+
+@mcp_ops.tool(
     name="list_jobs",
     description=(
         "List background jobs, newest first. Optional filters by status, type "

@@ -9,6 +9,7 @@ import logging_setup
 import outcomes
 import prompt_repo
 import sources.base
+from engines import answer_parsers
 from models.eval import Question, QuestionLog, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
@@ -58,6 +59,7 @@ class Retrieval:
 class AnswerMetric:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    answer_parse: dict | None = None
     distance_threshold: float = field(
         default_factory=lambda: round(config.settings.retrieval.distance_threshold, 3)
     )
@@ -324,6 +326,7 @@ def answer_from_rows(
         metrics = AnswerMetric(
             prompt_tokens=response.prompt_tokens,
             completion_tokens=response.completion_tokens,
+            answer_parse=answer_parsers.record(getattr(response, "parsed", None)),
         )
         if model:
             metrics.model = model
@@ -439,6 +442,8 @@ def _log_answer(
                 "outcome": outcomes.classify(ans.text, bool(ans.sources)),
                 # the one fact both the judge and the report may read: neither re-derives it
                 "refusal": outcomes.reads_as_refusal(ans.text),
+                # what the parser cut from the answer, only when it cut something
+                **({"answer_parse": ans.metrics.answer_parse} if ans.metrics.answer_parse else {}),
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

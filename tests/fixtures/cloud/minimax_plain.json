@@ -1,0 +1,19 @@
+{
+ "finish_reason": "stop",
+ "message": {
+  "annotations": null,
+  "audio": null,
+  "content": "<think>The user asks: \"What is a Docker image? One sentence.\"\n\nWe need to answer in one sentence. The answer: \"A Docker image is a lightweight, standalone, executable package that includes everything needed to run a piece of software, such as code, runtime, libraries, and settings.\" That's a single sentence. Ensure it's one sentence. Provide concise answer.\n\nWe must follow policy. There's no disallowed content. It's a straightforward answer.\n\nThus final answer: \"A Docker image is a lightweight, standalone, executable package that contains the code, runtime, libraries, and settings needed to run a piece of software.\"\n</think>\n\nA Docker image is a lightweight, standalone, executable package that contains everything needed to run a piece of software—including code, runtime, libraries, and settings.",
+  "function_call": null,
+  "reasoning": null,
+  "reasoning_content": null,
+  "refusal": null,
+  "role": "assistant"
+ },
+ "usage": {
+  "completion_tokens": 157,
+  "prompt_tokens": 47,
+  "prompt_tokens_details": null,
+  "total_tokens": 204
+ }
+}

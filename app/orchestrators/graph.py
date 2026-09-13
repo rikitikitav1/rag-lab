@@ -7,6 +7,7 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
+from engines import answer_parsers
 from errors import StandFault
 from langgraph.graph import END, StateGraph
 from models.registry import Purpose
@@ -38,6 +39,7 @@ class State(TypedDict, total=False):
     prompt_tokens: Annotated[int, operator.add]
     completion_tokens: Annotated[int, operator.add]
     max_prompt_tokens: Annotated[int, _keep_max]
+    answer_parse: Annotated[list, operator.add]
     hops: int
     nudges: int
     external: bool
@@ -101,6 +103,7 @@ def model_node(state: State, config) -> dict:
         "prompt_tokens": turn.prompt_tokens,
         "completion_tokens": turn.completion_tokens,
         "max_prompt_tokens": turn.prompt_tokens,
+        "answer_parse": [turn.parsed],
         "turn": turn,
     }
     if turn.tool_calls:
@@ -305,6 +308,7 @@ def final_node(state: State, config) -> dict:
         *update.get("messages", []),
         final.message or {"role": "assistant", "content": final.text or ""},
     ]
+    update["answer_parse"] = [*update.get("answer_parse", []), final.parsed]
     update.update(
         hops=state["hops"] + 1,
         prompt_tokens=final.prompt_tokens,
@@ -431,6 +435,7 @@ def invoke(question, system, ctx, result) -> None:
     result.hops = state["hops"]
     result.prompt_tokens = state["prompt_tokens"]
     result.completion_tokens = state["completion_tokens"]
+    result.answer_parse = answer_parsers.summarize(state.get("answer_parse") or [])
     result.max_prompt_tokens = state["max_prompt_tokens"]
     result.text = state.get("text") or ""
     result.finished_by = str(state.get("finished_by") or policy.FinishedBy.answer)

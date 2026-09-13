@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 import config
 from models.registry import EngineKind, Placement
 from openai import OpenAI
+from redaction import redact
 
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 
@@ -86,6 +87,9 @@ def base_url(spec: EngineSpec) -> str:
         seen = config.settings.llm.base_url
     if not seen:
         raise Unconfigured(f"engine {spec.name}: address is not configured")
+    # a broker's page gives the address with /v1, and the client adds its own
+    seen = seen.rstrip("/")
+    seen = seen[: -len("/v1")] if seen.endswith("/v1") else seen
     return _refuse_unusable(spec, seen)
 
 
@@ -96,6 +100,8 @@ def _refuse_unusable(spec: EngineSpec, address: str) -> str:
         raise Unconfigured(f"engine {spec.name}: address is not an http url")
     if seen.username or seen.password:
         raise Unconfigured(f"engine {spec.name}: address carries credentials")
+    if redact(address) != address:
+        raise Unconfigured(f"engine {spec.name}: address carries a key; put it in {spec.env_prefix}_API_KEY")
     return address
 
 

@@ -1,0 +1,22 @@
+{
+ "finish_reason": "tool_calls",
+ "message": {
+  "content": "><｜｜tool▁calls▁beginning｜｜><｜｜tool▁call▁beginning｜｜>invoke<｜｜tool▁sep｜｜>{\"name\": \"search_corpus\", \"query\": \"Redis persistence\"}<｜｜tool▁call▁end｜｜><｜｜tool▁calls▁end｜｜>",
+  "role": "assistant",
+  "tool_calls": [
+   {
+    "function": {
+     "arguments": "{\"query\": \"Redis persistence\"}",
+     "name": "search_corpus"
+    },
+    "id": "chatcmpl-tool-bb5160b57ef8aae1",
+    "type": "function"
+   }
+  ]
+ },
+ "usage": {
+  "completion_tokens": 130,
+  "prompt_tokens": 283,
+  "total_tokens": 413
+ }
+}
