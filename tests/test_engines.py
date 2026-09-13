@@ -114,16 +114,18 @@ def test_todays_engine_carries_the_whole_sampler():
 
 def test_a_name_on_two_engines_refuses_instead_of_picking_one(monkeypatch):
     _rows_are(monkeypatch, [
-        (1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
-        (3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu),
+        ("none", 1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
+        ("none", 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu),
     ])
     with pytest.raises(engines.Ambiguous, match="ollama, vllm"):
         engines.find_model("qwen2.5:7b")
 
 
 def test_a_name_on_one_engine_takes_that_engine(monkeypatch):
-    _rows_are(monkeypatch, [(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)])
-    assert engines.find_model("qwen2.5:7b").engine.name == "vllm"
+    # the row's parser comes first and rides along, so every call cuts the answer the row's way
+    _rows_are(monkeypatch, [("think_tags", 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)])
+    found = engines.find_model("qwen2.5:7b")
+    assert (found.engine.name, found.parser) == ("vllm", "think_tags")
 
 
 def test_a_name_nowhere_is_absent_rather_than_an_error(monkeypatch):

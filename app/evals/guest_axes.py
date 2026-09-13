@@ -116,14 +116,17 @@ def _finite(score) -> float | None:
 
 
 def score(axis: str, ql) -> dict:
-    from evals.guest_llm import stamp
+    from evals.guest_llm import spent, stamp
 
-    start = time.perf_counter()
+    start, before = time.perf_counter(), spent()
     value = asyncio.run(_metric(axis).single_turn_ascore(_sample(ql)))
+    after = spent()
     finite = _finite(value)
     return {
         "score": finite,
         "abstained": finite is None,
         "elapsed": round(time.perf_counter() - start, 3),
+        "prompt_tokens": after[0] - before[0],
+        "completion_tokens": after[1] - before[1],
         **stamp(),
     }

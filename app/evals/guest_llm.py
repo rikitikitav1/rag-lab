@@ -6,6 +6,7 @@ no width stamp, which would make it the only number on this stand that cannot sa
 
 import asyncio
 import os
+import threading
 
 import llm
 
@@ -36,6 +37,16 @@ def _text_of(prompt) -> str:
     return prompt.to_string() if hasattr(prompt, "to_string") else str(prompt)
 
 
+# ragas asks the model several times for one row, from threads, and hands back only the text
+_spent = [0, 0]
+_spent_lock = threading.Lock()
+
+
+def spent() -> tuple[int, int]:
+    with _spent_lock:
+        return _spent[0], _spent[1]
+
+
 class OurClient(BaseRagasLLM):
     def __init__(self, role: str = ROLE, model: str | None = None):
         self.role = role
@@ -47,6 +58,9 @@ class OurClient(BaseRagasLLM):
         if n != 1:
             log.warning("guest_llm.n_capped", asked=n)
         answer = llm.ask("", _text_of(prompt), role=self.role, model=self.model)
+        with _spent_lock:
+            _spent[0] += answer.prompt_tokens or 0
+            _spent[1] += answer.completion_tokens or 0
         return LLMResult(generations=[[Generation(text=answer.text or "")]])
 
     async def agenerate_text(

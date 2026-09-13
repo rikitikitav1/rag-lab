@@ -1,7 +1,7 @@
 import engines
 import job_queue
 from crud import get_or_404
-from engines import vllm
+from engines import answer_parsers, vllm
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.jobs import Job
@@ -43,6 +43,7 @@ class ModelResponse(BaseModel):
     size_bytes: int | None = None
     # one base set behind two rows, which is what a comparison across engines joins on
     weights: str | None = None
+    answer_parser: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -57,6 +58,7 @@ class ModelResponse(BaseModel):
             quant=model.quant,
             size_bytes=model.size_bytes,
             weights=weights,
+            answer_parser=model.answer_parser,
         )
 
 
@@ -262,17 +264,29 @@ class ModelPatchRequest(BaseModel):
                 raise ValueError("weights names a hub repository: org/name, without `..`")
         return v
 
+    # how this model's answers are cut on this engine, one of the parsers the stand has
+    answer_parser: str | None = Field(default=None, max_length=100)
+
+    @field_validator("answer_parser")
+    @classmethod
+    def _a_known_parser(cls, v: str | None) -> str | None:
+        if v is not None:
+            answer_parsers.refuse_unknown(v)
+        return v
+
 
 @router.patch("/{id}", response_model=ModelResponse)
 async def patch_model(
     id: int, request: ModelPatchRequest, session: AsyncSession = Depends(get_session)
 ):
-    if request.quant is None and request.weights is None:
-        raise HTTPException(status_code=422, detail="nothing to change: name a quant or weights")
+    if request.quant is None and request.weights is None and request.answer_parser is None:
+        raise HTTPException(status_code=422, detail="nothing to change: name a quant, weights or answer_parser")
     model = await get_or_404(Model, id, session)
     engine = await _engine_of(session, model)
     if request.quant is not None:
         model.quant = request.quant
+    if request.answer_parser is not None:
+        model.answer_parser = request.answer_parser
     # a quant-only patch answered `weights: null` for a row that had them
     weights = await session.scalar(select(Weights.name).where(Weights.id == model.weights_id))
     if request.weights is not None:

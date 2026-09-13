@@ -127,7 +127,7 @@ Everything tunable about the pipeline lives in `config.yaml`; the environment on
 | `HF_TOKEN`, `CONTEXT7_API_KEY` | empty | Secrets for external MCP integrations. Only variables allowlisted in `config.yaml` (`mcp_integrations.secret_env`) are ever read. |
 | `RAGAS_DO_NOT_TRACK` | `true` | Turns off the usage event `ragas` posts per generation. It is sent synchronously, inside the window the guest pass measures, so leaving it on prices the network into the axis. |
 | `POSTGRES_HOST`, `OLLAMA_BASE_URL` | empty | Only for a script run on the host. Inside compose the service names resolve and both stay unset. |
-| `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY` | see compose | One pair per engine row, named by its `env_prefix` (`VLLM_BASE_URL`, `CLOUD_API_KEY`). The address and the key never live in the database: a row you can read a key out of leaks through any report. Compose ships defaults for `VLLM`, `VLLM_CPU`, `VLLM_EMBED`, `VLLM_RERANK` and `OLLAMA_CPU`, all pointing at compose services; those under a profile answer only once started with `--profile`, and until then their engine reads as down. |
+| `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY` | see compose | One pair per engine row, named by its `env_prefix` (`VLLM_BASE_URL`, `GONKA_API_KEY`). The address and the key never live in the database: a row you can read a key out of leaks through any report. Compose ships defaults for `VLLM`, `VLLM_CPU`, `VLLM_EMBED`, `VLLM_RERANK` and `OLLAMA_CPU`, all pointing at compose services; those under a profile answer only once started with `--profile`, and until then their engine reads as down. A cloud is a row added through `POST /v1/engine`, and its pair reaches the containers through `.env` without editing compose. |
 
 ## REST API
 

@@ -481,3 +481,24 @@ def test_what_a_guest_reads_off_a_row_survives_the_session():
     assert guest_axes.carried(SimpleNamespace(
         question_text=None, answer=None, contexts=None, question=None
     )).question.reference_answer is None
+
+
+def test_a_guest_row_carries_what_its_calls_cost(monkeypatch):
+    # ragas asks the model several times for one row and keeps only the text; the stamp keeps the sum
+    import llm
+    from evals import guest_llm
+
+    monkeypatch.setattr(guest_llm.llm, "ask", lambda *a, **kw: llm.Completion(text="x", prompt_tokens=10, completion_tokens=3))
+    client = guest_llm.OurClient()
+
+    class Metric:
+        async def single_turn_ascore(self, sample):
+            client.generate_text("first")
+            client.generate_text("second")
+            return 0.5
+
+    monkeypatch.setattr(guest_axes, "_metric", lambda axis: Metric())
+    monkeypatch.setattr(guest_axes, "_sample", lambda ql: None)
+    monkeypatch.setattr(guest_llm, "stamp", lambda: {})
+    got = guest_axes.score("faithfulness", _row())
+    assert (got["prompt_tokens"], got["completion_tokens"]) == (20, 6)

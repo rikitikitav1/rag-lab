@@ -91,6 +91,8 @@ class Engine(Base):
     # the address and the key live in the environment; a row you can read a key out of leaks
     env_prefix: Mapped[str]
     placement: Mapped[Placement] = mapped_column(Enum(Placement, native_enum=False))
+    # which reader in `engines.balances` asks this cloud's broker what is left on the key
+    balance_reader: Mapped[str] = mapped_column(default="none")
     budget: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
     spent: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
     # the second MR reserves at the door and releases at the end; today nothing writes these
@@ -134,6 +136,8 @@ class Model(Base):
     # whether a vLLM serving it returns tool calls, and for which process start that was asked
     tool_probe: Mapped[bool | None] = mapped_column(default=None)
     tool_probe_start: Mapped[str | None] = mapped_column(default=None)
+    # how this model's answers on this engine are cut; `none` passes the text as it came
+    answer_parser: Mapped[str] = mapped_column(default="none")
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )

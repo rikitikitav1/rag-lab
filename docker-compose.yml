@@ -1,4 +1,4 @@
-# every service that reaches an engine reads the same addresses: the bootstrap once lacked the cpu ones
+# the local engines' addresses; a cloud's pair comes through `.env`, so a new one needs no edit here
 x-engine-env: &engine-env
   VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm:8000}
   VLLM_API_KEY: ${VLLM_API_KEY:-}
@@ -9,8 +9,6 @@ x-engine-env: &engine-env
   VLLM_RERANK_BASE_URL: ${VLLM_RERANK_BASE_URL:-http://vllm-rerank:8000}
   VLLM_RERANK_API_KEY: ${VLLM_RERANK_API_KEY:-}
   OLLAMA_CPU_BASE_URL: ${OLLAMA_CPU_BASE_URL:-http://ollama-cpu:11434}
-  CLOUD_BASE_URL: ${CLOUD_BASE_URL:-}
-  CLOUD_API_KEY: ${CLOUD_API_KEY:-}
   ENGINE_HF_CACHE: /engine_weights
 
 # pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
@@ -38,6 +36,9 @@ services:
     command:
       ["uvicorn", "server:app",
        "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    env_file:
+      - path: .env
+        required: false
     environment:
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
@@ -94,6 +95,9 @@ services:
       dockerfile: Dockerfile
     command: ["python", "app/bootstrap.py"]
     restart: "no"
+    env_file:
+      - path: .env
+        required: false
     environment:
       <<: *engine-env
       HF_TOKEN: ${HF_TOKEN:-}
@@ -139,6 +143,9 @@ services:
     command: ["python", "app/worker.py"]
     # the worker writes pulled weights into the host's cache, and as root they were not the host's
     user: *host-user
+    env_file:
+      - path: .env
+        required: false
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       HOME: /tmp

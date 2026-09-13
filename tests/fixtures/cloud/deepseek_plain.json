@@ -1,0 +1,19 @@
+{
+ "finish_reason": "stop",
+ "message": {
+  "annotations": null,
+  "audio": null,
+  "content": "A Docker image is a lightweight, standalone, and immutable package that contains everything needed to run a piece of software—including code, runtime, libraries, and settings—serving as a template from which containers are instantiated.",
+  "function_call": null,
+  "reasoning": null,
+  "reasoning_content": null,
+  "refusal": null,
+  "role": "assistant"
+ },
+ "usage": {
+  "completion_tokens": 46,
+  "prompt_tokens": 13,
+  "prompt_tokens_details": null,
+  "total_tokens": 59
+ }
+}

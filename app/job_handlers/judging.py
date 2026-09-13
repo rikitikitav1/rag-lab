@@ -14,6 +14,7 @@ from models.eval import Question, QuestionLog
 from models.registry import Engine, EngineKind, Purpose, Role
 from orm import dsn
 from orm.sync_db import Session
+from redaction import redact
 from sqlalchemy import DateTime, and_, cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from use_cases import experiment, judge, rejudge
@@ -825,7 +826,7 @@ def _run_axis(log_id, axis, verdict_fn, *args):
     except Exception as e:
         log.error("judge.axis_failed", axis=axis, log_id=log_id, error=str(e))
         # the kind and what it said: a row that failed three times left only an exception name
-        return None, f"{type(e).__name__}: {e}"
+        return None, f"{type(e).__name__}: {redact(str(e))}"
 
 
 # a fan-out changes verdicts and a seed makes a pass repeatable
@@ -836,5 +837,9 @@ def _axis_metric(verdict, stamp: dict | None = None) -> dict:
         "model": verdict.model,
         # named for the judge, because the row already carries the answering call's count
         "judge_prompt_tokens": verdict.prompt_tokens,
+        # a thinking judge on a broker pays for its output, and the output is where it thinks
+        "judge_completion_tokens": getattr(verdict, "completion_tokens", None),
+        **({"judge_parser": verdict.parser} if getattr(verdict, "parser", None) else {}),
+        **({"judge_answer_parse": verdict.answer_parse} if getattr(verdict, "answer_parse", None) else {}),
         **(stamp or {}),
     }

@@ -48,6 +48,7 @@ class AgentResult:
     tools_offered: list = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    answer_parse: dict | None = None
     max_prompt_tokens: int = 0
     truncated_hops: int = 0
     last_prompt_tokens: int = 0
@@ -415,6 +416,8 @@ def _log_answer(
             ),
             metrics={
                 "hops": result.hops,
+                # what the parser cut across the hops, only when it cut something
+                **({"answer_parse": result.answer_parse} if result.answer_parse else {}),
                 # which edge ended the graph, so no reader recomputes it from `hops >= ceiling`
                 "finished_by": result.finished_by,
                 # `contexts` is flat across hops and calls; this says which piece came from where

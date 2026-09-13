@@ -162,6 +162,7 @@ CREATE TABLE public.engines (
     spent numeric(12,6) DEFAULT 0 NOT NULL,
     reserved numeric(12,6) DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    balance_reader text DEFAULT 'none'::text NOT NULL,
     CONSTRAINT engines_env_prefix_shape CHECK ((env_prefix ~ '^[A-Z][A-Z0-9_]{0,31}$'::text))
 );
 
@@ -337,7 +338,8 @@ CREATE TABLE public.models (
     weights_id integer,
     size_bytes bigint,
     tool_probe boolean,
-    tool_probe_start text
+    tool_probe_start text,
+    answer_parser text DEFAULT 'none'::text NOT NULL
 );
 
 
@@ -943,4 +945,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260909000003'),
     ('20260911000001'),
     ('20260911000002'),
-    ('20260911000003');
+    ('20260911000003'),
+    ('20260912000001'),
+    ('20260912000002');

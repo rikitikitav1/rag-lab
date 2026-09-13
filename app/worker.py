@@ -8,6 +8,7 @@ import job_queue
 import job_specs
 import llm
 import logging_setup
+from redaction import redact
 
 log = logging_setup.get_logger(__name__)
 
@@ -44,7 +45,7 @@ def run_once(queues: list[str]) -> bool:
     try:
         job_specs.check(claimed.type, claimed.options, from_the_worker=True)
     except Exception as bad:
-        job_queue.fail(claimed.id, {"error": str(bad)})
+        job_queue.fail(claimed.id, {"error": redact(str(bad))})
         return True
 
     start = time.perf_counter()
@@ -95,7 +96,7 @@ def run_once(queues: list[str]) -> bool:
             log.error("worker.retry", id=claimed.id, attempts=attempts, error=str(e))
         else:
             job_queue.fail(
-                claimed.id, {"error": str(e), "attempts": attempts}, elapsed=elapsed
+                claimed.id, {"error": redact(str(e)), "attempts": attempts}, elapsed=elapsed
             )
             log.error("worker.failed", id=claimed.id, error=str(e))
             _fail_the_experiment_waiting_on(claimed)

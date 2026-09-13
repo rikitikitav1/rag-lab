@@ -296,8 +296,10 @@ def test_an_engine_moves_off_the_card_but_never_renames_or_repoints(door, monkey
         moved = client.patch("/v1/engine/2", json={"placement": "cpu"})
         renamed = client.patch("/v1/engine/2", json={"name": "other"})
         repointed = client.patch("/v1/engine/2", json={"placement": "gpu", "env_prefix": "OTHER"})
+        empty = client.patch("/v1/engine/2", json={})
 
     assert refused.status_code == 409 and "stop it" in refused.json()["detail"]
+    assert empty.status_code == 422 and "nothing to change" in empty.json()["detail"], "as the model door says"
     assert same.status_code == 200, "restating the placement it has is no move"
     assert moved.status_code == 200 and moved.json()["placement"] == "cpu"
     # a stamp names its engine by name and address: changing either would move the ruler silently

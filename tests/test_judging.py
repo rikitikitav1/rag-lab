@@ -176,7 +176,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     )
     _judged_on(monkeypatch, "ollama")
     verdict = SimpleNamespace(reason="because", elapsed=1.5, model="qwen2.5:7b",
-                              prompt_tokens=2317)
+                              prompt_tokens=2317, completion_tokens=412)
 
     monkeypatch.setenv("OLLAMA_NUM_PARALLEL", "4")
     written = judging._axis_metric(verdict, judging.stamp_of(4))
@@ -189,7 +189,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
         # null with no instrument named would mean nowhere to ask, and ollama is where we ask
         "on_card_read_from": "ollama /api/ps",
         # ollama trims to its window silently, so the count is the only witness that it did not
-        "judge_prompt_tokens": 2317,
+        "judge_prompt_tokens": 2317, "judge_completion_tokens": 412,
         # the address and the entity together: one survives the migration, the other names it
         "engine_name": "ollama", "engine_refused": {}, "engine_added": {},
         # no pass named a residency, so no instrument minted one either
