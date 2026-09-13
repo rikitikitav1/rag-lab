@@ -378,3 +378,18 @@ def test_the_door_refuses_question_ids_that_repeat_or_are_not_in_the_stand(clien
     repeated = client.post("/v1/eval/run", json={"question_ids": [34, 34]})
     assert repeated.status_code == 422 and "question ids repeat: [34]" in str(repeated.json()["detail"])
     assert client.post("/v1/eval/run", json={"question_ids": [34, 35]}).status_code == 200
+
+
+def test_a_taken_run_name_is_refused_at_every_door_that_queues_a_run(client, monkeypatch):
+    # only `/v1/eval/run` checked, and the experiment door's retry wrote every question twice
+    _door_that_queues(monkeypatch, rows=3)
+    job = client.post("/v1/job", json={"type": "eval_run", "options": {"run_name": "r", "set_name": "s"}})
+    assert job.status_code == 409 and "pass resume" in job.json()["detail"]
+    sweep = client.post("/v1/eval/experiment", json={"run_name": "r", "set_name": "s", "param": "k", "values": [5]})
+    assert sweep.status_code == 409
+
+
+def test_the_chat_refuses_options_it_would_not_read(client):
+    # a model, a temperature and tags were accepted and never read
+    assert client.post("/v1/chat/question", json={"text": "x", "options": {"model": "m"}}).status_code == 422
+    assert client.post("/v1/chat/question", json={"text": "x", "filter": {"tags": ["t"]}}).status_code == 422

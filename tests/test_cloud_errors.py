@@ -104,6 +104,7 @@ def test_a_run_that_answered_nothing_stops_for_good_and_is_not_answered_again(mo
     monkeypatch.setattr(evaluation, "require_role_ready", lambda *a, **kw: None)
     monkeypatch.setattr(evaluation, "require_card", lambda *a, **kw: None)
     monkeypatch.setattr(evaluation.runner, "run", stopped)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (0, []))
     # the worker retries anything but Final, and a retry answers every question again
     with pytest.raises(base.Final, match="0 of 3"):
         evaluation.eval_run({"run_name": "r"})
@@ -127,3 +128,20 @@ def test_a_refused_key_stops_the_run_instead_of_failing_every_row(monkeypatch, s
     with pytest.raises(llm.KeyRefused, match=f"http {status}") as caught:
         llm._complete(CLOUD, "m", [], {})
     assert isinstance(caught.value, StandFault)
+
+
+def test_every_door_s_run_meets_the_taken_name_in_the_worker(monkeypatch):
+    # the experiment door and /v1/job queued a second run under a taken name, and a question landed twice
+    from job_handlers import base, evaluation
+
+    seen = {}
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda *a, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda *a, **kw: None)
+    monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 1)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (3, [2739]))
+    with pytest.raises(base.Final, match="is taken"):
+        evaluation.eval_run({"run_name": "r", "_job_id": 2743})
+    # its own first attempt wrote those rows: the retry answers the rest
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (3, []))
+    evaluation.eval_run({"run_name": "r", "_job_id": 2743, "attempts": 1})
+    assert seen["resume"] is True

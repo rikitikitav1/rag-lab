@@ -104,6 +104,8 @@ services:
     environment:
       <<: *engine-env
       HF_TOKEN: ${HF_TOKEN:-}
+      # the acceptance probe calls the model, and it waited the code's default whatever the stand was told
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
       # as root on the mounted tree, it left bytecode the host could not remove
       PYTHONDONTWRITEBYTECODE: "1"
     depends_on:

@@ -168,6 +168,7 @@ def test_one_place_decides_whether_a_run_reranks(monkeypatch):
     monkeypatch.setattr(evaluation, "require_role_ready", lambda role, **kw: None)
     monkeypatch.setattr(evaluation, "require_card", lambda role, model=None, allow_spill=False: None)
     monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 0)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (0, []))
 
     evaluation.eval_run({"run_name": "r", "set_name": "s"})
     assert seen["use_rerank"] is None

@@ -287,8 +287,11 @@ def is_cancelled(id: int) -> bool:
 def _update(id: int, **fields) -> None:
     with Session() as session:
         job = session.get(Job, id)
-        if job is None or job.status == JobStatus.cancelled:
+        if job is None:
             return
+        # a cancel is final, but how long the job ran before it is still the job's
+        if job.status == JobStatus.cancelled:
+            fields = {k: v for k, v in fields.items() if k == "elapsed"}
         for key, value in fields.items():
             setattr(job, key, value)
         session.commit()

@@ -2,7 +2,7 @@ from typing import Literal
 
 import config
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from use_cases import card_wait, chat
 
 import db
@@ -12,23 +12,17 @@ from api.v1.schemas import AnswerSource
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-class QuestionOptions(BaseModel):
-    model: str | None = None
-    max_distance: float | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-
-
+# options and tags were accepted and never read: a client that chose a model got the default unsaid
 class QuestionFilter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     # the MCP door validated this and the REST doors did not, onto the same lquery
     category: str | None = Field(default=None, pattern=db.CATEGORY_RE.pattern)
-    tags: list[str] = []
 
 
 class QuestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     text: str
     filter: QuestionFilter | None = None
-    options: QuestionOptions | None = None
     rerank: bool | None = None
     language: Literal["ru", "en"] | None = None
     # 1..1000 is what the server accepts: a value it refuses dies after the embedding is paid

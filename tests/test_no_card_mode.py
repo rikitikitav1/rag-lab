@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -249,14 +250,15 @@ def _run_up_sh(tmp_path, plan: str) -> list[str]:
 echo "$*" >> {log}
 case "$*" in
   info*) echo " nvidia.com/gpu=all" ;;
-  "compose --dry-run up -d"*) printf '%s\\n' "{plan}" ;;
+  "compose --dry-run up -d"*) [ "{plan}" = hang ] && sleep 30; printf '%s\\n' "{plan}" ;;
+  "compose ps --status running --services") ;;
   "compose exec -T ollama ollama ps") printf 'NAME ID SIZE\\n'; [ -f {stopped} ] || echo "llama3.1:8b a1 6GB" ;;
   "compose exec -T ollama ollama stop"*) touch {stopped} ;;
 esac
 """)
     fake.chmod(0o755)
-    env = {**os.environ, "PATH": f"{fake.parent}:{os.environ['PATH']}"}
-    subprocess.run(["bash", str(ROOT / "scripts/up.sh")], env=env, check=True, capture_output=True)
+    env = {**os.environ, "PATH": f"{fake.parent}:{os.environ['PATH']}", "UP_PLAN_TIMEOUT": "1"}
+    subprocess.run(["bash", str(ROOT / "scripts/up.sh")], env=env, check=True, capture_output=True, timeout=20)
     return log.read_text().splitlines()
 
 
@@ -272,6 +274,28 @@ def test_up_sh_frees_the_card_before_a_vllm_start_and_leaves_ollama_alone_otherw
     assert not [c for c in calls if "ollama" in c], "a running vLLM takes nothing from ollama"
     assert calls[-1] == "compose up -d"
 
+
+
+def test_up_sh_does_not_hang_on_a_plan_that_never_ends_and_still_frees_the_card(tmp_path):
+    # after `down` the dry run waited on a one-shot container's exit for ever, silently
+    calls = _run_up_sh(tmp_path, "hang")
+    assert "compose exec -T ollama ollama stop llama3.1:8b" in calls, "a vLLM that is not running is about to start"
+    assert calls[-1] == "compose up -d"
+
+
+def test_up_sh_cpu_stops_the_card_engines_a_running_stand_kept_answering_from(tmp_path):
+    import os
+    import subprocess
+
+    log = tmp_path / "docker.log"
+    fake = tmp_path / "bin" / "docker"
+    fake.parent.mkdir()
+    fake.write_text(f'#!/bin/sh\necho "$*" >> {log}\n')
+    fake.chmod(0o755)
+    env = {**os.environ, "PATH": f"{fake.parent}:{os.environ['PATH']}"}
+    subprocess.run(["bash", str(ROOT / "scripts/up.sh"), "--cpu"], env=env, check=True, capture_output=True, timeout=20)
+    calls = log.read_text().splitlines()
+    assert calls[0] == "compose stop ollama vllm" and calls[-1].endswith("up -d")
 
 def _judge_model() -> str:
     import config
@@ -308,6 +332,18 @@ def test_the_compose_default_mirrors_the_judge_config_yaml_names():
     (default,) = re.findall(r'"--model", "\$\{VLLM_MODEL:-([^}]+)\}"', text)
     assert default == _judge_model(), "a bare `docker compose up` would start another judge"
 
+
+
+def test_the_window_is_one_number_in_every_place_that_states_it():
+    # six places said 8192 and only a comment tied them: one changed alone truncates without a word
+    import re
+
+    compose = (ROOT / "docker-compose.yml").read_text()
+    stated = {int(v) for v in re.findall(r"\$\{(?:OLLAMA_CONTEXT_LENGTH|VLLM_MAX_MODEL_LEN):-(\d+)\}", compose)}
+    stated |= {int(v) for v in re.findall(r'"--max-model-len", "(\d+)"', compose)}
+    stated |= {int(v) for v in re.findall(r"^(?:OLLAMA_CONTEXT_LENGTH|VLLM_MAX_MODEL_LEN)=(\d+)$", (ROOT / ".env.example").read_text(), re.M)}
+    stated.add(yaml.safe_load((ROOT / "config.yaml").read_text())["llm"]["context_length"])
+    assert len(stated) == 1, f"the window is stated as {sorted(stated)}"
 
 def test_the_judge_is_an_optional_dependency_of_the_boot_and_ollama_is_not():
     # compose waits for an optional healthy dependency while it starts and goes on once it has died

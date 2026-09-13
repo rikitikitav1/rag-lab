@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 
+import config
 import engines
 import llm
 import pytest
@@ -52,7 +53,7 @@ def test_only_the_seeded_engine_falls_back_to_the_config(monkeypatch):
     # a typo in a second engine's prefix used to address the first one and stamp the second's name
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
     monkeypatch.delenv("OLLAMA2_BASE_URL", raising=False)
-    assert engines.base_url(OLLAMA) == llm.LLM_BASE
+    assert engines.base_url(OLLAMA) == config.settings.llm.base_url
     with pytest.raises(core.Unconfigured, match="address is not configured"):
         engines.base_url(SECOND)
 

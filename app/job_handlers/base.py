@@ -75,5 +75,24 @@ def require_model_ready(name: str, role: str | None = None) -> None:
             )
         )
     if status != Status.ready:
+        failed = _failed_pull(found.name, found.engine.id)
+        if failed:
+            raise Final(f"model {found.name} on {found.engine.name} did not pull: {failed}")
         # a model that never arrives would re-defer for the life of the process, holding its lane
         raise Deferred(30)
+
+
+# a pull that gave up says so here, or the run waiting on it deferred for an hour
+def _failed_pull(name: str, engine_id: int) -> str | None:
+    from models.jobs import Job, JobStatus
+
+    with Session() as session:
+        last = session.execute(
+            select(Job.status, Job.error).where(
+                Job.type == "pull_llm_model", Job.options["name"].astext == name,
+                Job.options["engine_id"].as_integer() == engine_id,
+            ).order_by(Job.id.desc()).limit(1)
+        ).first()
+    if last is None or last.status != JobStatus.error:
+        return None
+    return str((last.error or {}).get("error") or "the pull failed")

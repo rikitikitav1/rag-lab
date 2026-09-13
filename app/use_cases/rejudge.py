@@ -64,6 +64,7 @@ def copy_runs(source: str, targets: list[str], question_ids=None) -> dict[str, i
     # a fixed order: two fan-outs sharing a name would take their locks in opposite orders
     targets = sorted(targets)
     with Session() as session:
+        _refuse_repeated_questions(session, source, question_ids)
         for target in targets:
             _refuse_bad_pair(session, source, target)
         made = {
@@ -74,6 +75,20 @@ def copy_runs(source: str, targets: list[str], question_ids=None) -> dict[str, i
         }
         session.commit()
         return made
+
+
+# a copy of a run holding one question twice kept whichever row the database returned last
+def _refuse_repeated_questions(session, source: str, question_ids=None) -> None:
+    stmt = (
+        select(QuestionLog.question_id)
+        .where(QuestionLog.run_name == source, QuestionLog.question_id.isnot(None))
+        .group_by(QuestionLog.question_id).having(func.count() > 1).limit(5)
+    )
+    if question_ids is not None:
+        stmt = stmt.where(QuestionLog.question_id.in_(list(question_ids)))
+    repeated = list(session.scalars(stmt))
+    if repeated:
+        raise ValueError(f"run {source} holds questions {repeated} more than once: a copy cannot pair them")
 
 
 # what a failure after the copies compensates with

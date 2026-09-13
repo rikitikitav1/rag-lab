@@ -872,3 +872,16 @@ def test_a_rejudge_is_not_reported_along_the_guest_bench():
     with pytest.raises(ValueError, match="moves only the guest"):
         ExperimentCreate(kind="rejudge", source_run="r", param="guest_model", unpaired=True,
                          axes={"guest_model": ["qwen2.5:7b"], "repeat": ["a"]})
+
+
+def test_a_run_holding_a_question_twice_is_not_copied():
+    # the report kept whichever of the two rows the database returned last
+    import pytest
+    from use_cases import rejudge
+
+    class _Session:
+        def scalars(self, _stmt):
+            return [10588]
+
+    with pytest.raises(ValueError, match="more than once"):
+        rejudge._refuse_repeated_questions(_Session(), "tester_ss_k_05")

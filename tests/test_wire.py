@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 
+import config
 import engines
 import httpx
 import llm
@@ -87,7 +88,7 @@ def test_the_recording_carries_the_address_and_not_only_the_body(monkeypatch):
 def test_the_address_is_the_one_the_engine_layer_builds(monkeypatch):
     # the fixture used to hold a url the test itself had formatted, so `base_url` never ran
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
-    assert engines.base_url(SPEC) == llm.LLM_BASE
+    assert engines.base_url(SPEC) == config.settings.llm.base_url
     recorded = json.loads(GOLDEN.read_text(encoding="utf-8"))[0]["url"]
     assert recorded.startswith(f"{engines.base_url(SPEC)}/v1")
 

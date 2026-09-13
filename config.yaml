@@ -3,11 +3,11 @@ service:
   retrieval:
     # 0.55 cuts the hybrid pool and never empties it over 1643 questions; 0.39 weak, 0.44 off-topic
     # tuned: file=datasets/measurements/threshold_calibration_20260830.json
-    distance_threshold: 0.55
+    distance_threshold: 0.55      # cosine distance, 0 to 2
     # this is `k`: how many chunks the generator sees, and what the context guard multiplies
     results_limit: 5
-    limit_vector: 20
-    limit_keywords: 20
+    limit_vector: 20              # candidates the vector leg hands to the fusion
+    limit_keywords: 20            # the same for the text leg
     rrf_k: 60
     # AND over every lexeme: OR costs 0.15-0.23 MRR on paraphrases
     # tuned: file=datasets/measurements/2026-08-26_keyword_switch_grid.txt
@@ -54,17 +54,17 @@ service:
     gate_signal: distance
     # one value for two languages (ru 0.3957, en 0.3653), so its 22-of-100 budget holds on neither
     # tuned: file=datasets/measurements/threshold_calibration_20260830.json
-    weak_distance: 0.39
+    weak_distance: 0.39           # cosine distance
     # per language: an off-domain english question sits closer to an english corpus. 1% budget
     # tuned: file=datasets/measurements/threshold_calibration_20260830.json
-    topic_threshold:
+    topic_threshold:              # cosine distance
       ru: 0.4560
       en: 0.4374
   ingestion:
-    batch_size: 100
-    commit_size: 1000
+    batch_size: 100               # chunks per embedder call
+    commit_size: 1000             # rows per commit
     # a shadow ceiling: the fallback for a source with no variant policy
-    chunk_max_size: 1024
+    chunk_max_size: 1024          # characters
   corpus:
     description: >-
       the technical knowledge corpus (interview banks, system-design-primer, redis docs)
@@ -75,11 +75,11 @@ service:
     # every key here is read by the code; `header_prefix` is derived from `chunker`
       baseline:
         chunker: legacy
-        max_chunk_size: 1024
+        max_chunk_size: 1024      # characters
     # point zero of the ceiling grid: hygiene isolated from the change of splitter
       clean_1024:
         chunker: rooted
-        max_chunk_size: 1024
+        max_chunk_size: 1024      # characters
         # what the ceiling counts, said out loud rather than inherited from a default
         ceiling_on: body
       # variants that lost are gone; their policy rides in the entry that measured them
@@ -104,7 +104,7 @@ service:
       prefix_dominates: 15
       dup_in_source: 10
       tiny: 10
-    history_per_variant: 20
+    history_per_variant: 20       # reports kept per variant
     # written into every report, so a score from another formula is not read as this one
     score_formula: v1
 
@@ -295,7 +295,7 @@ service:
         - xml-interview-questions
 llm:
   # what we expect OLLAMA_CONTEXT_LENGTH to be; the server is the authority
-  context_length: 8192
+  context_length: 8192          # tokens
   base_url: http://ollama:11434
   # in the order the pipeline uses them
   roles:

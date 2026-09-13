@@ -351,6 +351,18 @@ async def _eval_runs_named(session, run_name: str) -> list:
     )).all())
 
 
+# a taken name, by its rows or by a job that stopped before its first row, is resumed, not run twice
+async def refuse_a_taken_run(session, run_name: str) -> None:
+    rows = await _rows_of(session, run_name)
+    jobs = await _eval_runs_named(session, run_name)
+    if rows or jobs:
+        raise HTTPException(
+            status_code=409,
+            detail=f"run {run_name} has {rows} rows and {len(jobs)} eval_run jobs: pass resume"
+            " to answer the rest on its own options, or name a new run",
+        )
+
+
 # a resumed run changes nothing: it runs on the stopped job's own options and asks only the unanswered
 async def _resume(session, request: EvalRunRequest) -> JobEnqueuedResponse:
     extra = sorted(request.model_fields_set - {"run_name", "resume"})
@@ -377,16 +389,8 @@ async def enqueue_eval_run(
 ):
     if request.resume:
         return await _resume(session, request)
-    # a taken name, by its rows or by a job that stopped before its first row, is resumed, not run twice
     if request.run_name:
-        rows = await _rows_of(session, request.run_name)
-        jobs = await _eval_runs_named(session, request.run_name)
-        if rows or jobs:
-            raise HTTPException(
-                status_code=409,
-                detail=f"run {request.run_name} has {rows} rows and {len(jobs)} eval_run jobs: pass resume"
-                " to answer the rest on its own options, or name a new run",
-            )
+        await refuse_a_taken_run(session, request.run_name)
     if request.question_ids:
         await _refuse_missing_questions(session, request.question_ids)
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
@@ -508,13 +512,17 @@ async def enqueue_experiment(
     # what the row claims it filtered by: ids win over the set, as `_target_texts` reads them
     set_name = request.set_name if not request.question_ids else None
     rerank = resolve_rerank(request.rerank)
+    names = [f"{base}_{request.param}_{value_suffix(value)}" for value in request.values]
+    # all of them before any is queued: a client's retry after a timeout wrote every question twice
+    for name in names:
+        await refuse_a_taken_run(session, name)
     jobs = []
-    for value in request.values:
+    for value, name in zip(request.values, names, strict=True):
         job = await _enqueue(
             session,
             "eval_run",
             {
-                "run_name": f"{base}_{request.param}_{value_suffix(value)}",
+                "run_name": name,
                 "set_name": set_name,
                 "question_ids": request.question_ids,
                 "rerank": rerank,

@@ -96,6 +96,10 @@ async def enqueue_job(
         job_specs.check(request.type, request.options)
     except job_specs.Refused as bad:
         raise HTTPException(status_code=400, detail=str(bad)) from bad
+    if request.type == "eval_run" and request.options.get("run_name") and not request.options.get("resume"):
+        from api.v1.eval import refuse_a_taken_run
+
+        await refuse_a_taken_run(session, request.options["run_name"])
 
     job = job_queue.add_job(session, request.type, request.options)
     await session.commit()

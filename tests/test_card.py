@@ -747,6 +747,7 @@ def test_a_run_s_allow_cpu_reaches_the_card(monkeypatch):
     monkeypatch.setattr(evaluation, "require_card",
                         lambda role, model=None, allow_spill=False: asked.append(allow_spill))
     monkeypatch.setattr(evaluation.runner, "run", lambda **kw: 0)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (0, []))
     evaluation.eval_run({"run_name": "r", "set_name": "s", "allow_cpu": True})
     evaluation.eval_run({"run_name": "r", "set_name": "s"})
     assert asked == [True, False]

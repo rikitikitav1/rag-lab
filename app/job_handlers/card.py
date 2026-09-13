@@ -43,7 +43,7 @@ def _to_load(spec, model: str | None) -> bool:
 def hand_card(options: dict) -> None:
     target = engines.spec_of_id(options["engine_id"])
     if target is None:
-        raise ValueError(f"engine {options['engine_id']} is not registered")
+        raise Final(f"engine {options['engine_id']} is not registered")
     take(target, options.get("model"))
     if options.get("seat"):
         role = Role(options["seat"])

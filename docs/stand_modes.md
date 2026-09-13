@@ -194,7 +194,13 @@ recreate the worker with the card and the two-minute timeout. Put
 `COMPOSE_FILE=docker-compose.yml:docker-compose.cpu.yml` in `.env` while the stand runs this way.
 
 The layer seats roles only on an empty database. A stand that already has roles keeps them, so seat
-each one with `PUT /v1/role` on its model on `ollama-cpu`, by the ids the model list gives.
+each one with `PUT /v1/role` on its model on `ollama-cpu`, by the ids the model list gives; a model
+the list does not have there, as `llama3.1:8b` and `gemma2:9b`, comes first through `POST /v1/model`.
+From a stand running on the card, `scripts/up.sh --cpu` stops `ollama` and `vllm` before it starts.
+
+The `embedding` role moved to `ollama-cpu` is another embedder than the one the index and the questions
+were built with: every search is refused until a variant is indexed with it, as section 3 does for
+vLLM, and the next `up` re-embeds every question of every set in place, and again on the way back.
 
 No reranker: ollama scores no pairs, so `"rerank": true` and the agent's gate at `gate_signal:
 cross_encoder` or `either` do not work in this mode.

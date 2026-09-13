@@ -15,7 +15,8 @@ TIMEOUT = 15
 def _gonka_key(spec: EngineSpec) -> dict:
     seen = requests.get(f"{base_url(spec)}/v1/auth/key", headers=bearer(spec), timeout=TIMEOUT)
     seen.raise_for_status()
-    return {"balance": seen.json()["data"]["balance"], "unit": "usd"}
+    # the broker sends a binary float, and its tail of nines read as a debit of its own
+    return {"balance": round(float(seen.json()["data"]["balance"]), 8), "unit": "usd"}
 
 
 # each broker shapes its service route its own way, so the row names a reader and the code keeps it
