@@ -53,8 +53,11 @@ def test_a_guest_row_is_priced_by_its_own_stamp():
         (10, 5, {"ragas_faithfulness": {"score": 0.4}}),
         (10, 5, {}),
     ]
-    ragas = run_tokens.summarize([], rows)["per_question"]["ragas"]
-    assert (ragas["rows_counted"], ragas["rows_missing"], ragas["prompt"], ragas["completion"]) == (1, 1, 930, 40)
+    priced = run_tokens.summarize([], rows)["per_question"]
+    ragas, embedder = priced["ragas"], priced["ragas_embedding"]
+    assert (ragas["rows_counted"], ragas["rows_missing"], ragas["prompt"], ragas["completion"]) == (1, 1, 900, 40)
+    # the embedder is priced apart, as `spent` counts it apart
+    assert embedder["prompt"] == 30
     assert run_tokens.summarize([], [])["spent"] is None
 
 

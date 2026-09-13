@@ -1,6 +1,5 @@
 import contextlib
 import contextvars
-import os
 import threading
 from dataclasses import dataclass
 from typing import Any
@@ -17,7 +16,6 @@ from models.registry import EngineKind
 from openai import APIStatusError, OpenAIError
 
 # where the seeded engine answers; every other engine says so through its own `env_prefix`
-LLM_BASE = os.getenv("OLLAMA_BASE_URL") or config.settings.llm.base_url
 
 log = logging_setup.get_logger(__name__)
 

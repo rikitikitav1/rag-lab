@@ -15,6 +15,7 @@ from use_cases import rejudge
 
 log = logging_setup.get_logger(__name__)
 
+# fuses the arms' ranks into the report's one ranking, not the search legs: those read `retrieval.rrf_k`
 _RRF_K = 60
 _AXES = rejudge.AXES
 _COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")

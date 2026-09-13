@@ -62,6 +62,9 @@ def summarize(
             "generation": _price([(p, c) for p, c, _ in rows]),
             "judging": _price([_judged(metrics) for _, _, metrics in rows if _judged(metrics) is not _UNJUDGED]),
             "ragas": _price([_guested(metrics) for _, _, metrics in rows if _guested(metrics) is not _UNJUDGED]),
+            "ragas_embedding": _price([
+                _guested(metrics, embedder=True) for _, _, metrics in rows if _guested(metrics) is not _UNJUDGED
+            ]),
         },
         "reads": READS,
     }
@@ -97,13 +100,17 @@ def _judged(metrics: dict | None):
     return sum(s[token_fields.JUDGE_PROMPT] for s in stamps), sum(s[token_fields.JUDGE_COMPLETION] for s in stamps)
 
 
-def _guested(metrics: dict | None):
+_EMBEDDERS = ("ragas_embedding", "embedding")
+
+
+def _guested(metrics: dict | None, embedder: bool = False):
     stamps = [v for k, v in (metrics or {}).items() if k.startswith(PREFIX) and isinstance(v, dict) and "score" in v]
     if not stamps:
         return _UNJUDGED
     if any("tokens" not in s for s in stamps):
         return None, None
-    entries = [e for s in stamps for role in (s["tokens"] or {}).values() for e in role]
+    # the guest's embedder is its own role, and folded in it made this disagree with `spent`
+    entries = [e for s in stamps for name, got in (s["tokens"] or {}).items() if (name in _EMBEDDERS) == embedder for e in got]
     return sum(e.get("prompt", 0) for e in entries), sum(e.get("completion", 0) for e in entries)
 
 

@@ -21,7 +21,12 @@ from sqlalchemy.orm import defer
 from use_cases import rejudge, retrieval_compare
 from use_cases.chat import resolve_rerank
 
-from api.v1.eval import validate_axis_values, validate_param_values, value_suffix
+from api.v1.eval import (
+    refuse_a_taken_run,
+    validate_axis_values,
+    validate_param_values,
+    value_suffix,
+)
 
 router = APIRouter(prefix="/experiment", tags=["experiments"])
 
@@ -343,6 +348,8 @@ async def create_experiment(
         return await commit_and_refresh(session, exp)
 
     base = request.name or f"{request.dataset}_{request.pipeline.value}_{int(time.time())}"
+    for value in request.param_values:
+        await refuse_a_taken_run(session, f"{base}_{request.param}_{value_suffix(value)}")
     run_names = []
     for value in request.param_values:
         run_name = f"{base}_{request.param}_{value_suffix(value)}"
