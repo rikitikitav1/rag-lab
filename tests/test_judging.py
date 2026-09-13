@@ -579,7 +579,7 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     _judged_on(monkeypatch, "ollama")
     on_card, last, disturbed, handed = [None], [None], [False], [False]
     asked = []
-    monkeypatch.setattr(j, "judge_on_card", lambda _model=None: on_card[0])
+    monkeypatch.setattr(j, "judge_on_card", lambda _model=None, role="judging": on_card[0])
     monkeypatch.setattr(
         j, "_last_residency", lambda name, started=None: asked.append(name) or last[0]
     )
@@ -915,3 +915,15 @@ def test_the_card_is_read_for_the_engine_that_judges_not_the_one_the_role_names(
 
     assert judging.judge_on_card("Qwen/Qwen2.5-7B-Instruct-AWQ") is False
     assert asked == ["Qwen/Qwen2.5-7B-Instruct-AWQ"], "the override must reach the card probe"
+
+
+def test_a_remote_judge_is_stamped_with_no_residency_rather_than_one_of_its_own(monkeypatch):
+    # every pass minted its own id for a broker, and a reader took two passes for one residency each
+    import engines
+    import job_handlers.judging as j
+    from engines import card
+    from models.registry import EngineKind, Placement
+
+    cloud = engines.EngineSpec(8, "gonka", EngineKind.openai_compatible, "GONKA", Placement.remote)
+    monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: engines.Resolved("m", cloud))
+    assert j._residency(42) == j.Residency(None, False, card.NO_RESIDENCY)

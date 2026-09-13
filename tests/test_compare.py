@@ -443,3 +443,11 @@ def test_compare_carries_verdicts_for_a_pair_and_none_for_more():
     rows = [_scored(1, 1, 1)]
     assert compare.compare({"a": rows, "b": rows})["verdicts"]["comparable"] == 2
     assert compare.compare({"a": rows, "b": rows, "c": rows})["verdicts"] is None
+
+
+def test_a_remote_judge_is_read_as_having_no_residency_and_not_as_an_old_row():
+    from evals import compare
+
+    said = compare._what_to_read_first(True, True, None, True, True, remote_judge=True)
+    assert "remote judge has no residency" in said
+    assert "before this was recorded" in compare._what_to_read_first(True, True, None, True, True)

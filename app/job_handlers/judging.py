@@ -11,7 +11,7 @@ from engines import card
 from errors import StandFault
 from evals import guest_axes, measurements, sampling
 from models.eval import Question, QuestionLog
-from models.registry import Engine, EngineKind, Purpose, Role
+from models.registry import Engine, EngineKind, Placement, Purpose, Role
 from orm import dsn
 from orm.sync_db import Session
 from redaction import redact
@@ -41,8 +41,8 @@ residency_instrument = card.placement_instrument
 
 
 # a pass whose guests cost several times our own can lose the judge to a neighbour halfway
-def judge_on_card(model: str | None = None) -> bool | None:
-    judged_by = llm.resolve_for("judging", model)
+def judge_on_card(model: str | None = None, role: str = "judging") -> bool | None:
+    judged_by = llm.resolve_for(role, model)
     return card.model_on_card(judged_by.engine, judged_by.name)
 
 
@@ -294,7 +294,7 @@ def judge_language(options: dict) -> None:
 def judge_guest_axes(options: dict) -> None:
     if not guests_available():
         raise ValueError("this runtime carries no `ragas`, the guest axes cannot be scored here")
-    require_role_ready(Role.judging)
+    require_role_ready(Role.ragas)
 
     with Session() as session:
         log_ids = _guest_log_ids(session, options)
@@ -306,16 +306,17 @@ def judge_guest_axes(options: dict) -> None:
     # drawn once: a sweep that redraws turns a budget of fifty rows into a hundred and fifty
     budget = set(log_ids)
     width = judge_width(options.get("judge_width"))
+    messages = options.get("messages") or guest_axes.MESSAGE_FORMS[0]
     job_id = options.get("_job_id")
-    seen = _residency(job_id)
-    stamp = stamp_of(width, seen)
+    seen = _residency(job_id, role=Role.ragas)
+    stamp = stamp_of(width, seen, role=Role.ragas)
     started_on_card = seen.on_card
 
     def one(log_id):
         if _stop_asked(job_id):
             return False
         try:
-            return _score_guests(log_id, stamp)
+            return _score_guests(log_id, stamp, messages)
         except StandFault:
             raise
         except Exception as e:
@@ -343,7 +344,7 @@ def judge_guest_axes(options: dict) -> None:
             log.warning("judge_guest_axes.sweeping_again", owed=len(log_ids), sweep=sweep + 1)
     if log_ids and not _stop_asked(job_id):
         log.error("judge_guest_axes.sweeps_exhausted", owed=len(log_ids))
-    ended_on_card = judge_on_card()
+    ended_on_card = judge_on_card(role=Role.ragas)
     # a swallowed reading leaves `started_on_card` None, and None against a real bool is not a move
     if None not in (started_on_card, ended_on_card) and started_on_card != ended_on_card:
         # the rows carry their own reading; this says the pass is not one residency any more
@@ -394,8 +395,28 @@ def _drawn(ids: list[int], sample, seed) -> list[int]:
     return sorted(picked)
 
 
+# read once a row, and a failed reading is unknown: a question about the card must not take the row down
+def _guest_on_card() -> bool | None:
+    try:
+        return judge_on_card(role=Role.ragas)
+    except StandFault:
+        raise
+    except Exception as e:
+        log.warning("guest_axes.card_unread", error=str(e))
+        return None
+
+
+def _guest_seat_on_the_card() -> bool:
+    try:
+        return llm.resolve(Role.ragas).engine.placement in engines.CARD
+    except StandFault:
+        raise
+    except Exception:
+        return False
+
+
 # read, close, score, merge: the lock went and the session stayed open through minutes of calls
-def _score_guests(log_id: int, stamp: dict) -> bool:
+def _score_guests(log_id: int, stamp: dict, messages: str = guest_axes.MESSAGE_FORMS[0]) -> bool:
     with Session() as session:
         ql = session.get(QuestionLog, log_id)
         if ql is None or not ql.answered:
@@ -405,13 +426,16 @@ def _score_guests(log_id: int, stamp: dict) -> bool:
         row = guest_axes.carried(ql)
 
     scored, wrote = {}, False
+    on_card = _guest_on_card() if owed else None
+    # a model half on the processor answers with other kernels: a measuring pass stops, as a run does
+    if on_card is False and _guest_seat_on_the_card():
+        raise card.CardNotHanded("the guest's model is not whole on the card; the pass stops rather than score with it")
     for axis in owed:
         if _errored(metrics, axis):
             continue
         try:
             # our stamp plus the card read here: the stamp's `on_card` is about the pass
-            scored[axis] = {**stamp, **guest_axes.score(axis, row),
-                            "on_card_at_this_row": judge_on_card()}
+            scored[axis] = {**stamp, **guest_axes.score(axis, row, messages), "on_card_at_this_row": on_card}
             wrote = True
         except StandFault:
             raise
@@ -512,13 +536,15 @@ class LateResidency:
 
 
 # a residency is read by the instrument its own engine has, and the engines have different ones
-def _residency(job_id, model: str | None = None) -> Residency:
+def _residency(job_id, model: str | None = None, role: str = "judging") -> Residency:
     try:
-        judge = llm.resolve_for("judging", model)
+        judge = llm.resolve_for(role, model)
         engine = judge.engine
+        if engine.placement is Placement.remote:
+            return Residency(None, False, card.NO_RESIDENCY)
         if engine.kind is EngineKind.vllm:
             return _by_process_start(job_id, engine)
-        on_card = judge_on_card(model)
+        on_card = judge_on_card(model, role)
         # partly on the card is a different instrument: layers on the cpu answer with other kernels
         if on_card is not True:
             return Residency(job_id, on_card, residency_instrument(engine))
@@ -640,13 +666,13 @@ def _card_changed_hands(since: str | None, engine_name: str) -> bool:
 
 
 # once per row, not per axis: the width belongs to the pass and the sampler to the engine that answered
-def stamp_of(width: int, residency: Residency | None = None, model: str | None = None) -> dict:
+def stamp_of(width: int, residency: Residency | None = None, model: str | None = None, role: str = "judging") -> dict:
     from datetime import datetime, timezone
 
     seen = residency or Residency(None, None)
     # the bench can override the judge, and then the row was answered by that model's engine
-    judged_by = llm.resolve_for("judging", model)
-    sampler = llm.sampler(role="judging", spec=judged_by.engine)
+    judged_by = llm.resolve_for(role, model)
+    sampler = llm.sampler(role=role, spec=judged_by.engine)
     return {
         # at temperature zero this says the sampler took no part, not that the pass repeats
         "seed": sampler.sent.get("seed"),

@@ -18,7 +18,7 @@ def test_a_layer_replaces_the_whole_role_table():
 
     loaded = config._load(str(ROOT / "config.yaml"), str(ROOT / "config.cpu.yaml"))
     roles = loaded.llm.roles
-    assert set(roles) == {"embedding", "generation", "judging", "paraphrasing"}
+    assert set(roles) == {"embedding", "generation", "judging", "paraphrasing", "ragas", "ragas_embedding"}
     assert {cfg.engine for cfg in roles.values()} == {"ollama-cpu"}
     assert "reranking" not in roles, "ollama scores no pairs, so the layer seats no reranker"
 

@@ -4,4 +4,6 @@ llm:
     embedding:    { model: bge-m3, engine: ollama-cpu }
     generation:   { model: llama3.1:8b, engine: ollama-cpu, options: { max_tokens: 1024, temperature: 0.1 } }
     judging:      { model: qwen2.5:7b, engine: ollama-cpu, options: { max_tokens: 1024, temperature: 0, seed: 0 } }
+    ragas:        { model: qwen2.5:7b, engine: ollama-cpu, options: { max_tokens: 1024, temperature: 0, seed: 0 } }
+    ragas_embedding: { model: bge-m3, engine: ollama-cpu }
     paraphrasing: { model: gemma2:9b, engine: ollama-cpu, options: { max_tokens: 512, temperature: 0.3 } }

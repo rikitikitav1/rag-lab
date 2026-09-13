@@ -23,8 +23,8 @@ def test_a_call_counts_into_every_open_scope_and_only_a_carried_pool_thread_coun
         with ThreadPoolExecutor(2) as pool:
             list(pool.map(llm.carried(lambda i: llm._count("judging", LOCAL, "m", 1, 1)), range(4)))
             list(pool.map(lambda i: llm._count("judging", LOCAL, "m", 100, 100), range(2)))
-    assert row.record() == {"judging": [_entry(10, 3, 1)]}
-    assert job.record() == {"judging": [_entry(14, 7, 5)]}
+    assert row.record() == {"judging": [_entry(10, 3, 1, max_prompt=10)]}
+    assert job.record() == {"judging": [_entry(14, 7, 5, max_prompt=10)]}
     assert llm.Tally().record() is None, "a job that called nothing writes nothing"
 
 
@@ -38,11 +38,11 @@ def test_an_embedding_counts_its_tokens_and_a_local_one_without_them_is_a_named_
     _embedder(monkeypatch, SimpleNamespace(prompt_tokens=12))
     with llm.accounting() as job:
         llm._embeddings(engines.Resolved("m", LOCAL), ["a", "b"], "embedding")
-    assert job.record() == {"embedding": [_entry(12, 0, 1)]}
+    assert job.record() == {"embedding": [_entry(12, 0, 1, max_prompt=12)]}
     _embedder(monkeypatch, None)
     with llm.accounting() as job:
         llm._embeddings(engines.Resolved("m", LOCAL), ["a"], "embedding")
-    assert job.record() == {"embedding": [_entry(0, 0, 1, uncounted=1)]}
+    assert job.record() == {"embedding": [_entry(0, 0, 1, uncounted=1, max_prompt=0)]}
     # on a cloud the tokens are the quota
     with pytest.raises(llm.NoUsage):
         llm._embeddings(engines.Resolved("m", CLOUD), ["a"], "embedding")
@@ -74,7 +74,8 @@ def test_the_worker_writes_what_a_failed_job_spent(monkeypatch):
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: written.append((id, record)))
     assert worker.run_once(["default"])
     assert failed == [5]
-    assert written == [(5, {"generation": [{"engine": "gonka", "model": "m", "prompt": 30, "completion": 9, "calls": 1}]})]
+    assert written == [(5, {"generation": [{"engine": "gonka", "model": "m", "prompt": 30, "completion": 9, "calls": 1,
+                                           "max_prompt": 30}]})]
 
 
 def test_a_cloud_call_carries_its_run_as_the_cache_key_and_a_local_one_is_left_alone(monkeypatch):
@@ -144,3 +145,15 @@ def test_a_finished_job_has_its_count_before_it_reads_done(monkeypatch):
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: events.append("tokens"))
     assert worker.run_once(["default"])
     assert events == ["tokens", "done"]
+
+
+def test_a_count_keeps_the_longest_input_and_the_calls_the_output_limit_cut():
+    # the guest's reasoning ran past 1024 tokens on 15 of 113 calls, and only the log said so
+    with llm.accounting() as job:
+        llm._count("ragas", LOCAL, "m", 6403, 1024, "length")
+        llm._count("ragas", LOCAL, "m", 900, 200, "stop")
+    assert job.record() == {"ragas": [{**_entry(7303, 1224, 2), "model": "m", "max_prompt": 6403, "cut_by_length": 1}]}
+    first = {"ragas": [{**_entry(900, 200, 1), "max_prompt": 900}]}
+    second = {"ragas": [{**_entry(6403, 1024, 1), "max_prompt": 6403, "cut_by_length": 1}]}
+    merged = job_queue.merged_tokens(first, second)["ragas"][0]
+    assert (merged["max_prompt"], merged["cut_by_length"], merged["calls"]) == (6403, 1, 2)

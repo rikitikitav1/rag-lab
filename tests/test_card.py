@@ -378,7 +378,7 @@ def test_every_handler_that_names_a_role_passes_a_gate_that_asks_for_the_card():
 # the handlers that answer with a model, and the role each must ask for before its first call
 ROLE_HANDLERS = [
     ("judging", "judge_language", {"run_name": "r"}, "require_role_ready", "judging"),
-    ("judging", "judge_guest_axes", {"run_name": "r"}, "require_role_ready", "judging"),
+    ("judging", "judge_guest_axes", {"run_name": "r"}, "require_role_ready", "ragas"),
     ("judging", "judge_answers", {"run_name": "r"}, "require_role_ready", "judging"),
     ("dataprep", "paraphrase_questions", {}, "require_role_ready", "paraphrasing"),
     ("dataprep", "build_veto_set", {}, "require_role_ready", "paraphrasing"),
@@ -805,3 +805,20 @@ def test_a_judging_pass_asks_for_the_card_once(monkeypatch):
         judging.judge_answers({"run_name": "r"})
     # a refusal comes before the card, so it never wakes a judge it would turn away
     assert asked == [("role", False), ("second judge?", "r"), ("card", "judging")]
+
+
+def test_a_model_partly_on_the_card_is_handed_again_rather_than_taken_as_held(monkeypatch):
+    # a retried handover found gemma2:9b 15% on the processor, took it as held and finished in 29 ms
+    from job_handlers import card as handler
+
+    handed = []
+    monkeypatch.setattr(handler.card, "holds_for", lambda spec: True)
+    monkeypatch.setattr(handler, "_to_load", lambda spec, model: False)
+    monkeypatch.setattr(handler.card, "spilled", lambda spec, model: True)
+    monkeypatch.setattr(handler.card, "hand_to", lambda spec, model, allow_spill=False: handed.append(allow_spill))
+    monkeypatch.setattr(handler, "_probe_the_woken_generator", lambda spec: None)
+    handler.take(OLLAMA, "gemma2:9b")
+    assert handed == [False], "the handover makes the whole-card check, so it has to run"
+    handed.clear()
+    handler.take(OLLAMA, "gemma2:9b", allow_spill=True)
+    assert handed == [], "a run that allows the processor keeps what it already has"

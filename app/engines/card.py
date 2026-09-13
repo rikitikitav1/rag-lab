@@ -17,6 +17,9 @@ log = logging_setup.get_logger(__name__)
 WAIT_CEILING = 60
 POLL_SECONDS = 0.5
 
+# a broker's weights are not ours to watch load, so a remote judge's stamp says so instead of minting one
+NO_RESIDENCY = "none: a remote engine has no residency to read"
+
 
 class CardNotHanded(StandFault):
     pass

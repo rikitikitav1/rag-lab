@@ -94,6 +94,8 @@ class JudgeGuestAxes(Spec):
     log_ids: list[int] | None = None
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
+    # the old ruler, an empty system beside the prompt, kept for a bridge to numbers taken with it
+    messages: Literal["user_only", "empty_system"] = "user_only"
 
 
 class JudgeLanguage(Spec):
@@ -220,7 +222,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "eval_run": (Role.generation, Role.embedding, Role.reranking),
     "compare_retrieval": (Role.reranking,),
     "judge_answers": (Role.judging,),
-    "judge_guest_axes": (Role.judging, Role.embedding),
+    "judge_guest_axes": (Role.ragas, Role.ragas_embedding),
     "judge_language": (Role.judging, Role.generation),
     "check_mcp_health": (),
     "pull_llm_model": (),
