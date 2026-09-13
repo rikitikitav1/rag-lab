@@ -1,10 +1,11 @@
 import logging_setup
+from errors import StandFault
 from evals import runner
 from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from sqlalchemy import update
 
-from .base import register, require_card, require_model_ready, require_role_ready
+from .base import Final, register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
 
@@ -19,27 +20,32 @@ def eval_run(options: dict) -> None:
     # one preamble takes the card: two, on two engines, handed it back and forth and never started
     require_role_ready(Role.embedding, take_card=False)
     require_card("generation", model, allow_spill=bool(options.get("allow_cpu")))
-    answered = runner.run(
-        run_name=options["run_name"],
-        set_name=options.get("set_name"),
-        question_ids=options.get("question_ids"),
-        # the runner resolves the default: two deciders is how a null became every run's procedure
-        use_rerank=options.get("rerank"),
-        pipeline=options.get("pipeline", Pipeline.single_shot),
-        language=options.get("language"),
-        k=options.get("k"),
-        max_hops=options.get("max_hops"),
-        model=model,
-        fallback_policy=options.get("fallback_policy"),
-        gate_signal=options.get("gate_signal"),
-        restate_tools=bool(options.get("restate_tools")),
-        weak_distance=options.get("weak_distance"),
-        orchestrator=options.get("orchestrator"),
-        allow_cpu=bool(options.get("allow_cpu")),
-        topic_threshold=options.get("topic_threshold"),
-        job_id=options.get("_job_id"),
-        variant=options.get("variant"),
-    )
+    try:
+        answered = runner.run(
+            run_name=options["run_name"],
+            set_name=options.get("set_name"),
+            question_ids=options.get("question_ids"),
+            # the runner resolves the default: two deciders is how a null became every run's procedure
+            use_rerank=options.get("rerank"),
+            pipeline=options.get("pipeline", Pipeline.single_shot),
+            language=options.get("language"),
+            k=options.get("k"),
+            max_hops=options.get("max_hops"),
+            model=model,
+            fallback_policy=options.get("fallback_policy"),
+            gate_signal=options.get("gate_signal"),
+            restate_tools=bool(options.get("restate_tools")),
+            weak_distance=options.get("weak_distance"),
+            orchestrator=options.get("orchestrator"),
+            allow_cpu=bool(options.get("allow_cpu")),
+            topic_threshold=options.get("topic_threshold"),
+            job_id=options.get("_job_id"),
+            variant=options.get("variant"),
+            resume=bool(options.get("resume")),
+        )
+    # the worker's retry would answer every question again beside the rows already written
+    except StandFault as e:
+        raise Final(str(e)) from e
     log.info("eval_run.done", run_name=options["run_name"], answered=answered)
 
 

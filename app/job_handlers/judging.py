@@ -232,7 +232,7 @@ def judge_answers(options: dict) -> None:
             judged += bool(one(log_id))
     else:
         with ThreadPoolExecutor(max_workers=width) as pool:
-            judged = sum(1 for done in pool.map(one, log_ids) if done)
+            judged = sum(1 for done in pool.map(llm.carried(one), log_ids) if done)
     stopped = _stop_asked(job_id)
     log.info(
         "judge_answers.done",
@@ -335,7 +335,7 @@ def judge_guest_axes(options: dict) -> None:
                 scored += bool(one(log_id))
         else:
             with ThreadPoolExecutor(max_workers=width) as pool:
-                scored += sum(1 for done in pool.map(one, log_ids) if done)
+                scored += sum(1 for done in pool.map(llm.carried(one), log_ids) if done)
         with Session() as session:
             still = _guest_log_ids(session, {**options, "sample": None})
         log_ids = [i for i in still if i in budget]

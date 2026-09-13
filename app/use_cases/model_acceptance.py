@@ -171,20 +171,28 @@ _PROBE_TOOL = {"type": "function", "function": {
 # a cloud writes its thinking and its call markup into the text, and the row's parser must cut all of it
 def _refuse_markup_the_parser_leaves(role: Role, model_name: str, spec) -> None:
     import engines
+    import llm
     from engines import answer_parsers
 
     found = engines.find_model(model_name, spec.id)
     parser = found.parser if found else "none"
     try:
-        reply = engines.client_for(spec).chat.completions.create(
-            model=model_name, max_tokens=512, temperature=0, tools=[_PROBE_TOOL],
-            messages=[{"role": "user", "content": "Use the tool to find how Redis persistence works."}],
+        # through `llm`, so the probe's tokens land in the job's count and its errors read as every call's
+        reply = llm.complete_on(
+            spec, model_name, [{"role": "user", "content": "Use the tool to find how Redis persistence works."}],
+            {"max_tokens": 512, "temperature": 0, "tools": [_PROBE_TOOL]}, role,
         )
     # no key, no address or a refused key is a row no call can reach, not a probe that failed to land
     except engines.Unconfigured as e:
         raise ValueError(f"{model_name} on {spec.name} cannot be called: {e}") from e
-    except (AuthenticationError, PermissionDeniedError) as e:
-        raise ValueError(f"{model_name} on {spec.name} cannot be called: http {e.status_code}") from e
+    # a property of the row, like a missing key: every run on it would stop on its first call
+    except llm.NoUsage as e:
+        raise ValueError(f"{model_name} on {spec.name} sends no token usage: {e}") from e
+    except RuntimeError as e:
+        refused = e.__cause__
+        if isinstance(refused, (AuthenticationError, PermissionDeniedError)):
+            raise ValueError(f"{model_name} on {spec.name} cannot be called: http {refused.status_code}") from e
+        return _unknown(role, model_name, e)
     except Exception as e:  # a probe must not become the reason a role cannot be assigned
         return _unknown(role, model_name, e)
     left = answer_parsers.parse(parser, reply.choices[0].message.content).leftover_markers

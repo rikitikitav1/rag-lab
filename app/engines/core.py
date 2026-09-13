@@ -130,6 +130,13 @@ def address_of(spec: EngineSpec) -> str:
 
 _clients: dict[int, OpenAI] = {}
 
+# a broker drops a call now and then and answers the next one; every 5xx past the retries stops the run
+CLOUD_RETRIES = 4
+
+
+def _retries(spec: EngineSpec) -> int:
+    return CLOUD_RETRIES if spec.kind is EngineKind.openai_compatible else 1
+
 
 def client_for(spec: EngineSpec) -> OpenAI:
     got = _clients.get(spec.id)
@@ -138,7 +145,7 @@ def client_for(spec: EngineSpec) -> OpenAI:
             base_url=f"{base_url(spec)}/v1",
             api_key=api_key(spec),
             timeout=LLM_TIMEOUT,
-            max_retries=1,
+            max_retries=_retries(spec),
         )
     return got
 

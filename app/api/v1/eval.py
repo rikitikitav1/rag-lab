@@ -13,11 +13,12 @@ from evals import retrieval_metrics
 from evals.pools import Ambiguous
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from models.eval import QuestionLog
+from models import Job
+from models.eval import Question, QuestionLog
 from models.registry import Pipeline, refuse_unknown_registry
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from use_cases import agent_policy, rejudge, retrieval_compare
@@ -321,11 +322,73 @@ def value_suffix(value) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]", "_", str(value))
 
 
+async def _rows_of(session, run_name: str) -> int:
+    return await session.scalar(
+        select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == run_name)
+    ) or 0
+
+
+async def _question_ids_in(session, ids: list[int]) -> set[int]:
+    return set((await session.scalars(select(Question.id).where(Question.id.in_(ids)))).all())
+
+
+# refused at the door, not an hour in: a run over fewer questions than named reads as the named set
+async def _refuse_missing_questions(session, ids: list[int]) -> None:
+    repeated = sorted({i for i in ids if ids.count(i) > 1})
+    if repeated:
+        raise HTTPException(status_code=422, detail=f"question ids repeat: {repeated[:20]}")
+    missing = sorted(set(ids) - await _question_ids_in(session, ids))
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{len(missing)} of {len(ids)} question ids are not in the stand: {missing[:20]}",
+        )
+
+
+async def _eval_runs_named(session, run_name: str) -> list:
+    return list((await session.scalars(
+        select(Job).where(Job.type == "eval_run", Job.options["run_name"].astext == run_name).order_by(Job.id.desc())
+    )).all())
+
+
+# a resumed run changes nothing: it runs on the stopped job's own options and asks only the unanswered
+async def _resume(session, request: EvalRunRequest) -> JobEnqueuedResponse:
+    extra = sorted(request.model_fields_set - {"run_name", "resume"})
+    if not request.run_name or extra:
+        raise HTTPException(
+            status_code=422,
+            detail="resume takes run_name alone: a resumed run changes nothing"
+            + (f", and {', '.join(extra)} would" if extra else ""),
+        )
+    jobs = await _eval_runs_named(session, request.run_name)
+    if not jobs:
+        raise HTTPException(status_code=404, detail=f"no eval_run named {request.run_name} to resume")
+    if any(job.status in job_queue.ACTIVE for job in jobs):
+        raise HTTPException(status_code=409, detail=f"run {request.run_name} is still queued or running")
+    # the worker's own bookkeeping belongs to the attempt that stopped, not to the resumed one
+    options = {k: v for k, v in jobs[0].options.items() if k not in ("attempts", "deferred_seconds")}
+    return await _enqueue(session, "eval_run", {**options, "resume": True})
+
+
 @router.post("/run", response_model=JobEnqueuedResponse)
 async def enqueue_eval_run(
     request: EvalRunRequest,
     session: AsyncSession = Depends(get_session),
 ):
+    if request.resume:
+        return await _resume(session, request)
+    # a taken name, by its rows or by a job that stopped before its first row, is resumed, not run twice
+    if request.run_name:
+        rows = await _rows_of(session, request.run_name)
+        jobs = await _eval_runs_named(session, request.run_name)
+        if rows or jobs:
+            raise HTTPException(
+                status_code=409,
+                detail=f"run {request.run_name} has {rows} rows and {len(jobs)} eval_run jobs: pass resume"
+                " to answer the rest on its own options, or name a new run",
+            )
+    if request.question_ids:
+        await _refuse_missing_questions(session, request.question_ids)
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
     return await _enqueue(
         session,
@@ -348,6 +411,7 @@ async def enqueue_eval_run(
             "allow_cpu": request.allow_cpu,
             "restate_tools": request.restate_tools,
             "variant": request.variant,
+            "resume": False,
         },
     )
 

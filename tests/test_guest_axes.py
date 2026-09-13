@@ -487,8 +487,16 @@ def test_a_guest_row_carries_what_its_calls_cost(monkeypatch):
     # ragas asks the model several times for one row and keeps only the text; the stamp keeps the sum
     import llm
     from evals import guest_llm
+    from models.registry import EngineKind, Placement
 
-    monkeypatch.setattr(guest_llm.llm, "ask", lambda *a, **kw: llm.Completion(text="x", prompt_tokens=10, completion_tokens=3))
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x", tool_calls=None), finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
+    )
+    monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
+    monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
+    monkeypatch.setattr(llm, "_complete", lambda *a, **kw: reply)
     client = guest_llm.OurClient()
 
     class Metric:
@@ -501,4 +509,42 @@ def test_a_guest_row_carries_what_its_calls_cost(monkeypatch):
     monkeypatch.setattr(guest_axes, "_sample", lambda ql: None)
     monkeypatch.setattr(guest_llm, "stamp", lambda: {})
     got = guest_axes.score("faithfulness", _row())
-    assert (got["prompt_tokens"], got["completion_tokens"]) == (20, 6)
+    assert got["tokens"] == {"judging": [{"engine": "ollama", "model": "m", "prompt": 20, "completion": 6, "calls": 2}]}
+
+
+def test_two_guest_rows_in_two_threads_each_keep_their_own_count(monkeypatch):
+    # one counter per module mixed a neighbour's calls into a row once the pass ran wider than one
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    import llm
+    from evals import guest_llm
+    from models.registry import EngineKind, Placement
+
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x", tool_calls=None), finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
+    )
+    monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
+    monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
+    monkeypatch.setattr(llm, "_complete", lambda *a, **kw: reply)
+    together = threading.Barrier(2)
+    client = guest_llm.OurClient()
+
+    class Metric:
+        async def single_turn_ascore(self, calls):
+            together.wait(timeout=5)
+            for _ in range(calls):
+                await client.agenerate_text("p")
+            return 0.5
+
+    monkeypatch.setattr(guest_axes, "_metric", lambda axis: Metric())
+    monkeypatch.setattr(guest_axes, "_sample", lambda ql: ql.calls)
+    monkeypatch.setattr(guest_llm, "stamp", lambda: {})
+    with llm.accounting() as job:
+        with ThreadPoolExecutor(2) as pool:
+            got = list(pool.map(llm.carried(lambda ql: guest_axes.score("faithfulness", ql)),
+                                [_row(id=1, calls=1), _row(id=2, calls=3)]))
+    assert [row["tokens"]["judging"][0]["calls"] for row in got] == [1, 3]
+    assert job.record()["judging"][0]["calls"] == 4

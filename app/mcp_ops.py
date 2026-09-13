@@ -11,6 +11,7 @@ from evals import (
     question_sets,
     retrieval_metrics,
     run_debts,
+    run_tokens,
     stats,
 )
 from evals.loaders import load_logs
@@ -41,7 +42,10 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
         "its rows cannot owe it: per guest axis the rows owed, scored and abstained, "
         "which of question_text/answer/contexts/reference the others lack, the seconds "
         "one row of this run costs on that axis, and what finishing the debt would cost. "
-        "Read debts before spending a judge or a guest pass on a run."
+        "Read debts before spending a judge or a guest pass on a run. tokens says what the run "
+        "cost: spent is the sum over the run's jobs per role, engine and model, retries included, "
+        "and is what a broker's quota sees; per_question is the price of one row per role, from "
+        "the rows, with the rows that carry no count named rather than read as zero."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -51,7 +55,10 @@ def run_metrics(
     _named_runs([run_name.strip()] if run_name.strip() else [])
     gen = generation_metrics.evaluate(run_name)
     ret = retrieval_metrics.evaluate(run_name)
-    return {"run_name": run_name, **gen, **ret, "debts": run_debts.safely(run_name)}
+    return {
+        "run_name": run_name, **gen, **ret, "debts": run_debts.safely(run_name),
+        "tokens": run_tokens.of(run_name),
+    }
 
 
 @mcp_ops.tool(
@@ -358,6 +365,8 @@ def list_jobs(
                 "status": j.status,
                 "run_name": (j.options or {}).get("run_name"),
                 "elapsed": j.elapsed,
+                # per role, per engine and model; null for a job from before the count
+                "tokens": j.tokens,
             }
             for j in session.scalars(stmt)
         ]

@@ -49,6 +49,8 @@ class EvalRunFields(Spec):
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
     # llama3.1 renders tool schemas only in the last user message, and a tool answer buries them
     restate_tools: bool = False
+    # answer only what a stopped run left unanswered, on the options it ran with
+    resume: bool = False
 
 
 # what the queue accepts is what a door may offer plus what the stand attaches to its own jobs

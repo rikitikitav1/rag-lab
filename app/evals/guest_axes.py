@@ -116,17 +116,18 @@ def _finite(score) -> float | None:
 
 
 def score(axis: str, ql) -> dict:
-    from evals.guest_llm import spent, stamp
+    import llm
+    from evals.guest_llm import stamp
 
-    start, before = time.perf_counter(), spent()
-    value = asyncio.run(_metric(axis).single_turn_ascore(_sample(ql)))
-    after = spent()
+    start = time.perf_counter()
+    # ragas asks the model several times for one row and keeps only the text; this scope keeps the sum
+    with llm.accounting() as row:
+        value = asyncio.run(_metric(axis).single_turn_ascore(_sample(ql)))
     finite = _finite(value)
     return {
         "score": finite,
         "abstained": finite is None,
         "elapsed": round(time.perf_counter() - start, 3),
-        "prompt_tokens": after[0] - before[0],
-        "completion_tokens": after[1] - before[1],
+        "tokens": row.record(),
         **stamp(),
     }

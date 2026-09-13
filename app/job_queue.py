@@ -145,6 +145,31 @@ def fail(id: int, error: dict, elapsed: float | None = None) -> None:
     _update(id, **fields)
 
 
+# added to earlier attempts, on a cancelled job too; one that spent nothing writes {}, null is before the count
+def add_tokens(id: int, record: dict | None) -> None:
+    with Session() as session:
+        job = session.get(Job, id)
+        if job is None:
+            return
+        job.tokens = merged_tokens(job.tokens, record or {})
+        session.commit()
+
+
+def merged_tokens(was: dict | None, more: dict) -> dict:
+    out = {role: [dict(entry) for entry in entries] for role, entries in (was or {}).items()}
+    for role, entries in more.items():
+        held = out.setdefault(role, [])
+        for entry in entries:
+            same = next((e for e in held if (e["engine"], e["model"]) == (entry["engine"], entry["model"])), None)
+            if same is None:
+                held.append(dict(entry))
+                continue
+            for key in ("prompt", "completion", "calls", "uncounted"):
+                if key in entry or key in same:
+                    same[key] = same.get(key, 0) + entry.get(key, 0)
+    return out
+
+
 def reschedule(
     id: int, options: dict, delay: timedelta, elapsed: float | None = None
 ) -> None:

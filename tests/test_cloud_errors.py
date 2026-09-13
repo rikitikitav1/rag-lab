@@ -59,3 +59,47 @@ def test_a_quota_or_a_rate_limit_stops_the_run(monkeypatch, status):
     with pytest.raises(llm.BrokerRefused, match=f"http {status}") as caught:
         llm._complete(CLOUD, "MiniMaxAI/MiniMax-M2.7", [], {})
     assert isinstance(caught.value, StandFault), "a loop forgives a RuntimeError as one failed row"
+
+
+@pytest.mark.parametrize("status", [500, 502, 503])
+def test_a_server_that_says_it_is_broken_stops_the_run_on_any_engine(monkeypatch, status):
+    # a 502 from the broker was forgiven row by row, and the run read done with no answer at all
+    import llm
+
+    request = httpx.Request("POST", "https://b.example/v1/chat/completions")
+    failure = openai.APIStatusError("no", response=httpx.Response(status, request=request), body=None)
+
+    def create(**kw):
+        raise failure
+
+    chat = type("C", (), {"chat": type("Ch", (), {"completions": type("Co", (), {"create": staticmethod(create)})})})
+    embed = type("E", (), {"embeddings": type("Em", (), {"create": staticmethod(create)})})
+    monkeypatch.setattr(llm, "_card_for", lambda spec, name: __import__("contextlib").nullcontext())
+    local = engines.EngineSpec(2, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    monkeypatch.setattr(llm.engines, "client_for", lambda spec: chat)
+    with pytest.raises(llm.ServerFailed, match=f"http {status}") as caught:
+        llm._complete(local, "m", [], {})
+    assert isinstance(caught.value, StandFault)
+    monkeypatch.setattr(llm.engines, "client_for", lambda spec: embed)
+    with pytest.raises(llm.ServerFailed):
+        llm._embeddings(engines.Resolved("m", CLOUD), ["a"], "embedding")
+
+
+def test_a_run_that_answered_nothing_stops_for_good_and_is_not_answered_again(monkeypatch):
+    from evals import runner
+    from job_handlers import base, evaluation
+
+    with pytest.raises(runner.NoAnswers, match="0 of 3"):
+        runner._refuse_a_run_that_answered_nothing("r", answered=0, total=3, cancelled=False)
+    runner._refuse_a_run_that_answered_nothing("r", answered=0, total=3, cancelled=True)
+    runner._refuse_a_run_that_answered_nothing("r", answered=1, total=3, cancelled=False)
+
+    def stopped(**kw):
+        raise runner.NoAnswers("r: 0 of 3 questions answered")
+
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda *a, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda *a, **kw: None)
+    monkeypatch.setattr(evaluation.runner, "run", stopped)
+    # the worker retries anything but Final, and a retry answers every question again
+    with pytest.raises(base.Final, match="0 of 3"):
+        evaluation.eval_run({"run_name": "r"})

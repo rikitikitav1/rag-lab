@@ -527,3 +527,30 @@ def test_a_phased_run_reads_the_embedder_s_placement_before_it_lets_it_go(monkey
     kinds = [c if c[0] == "placed" else c[0] for c in calls]
     assert kinds.index(("placed", "embedding")) < kinds.index("unload"), "read before the release"
     assert seen == [{"embedding": True, "reranking": True}]
+
+
+def test_a_resumed_run_asks_only_what_has_no_answer_and_replaces_every_error_row():
+    from evals import runner
+
+    rows = [
+        (1, "a", {"outcome": "answered"}),
+        (2, "b", {"outcome": "error", "failed": "hop cap"}),
+        (3, "b", {"outcome": "error"}),
+        (4, "d", {"outcome": "refused"}),
+    ]
+    todo, replaced = runner._split_answered(["a", "b", "c", "d"], rows)
+    # a refusal is an answer; a question with no row at all is asked again, like an error
+    assert todo == ["b", "c"]
+    assert replaced == {"b": {"log_ids": [2, 3], "outcome": "error", "failed": "hop cap"}}
+
+
+def test_a_run_over_named_questions_refuses_to_start_when_any_is_missing():
+    # a floor on 50 rows that quietly became a floor on 48 is read as a floor on 50
+    import pytest
+    from errors import StandFault
+    from evals import runner
+
+    with pytest.raises(runner.MissingQuestions, match=r"1 of 3 question ids are not in the stand: \[2\]") as caught:
+        runner._refuse_missing([1, 2, 3], {1, 3})
+    assert isinstance(caught.value, StandFault), "eval_run stops a StandFault for good instead of retrying"
+    runner._refuse_missing([1, 1, 3], {1, 3})
