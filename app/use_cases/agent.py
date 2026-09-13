@@ -161,15 +161,15 @@ def run(
         gate.off_topic = True
         gate.drop_weak_context = True
     if policy == FallbackPolicy.corpus_first_weak:
-        gate.signal = GateSignal(gate_signal or config.settings.agent.gate_signal)
+        gate.signal = GateSignal(gate_signal or config.settings.agent.gate.signal)
         if gates_with_cross_encoder(policy, gate.signal):
-            gate.top = config.settings.agent.gate_candidates
-            gate.threshold = config.settings.agent.weak_threshold
+            gate.top = config.settings.agent.gate.candidates
+            gate.threshold = config.settings.agent.gate.weak_threshold
         if gate.signal != GateSignal.cross_encoder:
             gate.distance_threshold = (
                 weak_distance
                 if weak_distance is not None
-                else config.settings.agent.weak_distance
+                else config.settings.agent.gate.weak_distance
             )
         gate.drop_weak_context = gate.off_topic or bool(remote)
     orchestrator = Orchestrator(orchestrator or Orchestrator.langgraph_ported)

@@ -1,5 +1,7 @@
 import contextlib
 import contextvars
+import functools
+import json
 import threading
 from dataclasses import dataclass
 from typing import Any
@@ -113,7 +115,7 @@ class Tally:
 
     # the longest input against the window, and the calls the output limit cut: a sum hides both
     def add(self, role: str, engine: str, model: str, prompt: int | None, completion: int | None,
-            cut: bool = False) -> None:
+            cut: bool = False, input_cut: bool = False) -> None:
         with self._lock:
             got = self._seen.setdefault((role, engine, model), dict.fromkeys(token_fields.FIELDS, 0))
             got["prompt"] += prompt or 0
@@ -122,6 +124,7 @@ class Tally:
             got["uncounted"] += prompt is None
             got["max_prompt"] = max(got["max_prompt"], prompt or 0)
             got["cut_by_length"] += cut
+            got["input_cut"] += input_cut
 
     def record(self) -> dict | None:
         with self._lock:
@@ -188,10 +191,46 @@ def carried(fn):
 
 
 def _count(role, engine, model: str, prompt: int | None, completion: int | None,
-           finish_reason: str | None = None) -> None:
+           finish_reason: str | None = None, input_cut: bool = False) -> None:
     for tally in _tallies.get():
         tally.add(str(getattr(role, "value", role)), engine.name, model, prompt, completion,
-                  cut=token_fields.cut(finish_reason))
+                  cut=token_fields.cut(finish_reason), input_cut=input_cut)
+
+
+class InputOverWindow(ValueError):
+    pass
+
+
+# cl100k reads Russian about a fifth longer than qwen and English about as long: divided, it never overcounts
+_OVERCOUNT = 1.25
+
+
+@functools.lru_cache(maxsize=1)
+def _encoding():
+    import tiktoken
+
+    return tiktoken.get_encoding("cl100k_base")
+
+
+def _least_tokens(messages) -> int:
+    texts = [m.get("content") if isinstance(m, dict) else getattr(m, "content", None) for m in messages]
+    return int(sum(len(_encoding().encode(t if isinstance(t, str) else json.dumps(t or ""))) for t in texts) / _OVERCOUNT)
+
+
+# ollama cuts an input longer than the window to its head and a tail, and answers as if it had read it all
+def _refuse_an_input_over_the_window(spec, name: str, messages) -> int | None:
+    if spec.kind is not EngineKind.ollama:
+        return None
+    window = engines.window_or_configured(spec, name)
+    if window and (least := _least_tokens(messages)) > window:
+        raise InputOverWindow(f"the input is at least {least} tokens against the {window}-token window of {name}")
+    return window
+
+
+# the cut the check above could not see: ollama 0.32 answers a cut input with exactly this many prompt tokens
+def _cut_by_the_server(window: int | None, params: dict, prompt_tokens: int | None) -> bool:
+    budget = params.get("max_tokens")
+    return bool(window and budget and prompt_tokens == window - budget + 2)
 
 
 # a call by engine and name, for a model no role holds yet: the probe before a seat
@@ -257,11 +296,16 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
     name = picked.name
     # no system at all is not an empty one: a template drops its default only for a system it was given
     messages = ([] if system is None else [{"role": "system", "content": system}]) + [{"role": "user", "content": user}]
-    resp = _complete(picked.engine, name, messages, _params(role, schema, picked))
+    window = _refuse_an_input_over_the_window(picked.engine, name, messages)
+    params = _params(role, schema, picked)
+    resp = _complete(picked.engine, name, messages, params)
 
     usage = _usage(resp, picked.engine)
+    input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
     _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens,
-           getattr(resp.choices[0], "finish_reason", None))
+           getattr(resp.choices[0], "finish_reason", None), input_cut=input_cut)
+    if input_cut:
+        raise InputOverWindow(f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window")
     log.info(
         "llm.chat",
         role=role,
@@ -287,12 +331,17 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     params = _params(role, None, picked)
     if tools:
         params["tools"] = tools
+    window = _refuse_an_input_over_the_window(picked.engine, name, messages)
     resp = _complete(picked.engine, name, messages, params)
 
     choice = resp.choices[0]
     message = choice.message
     usage = _usage(resp, picked.engine)
-    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens, choice.finish_reason)
+    input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens, choice.finish_reason,
+           input_cut=input_cut)
+    if input_cut:
+        raise InputOverWindow(f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window")
     log.info(
         "llm.chat_tools",
         role=role,

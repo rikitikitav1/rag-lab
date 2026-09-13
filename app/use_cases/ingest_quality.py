@@ -6,7 +6,7 @@ import config
 import ingest
 import logging_setup
 import sources.base
-from ingest import BOILERPLATE_MIN_FILES, MAX_CHUNK_SIZE
+from ingest import BOILERPLATE_MIN_FILES
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -121,7 +121,7 @@ def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:
 
 
 def measure(
-    samples: list[Sample], ceiling: int = MAX_CHUNK_SIZE, records_sections: bool = True
+    samples: list[Sample], ceiling: int, records_sections: bool = True
 ) -> Metrics:
     total = len(samples)
     files = len({s.file for s in samples})
@@ -316,7 +316,7 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
     # the legacy cut records a section only where the file opens H1 then H2
     metrics = measure(
         samples,
-        ceiling=policy.get("max_chunk_size") or MAX_CHUNK_SIZE,
+        ceiling=policy["max_chunk_size"],
         records_sections=sources.base.hygienic(policy),
     )
     metrics.score = score(metrics, cfg.weights)

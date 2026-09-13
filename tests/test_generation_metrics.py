@@ -189,7 +189,7 @@ def test_a_refusal_does_not_drag_the_axis_means_of_the_answers(monkeypatch):
     m = _evaluate(monkeypatch, answers + [refusal])
 
     assert (m["faithfulness"], m["relevance"]) == (7.33, 5.33)
-    assert m["answered_only"] == {
+    assert m["answered_only"] == {"without_a_score": 0, 
         "n": 2, "faithfulness": 6.0, "relevance": 8.0, "completeness": None
     }
 

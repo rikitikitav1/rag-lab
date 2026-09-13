@@ -48,7 +48,7 @@ def test_a_runaway_heading_is_capped_instead_of_riding_on_every_piece():
 
 
 def test_a_heading_is_collapsed_to_one_line():
-    pieces = ingest.cut_with_root("## S\n\nbody", "  Redis\t Streams  ")
+    pieces = ingest.cut_with_root("## S\n\nbody", "  Redis\t Streams  ", ceiling=1024)
     assert pieces[0].prefix.startswith("# Redis Streams\n")
 
 
@@ -68,29 +68,29 @@ def test_the_ceiling_is_spent_on_the_body_unless_the_variant_says_otherwise():
 # over all 1001 files: 15652 headings, the longest 177, so the cap touches nothing real
 def test_a_capped_heading_does_not_shorten_the_recorded_section():
     long_heading = "H" * (ingest.HEADING_CAP - 10)
-    pieces = ingest.cut_with_root(f"## {long_heading}\n\nbody", "Root")
+    pieces = ingest.cut_with_root(f"## {long_heading}\n\nbody", "Root", ceiling=1024)
     assert pieces[0].section == f"Root > {long_heading}"
     assert f"## {long_heading}\n" in pieces[0].prefix
 
 
 def test_the_recorded_path_is_bounded_too():
-    pieces = ingest.cut_with_root("## " + "H" * 4000 + "\n\nbody", "Root")
+    pieces = ingest.cut_with_root("## " + "H" * 4000 + "\n\nbody", "Root", ceiling=1024)
     assert len(pieces[0].section) == ingest.SECTION_CAP
 
 
 def test_a_file_without_a_root_still_cuts():
-    pieces = ingest.cut_with_root("## S\n\nbody", None)
+    pieces = ingest.cut_with_root("## S\n\nbody", None, ceiling=1024)
     assert [p.section for p in pieces] == ["S"]
     assert pieces[0].prefix == "## S\n"
 
 
 def test_empty_input_gives_nothing():
-    assert ingest.cut_with_root("", "Root") == []
-    assert ingest.cut_with_root("   \n ", "Root") == []
+    assert ingest.cut_with_root("", "Root", ceiling=1024) == []
+    assert ingest.cut_with_root("   \n ", "Root", ceiling=1024) == []
 
 
 def test_a_section_with_no_body_is_dropped():
-    pieces = ingest.cut_with_root("## Empty\n\n## Real\n\nbody", "Root")
+    pieces = ingest.cut_with_root("## Empty\n\n## Real\n\nbody", "Root", ceiling=1024)
     assert [p.section for p in pieces] == ["Root > Real"]
 
 
@@ -175,26 +175,26 @@ def test_a_heading_inside_a_code_fence_is_not_a_heading():
 
 def test_the_tilde_fence_counts_too():
     content = "## S\n\n~~~yaml\n### not a heading\n~~~\n\ntail"
-    assert [p.section for p in ingest.cut_with_root(content, "Root")] == ["Root > S"]
+    assert [p.section for p in ingest.cut_with_root(content, "Root", ceiling=1024)] == ["Root > S"]
 
 
 def test_a_heading_indented_inside_the_line_is_still_a_heading():
     content = "## S\n\nbody\n\n  ## Slightly indented\n\nmore"
-    sections = [p.section for p in ingest.cut_with_root(content, "Root")]
+    sections = [p.section for p in ingest.cut_with_root(content, "Root", ceiling=1024)]
     assert sections == ["Root > S", "Root > Slightly indented"]
 
 
 def test_a_file_whose_fences_do_not_close_is_read_without_them():
     # the missing bracket cannot be put back, and one code block would swallow every heading
     content = "## One\n\n```python\nprint(1)\n\n## Two\n\nbody\n\n## Three\n\nmore"
-    sections = [p.section for p in ingest.cut_with_root(content, "Root")]
+    sections = [p.section for p in ingest.cut_with_root(content, "Root", ceiling=1024)]
     assert sections == ["Root > One", "Root > Two", "Root > Three"]
 
 
 def test_a_tab_inside_a_heading_does_not_lose_the_file():
     # the parser reports headings with non-printables removed, so a raw comparison missed
     content = "## one\ttwo\n\nbody\n\n## plain\n\nmore"
-    sections = [p.section for p in ingest.cut_with_root(content, "Root")]
+    sections = [p.section for p in ingest.cut_with_root(content, "Root", ceiling=1024)]
     assert sections == ["Root > one\ttwo", "Root > plain"]
 
 
@@ -241,7 +241,7 @@ def test_a_textless_piece_beside_a_full_one_is_bounded_rather_than_absorbed():
 def test_a_fenced_heading_stays_fenced_even_when_the_same_text_is_a_real_heading():
     # the parser reports which texts are headings, not which lines, so a fenced copy slipped
     content = "## Setup\n\nreal\n\n```bash\n## Setup\n```\n\ntail"
-    pieces = ingest.cut_with_root(content, "Root")
+    pieces = ingest.cut_with_root(content, "Root", ceiling=1024)
     assert [p.section for p in pieces] == ["Root > Setup"]
     assert any("```bash" in p.body for p in pieces)
 

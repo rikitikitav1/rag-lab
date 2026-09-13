@@ -77,7 +77,7 @@ class Driver:
         return name
 
     # the window a model gets once it loads, for a model nobody has loaded yet
-    def configured_window(self, spec: EngineSpec) -> int | None:
+    def configured_window(self, spec: EngineSpec, model: str) -> int | None:
         return None
 
 
@@ -127,9 +127,10 @@ class Ollama(Driver):
     def window(self, spec: EngineSpec, model: str) -> int | None:
         return ollama.context_length(model, spec)
 
-    # compose starts ollama with `OLLAMA_CONTEXT_LENGTH` from the same default
-    def configured_window(self, spec: EngineSpec) -> int | None:
-        return config.settings.llm.context_length
+    # a windowed tag names its own; any other loads with `OLLAMA_CONTEXT_LENGTH`, compose's same default
+    def configured_window(self, spec: EngineSpec, model: str) -> int | None:
+        derived = ollama.windowed(model)
+        return derived[1] if derived else config.settings.llm.context_length
 
     def window_model(self, spec: EngineSpec, configured: str | None) -> str | None:
         return ollama.window_model(configured, spec=spec)
@@ -249,4 +250,4 @@ def window_or_configured(spec: EngineSpec, model: str) -> int | None:
     except Exception as e:
         log.warning("engine.window_unread", engine=spec.name, model=model, error=str(e))
         window = None
-    return window or reading.configured_window(spec)
+    return window or reading.configured_window(spec, model)

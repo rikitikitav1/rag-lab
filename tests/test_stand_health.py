@@ -272,3 +272,18 @@ def test_a_role_loaded_off_the_card_of_an_ollama_that_answers_is_named(monkeypat
     whole[0] = False
     (line,) = stand_health.roles_down()
     assert line.startswith("generation: llama3.1:8b@ollama is not whole on the card")
+
+
+def test_a_model_s_own_sampler_is_shown_as_an_override_and_not_as_drift(monkeypatch):
+    # the model row's budget went out while the yaml said 1024, and the stand read showed nothing
+    import engines
+    from models.registry import EngineKind, Placement
+
+    spec = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    monkeypatch.setattr(stand_health, "_roles", lambda: [
+        ("ragas", engines.Resolved("qwen2.5:7b", spec, options={"max_tokens": 4096})),
+        ("embedding", engines.Resolved("bge-m3", spec)),
+    ])
+    out = stand_health.samplers()
+    assert out["ragas"]["sampler"]["max_tokens"] == 4096 and out["ragas"]["overrides"] == ["max_tokens"]
+    assert out["embedding"]["overrides"] == []

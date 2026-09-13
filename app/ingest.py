@@ -2,13 +2,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import config
 import logging_setup
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 log = logging_setup.get_logger(__name__)
-
-MAX_CHUNK_SIZE = config.settings.ingestion.chunk_max_size
 
 # one owner for the cut that drops such blocks and the metric that counts them
 BOILERPLATE_FILE_SHARE = 0.5
@@ -53,7 +50,7 @@ def _budget(ceiling: int, prefix: str, ceiling_on: str) -> int:
 
 
 # from the variant's policy: the constant let a frozen variant declare a ceiling nothing read
-def chunk_markdown(content, separator="\n## ", ceiling=None):
+def chunk_markdown(content, separator="\n## ", *, ceiling):
     if not content.strip():
         return []
 
@@ -66,15 +63,14 @@ def chunk_markdown(content, separator="\n## ", ceiling=None):
     return split_all_by_size(chunks, ceiling)
 
 
-def split_all_by_size(chunks, ceiling=None):
+def split_all_by_size(chunks, ceiling):
     result = []
     for chunk in chunks:
         result.extend(split_by_size(chunk, max_size=ceiling))
     return result
 
 
-def split_by_size(text, separators=("\n\n", "\n", ". ", " "), max_size=None):
-    max_size = max_size or MAX_CHUNK_SIZE
+def split_by_size(text, separators=("\n\n", "\n", ". ", " "), *, max_size):
     if len(text) <= max_size:
         return [text]
 
@@ -92,7 +88,7 @@ def split_by_size(text, separators=("\n\n", "\n", ". ", " "), max_size=None):
             if current_chunk:
                 result.append(current_chunk)
             if len(part) > max_size:
-                result.extend(split_by_size(part, rest, max_size))
+                result.extend(split_by_size(part, rest, max_size=max_size))
                 current_chunk = ""
             else:
                 current_chunk = part
@@ -238,8 +234,7 @@ def _by_size(prefix, body, path, ceiling, ceiling_on) -> list[Cut]:
 
 
 # the prefix repeats whole on every piece and is never cut itself
-def cut_with_root(content, root, ceiling=None, ceiling_on=BODY, file=None) -> list[Cut]:
-    ceiling = ceiling or MAX_CHUNK_SIZE
+def cut_with_root(content, root, ceiling, ceiling_on=BODY, file=None) -> list[Cut]:
     cuts = []
     for _heading, prefix, path, body, _head, _subs in _bodied_sections(content, root, file):
         cuts.extend(_by_size(prefix, body, path, ceiling, ceiling_on))
@@ -274,8 +269,7 @@ def _prefix_and_path(root: str, heading: str) -> tuple[str, str]:
 
 
 # structure first, size last: by subheadings only when it does not fit, by size after
-def cut_structured(content, root, ceiling=None, ceiling_on=BODY, file=None) -> list[Cut]:
-    ceiling = ceiling or MAX_CHUNK_SIZE
+def cut_structured(content, root, ceiling, ceiling_on=BODY, file=None) -> list[Cut]:
     cuts = []
     for heading, prefix, path, body, head, subs in _bodied_sections(content, root, file):
         if len(body.strip()) <= _budget(ceiling, prefix, ceiling_on) or not subs:

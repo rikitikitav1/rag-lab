@@ -3,14 +3,19 @@ from typing import Literal
 
 import samplers
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
 # a file that replaces `llm.roles`, as the layout of a host without a card does
 CONFIG_OVERLAY = os.getenv("CONFIG_OVERLAY")
 
 
-class RoleCfg(BaseModel):
+# a mistyped key fails the start, and so does a missing one: no default stands in for a measured number
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class RoleCfg(_Strict):
     model: str
     # unnamed means the seeded ollama, which is a default only while every config model is pulled
     engine: str | None = None
@@ -22,42 +27,64 @@ class RoleCfg(BaseModel):
         return samplers.check(v)
 
 
-class RetrievalCfg(BaseModel):
+# named as a run's record names them, so nothing translates between the two
+class KeywordCfg(_Strict):
+    query: str
+    rank: str
+    norm: int
+    query_lang: str
+
+
+class RetrievalCfg(_Strict):
     distance_threshold: float
     results_limit: int
     limit_vector: int
     limit_keywords: int
     rrf_k: int
-    keyword_query: str = "and"
-    keyword_rank: str = "ts_rank"
-    keyword_norm: int = 0
-    query_lang: str = "function_words"
+    keyword: KeywordCfg
     # "auto" asks the planner for the deepest rung still walking the index, which moves
-    ef_search: int | Literal["auto"] = "auto"
-    ef_ladder: list[int] = [100, 200, 400]
-    recall_gate: float = 0.98
-    max_mrr_loss: float = 0.01
-    max_questions_lost: int = 0
-    index_alive_recall: float = 0.9
-    index_alive_questions: int = 40
-    criterion_sets: list[str] = ["paraphrased_v2_ru", "paraphrased_v2"]
-    veto_sets: list[str] = ["veto_v1"]
+    ef_search: int | Literal["auto"]
 
 
-class RerankCfg(BaseModel):
-    enabled: bool = False
-    candidates: int = 20
+class SearchDepthCfg(_Strict):
+    ef_ladder: list[int]
+    recall_gate: float
+    max_mrr_loss: float
+    max_questions_lost: int
 
 
-class AgentCfg(BaseModel):
-    max_hops: int = 4
-    fallback_policy: str = "corpus_first"
-    gate_candidates: int = 5
-    weak_threshold: float = 0.5
-    gate_signal: str = "distance"
+class IndexAliveCfg(_Strict):
+    recall: float
+    questions: int
+
+
+# what a run is judged on, read by the preflight and the reports and never by a query
+class VerdictCfg(_Strict):
+    criterion_sets: list[str]
+    veto_sets: list[str]
+    search_depth: SearchDepthCfg
+    index_alive: IndexAliveCfg
+
+
+class RerankCfg(_Strict):
+    enabled: bool
+    candidates: int
+
+
+class AgentGateCfg(_Strict):
+    signal: str
+    weak_distance: float
+    # both read at `signal: cross_encoder` and `either`
+    weak_threshold: float
+    candidates: int
+
+
+class AgentCfg(_Strict):
+    max_hops: int
+    fallback_policy: str
+    gate: AgentGateCfg
     # an off-domain english question sits closer to an english corpus than a russian one
-    topic_threshold: float | dict[str, float] | None = None
-    weak_distance: float = 0.39
+    topic_threshold: float | dict[str, float] | None
 
     def topic_threshold_for(self, language: str | None) -> float | None:
         if not isinstance(self.topic_threshold, dict):
@@ -71,14 +98,13 @@ class AgentCfg(BaseModel):
         return max(self.topic_threshold.values())
 
 
-class FtsCfg(BaseModel):
-    languages: dict[str, str] = {"en": "english", "ru": "russian"}
-    fallback: str = "english"
+class FtsCfg(_Strict):
+    languages: dict[str, str]
+    fallback: str
 
 
 # typed like the gates that judge it: a typo fails the start, not the cut
-class PolicyCfg(BaseModel):
-    model_config = {"extra": "forbid"}
+class PolicyCfg(_Strict):
     chunker: Literal["legacy", "rooted", "structured"]
     max_chunk_size: int = Field(gt=0)
     ceiling_on: Literal["body", "content"] = "body"
@@ -94,13 +120,10 @@ class PolicyCfg(BaseModel):
         return {**super().model_dump(**kw), "header_prefix": self.header_prefix}
 
 
-class CorpusCfg(BaseModel):
-    description: str = (
-        "the technical knowledge corpus (interview banks, "
-        "system-design-primer, redis docs)"
-    )
-    variant: str = "baseline"
-    variants: dict[str, PolicyCfg] = {}
+class CorpusCfg(_Strict):
+    description: str
+    variant: str
+    variants: dict[str, PolicyCfg]
 
     def policy(self, variant: str | None = None) -> dict:
         name = variant or self.variant
@@ -114,15 +137,13 @@ class CorpusCfg(BaseModel):
         return declared.model_dump() if declared else None
 
 
-class GateCfg(BaseModel):
-    model_config = {"extra": "forbid"}
+class GateCfg(_Strict):
     min: float | None = None
     max: float | None = None
 
 
 # named fields, not a free dict: a typo in the judge's config must fail the start
-class MetricGatesCfg(BaseModel):
-    model_config = {"extra": "forbid"}
+class MetricGatesCfg(_Strict):
     section_coverage: GateCfg | None = None
     prefix_dominates: GateCfg | None = None
     dup_in_file: GateCfg | None = None
@@ -135,8 +156,7 @@ class MetricGatesCfg(BaseModel):
     code_only: GateCfg | None = None
 
 
-class MetricWeightsCfg(BaseModel):
-    model_config = {"extra": "forbid"}
+class MetricWeightsCfg(_Strict):
     section_coverage: float = 0
     prefix_dominates: float = 0
     dup_in_file: float = 0
@@ -149,53 +169,57 @@ class MetricWeightsCfg(BaseModel):
     code_only: float = 0
 
 
-class IngestQualityCfg(BaseModel):
+class IngestQualityCfg(_Strict):
     # thresholds live here, not in code: they are turned by hand and land in every report
-    hard_gates: MetricGatesCfg = MetricGatesCfg()
-    soft_gates: MetricGatesCfg = MetricGatesCfg()
-    history_per_variant: int = 20
-    score_formula: str = "v1"
-    weights: MetricWeightsCfg = MetricWeightsCfg()
+    hard_gates: MetricGatesCfg
+    soft_gates: MetricGatesCfg
+    history_per_variant: int
+    score_formula: str
+    weights: MetricWeightsCfg
 
 
-class IngestionCfg(BaseModel):
+class IngestionCfg(_Strict):
     batch_size: int
     commit_size: int
-    chunk_max_size: int
 
 
-class InterviewCfg(BaseModel):
+class InterviewCfg(_Strict):
     base_url: str
     language: str
     repos: list[str]
 
 
-class SourcesCfg(BaseModel):
+class SourcesCfg(_Strict):
     interview: InterviewCfg
 
 
-class LlmCfg(BaseModel):
+class EngineCfg(_Strict):
+    name: str
+    kind: Literal["ollama", "vllm", "openai_compatible"]
+    env_prefix: str
+    placement: Literal["gpu", "cpu", "gpu+cpu", "remote"]
+
+
+class LlmCfg(_Strict):
     base_url: str
     roles: dict[str, RoleCfg]
-    context_length: int = 8192
-    candidates: list[str] = []
+    context_length: int
 
     # a role on another engine is registered through `/v1/model`, not pulled through `/api/pull`
     @property
     def pull_models(self) -> list[str]:
-        ours = {r.model for r in self.roles.values() if r.engine is None}
-        return list(ours | set(self.candidates))
+        return list({r.model for r in self.roles.values() if r.engine is None})
 
 
-class PostgresCfg(BaseModel):
+class PostgresCfg(_Strict):
     host: str
     port: int
     dbname: str
     user: str
 
 
-class McpIntegrationsCfg(BaseModel):
-    secret_env: list[str] = []
+class McpIntegrationsCfg(_Strict):
+    secret_env: list[str]
 
     def secret(self, name: str) -> str:
         if name not in self.secret_env:
@@ -203,19 +227,19 @@ class McpIntegrationsCfg(BaseModel):
         return os.getenv(name, "")
 
 
-class AppConfig(BaseModel):
-    # forbid, like the four models above: `_load` now hands the whole section over
-    model_config = {"extra": "forbid"}
+class AppConfig(_Strict):
     retrieval: RetrievalCfg
-    rerank: RerankCfg = RerankCfg()
-    agent: AgentCfg = AgentCfg()
+    verdict: VerdictCfg
+    rerank: RerankCfg
+    agent: AgentCfg
     ingestion: IngestionCfg
-    ingest_quality: IngestQualityCfg = IngestQualityCfg()
-    fts: FtsCfg = FtsCfg()
+    ingest_quality: IngestQualityCfg
+    fts: FtsCfg
     corpus: CorpusCfg
     repos_dir: str
     prompts_dir: str
     sources: SourcesCfg
+    engines: list[EngineCfg]
     llm: LlmCfg
     postgres: PostgresCfg
     mcp_integrations: McpIntegrationsCfg
@@ -238,31 +262,29 @@ def _roles_of(overlay: str) -> dict:
     return llm["roles"]
 
 
+# a data file is named by its path, beside the config that names it
+def _data(here: str, path: str):
+    with open(os.path.join(here, path)) as f:
+        return yaml.safe_load(f)
+
+
 def _load(path: str, overlay: str | None = None) -> AppConfig:
     with open(path) as f:
         raw = yaml.safe_load(f)
     if overlay:
         raw["llm"]["roles"] = _roles_of(overlay)
-    # the keys under `service` are the field names, so a new one needs no second edit
-    return AppConfig(
-        **raw["service"],
-        llm=raw["llm"],
-        postgres=raw["postgres"],
-        mcp_integrations=raw.get("mcp_integrations", {}),
-    )
+    here = os.path.dirname(os.path.abspath(path))
+    if isinstance(raw.get("sources"), dict):
+        raw["sources"] = {name: _data(here, file) for name, file in raw["sources"].items()}
+    return AppConfig(**raw)
 
 
 settings = _load(CONFIG_PATH, CONFIG_OVERLAY)
 
 
-# the keyword leg by the name the record uses: five places wrote this set out
-KEYWORD_SWITCHES = {
-    "query": "keyword_query",
-    "rank": "keyword_rank",
-    "norm": "keyword_norm",
-    "query_lang": "query_lang",
-}
+# the keyword leg by the name the record uses, which is the name the config uses
+KEYWORD_SWITCHES = tuple(KeywordCfg.model_fields)
 
 
 def keyword_switches() -> dict:
-    return {key: getattr(settings.retrieval, field) for key, field in KEYWORD_SWITCHES.items()}
+    return settings.retrieval.keyword.model_dump()
