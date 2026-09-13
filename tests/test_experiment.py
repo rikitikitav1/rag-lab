@@ -397,9 +397,9 @@ def test_a_bulk_cancel_takes_each_run_judge_with_it(monkeypatch):
     from models import JobStatus
 
     jobs = [
-        SimpleNamespace(id=1, type="eval_run", options={"run_name": "a"}, status=JobStatus.new),
+        SimpleNamespace(id=1, type="eval_run", options={"run_name": "a"}, status=JobStatus.new, tokens=None),
         SimpleNamespace(
-            id=9, type="judge_answers", options={"run_name": "a"}, status=JobStatus.new
+            id=9, type="judge_answers", options={"run_name": "a"}, status=JobStatus.new, tokens=None
         ),
     ]
 
@@ -443,11 +443,11 @@ def test_cancelling_an_arm_does_not_leave_its_experiment_running(monkeypatch):
     monkeypatch.setattr(uc, "mark_failed_for_run", lambda run: failed.append(run))
 
     jobs = [
-        SimpleNamespace(id=1, type="eval_run", options={"run_name": "a"}, status=JobStatus.new),
+        SimpleNamespace(id=1, type="eval_run", options={"run_name": "a"}, status=JobStatus.new, tokens=None),
         SimpleNamespace(
-            id=2, type="judge_answers", options={"run_name": "b"}, status=JobStatus.running
+            id=2, type="judge_answers", options={"run_name": "b"}, status=JobStatus.running, tokens=None
         ),
-        SimpleNamespace(id=3, type="index_data", options={}, status=JobStatus.new),
+        SimpleNamespace(id=3, type="index_data", options={}, status=JobStatus.new, tokens=None),
     ]
 
     class _Result(list):
@@ -482,7 +482,7 @@ def test_every_kind_of_report_declares_its_schema():
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (4, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (7, 6, 9)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (7, 6, 12)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
@@ -492,7 +492,7 @@ def test_every_kind_of_report_declares_its_schema():
     # the reports this arc added or moved here: the guard is why the anchor left `scripts`
     from evals import compare, human_anchor, language_cost
 
-    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (9, 1, 1)
+    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (12, 1, 1)
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():
@@ -862,3 +862,26 @@ def test_a_run_without_a_target_is_refused_rather_than_sweeping_every_question()
 
     with pytest.raises(ValueError, match="target"):
         _target_texts(None, None)
+
+
+def test_a_rejudge_is_not_reported_along_the_guest_bench():
+    # the report reads our judge across arms, and a guest_model param labelled its noise with guest names
+    import pytest
+    from api.v1.experiment import ExperimentCreate
+
+    with pytest.raises(ValueError, match="moves only the guest"):
+        ExperimentCreate(kind="rejudge", source_run="r", param="guest_model", unpaired=True,
+                         axes={"guest_model": ["qwen2.5:7b"], "repeat": ["a"]})
+
+
+def test_a_run_holding_a_question_twice_is_not_copied():
+    # the report kept whichever of the two rows the database returned last
+    import pytest
+    from use_cases import rejudge
+
+    class _Session:
+        def scalars(self, _stmt):
+            return [10588]
+
+    with pytest.raises(ValueError, match="more than once"):
+        rejudge._refuse_repeated_questions(_Session(), "tester_ss_k_05")

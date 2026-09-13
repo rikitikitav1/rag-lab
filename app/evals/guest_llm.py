@@ -7,22 +7,27 @@ no width stamp, which would make it the only number on this stand that cannot sa
 import asyncio
 import os
 
+import engines
 import llm
 
 # a synchronous POST to the library's own server sat inside every measured call
 os.environ.setdefault("RAGAS_DO_NOT_TRACK", "true")
 import logging_setup
+from evals.guest_axes import MESSAGE_FORMS
 from langchain_core.outputs import Generation, LLMResult
 from ragas.embeddings.base import BaseRagasEmbeddings
 from ragas.llms.base import BaseRagasLLM
 
 log = logging_setup.get_logger(__name__)
 
-# the role whose model, sampler and seed the guest borrows: it judges, so it borrows the judge
-ROLE = "judging"
+# the guest's own seat: its prompts are not our judge's, and a borrowed seat moved with the judge
+ROLE = "ragas"
 
-# response relevancy compares vectors, so one guest borrows this role beside the judging one
-EMBEDDING_ROLE = "embedding"
+# the standard's own wrapper sends one human message; an empty system switched the template's default off
+MESSAGES = MESSAGE_FORMS[0]
+
+# response relevancy compares vectors on a seat of its own: the corpus embedder stays where the corpus is
+EMBEDDING_ROLE = "ragas_embedding"
 
 
 # ragas reads this off the object rather than taking it in, and both adapters set the same one
@@ -36,17 +41,23 @@ def _text_of(prompt) -> str:
     return prompt.to_string() if hasattr(prompt, "to_string") else str(prompt)
 
 
+
 class OurClient(BaseRagasLLM):
-    def __init__(self, role: str = ROLE, model: str | None = None):
+    def __init__(self, role: str = ROLE, model: str | None = None, messages: str = MESSAGES):
         self.role = role
         self.model = model
+        if messages not in MESSAGE_FORMS:
+            raise ValueError(f"unknown guest message form {messages!r}; known: {', '.join(MESSAGE_FORMS)}")
+        self.messages = messages
         self.set_run_config(_one_try())
 
     # ragas asks for n samples; our judging sampler is seeded, so n>1 would repeat one answer
     def generate_text(self, prompt, n=1, temperature=None, stop=None, callbacks=None) -> LLMResult:
         if n != 1:
             log.warning("guest_llm.n_capped", asked=n)
-        answer = llm.ask("", _text_of(prompt), role=self.role, model=self.model)
+        # the old ruler is kept callable, so a bridge can read both on the same rows
+        system = "" if self.messages == MESSAGE_FORMS[1] else None
+        answer = llm.ask(system, _text_of(prompt), role=self.role, model=self.model)
         return LLMResult(generations=[[Generation(text=answer.text or "")]])
 
     async def agenerate_text(
@@ -86,14 +97,30 @@ def _runtime() -> str:
     return "container" if Path("/.dockerenv").exists() else "host"
 
 
-def stamp() -> dict:
+# two guest numbers compare only when every field here agrees; a row stamped `role: judging` sat on the judge
+def stamp(messages: str = MESSAGES, model: str | None = None) -> dict:
     from importlib.metadata import version
 
+    from engines import answer_parsers
+
+    # the model the calls went to: a bench on the job, or the seat when the job names none
+    picked = llm.resolve_for(ROLE, model)
     return {
         "ragas": version("ragas"),
-        "model": llm.resolve_name(ROLE),
+        "model": picked.name,
         "role": ROLE,
+        # a row without it sent an empty system beside the prompt: another ruler for the same axis
+        "messages": messages,
+        "engine": picked.engine.name,
+        "sampler": llm.sampler_of(ROLE, picked),
+        # the window the calls ran in: an input past it is dropped, and the budget sits in the sampler
+        "window": engines.window_or_configured(picked.engine, picked.name),
+        "parser": answer_parsers.label(picked.parser),
+        "cache_key": llm.cache_key_of(picked.engine),
         # one guest measures with vectors, and its embedder never reached the record
         "embedding_model": llm.resolve_name(EMBEDDING_ROLE),
+        "embedding_role": EMBEDDING_ROLE,
+        # one embedder on two engines is two rulers, and answer relevancy measures with it
+        "embedding_engine": llm.resolve(EMBEDDING_ROLE).engine.name,
         "runtime": _runtime(),
     }

@@ -1,3 +1,4 @@
+import re
 import time
 from typing import Any
 
@@ -128,7 +129,8 @@ def _shaped(models: list) -> list[dict]:
 
 # the registry knows the size before the first byte, and a first pull has no recorded size at all
 def registry_size(model: str) -> int | None:
-    name = add_tags([model])[0]
+    # a windowed tag lives only here; the registry knows its base, and the bytes are the base's
+    name = add_tags([(windowed(model) or (model,))[0]])[0]
     repo, tag = name.rsplit(":", 1)
     if "/" not in repo:
         repo = f"library/{repo}"
@@ -142,8 +144,24 @@ def registry_size(model: str) -> int | None:
         return None
 
 
+# a tag that carries its own window: the OpenAI door takes no num_ctx per call, so the window lives in the model
+WINDOWED = re.compile(r"^(?P<base>.+:.+)-w(?P<window>\d+)$")
+
+
+def windowed(model: str) -> tuple[str, int] | None:
+    seen = WINDOWED.match(model or "")
+    return (seen["base"], int(seen["window"])) if seen else None
+
+
 def pull_model(model, spec=None):
-    return post("/api/pull", {"model": model, "stream": False}, spec, timeout=PULL_TIMEOUT)
+    derived = windowed(model)
+    if derived is None:
+        return post("/api/pull", {"model": model, "stream": False}, spec, timeout=PULL_TIMEOUT)
+    base, window = derived
+    post("/api/pull", {"model": base, "stream": False}, spec, timeout=PULL_TIMEOUT)
+    # the same weights under a second name, loaded with this window
+    return post("/api/create", {"model": model, "from": base, "parameters": {"num_ctx": window}, "stream": False},
+                spec, timeout=PULL_TIMEOUT)
 
 
 def unload(model: str, spec=None) -> None:

@@ -410,7 +410,7 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
 @lru_cache(maxsize=1)
 def criterion_sets() -> tuple[str, ...]:
     out = _in_worker(
-        "import config; print(','.join(config.settings.retrieval.criterion_sets))"
+        "import config; print(','.join(config.settings.verdict.criterion_sets))"
     )
     return tuple(name for name in out.split(",") if name) or ("paraphrased_v2_ru",)
 
@@ -418,7 +418,7 @@ def criterion_sets() -> tuple[str, ...]:
 # a veto set can only veto, but an unreachable label in one still reads as a regression
 @lru_cache(maxsize=1)
 def veto_sets() -> tuple[str, ...]:
-    out = _in_worker("import config; print(','.join(config.settings.retrieval.veto_sets))")
+    out = _in_worker("import config; print(','.join(config.settings.verdict.veto_sets))")
     return tuple(name for name in out.split(",") if name)
 
 
@@ -474,8 +474,8 @@ def _alive_thresholds() -> tuple[float, int] | None:
     # sh() returns "" on any non-zero exit, which is what a downed worker looks like
     out = _in_worker(
         "import config;"
-        " r = config.settings.retrieval;"
-        " print(f'{r.index_alive_recall} {r.index_alive_questions}')"
+        " r = config.settings.verdict.index_alive;"
+        " print(f'{r.recall} {r.questions}')"
     )
     try:
         floor, asked = out.split()
@@ -510,13 +510,17 @@ def _rows(run_name: str) -> list:
 
 # checked on what a run asked for: ollama truncates and answers from what is left
 def _prompts_over_the_window(logs: list) -> list:
-    # the generation role, not the max: the judge never shares a window with these rows
+    # the generation role's budget as sent, the model's own over the role's: the judge never shares this window
     out = _in_worker(
-        "import config; print(f'{config.settings.llm.context_length}"
-        " {config.settings.llm.roles[\'generation\'].options.get(\'max_tokens\', 0)}')"
+        "import engines, llm; p = llm.resolve('generation');"
+        " print(engines.window_or_configured(p.engine, p.name), llm.sampler_of('generation', p).get('max_tokens', 0))"
     )
+    parts = out.split()
+    if parts[:1] == ["None"]:
+        # a broker states no window to guard
+        return []
     try:
-        window, reserved = (int(part) for part in out.split())
+        window, reserved = (int(part) for part in parts)
     except ValueError:
         # a down worker and an empty roles map both land here, and "no rows over" is a pass
         return [f"cannot read the window from the worker ({out[:40] or 'no answer'})"]

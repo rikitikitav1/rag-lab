@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -18,7 +19,7 @@ def test_a_layer_replaces_the_whole_role_table():
 
     loaded = config._load(str(ROOT / "config.yaml"), str(ROOT / "config.cpu.yaml"))
     roles = loaded.llm.roles
-    assert set(roles) == {"embedding", "generation", "judging", "paraphrasing"}
+    assert set(roles) == {"embedding", "generation", "judging", "paraphrasing", "ragas", "ragas_embedding"}
     assert {cfg.engine for cfg in roles.values()} == {"ollama-cpu"}
     assert "reranking" not in roles, "ollama scores no pairs, so the layer seats no reranker"
 
@@ -65,7 +66,9 @@ def test_the_seed_registers_the_processor_ollama():
     finally:
         seed.Session = original
     assert "ollama-cpu" in added
-    assert seed.SEEDED_OLLAMA_CPU["placement"] is Placement.cpu
+    import config
+
+    assert {e.name: e.placement for e in config.settings.engines}["ollama-cpu"] == Placement.cpu
 
 
 def test_a_role_on_an_ollama_the_pull_list_misses_gets_its_row(monkeypatch):
@@ -199,6 +202,25 @@ def _compose(name: str) -> dict:
     return yaml.load((ROOT / name).read_text(), Loader=Loader)
 
 
+def test_a_env_filled_for_a_host_script_cannot_move_the_containers():
+    # POSTGRES_HOST=localhost written as .env.example says would have sent three services to themselves
+    main = _compose("docker-compose.yml")["services"]
+    reading = {name for name, svc in main.items() if svc.get("env_file")}
+    assert {"rag-lab", "bootstrap", "worker"} <= reading
+    for name in reading:
+        env = main[name].get("environment") or {}
+        assert env.get("POSTGRES_HOST") == "" and env.get("OLLAMA_BASE_URL") == "", name
+
+
+def test_every_service_that_mounts_the_tree_writes_no_bytecode():
+    # the bootstrap ran as root on the mounted tree and left bytecode the host could not remove
+    main = _compose("docker-compose.yml")["services"]
+    mounting = {name for name, svc in main.items() if any(str(v).startswith(".:") for v in svc.get("volumes") or [])}
+    assert {"bootstrap", "seed", "worker"} <= mounting
+    for name in mounting:
+        assert (main[name].get("environment") or {}).get("PYTHONDONTWRITEBYTECODE") == "1", name
+
+
 def test_every_service_that_reserves_the_card_is_let_go_by_the_no_card_layer():
     # a new service with the card's reservation and no line in the layer would break `up.sh --cpu`
     main = _compose("docker-compose.yml")["services"]
@@ -230,14 +252,15 @@ def _run_up_sh(tmp_path, plan: str) -> list[str]:
 echo "$*" >> {log}
 case "$*" in
   info*) echo " nvidia.com/gpu=all" ;;
-  "compose --dry-run up -d"*) printf '%s\\n' "{plan}" ;;
+  "compose --dry-run up -d"*) [ "{plan}" = hang ] && sleep 30; printf '%s\\n' "{plan}" ;;
+  "compose ps --status running --services") ;;
   "compose exec -T ollama ollama ps") printf 'NAME ID SIZE\\n'; [ -f {stopped} ] || echo "llama3.1:8b a1 6GB" ;;
   "compose exec -T ollama ollama stop"*) touch {stopped} ;;
 esac
 """)
     fake.chmod(0o755)
-    env = {**os.environ, "PATH": f"{fake.parent}:{os.environ['PATH']}"}
-    subprocess.run(["bash", str(ROOT / "scripts/up.sh")], env=env, check=True, capture_output=True)
+    env = {**os.environ, "PATH": f"{fake.parent}:{os.environ['PATH']}", "UP_PLAN_TIMEOUT": "1"}
+    subprocess.run(["bash", str(ROOT / "scripts/up.sh")], env=env, check=True, capture_output=True, timeout=20)
     return log.read_text().splitlines()
 
 
@@ -252,3 +275,80 @@ def test_up_sh_frees_the_card_before_a_vllm_start_and_leaves_ollama_alone_otherw
     calls = _run_up_sh(quiet, "Container rag-lab-vllm-1  Running")
     assert not [c for c in calls if "ollama" in c], "a running vLLM takes nothing from ollama"
     assert calls[-1] == "compose up -d"
+
+
+
+def test_up_sh_does_not_hang_on_a_plan_that_never_ends_and_still_frees_the_card(tmp_path):
+    # after `down` the dry run waited on a one-shot container's exit for ever, silently
+    calls = _run_up_sh(tmp_path, "hang")
+    assert "compose exec -T ollama ollama stop llama3.1:8b" in calls, "a vLLM that is not running is about to start"
+    assert calls[-1] == "compose up -d"
+
+
+def test_up_sh_cpu_stops_the_card_engines_a_running_stand_kept_answering_from(tmp_path):
+    import os
+    import subprocess
+
+    log = tmp_path / "docker.log"
+    fake = tmp_path / "bin" / "docker"
+    fake.parent.mkdir()
+    fake.write_text(f'#!/bin/sh\necho "$*" >> {log}\n')
+    fake.chmod(0o755)
+    env = {**os.environ, "PATH": f"{fake.parent}:{os.environ['PATH']}"}
+    subprocess.run(["bash", str(ROOT / "scripts/up.sh"), "--cpu"], env=env, check=True, capture_output=True, timeout=20)
+    calls = log.read_text().splitlines()
+    assert calls[0] == "compose stop ollama vllm" and calls[-1].endswith("up -d")
+
+def _judge_model() -> str:
+    import config
+
+    return config._load(str(ROOT / "config.yaml")).llm.roles["judging"].model
+
+
+def test_up_sh_starts_vllm_with_the_judge_config_yaml_names(tmp_path):
+    # the judge was named twice, in config.yaml and in compose, and only the boot noticed they differed
+    import os
+    import subprocess
+
+    fake = tmp_path / "bin" / "docker"
+    fake.parent.mkdir()
+    seen = tmp_path / "seen"
+    fake.write_text(
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        "  info*) echo ' nvidia.com/gpu=all' ;;\n"
+        f"  'compose up -d'*) echo \"$VLLM_MODEL\" > {seen} ;;\n"
+        "esac\n"
+    )
+    fake.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "VLLM_MODEL"}
+    env["PATH"] = f"{fake.parent}:{env['PATH']}"
+    subprocess.run(["bash", str(ROOT / "scripts/up.sh")], env=env, check=True, capture_output=True)
+    assert seen.read_text().strip() == _judge_model()
+
+
+def test_the_compose_default_mirrors_the_judge_config_yaml_names():
+    import re
+
+    text = (ROOT / "docker-compose.yml").read_text()
+    (default,) = re.findall(r'"--model", "\$\{VLLM_MODEL:-([^}]+)\}"', text)
+    assert default == _judge_model(), "a bare `docker compose up` would start another judge"
+
+
+
+def test_the_window_is_one_number_in_every_place_that_states_it():
+    # six places said 8192 and only a comment tied them: one changed alone truncates without a word
+    import re
+
+    compose = (ROOT / "docker-compose.yml").read_text()
+    stated = {int(v) for v in re.findall(r"\$\{(?:OLLAMA_CONTEXT_LENGTH|VLLM_MAX_MODEL_LEN):-(\d+)\}", compose)}
+    stated |= {int(v) for v in re.findall(r'"--max-model-len", "(\d+)"', compose)}
+    stated |= {int(v) for v in re.findall(r"^(?:OLLAMA_CONTEXT_LENGTH|VLLM_MAX_MODEL_LEN)=(\d+)$", (ROOT / ".env.example").read_text(), re.M)}
+    stated.add(yaml.safe_load((ROOT / "config.yaml").read_text())["llm"]["context_length"])
+    assert len(stated) == 1, f"the window is stated as {sorted(stated)}"
+
+def test_the_judge_is_an_optional_dependency_of_the_boot_and_ollama_is_not():
+    # compose waits for an optional healthy dependency while it starts and goes on once it has died
+    main = _compose("docker-compose.yml")["services"]["bootstrap"]["depends_on"]
+    assert main["vllm"] == {"condition": "service_healthy", "required": False}
+    assert main["ollama"].get("required", True) is True, "the generator and the embedder live there"

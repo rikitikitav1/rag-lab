@@ -150,7 +150,7 @@ def test_every_row_is_judged_once_whatever_the_width(monkeypatch):
     seen = []
     monkeypatch.setattr(judging, "_target_log_ids", lambda session, options: list(range(20)))
     monkeypatch.setattr(
-        judging, "_judge_log", lambda log_id, **kw: seen.append(log_id)
+        judging, "_judge_log", lambda log_id, **kw: seen.append(log_id) or True
     )
     monkeypatch.setattr(judging, "Session", FakeSession)
     monkeypatch.setattr(judging.experiment, "try_aggregate_for_run", lambda run: None)
@@ -176,7 +176,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     )
     _judged_on(monkeypatch, "ollama")
     verdict = SimpleNamespace(reason="because", elapsed=1.5, model="qwen2.5:7b",
-                              prompt_tokens=2317)
+                              prompt_tokens=2317, completion_tokens=412)
 
     monkeypatch.setenv("OLLAMA_NUM_PARALLEL", "4")
     written = judging._axis_metric(verdict, judging.stamp_of(4))
@@ -185,11 +185,12 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     assert written.pop("residency_id") is None, "no pass named it, so the stamp says so"
     assert written == {
         "reason": "because", "elapsed": 1.5, "model": "qwen2.5:7b", "seed": 0, "width": 4,
+        "sampler": {"temperature": 0, "seed": 0},
         "slots_believed": 4, "on_card": None, "engine": "ollama:11434",
         # null with no instrument named would mean nowhere to ask, and ollama is where we ask
         "on_card_read_from": "ollama /api/ps",
         # ollama trims to its window silently, so the count is the only witness that it did not
-        "judge_prompt_tokens": 2317,
+        "judge_prompt_tokens": 2317, "judge_completion_tokens": 412,
         # the address and the entity together: one survives the migration, the other names it
         "engine_name": "ollama", "engine_refused": {}, "engine_added": {},
         # no pass named a residency, so no instrument minted one either
@@ -208,7 +209,7 @@ def test_a_row_records_what_judged_it_beside_the_model(monkeypatch):
     bare.pop("judged_at")
     bare.pop("residency_id")
     assert bare == {
-        "seed": None, "width": 1, "slots_believed": 4, "on_card": None,
+        "seed": None, "sampler": {"temperature": 0}, "width": 1, "slots_believed": 4, "on_card": None,
         "engine": "ollama:11434", "engine_name": "ollama", "engine_refused": {},
         "engine_added": {}, "on_card_read_from": "ollama /api/ps", "residency_source": None,
     }
@@ -579,7 +580,7 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     _judged_on(monkeypatch, "ollama")
     on_card, last, disturbed, handed = [None], [None], [False], [False]
     asked = []
-    monkeypatch.setattr(j, "judge_on_card", lambda _model=None: on_card[0])
+    monkeypatch.setattr(j, "judge_on_card", lambda _model=None, role="judging": on_card[0])
     monkeypatch.setattr(
         j, "_last_residency", lambda name, started=None: asked.append(name) or last[0]
     )
@@ -814,7 +815,7 @@ def test_the_card_is_read_after_the_judge_answered_and_not_before(monkeypatch):
     monkeypatch.setattr(judging, "_residency", lambda job_id, model=None: order.append("probe")
                         or judging.Residency(job_id, True))
 
-    late = judging.LateResidency(7)
+    late = judging.Pass(7, (), residency=lambda: judging._residency(7))
     assert order == [], "building the holder must not touch the card"
 
     class _Session:
@@ -915,3 +916,15 @@ def test_the_card_is_read_for_the_engine_that_judges_not_the_one_the_role_names(
 
     assert judging.judge_on_card("Qwen/Qwen2.5-7B-Instruct-AWQ") is False
     assert asked == ["Qwen/Qwen2.5-7B-Instruct-AWQ"], "the override must reach the card probe"
+
+
+def test_a_remote_judge_is_stamped_with_no_residency_rather_than_one_of_its_own(monkeypatch):
+    # every pass minted its own id for a broker, and a reader took two passes for one residency each
+    import engines
+    import job_handlers.judging as j
+    from engines import card
+    from models.registry import EngineKind, Placement
+
+    cloud = engines.EngineSpec(8, "gonka", EngineKind.openai_compatible, "GONKA", Placement.remote)
+    monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: engines.Resolved("m", cloud))
+    assert j._residency(42) == j.Residency(None, False, card.NO_RESIDENCY)

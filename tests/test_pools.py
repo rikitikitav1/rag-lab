@@ -212,6 +212,7 @@ def test_the_rest_door_and_the_mcp_tool_read_the_same_rows(monkeypatch):
                  "paraphrase_of": None}]
 
     monkeypatch.setattr(question_sets, "rows", rows)
+    monkeypatch.setattr(question_sets, "inventory", lambda name: [{"set_name": name}])
     with TestClient(server.app) as client:
         got = client.get("/v1/questions", params={"set_name": "s", "pool": "in_corpus", "limit": 5})
         unknown = client.get("/v1/questions", params={"pool": "corpus"})

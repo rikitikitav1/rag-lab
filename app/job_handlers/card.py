@@ -16,7 +16,9 @@ _taking = threading.Lock()
 def take(spec, model: str | None = None, allow_spill: bool = False) -> None:
     with _taking:
         try:
-            if spec.placement in engines.CARD and card.holds_for(spec) and not _to_load(spec, model):
+            # a model already partly on the card is no reason to skip the check the handover makes
+            if (spec.placement in engines.CARD and card.holds_for(spec) and not _to_load(spec, model)
+                    and (allow_spill or not (model and card.spilled(spec, model)))):
                 return
             card.hand_to(spec, model, allow_spill=allow_spill)
         except card.CardNotHanded:
@@ -41,7 +43,7 @@ def _to_load(spec, model: str | None) -> bool:
 def hand_card(options: dict) -> None:
     target = engines.spec_of_id(options["engine_id"])
     if target is None:
-        raise ValueError(f"engine {options['engine_id']} is not registered")
+        raise Final(f"engine {options['engine_id']} is not registered")
     take(target, options.get("model"))
     if options.get("seat"):
         role = Role(options["seat"])

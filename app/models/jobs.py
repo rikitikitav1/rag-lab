@@ -34,6 +34,10 @@ class Job(Base):
     options: Mapped[dict] = mapped_column(JSONB, default=dict)
     error: Mapped[dict | None] = mapped_column(JSONB)
     elapsed: Mapped[float | None]
+    # per role, per engine and model: what the job's calls spent, retries and failures included
+    tokens: Mapped[dict | None] = mapped_column(JSONB)
+    # per cloud, what its broker said was left on the key before the job and after it
+    balances: Mapped[dict | None] = mapped_column(JSONB)
     apply_since: Mapped[datetime] = mapped_column(server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

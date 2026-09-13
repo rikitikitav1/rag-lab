@@ -138,11 +138,12 @@ def test_only_ollama_spills_and_an_asleep_vllm_is_not_off_the_card(monkeypatch):
              "embedding": _engine("ollama-cpu", "ollama", "cpu"),
              "judging": _engine("vllm", "vllm", "gpu"),
              "paraphrasing": _engine("ollama", "ollama", "gpu"),
-             "reranking": _engine("vllm-rerank", "vllm", "gpu")}
+             "reranking": _engine("vllm-rerank", "vllm", "gpu"),
+             "ragas": _engine("vllm", "vllm", "gpu"), "ragas_embedding": _engine("ollama", "ollama", "gpu")}
     monkeypatch.setattr(stand_health.llm, "resolve",
                         lambda role: engines.Resolved(role, specs[role]))
     on = {"generation": False, "embedding": False, "judging": False, "paraphrasing": None,
-          "reranking": False}
+          "reranking": False, "ragas": False, "ragas_embedding": None}
     monkeypatch.setattr(stand_health.card_holder, "model_on_card", lambda spec, name: on[name])
     seen = stand_health.roles_on_card()
     assert [r for r, v in seen.items() if v["spilled"]] == ["generation"], seen
@@ -154,7 +155,8 @@ def test_a_role_whose_engine_does_not_answer_is_named(monkeypatch):
 
     specs = {"generation": _engine("ollama", "ollama", "gpu"), "embedding": _engine("ollama", "ollama", "gpu"),
              "judging": _engine("vllm", "vllm", "gpu"), "paraphrasing": _engine("ollama", "ollama", "gpu"),
-             "reranking": _engine("vllm-rerank", "vllm", "gpu")}
+             "reranking": _engine("vllm-rerank", "vllm", "gpu"), "ragas": _engine("ollama", "ollama", "gpu"),
+             "ragas_embedding": _engine("ollama", "ollama", "gpu")}
     monkeypatch.setattr(stand_health.llm, "resolve", lambda role: engines.Resolved(role, specs[role]))
     alive = {"ollama": True, "vllm": False, "vllm-rerank": None}
     monkeypatch.setattr(stand_health, "_answers", lambda spec: alive[spec.name])
@@ -270,3 +272,18 @@ def test_a_role_loaded_off_the_card_of_an_ollama_that_answers_is_named(monkeypat
     whole[0] = False
     (line,) = stand_health.roles_down()
     assert line.startswith("generation: llama3.1:8b@ollama is not whole on the card")
+
+
+def test_a_model_s_own_sampler_is_shown_as_an_override_and_not_as_drift(monkeypatch):
+    # the model row's budget went out while the yaml said 1024, and the stand read showed nothing
+    import engines
+    from models.registry import EngineKind, Placement
+
+    spec = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    monkeypatch.setattr(stand_health, "_roles", lambda: [
+        ("ragas", engines.Resolved("qwen2.5:7b", spec, options={"max_tokens": 4096})),
+        ("embedding", engines.Resolved("bge-m3", spec)),
+    ])
+    out = stand_health.samplers()
+    assert out["ragas"]["sampler"]["max_tokens"] == 4096 and out["ragas"]["overrides"] == ["max_tokens"]
+    assert out["embedding"]["overrides"] == []

@@ -1,3 +1,4 @@
+from errors import Final as Final
 from models.registry import Model, ModelRole, Role, Status, refuse_unknown_registry
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -8,11 +9,6 @@ HANDLERS = {}
 class Deferred(Exception):
     def __init__(self, delay_seconds: int = 10):
         self.delay_seconds = delay_seconds
-
-
-# the same options fail the same way: a retry only wakes a server and takes the card again
-class Final(Exception):
-    pass
 
 
 def register(job_type):
@@ -60,16 +56,8 @@ def require_model_ready(name: str, role: str | None = None) -> None:
     import job_queue
     import llm
 
-    try:
-        found = engines.find_model(name)
-    except engines.Ambiguous:
-        if role is None:
-            raise
-        # one name on two engines, as on `ollama` and `ollama-cpu`: the role's engine answers
-        found = engines.find_model(name, llm.resolve(role).engine.id)
-        # the role's engine lacks it: still ambiguous, and never a new name to register and pull
-        if found is None:
-            raise
+    # the role's engine lacks it: still ambiguous, and never a new name to register and pull
+    found = engines.find_model_on(name, lambda: llm.resolve(role).engine.id if role else None)
     if found is None:
         # the same refusal the HTTP door makes: this is a second way to have a name pulled
         refuse_unknown_registry(name)
@@ -87,5 +75,24 @@ def require_model_ready(name: str, role: str | None = None) -> None:
             )
         )
     if status != Status.ready:
+        failed = _failed_pull(found.name, found.engine.id)
+        if failed:
+            raise Final(f"model {found.name} on {found.engine.name} did not pull: {failed}")
         # a model that never arrives would re-defer for the life of the process, holding its lane
         raise Deferred(30)
+
+
+# a pull that gave up says so here, or the run waiting on it deferred for an hour
+def _failed_pull(name: str, engine_id: int) -> str | None:
+    from models.jobs import Job, JobStatus
+
+    with Session() as session:
+        last = session.execute(
+            select(Job.status, Job.error).where(
+                Job.type == "pull_llm_model", Job.options["name"].astext == name,
+                Job.options["engine_id"].as_integer() == engine_id,
+            ).order_by(Job.id.desc()).limit(1)
+        ).first()
+    if last is None or last.status != JobStatus.error:
+        return None
+    return str((last.error or {}).get("error") or "the pull failed")

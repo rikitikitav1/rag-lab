@@ -1,12 +1,12 @@
 import logging_setup
-from engines import CARD, CardState, ollama
+from engines import CARD, CardState, is_cloud, ollama
 from models.registry import EngineKind, Model, ModelRole, Placement, Role
 from orm.sync_db import Session
 from sqlalchemy import select
 
 # what each role needs of a model, in the terms the server answers in
 REQUIRED_CAPABILITY = {Role.generation: "tools"}
-REFUSED_CAPABILITY = {Role.judging: "thinking", Role.paraphrasing: "thinking"}
+REFUSED_CAPABILITY = {Role.judging: "thinking", Role.paraphrasing: "thinking", Role.ragas: "thinking"}
 NEEDS_SYSTEM = (Role.generation, Role.judging, Role.paraphrasing)
 
 log = logging_setup.get_logger(__name__)
@@ -53,6 +53,8 @@ def refuse_unfit_model(role: Role, model_name: str, engine_id: int | None = None
         raise ValueError(f"{model_name} cannot rerank: the role lives on a vLLM pooling server")
     if spec is not None and spec.kind is EngineKind.vllm:
         return _refuse_unfit_on_vllm(role, model_name, spec)
+    if spec is not None and is_cloud(spec.kind):
+        return _refuse_markup_the_parser_leaves(role, model_name, spec)
     # only ollama describes its models, so an engine that cannot be asked is not a failed probe
     if spec is not None and spec.kind is not EngineKind.ollama:
         log.info("model.acceptance_not_probed", role=role.value, model=model_name, engine=spec.name)
@@ -105,7 +107,7 @@ class NeedsProbe(Exception):
     pass
 
 
-POOLING_ROLES = (Role.embedding, Role.reranking)
+POOLING_ROLES = (Role.embedding, Role.reranking, Role.ragas_embedding)
 
 
 def _refuse_unfit_on_vllm(role: Role, model_name: str, spec) -> None:
@@ -157,3 +159,46 @@ def seat(role: Role, engine_id: int, model_name: str, *, over: int | None) -> No
             found.model_id = model.id
         session.commit()
     log.info("model.role_seated", role=role.value, model=model_name, engine_id=engine_id)
+
+
+_PROBE_TOOL = {"type": "function", "function": {
+    "name": "search_corpus", "description": "Search the interview corpus",
+    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+}}
+
+
+# a cloud writes its thinking and its call markup into the text, and the row's parser must cut all of it
+def _refuse_markup_the_parser_leaves(role: Role, model_name: str, spec) -> None:
+    import engines
+    import llm
+    from engines import answer_parsers
+
+    # an embedder writes no text and calls no tool: the probe would spend a call to learn nothing
+    if role in POOLING_ROLES:
+        return None
+    found = engines.find_model(model_name, spec.id)
+    parser = found.parser if found else answer_parsers.NONE
+    try:
+        # through `llm`, so the probe's tokens land in the job's count and its errors read as every call's
+        reply = llm.complete_on(
+            spec, model_name, [{"role": "user", "content": "Use the tool to find how Redis persistence works."}],
+            {"max_tokens": 512, "temperature": 0, "tools": [_PROBE_TOOL]}, role,
+        )
+    # no key, no address or a refused key is a row no call can reach, not a probe that failed to land
+    except engines.Unconfigured as e:
+        raise ValueError(f"{model_name} on {spec.name} cannot be called: {e}") from e
+    # a property of the row, like a missing key: every run on it would stop on its first call
+    except llm.NoUsage as e:
+        raise ValueError(f"{model_name} on {spec.name} sends no token usage: {e}") from e
+    except llm.KeyRefused as e:
+        raise ValueError(f"{model_name} on {spec.name} cannot be called: {e}") from e
+    except Exception as e:  # a probe must not become the reason a role cannot be assigned
+        return _unknown(role, model_name, e)
+    if not reply.choices:
+        return _unknown(role, model_name, ValueError("the probe came back without a choice"))
+    left = answer_parsers.parse(parser, reply.choices[0].message.content).leftover_markers
+    if left:
+        raise ValueError(
+            f"{model_name} leaves {', '.join(left)} in its answers under the parser {parser};"
+            " name one with PATCH /v1/model/{id} and answer_parser"
+        )

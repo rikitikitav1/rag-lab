@@ -1,3 +1,4 @@
+import config
 import logging_setup
 import requests
 from models.registry import EngineKind
@@ -75,6 +76,10 @@ class Driver:
     def weights_key(self, name: str) -> str:
         return name
 
+    # the window a model gets once it loads, for a model nobody has loaded yet
+    def configured_window(self, spec: EngineSpec, model: str) -> int | None:
+        return None
+
 
 class Ollama(Driver):
     instrument = "ollama /api/ps"
@@ -121,6 +126,11 @@ class Ollama(Driver):
 
     def window(self, spec: EngineSpec, model: str) -> int | None:
         return ollama.context_length(model, spec)
+
+    # a windowed tag names its own; any other loads with `OLLAMA_CONTEXT_LENGTH`, compose's same default
+    def configured_window(self, spec: EngineSpec, model: str) -> int | None:
+        derived = ollama.windowed(model)
+        return derived[1] if derived else config.settings.llm.context_length
 
     def window_model(self, spec: EngineSpec, configured: str | None) -> str | None:
         return ollama.window_model(configured, spec=spec)
@@ -230,3 +240,14 @@ _REMOTE = Driver()
 
 def driver(kind: EngineKind | None) -> Driver:
     return _DRIVERS.get(kind, _REMOTE)
+
+
+# the server's window when the model is loaded, else the one it will load with: a guard on either passed unloaded models
+def window_or_configured(spec: EngineSpec, model: str) -> int | None:
+    reading = driver(spec.kind)
+    try:
+        window = reading.window(spec, model)
+    except Exception as e:
+        log.warning("engine.window_unread", engine=spec.name, model=model, error=str(e))
+        window = None
+    return window or reading.configured_window(spec, model)

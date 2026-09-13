@@ -158,10 +158,8 @@ CREATE TABLE public.engines (
     kind text NOT NULL,
     env_prefix text NOT NULL,
     placement text NOT NULL,
-    budget numeric(12,6),
-    spent numeric(12,6) DEFAULT 0 NOT NULL,
-    reserved numeric(12,6) DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    balance_reader text DEFAULT 'none'::text NOT NULL,
     CONSTRAINT engines_env_prefix_shape CHECK ((env_prefix ~ '^[A-Z][A-Z0-9_]{0,31}$'::text))
 );
 
@@ -249,7 +247,9 @@ CREATE TABLE public.jobs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     elapsed double precision,
-    queue text DEFAULT 'default'::text NOT NULL
+    queue text DEFAULT 'default'::text NOT NULL,
+    tokens jsonb,
+    balances jsonb
 );
 
 
@@ -337,7 +337,9 @@ CREATE TABLE public.models (
     weights_id integer,
     size_bytes bigint,
     tool_probe boolean,
-    tool_probe_start text
+    tool_probe_start text,
+    answer_parser text DEFAULT 'none'::text NOT NULL,
+    options jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -943,4 +945,10 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260909000003'),
     ('20260911000001'),
     ('20260911000002'),
-    ('20260911000003');
+    ('20260911000003'),
+    ('20260912000001'),
+    ('20260912000002'),
+    ('20260912000003'),
+    ('20260912000004'),
+    ('20260912000005'),
+    ('20260912000006');

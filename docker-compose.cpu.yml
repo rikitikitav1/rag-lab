@@ -24,6 +24,7 @@ services:
         condition: service_healthy
     environment:
       CONFIG_OVERLAY: config.cpu.yaml
+      LLM_TIMEOUT: ${LLM_TIMEOUT_CPU:-600}
   seed:
     environment:
       CONFIG_OVERLAY: config.cpu.yaml

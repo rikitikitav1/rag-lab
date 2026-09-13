@@ -166,12 +166,14 @@ curl -s "localhost:8000/v1/job?type=hand_card&status=error&limit=5" | python3 -m
   <service>` gives the card back, and `docker info` should list the NVIDIA CDI devices (README,
   Quickstart).
 - `vllm` exits at start with `Free memory on device ... is less than desired GPU memory
-  utilization`, and the API and the worker stay `Created` behind it: the stack was recreated while
-  ollama still held a model, since the ollama container is not recreated with it and keeps its
-  models loaded. The API is down, so the queue cannot hand anything: unload ollama's models through
-  its own port (`curl localhost:11434/api/generate -d '{"model":"<name>","keep_alive":0}'` for each
-  name in `curl localhost:11434/api/ps`), then `docker compose up -d` again. `scripts/up.sh` does
+  utilization`: the stack was recreated while ollama still held a model, since the ollama container
+  is not recreated with it and keeps its models loaded. The rest of the stack comes up without the
+  judge, and `/readiness` names it. Unload ollama's models through its own port (`curl
+  localhost:11434/api/generate -d '{"model":"<name>","keep_alive":0}'` for each name in `curl
+  localhost:11434/api/ps`), then `docker compose up -d vllm`. `scripts/up.sh` does
   this itself whenever `vllm` is about to start; a bare `docker compose up -d` does not.
+- `vllm` neither dies nor turns healthy: the bootstrap waits for it up to its healthcheck's
+  `start_period`, an hour (the first start downloads the weights); `docker compose logs vllm` says why.
 
 Back to the default: `POST /v1/model/{id of the judge}/load` hands the card to the judge through the
 queue, and the next job that needs ollama takes it back the same way.
@@ -192,7 +194,13 @@ recreate the worker with the card and the two-minute timeout. Put
 `COMPOSE_FILE=docker-compose.yml:docker-compose.cpu.yml` in `.env` while the stand runs this way.
 
 The layer seats roles only on an empty database. A stand that already has roles keeps them, so seat
-each one with `PUT /v1/role` on its model on `ollama-cpu`, by the ids the model list gives.
+each one with `PUT /v1/role` on its model on `ollama-cpu`, by the ids the model list gives; a model
+the list does not have there, as `llama3.1:8b` and `gemma2:9b`, comes first through `POST /v1/model`.
+From a stand running on the card, `scripts/up.sh --cpu` stops `ollama` and `vllm` before it starts.
+
+The `embedding` role moved to `ollama-cpu` is another embedder than the one the index and the questions
+were built with: every search is refused until a variant is indexed with it, as section 3 does for
+vLLM, and the next `up` re-embeds every question of every set in place, and again on the way back.
 
 No reranker: ollama scores no pairs, so `"rerank": true` and the agent's gate at `gate_signal:
 cross_encoder` or `either` do not work in this mode.

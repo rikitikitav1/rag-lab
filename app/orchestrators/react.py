@@ -6,6 +6,7 @@ import engines
 import engines.ollama
 import llm
 import logging_setup
+import token_fields
 from errors import StandFault
 from langchain_core.tools import StructuredTool
 from use_cases import agent_policy as policy
@@ -16,7 +17,7 @@ log = logging_setup.get_logger(__name__)
 
 def truncated(message) -> bool:
     meta = getattr(message, "response_metadata", None) or {}
-    return meta.get("finish_reason") == "length" or meta.get("done_reason") == "length"
+    return token_fields.cut(meta.get("finish_reason")) or token_fields.cut(meta.get("done_reason"))
 
 
 # the third client in the tree, and the only one that used to read the address out of the config
@@ -25,7 +26,7 @@ def chat_model(role: str = "generation", model: str | None = None):
 
     picked = llm.resolve_for(role, model)
     engines.ollama.refuse_unless_ollama(picked.engine, "the idiomatic orchestrator")
-    sent = llm.sampler(role, picked.engine).sent
+    sent = llm.sampler(role, picked).sent
     return ChatOllama(
         base_url=engines.base_url(picked.engine),
         model=picked.name,

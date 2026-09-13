@@ -13,6 +13,7 @@ from enum import StrEnum
 from typing import Literal
 
 import limits
+from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from use_cases import agent_policy
@@ -31,7 +32,7 @@ class Spec(BaseModel):
 class EvalRunFields(Spec):
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
     set_name: str | None = None
-    question_ids: list[int] | None = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
+    question_ids: limits.QuestionIds = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
@@ -49,6 +50,8 @@ class EvalRunFields(Spec):
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
     # llama3.1 renders tool schemas only in the last user message, and a tool answer buries them
     restate_tools: bool = False
+    # answer only what a stopped run left unanswered, on the options it ran with
+    resume: bool = False
 
 
 # what the queue accepts is what a door may offer plus what the stand attaches to its own jobs
@@ -69,7 +72,7 @@ class JudgeAnswers(Spec):
     # a counter, not a flag: the sweep carries how many times it has swept, and it reaches three
     sweep: int | bool | None = None
     judge_width: int | None = Field(default=None, ge=1, le=limits.MAX_RUNS)
-    judge_model: str | None = None
+    judge_model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
     judge_prompts: dict | None = None
     control_axes: list | tuple | None = None
     control_sample: int | None = None
@@ -92,6 +95,10 @@ class JudgeGuestAxes(Spec):
     log_ids: list[int] | None = None
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
+    # the old ruler, an empty system beside the prompt, kept for a bridge to numbers taken with it
+    messages: Literal[*MESSAGE_FORMS] = MESSAGE_FORMS[0]
+    # the guest's own bench, as `judge_model` is the judge's: a copy scored by another model, no reseat
+    guest_model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
 
 
 class JudgeLanguage(Spec):
@@ -218,7 +225,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "eval_run": (Role.generation, Role.embedding, Role.reranking),
     "compare_retrieval": (Role.reranking,),
     "judge_answers": (Role.judging,),
-    "judge_guest_axes": (Role.judging, Role.embedding),
+    "judge_guest_axes": (Role.ragas, Role.ragas_embedding),
     "judge_language": (Role.judging, Role.generation),
     "check_mcp_health": (),
     "pull_llm_model": (),
@@ -241,6 +248,9 @@ def lane(job_type: str) -> str:
 
 # the stand's own bookkeeping on a job: `_job_id` carries a prefix and these two never did
 WORKER_KEYS = ("deferred_seconds", "attempts")
+
+# the options by which a job names a model beside its roles' own
+MODEL_OVERRIDES = {"generation": "model", "judging": "judge_model", "ragas": "guest_model"}
 
 
 class Refused(ValueError):

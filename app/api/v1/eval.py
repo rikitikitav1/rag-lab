@@ -10,14 +10,16 @@ import limits
 import logging_setup
 from evals import compare as compare_uc
 from evals import retrieval_metrics
+from evals.guest_axes import MESSAGE_FORMS
 from evals.pools import Ambiguous
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from models.eval import QuestionLog
-from models.registry import Pipeline, refuse_unknown_registry
+from models import Job
+from models.eval import Question, QuestionLog
+from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, refuse_unknown_registry
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from use_cases import agent_policy, rejudge, retrieval_compare
@@ -55,6 +57,8 @@ class GuestAxesRequest(BaseModel):
     # the guests calibrate on a subsample, they are not an axis
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
+    messages: Literal[*MESSAGE_FORMS] = MESSAGE_FORMS[0]
+    guest_model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
 
 
 class JudgeRequest(BaseModel):
@@ -87,7 +91,7 @@ class EvalRunRequest(job_specs.EvalRunFields):
 class ExperimentRequest(BaseModel):
     run_name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
     set_name: str | None = None
-    question_ids: list[int] | None = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
+    question_ids: limits.QuestionIds = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
     rerank: bool | None = None
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
@@ -321,11 +325,74 @@ def value_suffix(value) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]", "_", str(value))
 
 
+async def _rows_of(session, run_name: str) -> int:
+    return await session.scalar(
+        select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == run_name)
+    ) or 0
+
+
+async def _question_ids_in(session, ids: list[int]) -> set[int]:
+    return set((await session.scalars(select(Question.id).where(Question.id.in_(ids)))).all())
+
+
+# refused at the door, not an hour in: a run over fewer questions than named reads as the named set
+async def _refuse_missing_questions(session, ids: list[int]) -> None:
+    missing = sorted(set(ids) - await _question_ids_in(session, ids))
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{len(missing)} of {len(ids)} question ids are not in the stand: {missing[:20]}",
+        )
+
+
+async def _eval_runs_named(session, run_name: str) -> list:
+    return list((await session.scalars(
+        select(Job).where(Job.type == "eval_run", Job.options["run_name"].astext == run_name).order_by(Job.id.desc())
+    )).all())
+
+
+# a taken name, by its rows or by a job that stopped before its first row, is resumed, not run twice
+async def refuse_a_taken_run(session, run_name: str) -> None:
+    rows = await _rows_of(session, run_name)
+    jobs = await _eval_runs_named(session, run_name)
+    if rows or jobs:
+        raise HTTPException(
+            status_code=409,
+            detail=f"run {run_name} has {rows} rows and {len(jobs)} eval_run jobs: pass resume"
+            " to answer the rest on its own options, or name a new run",
+        )
+
+
+# a resumed run changes nothing: it runs on the stopped job's own options and asks only the unanswered
+async def _resume(session, request: EvalRunRequest) -> JobEnqueuedResponse:
+    extra = sorted(request.model_fields_set - {"run_name", "resume"})
+    if not request.run_name or extra:
+        raise HTTPException(
+            status_code=422,
+            detail="resume takes run_name alone: a resumed run changes nothing"
+            + (f", and {', '.join(extra)} would" if extra else ""),
+        )
+    jobs = await _eval_runs_named(session, request.run_name)
+    if not jobs:
+        raise HTTPException(status_code=404, detail=f"no eval_run named {request.run_name} to resume")
+    if any(job.status in job_queue.ACTIVE for job in jobs):
+        raise HTTPException(status_code=409, detail=f"run {request.run_name} is still queued or running")
+    # the worker's own bookkeeping belongs to the attempt that stopped, not to the resumed one
+    options = {k: v for k, v in jobs[0].options.items() if k not in job_specs.WORKER_KEYS}
+    return await _enqueue(session, "eval_run", {**options, "resume": True})
+
+
 @router.post("/run", response_model=JobEnqueuedResponse)
 async def enqueue_eval_run(
     request: EvalRunRequest,
     session: AsyncSession = Depends(get_session),
 ):
+    if request.resume:
+        return await _resume(session, request)
+    if request.run_name:
+        await refuse_a_taken_run(session, request.run_name)
+    if request.question_ids:
+        await _refuse_missing_questions(session, request.question_ids)
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
     return await _enqueue(
         session,
@@ -348,6 +415,7 @@ async def enqueue_eval_run(
             "allow_cpu": request.allow_cpu,
             "restate_tools": request.restate_tools,
             "variant": request.variant,
+            "resume": False,
         },
     )
 
@@ -415,31 +483,17 @@ async def enqueue_guest_axes(
     request: GuestAxesRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    from job_handlers.judging import guest_rows_of, guests_available
+    from job_handlers.judging import guest_pass_refusal
 
-    if not guests_available():
-        raise HTTPException(
-            status_code=409,
-            detail="this runtime carries no `ragas`, the guest axes cannot be scored",
-        )
-    # a typo in the name used to be a job over nothing, and no cap stood where `/rejudge` has one
-    owed = await run_in_threadpool(guest_rows_of, request.run_name)
-    if not owed:
-        raise HTTPException(
-            status_code=404, detail=f"run {request.run_name} owes no guest axis"
-        )
-    # the pass walks the drawn subsample, so the cap is read over the same rows the handler counts
-    will_walk = min(owed, request.sample) if request.sample else owed
-    if will_walk > limits.MAX_GUEST_ROWS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{will_walk} rows would be walked, over the cap of {limits.MAX_GUEST_ROWS}",
-        )
+    refused = await run_in_threadpool(guest_pass_refusal, request.run_name, request.sample)
+    if refused:
+        raise HTTPException(status_code=refused[0], detail=refused[1])
     return await _enqueue(
         session,
         "judge_guest_axes",
         {"run_name": request.run_name, "judge_width": request.judge_width,
-         "sample": request.sample, "seed": request.seed},
+         "sample": request.sample, "seed": request.seed, "messages": request.messages,
+         "guest_model": request.guest_model},
     )
 
 
@@ -458,13 +512,17 @@ async def enqueue_experiment(
     # what the row claims it filtered by: ids win over the set, as `_target_texts` reads them
     set_name = request.set_name if not request.question_ids else None
     rerank = resolve_rerank(request.rerank)
+    names = [f"{base}_{request.param}_{value_suffix(value)}" for value in request.values]
+    # all of them before any is queued: a client's retry after a timeout wrote every question twice
+    for name in names:
+        await refuse_a_taken_run(session, name)
     jobs = []
-    for value in request.values:
+    for value, name in zip(request.values, names, strict=True):
         job = await _enqueue(
             session,
             "eval_run",
             {
-                "run_name": f"{base}_{request.param}_{value_suffix(value)}",
+                "run_name": name,
                 "set_name": set_name,
                 "question_ids": request.question_ids,
                 "rerank": rerank,

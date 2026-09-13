@@ -40,7 +40,7 @@ _resolved: dict[tuple[str, tuple[int, int]], int] = {}
 
 
 def ladder() -> list[int]:
-    return sorted(config.settings.retrieval.ef_ladder)
+    return sorted(config.settings.verdict.search_depth.ef_ladder)
 
 
 def _shape(conn) -> tuple[int, int]:

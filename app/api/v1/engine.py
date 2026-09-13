@@ -1,10 +1,11 @@
 import engines
 from crud import get_or_404
+from engines import balances
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from models.registry import Engine, EngineKind, Model, Placement
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,7 @@ class EngineResponse(BaseModel):
     kind: EngineKind
     env_prefix: str
     placement: Placement
+    balance_reader: str
     # read from the environment, never from the row, and shown so a reader can tell it is set
     address: str | None
     reachable: bool | None
@@ -30,7 +32,8 @@ class EngineResponse(BaseModel):
     def of(cls, row: Engine, address: str | None, reachable: bool | None = None):
         return cls(
             id=row.id, name=row.name, kind=row.kind, env_prefix=row.env_prefix,
-            placement=row.placement, address=address, reachable=reachable,
+            placement=row.placement, balance_reader=row.balance_reader or balances.NO_READER,
+            address=address, reachable=reachable,
         )
 
 
@@ -51,16 +54,46 @@ async def list_engines(session: AsyncSession = Depends(get_session)):
     return [EngineResponse.of(row, _address(row)) for row in rows]
 
 
+class BalanceResponse(BaseModel):
+    engine: str
+    reader: str
+    balance: float | None
+    unit: str | None
+    why: str | None
+    read_at: str
+
+
+# free to ask: the broker's service route generates nothing
+@router.get("/balances", response_model=list[BalanceResponse])
+async def broker_balances():
+    return await run_in_threadpool(balances.summary)
+
+
+def _known_reader(name: str | None) -> str | None:
+    if name is not None:
+        balances.refuse_unknown(name)
+    return name
+
+
 class EngineCreateRequest(BaseModel):
     name: str = Field(max_length=64, pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     kind: EngineKind
     env_prefix: str = Field(pattern=PREFIX)
     placement: Placement
+    balance_reader: str = balances.NO_READER
+
+    _reader = field_validator("balance_reader")(_known_reader)
+
+
+# a reader on a local engine would never be asked, and the summary would not show it
+def _refuse_a_reader_off_the_cloud(kind: EngineKind, reader: str | None) -> None:
+    if reader not in (None, balances.NO_READER) and not engines.is_cloud(kind):
+        raise HTTPException(status_code=422, detail=f"only a cloud has a broker to ask; {kind.value} has none")
 
 
 # a remote engine on `gpu` joined the card engines and every handover waited for it forever
 def _refuse_a_placement_the_kind_cannot_have(kind: EngineKind, placement: Placement) -> None:
-    remote_kind = kind is EngineKind.openai_compatible
+    remote_kind = engines.is_cloud(kind)
     if remote_kind != (placement is Placement.remote):
         raise HTTPException(
             status_code=422,
@@ -75,6 +108,7 @@ async def create_engine(
     if await session.scalar(select(exists().where(Engine.name == request.name))):
         raise HTTPException(status_code=409, detail=f"engine {request.name} already exists")
     _refuse_a_placement_the_kind_cannot_have(request.kind, request.placement)
+    _refuse_a_reader_off_the_cloud(request.kind, request.balance_reader)
     row = Engine(**request.model_dump())
     # asked before the insert: a misspelt prefix used to leave a row behind and answer 400
     try:
@@ -93,23 +127,32 @@ async def create_engine(
 class EnginePatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    placement: Placement
+    placement: Placement | None = None
+    balance_reader: str | None = None
+
+    _reader = field_validator("balance_reader")(_known_reader)
 
 
 @router.patch("/{id}", response_model=EngineResponse)
 async def patch_engine(
     id: int, request: EnginePatchRequest, session: AsyncSession = Depends(get_session)
 ):
+    if request.placement is None and request.balance_reader is None:
+        raise HTTPException(status_code=422, detail="nothing to change: name a placement or balance_reader")
     row = await get_or_404(Engine, id, session)
-    _refuse_a_placement_the_kind_cannot_have(row.kind, request.placement)
-    # the row describes the process it will start: a live one stays where it is, whatever it says
-    if request.placement != row.placement and await run_in_threadpool(_running, _spec(row)):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{row.name} is running as {row.placement.value}: stop it, change the"
-            " placement, and start it where the new one says",
-        )
-    row.placement = request.placement
+    if request.placement is not None:
+        _refuse_a_placement_the_kind_cannot_have(row.kind, request.placement)
+        # the row describes the process it will start: a live one stays where it is, whatever it says
+        if request.placement != row.placement and await run_in_threadpool(_running, _spec(row)):
+            raise HTTPException(
+                status_code=409,
+                detail=f"{row.name} is running as {row.placement.value}: stop it, change the"
+                " placement, and start it where the new one says",
+            )
+        row.placement = request.placement
+    if request.balance_reader is not None:
+        _refuse_a_reader_off_the_cloud(row.kind, request.balance_reader)
+        row.balance_reader = request.balance_reader
     await commit_and_refresh(session, row)
     engines.forget_clients(row.id)
     return EngineResponse.of(row, _address(row))

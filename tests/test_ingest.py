@@ -1,34 +1,37 @@
 import ingest
 import pytest
 
+# the ceiling every variant of the corpus declares today
+CEILING = 1024
+
 
 def test_chunk_markdown_empty():
-    assert ingest.chunk_markdown("") == []
-    assert ingest.chunk_markdown("   \n ") == []
+    assert ingest.chunk_markdown("", ceiling=CEILING) == []
+    assert ingest.chunk_markdown("   \n ", ceiling=CEILING) == []
 
 
 def test_chunk_markdown_keeps_h1_on_each_section():
     md = "# Title\nintro\n## A\nbody a\n## B\nbody b"
-    chunks = ingest.chunk_markdown(md)
+    chunks = ingest.chunk_markdown(md, ceiling=CEILING)
     assert chunks[0].startswith("# Title\nintro")
     assert any(c.startswith("# Title\n## A") for c in chunks)
     assert any(c.startswith("# Title\n## B") for c in chunks)
 
 
 def test_split_by_size_short_is_untouched():
-    assert ingest.split_by_size("short text") == ["short text"]
+    assert ingest.split_by_size("short text", max_size=CEILING) == ["short text"]
 
 
 def test_split_by_size_respects_max():
-    long = "a" * (ingest.MAX_CHUNK_SIZE * 2 + 50)
-    parts = ingest.split_by_size(long)
+    long = "a" * (CEILING * 2 + 50)
+    parts = ingest.split_by_size(long, max_size=CEILING)
     assert len(parts) >= 2
-    assert all(len(p) <= ingest.MAX_CHUNK_SIZE for p in parts)
+    assert all(len(p) <= CEILING for p in parts)
 
 
 def test_split_by_size_prefers_paragraph_boundary():
-    para = "x" * (ingest.MAX_CHUNK_SIZE - 10)
-    parts = ingest.split_by_size(para + "\n\n" + para)
+    para = "x" * (CEILING - 10)
+    parts = ingest.split_by_size(para + "\n\n" + para, max_size=CEILING)
     assert parts == [para, para]
 
 

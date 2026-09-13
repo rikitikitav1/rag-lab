@@ -48,6 +48,7 @@ class AgentResult:
     tools_offered: list = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    answer_parse: dict | None = None
     max_prompt_tokens: int = 0
     truncated_hops: int = 0
     last_prompt_tokens: int = 0
@@ -160,15 +161,15 @@ def run(
         gate.off_topic = True
         gate.drop_weak_context = True
     if policy == FallbackPolicy.corpus_first_weak:
-        gate.signal = GateSignal(gate_signal or config.settings.agent.gate_signal)
+        gate.signal = GateSignal(gate_signal or config.settings.agent.gate.signal)
         if gates_with_cross_encoder(policy, gate.signal):
-            gate.top = config.settings.agent.gate_candidates
-            gate.threshold = config.settings.agent.weak_threshold
+            gate.top = config.settings.agent.gate.candidates
+            gate.threshold = config.settings.agent.gate.weak_threshold
         if gate.signal != GateSignal.cross_encoder:
             gate.distance_threshold = (
                 weak_distance
                 if weak_distance is not None
-                else config.settings.agent.weak_distance
+                else config.settings.agent.gate.weak_distance
             )
         gate.drop_weak_context = gate.off_topic or bool(remote)
     orchestrator = Orchestrator(orchestrator or Orchestrator.langgraph_ported)
@@ -415,6 +416,8 @@ def _log_answer(
             ),
             metrics={
                 "hops": result.hops,
+                # what the parser cut across the hops, only when it cut something
+                **({"answer_parse": result.answer_parse} if result.answer_parse else {}),
                 # which edge ended the graph, so no reader recomputes it from `hops >= ceiling`
                 "finished_by": result.finished_by,
                 # `contexts` is flat across hops and calls; this says which piece came from where

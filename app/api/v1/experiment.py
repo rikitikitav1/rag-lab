@@ -21,7 +21,12 @@ from sqlalchemy.orm import defer
 from use_cases import rejudge, retrieval_compare
 from use_cases.chat import resolve_rerank
 
-from api.v1.eval import validate_axis_values, validate_param_values, value_suffix
+from api.v1.eval import (
+    refuse_a_taken_run,
+    validate_axis_values,
+    validate_param_values,
+    value_suffix,
+)
 
 router = APIRouter(prefix="/experiment", tags=["experiments"])
 
@@ -49,9 +54,7 @@ class ExperimentCreate(BaseModel):
     # an upper bound: what was measured is in results.procedure.questions
     sample_size: int | None = Field(default=None, ge=1, le=limits.MAX_QUESTION_IDS)
     sample_seed: int = 0
-    question_ids: list[int] | None = Field(
-        default=None, max_length=limits.MAX_QUESTION_IDS
-    )
+    question_ids: limits.QuestionIds = Field(default=None, max_length=limits.MAX_QUESTION_IDS)
     # the corpus every arm reads unless `variant` is the swept parameter
     variant: str | None = None
     data_prep: dict = Field(default_factory=dict)
@@ -99,6 +102,9 @@ class ExperimentCreate(BaseModel):
                     f"param must name one of the axes, got {self.param!r}"
                     f" against {sorted(axes)}"
                 )
+            # the report compares our judge across arms; a guest bench is read per row through guest_passes
+            if self.param == "guest_model":
+                raise ValueError("param reads our judge's verdicts across arms, and guest_model moves only the guest: name another axis, as repeat")
             self.param_values = list(axes[self.param])
             return self
         if not self.dataset:
@@ -191,6 +197,18 @@ async def _resolve_sample(
         .limit(sample_size)
     )
     return list(await session.scalars(stmt))
+
+
+# the jobs one arm queues, at creation and when arms are added; the guest is refused here as at its own door
+async def _queue_arm(session: AsyncSession, arm: dict, run_name: str, control_sample, control_seed) -> None:
+    from job_handlers.judging import guest_pass_refusal
+
+    job_queue.add_job(session, "judge_answers", rejudge.arm_options(arm, run_name, control_sample, control_seed))
+    if guest := rejudge.guest_options(arm, run_name):
+        refused = await run_in_threadpool(guest_pass_refusal, run_name)
+        if refused:
+            raise HTTPException(status_code=refused[0], detail=f"arm {run_name}: {refused[1]}")
+        job_queue.add_job(session, "judge_guest_axes", guest)
 
 
 @router.post("", response_model=ExperimentResponse)
@@ -303,15 +321,9 @@ async def create_experiment(
         exp.param_values = list(axes.get(exp.param, exp.param_values))
         exp.status = ExperimentStatus.running
         exp.started_at = datetime.now(timezone.utc)
-        for arm_name, arm in zip(names, arms, strict=True):
-            job_queue.add_job(
-                session,
-                "judge_answers",
-                rejudge.arm_options(
-                    arm, arm_name, request.control_sample, request.sample_seed
-                ),
-            )
         try:
+            for arm_name, arm in zip(names, arms, strict=True):
+                await _queue_arm(session, arm, arm_name, request.control_sample, request.sample_seed)
             await session.commit()
         except BaseException:
             # BaseException: a client disconnect raises CancelledError and leaves the copies behind
@@ -336,6 +348,8 @@ async def create_experiment(
         return await commit_and_refresh(session, exp)
 
     base = request.name or f"{request.dataset}_{request.pipeline.value}_{int(time.time())}"
+    for value in request.param_values:
+        await refuse_a_taken_run(session, f"{base}_{request.param}_{value_suffix(value)}")
     run_names = []
     for value in request.param_values:
         run_name = f"{base}_{request.param}_{value_suffix(value)}"
@@ -478,11 +492,7 @@ async def add_arms(
         # or an experiment that gains an arm later reports work it did not do
         exp.started_at = datetime.now(timezone.utc)
         for arm, run_name in zip(request.arms, names, strict=True):
-            job_queue.add_job(
-                session,
-                "judge_answers",
-                rejudge.arm_options(arm, run_name, control_sample, control_seed),
-            )
+            await _queue_arm(session, arm, run_name, control_sample, control_seed)
         await session.commit()
     except BaseException:
         # BaseException: a cancelled task leaves copies under names nothing can reuse

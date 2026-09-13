@@ -11,6 +11,7 @@ from pathlib import Path
 import logging_setup
 import requests
 from models.registry import refuse_shared_cache_dir
+from redaction import is_secret
 
 from .core import CardState, EngineSpec, Unconfigured, base_url, bearer, models_listing
 
@@ -383,6 +384,10 @@ def _patterns_for(files: list[dict] | None) -> list[str]:
     return [*_PULLED, "*.safetensors" if has_safetensors else "*.bin"]
 
 
+# both spellings the hub library reads, the old one included
+_HUB_TOKENS = ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")
+
+
 # the worker runs offline so the reranker asks nobody; a pull is the one call that must go out
 def pull_weights(repo: str) -> None:
     # hashed once before the pull, then once more after it, for the new bytes
@@ -391,7 +396,9 @@ def pull_weights(repo: str) -> None:
         log.info("vllm.weights_present", repo=repo)
         return
     _drop(repo, broken)
-    env = {**os.environ, "HF_HUB_OFFLINE": "0", "HF_HOME": weights_cache()}
+    # the hub's token and nothing else the stand holds: a broker's key has no business in a pull
+    kept = {k: v for k, v in os.environ.items() if k in _HUB_TOKENS or not is_secret(k)}
+    env = {**kept, "HF_HUB_OFFLINE": "0", "HF_HOME": weights_cache()}
     code = ("import json, sys; from huggingface_hub import snapshot_download;"
             " snapshot_download(sys.argv[1], allow_patterns=json.loads(sys.argv[2]))")
     files = _siblings(repo)

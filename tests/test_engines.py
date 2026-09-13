@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 
+import config
 import engines
 import llm
 import pytest
@@ -52,7 +53,7 @@ def test_only_the_seeded_engine_falls_back_to_the_config(monkeypatch):
     # a typo in a second engine's prefix used to address the first one and stamp the second's name
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
     monkeypatch.delenv("OLLAMA2_BASE_URL", raising=False)
-    assert engines.base_url(OLLAMA) == llm.LLM_BASE
+    assert engines.base_url(OLLAMA) == config.settings.llm.base_url
     with pytest.raises(core.Unconfigured, match="address is not configured"):
         engines.base_url(SECOND)
 
@@ -114,16 +115,18 @@ def test_todays_engine_carries_the_whole_sampler():
 
 def test_a_name_on_two_engines_refuses_instead_of_picking_one(monkeypatch):
     _rows_are(monkeypatch, [
-        (1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
-        (3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu),
+        ("none", {}, 1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu),
+        ("none", {}, 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu),
     ])
     with pytest.raises(engines.Ambiguous, match="ollama, vllm"):
         engines.find_model("qwen2.5:7b")
 
 
 def test_a_name_on_one_engine_takes_that_engine(monkeypatch):
-    _rows_are(monkeypatch, [(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)])
-    assert engines.find_model("qwen2.5:7b").engine.name == "vllm"
+    # the row's parser comes first and rides along, so every call cuts the answer the row's way
+    _rows_are(monkeypatch, [("think_tags", {}, 3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)])
+    found = engines.find_model("qwen2.5:7b")
+    assert (found.engine.name, found.parser) == ("vllm", "think_tags")
 
 
 def test_a_name_nowhere_is_absent_rather_than_an_error(monkeypatch):
@@ -207,6 +210,7 @@ def test_a_name_on_two_engines_is_taken_from_the_role_s_engine_or_refused(monkey
             pytest.fail("an ambiguous name is never registered again")
 
     monkeypatch.setattr(engines, "find_model", find)
+    monkeypatch.setattr(engines.lookup, "find_model", find)
     monkeypatch.setattr(llm, "resolve", lambda role: engines.Resolved(
         "m", {"generation": OLLAMA, "judging": VLLM}[role]))
     monkeypatch.setattr(base, "Session", _Session)
@@ -295,7 +299,7 @@ def test_an_override_naming_a_model_on_two_engines_takes_the_role_own_engine(mon
             raise engines.Ambiguous("two engines")
         return engines.Resolved(name, SECOND)
 
-    monkeypatch.setattr(llm.engines, "find_model", _one)
+    monkeypatch.setattr(llm.engines.lookup, "find_model", _one)
     picked = llm.resolve_for("judging", "qwen2.5:7b")
 
     # the second ask names the role's engine, and its answer is what the pass must use

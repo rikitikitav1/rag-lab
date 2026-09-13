@@ -11,6 +11,7 @@ from evals import (
     question_sets,
     retrieval_metrics,
     run_debts,
+    run_tokens,
     stats,
 )
 from evals.loaders import load_logs
@@ -41,7 +42,8 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
         "its rows cannot owe it: per guest axis the rows owed, scored and abstained, "
         "which of question_text/answer/contexts/reference the others lack, the seconds "
         "one row of this run costs on that axis, and what finishing the debt would cost. "
-        "Read debts before spending a judge or a guest pass on a run."
+        "Read debts before spending a judge or a guest pass on a run. tokens says what the run cost: "
+        + run_tokens.READS + "."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -50,8 +52,14 @@ def run_metrics(
 ) -> dict:
     _named_runs([run_name.strip()] if run_name.strip() else [])
     gen = generation_metrics.evaluate(run_name)
+    # a mistyped name read as a measured zero on retrieval
+    if not gen.get("n_logs"):
+        raise ToolError(f"no logs for run {run_name!r}")
     ret = retrieval_metrics.evaluate(run_name)
-    return {"run_name": run_name, **gen, **ret, "debts": run_debts.safely(run_name)}
+    return {
+        "run_name": run_name, **gen, **ret, "debts": run_debts.safely(run_name),
+        "tokens": run_tokens.of(run_name),
+    }
 
 
 @mcp_ops.tool(
@@ -97,7 +105,11 @@ def list_questions(
     limit: Annotated[int, Field(ge=1, le=1000)] = 100,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> list[dict]:
-    return question_sets.rows((set_name or "").strip() or None, language, pool, limit, offset)
+    named = (set_name or "").strip() or None
+    # a mistyped set read as an empty one while picking question_ids
+    if named and not question_sets.inventory(named):
+        raise ToolError(f"no question set named {set_name!r}")
+    return question_sets.rows(named, language, pool, limit, offset)
 
 
 def _named_runs(run_names: list[str]) -> list[str]:
@@ -105,6 +117,15 @@ def _named_runs(run_names: list[str]) -> list[str]:
         return compare.named_runs(run_names)
     except ValueError as e:
         raise ToolError(str(e)) from e
+
+
+# a name with no rows came back as a measured zero, and once as the winner
+def _logged(run_names: list[str]) -> list[str]:
+    names = _named_runs(run_names)
+    empty = [name for name in names if not load_logs(name)]
+    if empty:
+        raise ToolError(f"no logs for runs: {empty}")
+    return names
 
 
 @mcp_ops.tool(
@@ -179,8 +200,11 @@ def compare_runs(
         list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)
     ],
 ) -> dict:
-    names = _named_runs(run_names)
-    return experiment_uc.compute_results("run", names, names)
+    names = _logged(run_names)
+    try:
+        return experiment_uc.compute_results("run", names, names)
+    except pools.Ambiguous as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp_ops.tool(
@@ -206,7 +230,7 @@ def language_cost(
 ) -> dict:
     from evals import language_cost as costs
 
-    _named_runs([before, after] + ([floor_against] if floor_against else []))
+    _logged([before, after] + ([floor_against] if floor_against else []))
     return costs.measure(before, after, floor_against)
 
 
@@ -231,6 +255,7 @@ def compare_pools(
     ],
 ) -> dict:
     runs = {name: load_logs(name) for name in _named_runs(run_names)}
+    # the same refusal `_logged` makes, on logs already loaded here
     empty = [name for name, logs in runs.items() if not logs]
     if empty:
         raise ToolError(f"no logs for runs: {empty}")
@@ -282,6 +307,17 @@ def experiment_results(
             "conclusion": exp.conclusion,
             **{k: v for k, v in read.items() if k != "deltas"},
         }
+        guests = session.execute(
+            select(Job.status).where(
+                Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])
+            )
+        ).scalars().all()
+        if guests:
+            out["guest_passes"] = {
+                "done": sum(1 for status in guests if status == JobStatus.done), "of": len(guests),
+                "reads": "guest numbers are read per question_id, not compared here; "
+                         "run_metrics debts.guests says what a copy still owes",
+            }
         deltas = read["deltas"]
         if pair is not None:
             if pair not in deltas:
@@ -309,6 +345,22 @@ def engines_on_the_stand() -> dict:
 
     # one reader for `/health` and this tool, so the two can never tell different stories
     return stand_health.engines_section()
+
+
+@mcp_ops.tool(
+    name="broker_balances",
+    description=(
+        "What is left on each cloud engine's key, read from the broker's own service route: the "
+        "balance in the broker's unit, which reader read it and when. A cloud with no reader named, "
+        "or one that did not answer, says why instead of dropping out. Free to call: nothing is "
+        "generated. Read it before and after a cloud run to see what the run cost."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def broker_balances() -> list[dict]:
+    from engines import balances
+
+    return balances.summary()
 
 
 @mcp_ops.tool(
@@ -342,6 +394,10 @@ def list_jobs(
                 "status": j.status,
                 "run_name": (j.options or {}).get("run_name"),
                 "elapsed": j.elapsed,
+                # per role, per engine and model; null for a job from before the count
+                "tokens": j.tokens,
+                # per cloud, the broker's balance before and after; null for a job that called no cloud
+                "balances": j.balances,
             }
             for j in session.scalars(stmt)
         ]

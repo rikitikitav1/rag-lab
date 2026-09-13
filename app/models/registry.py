@@ -1,10 +1,10 @@
 import re
 from datetime import datetime
-from decimal import Decimal
 from enum import StrEnum
 
 from orm import Base
-from sqlalchemy import BigInteger, Enum, ForeignKey, Numeric, UniqueConstraint, func
+from sqlalchemy import BigInteger, Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -14,6 +14,10 @@ class Role(StrEnum):
     judging = "judging"
     paraphrasing = "paraphrasing"
     reranking = "reranking"
+    # the standard's judge: its own prompts, so its own seat rather than the judge's
+    ragas = "ragas"
+    # the one guest that measures with vectors, off the card so the guest's model has it whole
+    ragas_embedding = "ragas_embedding"
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
@@ -91,10 +95,8 @@ class Engine(Base):
     # the address and the key live in the environment; a row you can read a key out of leaks
     env_prefix: Mapped[str]
     placement: Mapped[Placement] = mapped_column(Enum(Placement, native_enum=False))
-    budget: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
-    spent: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
-    # the second MR reserves at the door and releases at the end; today nothing writes these
-    reserved: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=0)
+    # which reader in `engines.balances` asks this cloud's broker what is left on the key
+    balance_reader: Mapped[str] = mapped_column(default="none")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     def __repr__(self) -> str:
@@ -134,6 +136,10 @@ class Model(Base):
     # whether a vLLM serving it returns tool calls, and for which process start that was asked
     tool_probe: Mapped[bool | None] = mapped_column(default=None)
     tool_probe_start: Mapped[str | None] = mapped_column(default=None)
+    # how this model's answers on this engine are cut; `none` passes the text as it came
+    answer_parser: Mapped[str] = mapped_column(default="none")
+    # laid over the role's options when this model answers: a verbose model asks a larger budget anywhere
+    options: Mapped[dict] = mapped_column(JSONB, default=dict)
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )

@@ -80,6 +80,10 @@ async def import_questions(
     run_name: str | None = Form(default=None),
     session: AsyncSession = Depends(get_session),
 ):
+    if run and run_name:
+        from api.v1.eval import refuse_a_taken_run
+
+        await refuse_a_taken_run(session, run_name)
     raw = await file.read(_MAX_UPLOAD + 1)
     if len(raw) > _MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="file too large")

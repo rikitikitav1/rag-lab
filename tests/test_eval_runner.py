@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from evals import runner
@@ -255,7 +256,8 @@ def test_agent_runs_get_the_fallback_policy(monkeypatch):
     monkeypatch.setattr(runner.search_depth, "resolve", lambda *a, **kw: 100)
     monkeypatch.setattr(runner, "_walks_the_index", lambda variant, depth: True)
     monkeypatch.setattr(runner.job_queue, "enqueue", lambda *a, **kw: None)
-    monkeypatch.setattr(runner.agent, "run", lambda text, **kw: seen.append(kw["fallback_policy"]))
+    monkeypatch.setattr(runner.agent, "run", lambda text, **kw: seen.append(kw["fallback_policy"]) or SimpleNamespace(
+        failed=None, outcome="answered"))
 
     runner.run("run", set_name="s", pipeline="agent", fallback_policy="agent_choice")
 
@@ -280,7 +282,7 @@ def test_the_card_is_asked_about_before_the_generator_is_paid_for(monkeypatch):
 
     calls = _stub_phases(monkeypatch)
     monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
-    with pytest.raises(RuntimeError, match="not on the GPU"):
+    with pytest.raises(runner.card.CardNotHanded, match="not whole on the card"):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
     assert [c[0] for c in calls] == ["search", "search", "unload", "unload"], (
         "nothing after retrieval should have run, and the card goes back anyway"
@@ -296,7 +298,7 @@ def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
     _stub_phases(monkeypatch)
     # half on the processor counts as off: the one instrument the preflight reads
     monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
-    with pytest.raises(RuntimeError, match="not on the GPU"):
+    with pytest.raises(runner.card.CardNotHanded, match="not whole on the card"):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2))
 
 
@@ -330,7 +332,7 @@ def test_the_sequential_path_gives_the_card_back_too(monkeypatch):
         runner, "_release",
         lambda role="embedding", model=None: calls.append(("unload", role)),
     )
-    monkeypatch.setattr(runner, "_answer_one", lambda *a, **kw: calls.append(("answer",)))
+    monkeypatch.setattr(runner, "_answer_one", lambda *a, **kw: calls.append(("answer",)) or True)
     monkeypatch.setattr(runner, "_refuse_a_cpu_run", lambda roles, allow_cpu, model: None)
     answered, cancelled = runner._run_sequential(
         ["q1", "q2"],
@@ -393,7 +395,7 @@ def test_the_run_gate_refuses_a_spill_and_passes_an_asleep_vllm(monkeypatch):
                         lambda role: engines.Resolved(f"{role}-model", specs[role]))
     monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
     runner._refuse_a_cpu_run((Role.generation,), allow_cpu=False, model=None)
-    with pytest.raises(RuntimeError, match="embedding=embedding-model"):
+    with pytest.raises(runner.card.CardNotHanded, match="embedding=embedding-model"):
         runner._refuse_a_cpu_run(ANSWERING, allow_cpu=False, model=None)
     specs["embedding"] = cpu
     runner._refuse_a_cpu_run(ANSWERING, allow_cpu=False, model=None)
@@ -408,11 +410,11 @@ def test_the_run_gate_reads_the_arm_s_own_generator_not_the_role_s(monkeypatch):
     gpu = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
     monkeypatch.setattr(run_snapshot.llm, "resolve",
                         lambda role: engines.Resolved("llama3.1:8b", gpu))
-    monkeypatch.setattr(run_snapshot.llm.engines, "find_model",
+    monkeypatch.setattr(run_snapshot.llm.engines.lookup, "find_model",
                         lambda name, engine_id=None: engines.Resolved(name, gpu))
     monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: name == "llama3.1:8b")
     runner._refuse_a_cpu_run((Role.generation,), allow_cpu=False, model=None)
-    with pytest.raises(RuntimeError, match="generation=qwen2.5:32b"):
+    with pytest.raises(runner.card.CardNotHanded, match="generation=qwen2.5:32b"):
         runner._refuse_a_cpu_run((Role.generation,), allow_cpu=False, model="qwen2.5:32b")
 
 
@@ -527,3 +529,91 @@ def test_a_phased_run_reads_the_embedder_s_placement_before_it_lets_it_go(monkey
     kinds = [c if c[0] == "placed" else c[0] for c in calls]
     assert kinds.index(("placed", "embedding")) < kinds.index("unload"), "read before the release"
     assert seen == [{"embedding": True, "reranking": True}]
+
+
+def test_a_resumed_run_asks_only_what_has_no_answer_and_replaces_every_error_row():
+    from evals import runner
+
+    rows = [
+        (1, "a", {"outcome": "answered"}),
+        (2, "b", {"outcome": "error", "failed": "hop cap"}),
+        (3, "b", {"outcome": "error"}),
+        (4, "d", {"outcome": "refused"}),
+    ]
+    todo, replaced = runner._split_answered(["a", "b", "c", "d"], rows)
+    # a refusal is an answer; a question with no row at all is asked again, like an error
+    assert todo == ["b", "c"]
+    assert replaced == {"b": {"log_ids": [2, 3], "outcome": "error", "failed": "hop cap"}}
+
+
+def test_a_run_over_named_questions_refuses_to_start_when_any_is_missing():
+    # a floor on 50 rows that quietly became a floor on 48 is read as a floor on 50
+    import pytest
+    from errors import StandFault
+    from evals import runner
+
+    with pytest.raises(runner.MissingQuestions, match=r"1 of 3 question ids are not in the stand: \[2\]") as caught:
+        runner._refuse_missing([1, 2, 3], {1, 3})
+    assert isinstance(caught.value, StandFault), "eval_run stops a StandFault for good instead of retrying"
+    runner._refuse_missing([1, 1, 3], {1, 3})
+
+
+def test_an_agent_row_whose_hop_failed_is_not_counted_as_answered(monkeypatch):
+    # a broker refusing every row wrote rows of errors, and the run was counted as answered and judged
+    from types import SimpleNamespace
+
+    from evals import runner
+
+    spec = runner.RunSpec(variant="baseline", pipeline=runner.Pipeline.agent)
+    monkeypatch.setattr(runner.agent, "run", lambda *a, **kw: SimpleNamespace(failed=True, outcome="error"))
+    assert runner._answer_one("q", "r", spec) is False
+    monkeypatch.setattr(runner.agent, "run", lambda *a, **kw: SimpleNamespace(failed=None, outcome="answered"))
+    assert runner._answer_one("q", "r", spec) is True
+
+
+def test_a_resumed_run_that_stops_again_still_marks_what_it_wrote(monkeypatch):
+    # the marks came only on a normal end, so a second stop left new rows unmarked and the errors gone
+    import pytest
+    from errors import StandFault
+    from evals import runner
+
+    marked = []
+    monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1", "q2"])
+    monkeypatch.setattr(runner.db, "corpus_variants", lambda: [{"variant": "baseline"}])
+    monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: False)
+    monkeypatch.setattr(runner.search_depth, "resolve", lambda *a, **kw: 100)
+    monkeypatch.setattr(runner, "_walks_the_index", lambda variant, depth: True)
+    monkeypatch.setattr(runner, "_still_to_answer", lambda run_name, texts: (texts, {}, "t0"))
+    monkeypatch.setattr(runner, "_mark_resumed", lambda run_name, texts, *, replaced, since: marked.append(texts))
+
+    def stopped(*a, **kw):
+        raise StandFault("the broker is gone again")
+
+    monkeypatch.setattr(runner, "_run_sequential", stopped)
+    with pytest.raises(StandFault):
+        runner.run("r", set_name="s", pipeline="agent", resume=True)
+    assert marked == [["q1", "q2"]]
+
+
+def test_every_door_that_names_questions_refuses_a_repeated_id():
+    # a sweep over [1, 1, 2] ran two questions and recorded the list as named
+    import job_specs
+    import pytest
+    from api.v1.experiment import ExperimentCreate
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="question ids repeat"):
+        job_specs.EvalRun(run_name="r", question_ids=[1, 1, 2])
+    with pytest.raises(ValidationError, match="question ids repeat"):
+        ExperimentCreate(question_ids=[3, 3])
+    assert job_specs.EvalRun(run_name="r", question_ids=[1, 2]).question_ids == [1, 2]
+
+
+def test_a_resume_after_a_dead_worker_keeps_one_row_per_question():
+    # the dead attempt answered the question and left its error row, and the next resume never looked
+    rows = [(1, "a", {"outcome": "error", "failed": "http 500"}), (2, "a", {"outcome": "answered"}),
+            (3, "b", {"outcome": "error"})]
+    left = runner._errors_of(rows, runner._answered(rows))
+    assert left == {"a": {"log_ids": [1], "outcome": "error", "failed": "http 500"}}
+    todo, replaced = runner._split_answered(["a", "b"], rows)
+    assert todo == ["b"] and list(replaced) == ["b"]

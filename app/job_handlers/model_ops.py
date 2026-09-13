@@ -5,7 +5,7 @@ from orm.sync_db import Session
 from sqlalchemy import select
 from use_cases.weights_rules import refuse_if_the_weights_are_shared, refuse_remote
 
-from .base import register
+from .base import Final, register
 
 log = logging_setup.get_logger(__name__)
 
@@ -25,7 +25,13 @@ def pull_llm_model(options: dict) -> None:
     found = _pair(options["name"], options.get("engine_id"))
     pulling = engines.driver(found.engine.kind)
     engines.refuse_if_tight(_size_seen_before(found), found.name, pulling.weights_store())
-    pulling.pull(found.name, found.engine)
+    try:
+        pulling.pull(found.name, found.engine)
+    except Exception as e:
+        # a name the registry does not have fails the same way on every retry
+        if "file does not exist" in str(e) or "not found" in str(e).lower():
+            raise Final(f"{found.name} is not in the registry {found.engine.name} pulls from: {e}") from e
+        raise
     record_what_the_server_holds(found)
 
 

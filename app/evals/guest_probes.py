@@ -11,6 +11,7 @@ import statistics
 import llm
 from errors import StandFault
 from evals.guest_llm import stamp
+from redaction import redact
 from use_cases.ingest_quality import FENCE
 
 # 1 the first shape of this report: three arms, a stamp and an interval each
@@ -70,7 +71,7 @@ def score(metric, ql, answer) -> tuple[float | None, int, str | None]:
     except StandFault:
         raise
     except Exception as e:
-        return None, 0, f"{type(e).__name__}: {e}"[:120]
+        return None, 0, f"{type(e).__name__}: {redact(str(e))}"[:120]
 
 
 # the stand already has one bootstrap, and it holds its own generator instead of seeding everyone's

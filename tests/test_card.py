@@ -378,7 +378,7 @@ def test_every_handler_that_names_a_role_passes_a_gate_that_asks_for_the_card():
 # the handlers that answer with a model, and the role each must ask for before its first call
 ROLE_HANDLERS = [
     ("judging", "judge_language", {"run_name": "r"}, "require_role_ready", "judging"),
-    ("judging", "judge_guest_axes", {"run_name": "r"}, "require_role_ready", "judging"),
+    ("judging", "judge_guest_axes", {"run_name": "r"}, "require_role_ready", "ragas"),
     ("judging", "judge_answers", {"run_name": "r"}, "require_role_ready", "judging"),
     ("dataprep", "paraphrase_questions", {}, "require_role_ready", "paraphrasing"),
     ("dataprep", "build_veto_set", {}, "require_role_ready", "paraphrasing"),
@@ -438,9 +438,11 @@ def test_the_run_snapshot_stamps_each_answering_role_placement(monkeypatch):
                         lambda role, spec: engines.Sampler({}, {}))
     monkeypatch.setattr(run_snapshot.card, "model_on_card",
                         lambda spec, name: {"llama3.1:8b": False, "bge-m3": True}[name])
-    named, _, placed = run_snapshot._by_role(engines.Resolved("llama3.1:8b", OLLAMA))
+    named, _, placed, cache_keys, parsers = run_snapshot._by_role(engines.Resolved("llama3.1:8b", OLLAMA))
     assert placed == {Role.generation: False, Role.embedding: True}
-    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 9
+    assert parsers == {Role.generation: "none@1", Role.embedding: "none@1"}
+    assert cache_keys == {}, "a local engine keeps no broker cache"
+    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 12
 
 
 def test_a_run_that_reranks_names_the_reranker_and_keeps_what_was_read_while_roles_worked(monkeypatch):
@@ -745,6 +747,7 @@ def test_a_run_s_allow_cpu_reaches_the_card(monkeypatch):
     monkeypatch.setattr(evaluation, "require_card",
                         lambda role, model=None, allow_spill=False: asked.append(allow_spill))
     monkeypatch.setattr(evaluation.runner, "run", lambda **kw: 0)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (0, []))
     evaluation.eval_run({"run_name": "r", "set_name": "s", "allow_cpu": True})
     evaluation.eval_run({"run_name": "r", "set_name": "s"})
     assert asked == [True, False]
@@ -803,3 +806,20 @@ def test_a_judging_pass_asks_for_the_card_once(monkeypatch):
         judging.judge_answers({"run_name": "r"})
     # a refusal comes before the card, so it never wakes a judge it would turn away
     assert asked == [("role", False), ("second judge?", "r"), ("card", "judging")]
+
+
+def test_a_model_partly_on_the_card_is_handed_again_rather_than_taken_as_held(monkeypatch):
+    # a retried handover found gemma2:9b 15% on the processor, took it as held and finished in 29 ms
+    from job_handlers import card as handler
+
+    handed = []
+    monkeypatch.setattr(handler.card, "holds_for", lambda spec: True)
+    monkeypatch.setattr(handler, "_to_load", lambda spec, model: False)
+    monkeypatch.setattr(handler.card, "spilled", lambda spec, model: True)
+    monkeypatch.setattr(handler.card, "hand_to", lambda spec, model, allow_spill=False: handed.append(allow_spill))
+    monkeypatch.setattr(handler, "_probe_the_woken_generator", lambda spec: None)
+    handler.take(OLLAMA, "gemma2:9b")
+    assert handed == [False], "the handover makes the whole-card check, so it has to run"
+    handed.clear()
+    handler.take(OLLAMA, "gemma2:9b", allow_spill=True)
+    assert handed == [], "a run that allows the processor keeps what it already has"

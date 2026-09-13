@@ -224,48 +224,16 @@ def seed_questions() -> None:
     log.info("seed.questions", total=len(rows), exported=len(exported))
 
 
-# the migration seeded this row too, but a database built from `schema.sql` carries no data
-SEEDED_ENGINE = {
-    "name": "ollama",
-    "kind": EngineKind.ollama,
-    "env_prefix": "OLLAMA",
-    "placement": Placement.gpu,
-}
-# the judge's engine by default: the `vllm` service in compose answers under this prefix
-SEEDED_VLLM = {
-    "name": "vllm",
-    "kind": EngineKind.vllm,
-    "env_prefix": "VLLM",
-    "placement": Placement.gpu,
-}
-
-
-# the cross-encoder's engine: the `vllm-rerank` service, up under `--profile rerank`
-SEEDED_VLLM_RERANK = {
-    "name": "vllm-rerank",
-    "kind": EngineKind.vllm,
-    "env_prefix": "VLLM_RERANK",
-    "placement": Placement.gpu,
-}
-
-
-# the processor ollama: the `ollama-cpu` service, always up, and every role's engine on a host without a card
-SEEDED_OLLAMA_CPU = {
-    "name": "ollama-cpu",
-    "kind": EngineKind.ollama,
-    "env_prefix": "OLLAMA_CPU",
-    "placement": Placement.cpu,
-}
-
-
+# the engines a clean database starts with, as `config.yaml` lists them; the migration seeded the first too
 def seed_engines() -> None:
-    for row in (SEEDED_ENGINE, SEEDED_VLLM, SEEDED_VLLM_RERANK, SEEDED_OLLAMA_CPU):
+    for declared in config.settings.engines:
         with Session() as session:
-            if session.scalar(select(exists().where(Engine.name == row["name"]))):
+            if session.scalar(select(exists().where(Engine.name == declared.name))):
                 continue
-            session.add(Engine(**row))
+            session.add(Engine(name=declared.name, kind=EngineKind(declared.kind),
+                               env_prefix=declared.env_prefix, placement=Placement(declared.placement)))
             session.commit()
-        log.info("seed.engine", name=row["name"])
+        log.info("seed.engine", name=declared.name)
 
 
 MCP_INTEGRATIONS = [

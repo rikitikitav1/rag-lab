@@ -98,7 +98,7 @@ def test_one_rule_says_when_an_answer_needs_the_reranker(monkeypatch):
     monkeypatch.setattr(config.settings.agent, "fallback_policy", "corpus_first_weak")
     assert card_wait.reranker_needed(True) and not card_wait.reranker_needed(False)
     for signal, needed in (("cross_encoder", True), ("either", True), ("distance", False)):
-        monkeypatch.setattr(config.settings.agent, "gate_signal", signal)
+        monkeypatch.setattr(config.settings.agent.gate, "signal", signal)
         assert card_wait.reranker_needed(agent=True) is needed, signal
         assert not card_wait.reranker_needed(), "the chat has no gate"
     # the gate only scores under the weak policy, so a request's own policy decides
@@ -106,7 +106,7 @@ def test_one_rule_says_when_an_answer_needs_the_reranker(monkeypatch):
     assert card_wait.answering_roles(agent=True) == ("embedding", "generation")
     # a run sweeps the signal, and its own value decides over the config's
     assert card_wait.reranker_needed(agent=True, gate_signal="cross_encoder")
-    monkeypatch.setattr(config.settings.agent, "gate_signal", "either")
+    monkeypatch.setattr(config.settings.agent.gate, "signal", "either")
     assert not card_wait.reranker_needed(agent=True, gate_signal="distance")
     monkeypatch.setattr(config.settings.rerank, "enabled", True)
     assert card_wait.answering_roles() == ("embedding", "generation", "reranking")
@@ -146,11 +146,10 @@ def test_every_answering_door_waits_for_the_card(monkeypatch):
 
 def test_the_config_seats_the_cross_encoder_on_its_own_engine():
     import config
-    import seed
 
     role = config.settings.llm.roles["reranking"]
     assert (role.model, role.engine) == ("BAAI/bge-reranker-v2-m3", "vllm-rerank")
-    assert seed.SEEDED_VLLM_RERANK["name"] == role.engine
+    assert role.engine in {engine.name for engine in config.settings.engines}
 
 
 def test_a_vllm_under_a_profile_is_registered_from_intact_weights(monkeypatch):
