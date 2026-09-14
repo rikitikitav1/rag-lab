@@ -46,6 +46,10 @@ def _evaluate(monkeypatch, logs):
     return generation_metrics.evaluate("run")
 
 
+def test_the_metrics_name_the_refusal_rule_they_read_with(monkeypatch):
+    assert _evaluate(monkeypatch, [_log(faith=7)])["outcome_rule"] == generation_metrics.RULE
+
+
 def test_axes_stay_on_the_in_corpus_pool(monkeypatch):
     logs = [
         _log(marked=["a.md"], faith=8, rel=9),

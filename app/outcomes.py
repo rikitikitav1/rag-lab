@@ -18,6 +18,11 @@ MISSING_MARKERS = (
 SOURCE_MARKERS = (
     "source", "available", "corpus", "context", "документ", "источник", "материал", "корпус",
 )
+# "does not contain" is prose about anything, so it refuses only with the sources as its subject
+SOURCES_LACK = re.compile(
+    r"(контекст\w*|источник\w*|материал\w*|документ\w*|фрагмент\w*) не содерж"
+    r"|(context|sources?|documents?|materials?|passages?) (does not|doesn't|do not|don't) contain"
+)
 
 
 class Outcome(StrEnum):
@@ -52,6 +57,9 @@ def narrated_tool_call(text: str | None, names=(), prefixes=()) -> bool:
 
 REFUSAL_MAX_CHARS = 400
 
+# outcomes are read from the text on every read, so a cited refusal share carries the rule it was read with
+RULE = 2
+
 
 def refusal(text: str) -> bool:
     stripped = text.strip()
@@ -60,7 +68,7 @@ def refusal(text: str) -> bool:
     if len(stripped) > REFUSAL_MAX_CHARS:
         return False
     lowered = stripped.lower()
-    if any(m in lowered for m in REFUSAL_MARKERS):
+    if any(m in lowered for m in REFUSAL_MARKERS) or SOURCES_LACK.search(lowered):
         return True
     return any(m in lowered for m in MISSING_MARKERS) and any(
         s in lowered for s in SOURCE_MARKERS

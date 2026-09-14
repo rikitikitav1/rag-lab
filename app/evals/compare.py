@@ -2,6 +2,7 @@ import statistics
 import sys
 
 import limits
+import outcomes
 import token_fields
 from engines import DANGLING, answer_parsers, engine_of, registered_names
 from engines.card import NO_RESIDENCY
@@ -201,6 +202,7 @@ def compare(runs: dict[str, list]) -> dict:
     return {
         "schema": SCHEMA,
         "runs": names,
+        "outcome_rule": outcomes.RULE,
         "residency": residency,
         # the treatment, not a fault: two generators on two engines is what a pair of arms compares
         "answering_engines_by_run": {name: _answering_engines(logs) for name, logs in runs.items()},
