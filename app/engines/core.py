@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 from dataclasses import dataclass
@@ -168,6 +169,12 @@ def forget_clients(engine_id: int | None = None) -> None:
         _clients.pop(engine_id, None)
 
 
+# the head of the key's hash: which account a run spent on, never the key itself
+def key_fingerprint(spec: EngineSpec) -> str | None:
+    seen = os.getenv(f"{spec.env_prefix}_API_KEY")
+    return hashlib.sha256(seen.encode()).hexdigest()[:12] if seen else None
+
+
 # what the engine adds that the role never asked for, read from the server rather than from compose
 def added_by(spec: EngineSpec, model: str) -> dict:
     if spec.kind is EngineKind.ollama:
@@ -178,7 +185,9 @@ def added_by(spec: EngineSpec, model: str) -> dict:
             "repetition_penalty": ollama.repetition_penalty_served(model, spec),
             "server_version": ollama.server_version(spec),
         })
-    # a paid engine's host is not asked vLLM's routes, and its key goes to nothing but its calls
+    # a paid engine's host is not asked vLLM's routes; a run across two keys spent on two accounts
+    if is_cloud(spec.kind):
+        return _named({"key_fingerprint": key_fingerprint(spec)})
     if spec.kind is not EngineKind.vllm:
         return {}
     from . import vllm

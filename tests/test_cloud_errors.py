@@ -61,6 +61,50 @@ def test_a_quota_or_a_rate_limit_stops_the_run(monkeypatch, status):
     assert isinstance(caught.value, StandFault), "a loop forgives a RuntimeError as one failed row"
 
 
+def _throttled(monkeypatch, headers: dict, answers_after: int | None):
+    import llm
+
+    request = httpx.Request("POST", "https://b.example/v1/chat/completions")
+    asked, slept = [], []
+
+    def create(**kw):
+        asked.append(kw)
+        if answers_after is not None and len(asked) > answers_after:
+            return "the answer"
+        raise openai.APIStatusError("no", response=httpx.Response(429, headers=headers, request=request), body=None)
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": type("Co", (), {"create": staticmethod(create)})})})
+    monkeypatch.setattr(llm.engines, "client_for", lambda spec: client)
+    monkeypatch.setattr(llm, "_card_for", lambda spec, name: __import__("contextlib").nullcontext())
+    monkeypatch.setattr(llm.time, "sleep", slept.append)
+    return llm, asked, slept
+
+
+def test_a_429_that_names_its_pause_is_waited_and_asked_again(monkeypatch):
+    # two keys met the same throttle after twenty calls, and the first 429 stopped a guest owing 143 rows
+    llm, asked, slept = _throttled(monkeypatch, {"retry-after": "7"}, answers_after=1)
+    with llm.accounting() as tally:
+        assert llm._complete(CLOUD, "m", [], {}, "ragas") == "the answer"
+    assert slept == [7.0] and len(asked) == 2
+    assert tally.record() == {"ragas": [{"engine": "gonka", "model": "m", "prompt": 0, "completion": 0,
+                                         "calls": 0, "max_prompt": 0, "paced": 1, "paced_seconds": 7.0}]}
+
+
+@pytest.mark.parametrize("headers", [{}, {"retry-after": "3600"}, {"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}])
+def test_a_429_without_a_pause_or_with_a_cap_stops_the_run_at_once(monkeypatch, headers):
+    llm, asked, slept = _throttled(monkeypatch, headers, answers_after=None)
+    with pytest.raises(llm.BrokerRefused, match="http 429"):
+        llm._complete(CLOUD, "m", [], {}, "ragas")
+    assert slept == [] and len(asked) == 1
+
+
+def test_a_throttle_that_never_lifts_stops_after_its_waits(monkeypatch):
+    llm, asked, slept = _throttled(monkeypatch, {"retry-after-ms": "1500"}, answers_after=None)
+    with pytest.raises(llm.BrokerRefused):
+        llm._complete(CLOUD, "m", [], {}, "ragas")
+    assert slept == [1.5] * llm.PACE_TRIES and len(asked) == llm.PACE_TRIES + 1
+
+
 @pytest.mark.parametrize("status", [500, 502, 503])
 def test_a_broker_that_says_it_is_broken_stops_the_run_and_a_local_server_fails_one_row(monkeypatch, status):
     # a 502 from the broker was forgiven row by row; ollama's 500 on one broken tool call is that row's alone

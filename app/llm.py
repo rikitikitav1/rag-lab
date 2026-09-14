@@ -4,6 +4,7 @@ import functools
 import json
 import re
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -89,7 +90,7 @@ def _failed(e: OpenAIError, spec, name: str, what: str) -> Exception:
         log.error("llm.key_refused", model=name, engine=spec.name, status=status)
         return KeyRefused(f"{spec.name} refused the key for {name}: {said}")
     if status in (402, 429):
-        log.error("llm.broker_refused", model=name, engine=spec.name, status=status)
+        log.error("llm.broker_refused", model=name, engine=spec.name, status=status, headers=_rate_headers(e))
         return BrokerRefused(f"{spec.name} refused {name}: {said}, a quota or a rate limit")
     # a local 500 can be one reply the server could not build, as ollama's on a broken tool call
     if status is not None and status >= 500 and engines.is_cloud(spec.kind):
@@ -97,6 +98,33 @@ def _failed(e: OpenAIError, spec, name: str, what: str) -> Exception:
         return ServerFailed(f"{spec.name} failed {name}: {said}, the server says it is broken")
     log.error(f"llm.{what}_failed", model=name, engine=spec.name, error=said)
     return RuntimeError(f"LLM {what} failed ({name} on {spec.name}): {said}")
+
+
+# a broker's Retry-After up to this is a pace to keep; a longer one is a cap, and the run stops
+PACE_CEILING_SECONDS = 600
+# paced waits in a row before the call gives up: a throttle that never lifts is a stop
+PACE_TRIES = 5
+
+
+# what a refusal said about its limit, kept in the log: which kind of 429 it was is read from these
+def _rate_headers(e: Exception) -> dict:
+    if not isinstance(e, APIStatusError):
+        return {}
+    return {k: v for k, v in e.response.headers.items()
+            if k.lower() in ("retry-after", "retry-after-ms") or k.lower().startswith("x-ratelimit")}
+
+
+# the pause a 429 names; a date form is read as no pause rather than parsed
+def _retry_after(e: Exception) -> float | None:
+    if not isinstance(e, APIStatusError) or e.status_code != 429:
+        return None
+    headers = e.response.headers
+    try:
+        if headers.get("retry-after-ms") is not None:
+            return float(headers["retry-after-ms"]) / 1000
+        return float(headers["retry-after"]) if headers.get("retry-after") is not None else None
+    except ValueError:
+        return None
 
 
 # the stand counts tokens on every call, so a broker that sends no usage is named, not read as zero
@@ -124,6 +152,13 @@ class Tally:
             got["max_prompt"] = max(got["max_prompt"], prompt or 0)
             got["cut_by_length"] += cut
             got["input_cut"] += input_cut
+
+    # a wait a broker asked for is the job's cost too, and no answer came of it, so it is not a call
+    def pace(self, role: str, engine: str, model: str, seconds: float) -> None:
+        with self._lock:
+            got = self._seen.setdefault((role, engine, model), dict.fromkeys(token_fields.FIELDS, 0))
+            got["paced"] += 1
+            got["paced_seconds"] = round(got["paced_seconds"] + seconds, 1)
 
     def record(self) -> dict | None:
         with self._lock:
@@ -230,6 +265,11 @@ def _count(role, engine, model: str, prompt: int | None, completion: int | None,
                   cut=token_fields.cut(finish_reason), input_cut=input_cut)
 
 
+def _pace(role, engine, model: str, seconds: float) -> None:
+    for tally in _tallies.get():
+        tally.pace(str(getattr(role, "value", role)), engine.name, model, seconds)
+
+
 class InputOverWindow(ValueError):
     pass
 
@@ -279,7 +319,7 @@ def _cut_by_the_server(window: int | None, params: dict, prompt_tokens: int | No
 
 # a call by engine and name, for a model no role holds yet: the probe before a seat
 def complete_on(spec, name: str, messages, params, role):
-    resp = _complete(spec, name, messages, params)
+    resp = _complete(spec, name, messages, params, role)
     usage = _usage(resp, spec)
     _count(role, spec, name, usage.prompt_tokens, usage.completion_tokens,
            getattr(resp.choices[0], "finish_reason", None) if resp.choices else None)
@@ -325,14 +365,22 @@ def _without_the_body(e: Exception) -> str:
 
 
 # one contract for a failed completion: the same log event and error text, written twice
-def _complete(spec, name: str, messages, params):
+def _complete(spec, name: str, messages, params, role=None):
     with _card_for(spec, name):
-        try:
-            return engines.client_for(spec).chat.completions.create(
-                model=name, messages=messages, **params, **_keyed(spec)
-            )
-        except OpenAIError as e:
-            raise _failed(e, spec, name, "chat") from e
+        for tried in range(PACE_TRIES + 1):
+            try:
+                return engines.client_for(spec).chat.completions.create(
+                    model=name, messages=messages, **params, **_keyed(spec)
+                )
+            except OpenAIError as e:
+                # a throttle that names its pause is kept; one that does not, or a cap, stops the run
+                wait = _retry_after(e)
+                if wait is None or wait > PACE_CEILING_SECONDS or tried == PACE_TRIES:
+                    raise _failed(e, spec, name, "chat") from e
+                log.warning("llm.broker_paced", model=name, engine=spec.name, seconds=wait, tried=tried + 1,
+                            headers=_rate_headers(e))
+                _pace(role, spec, name, wait)
+                time.sleep(wait)
 
 
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:
@@ -342,7 +390,7 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
     messages = ([] if system is None else [{"role": "system", "content": system}]) + [{"role": "user", "content": user}]
     window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
     params = _params(role, schema, picked)
-    resp = _complete(picked.engine, name, messages, params)
+    resp = _complete(picked.engine, name, messages, params, role)
 
     usage = _usage(resp, picked.engine)
     input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
@@ -378,7 +426,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     if tools:
         params["tools"] = tools
     window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
-    resp = _complete(picked.engine, name, messages, params)
+    resp = _complete(picked.engine, name, messages, params, role)
 
     choice = resp.choices[0]
     message = choice.message

@@ -226,6 +226,30 @@ def test_two_engines_taking_the_same_port_in_turn_are_told_apart(monkeypatch):
     assert "same host and port" in got["read_this_first"]
 
 
+def test_two_arms_on_two_broker_keys_are_named_as_two_accounts(monkeypatch):
+    # a guest resumed on a second account's key: one ruler billed twice, and nothing in its rows said so
+    from types import SimpleNamespace
+
+    from evals import compare
+
+    monkeypatch.setattr(compare, "registered_names", lambda: {"gonka"})
+
+    def row(judge_key=None, answer_key=None):
+        added = {"key_fingerprint": judge_key} if judge_key else {}
+        answering = {"generation": {"key_fingerprint": answer_key}} if answer_key else {}
+        return SimpleNamespace(
+            metrics={"faithfulness": {"residency_id": None, "engine": "b.example", "engine_name": "gonka",
+                                      "engine_added": added},
+                     "config": {"engine_added": answering}},
+            prompts={"judge_faithfulness": 1}, question_id=1, run_name="arm", sources=_sources("a.md"),
+        )
+
+    got = compare.residencies({"a": [row(judge_key="aaa")], "b": [row(judge_key="bbb")]})
+    assert got["broker_keys_by_run"] == {"a": ["aaa"], "b": ["bbb"]} and got["one_broker_key"] is False
+    assert compare.residencies({"a": [row(answer_key="aaa")], "b": [row(judge_key="aaa")]})["one_broker_key"] is True
+    assert compare.residencies({"a": [_judged(engine="ollama:11434")]})["one_broker_key"] is None, "no cloud, no claim"
+
+
 def test_a_pair_judged_on_two_engines_is_refused_and_answering_engines_are_named(monkeypatch):
     # two judges are two rulers
     import pytest
@@ -474,3 +498,24 @@ def test_two_generators_read_as_one_only_when_they_ran_one_penalty():
     assert compare._answering_penalties_of({"a": vllm, "b": ollama})["one_answering_penalty"] is False
     assert compare._answering_penalties_of({"a": aligned, "b": ollama})["one_answering_penalty"] is True, "what was sent wins"
     assert compare._answering_penalties_of({"a": old, "b": ollama})["one_answering_penalty"] is None, "unstamped matches nothing"
+
+
+def test_a_row_the_stand_refused_itself_names_no_generator_to_the_pair():
+    # 38 off-domain rows found nothing and never called DeepSeek, yet gave its arm ollama and llama's 1.1
+    config = {"engines": {"generation": "gonka", "embedding": "ollama"},
+              "engine_added": {"generation": {"repetition_penalty": 1.0}}}
+    stale = {"engines": {"generation": "ollama", "embedding": "ollama"},
+             "engine_added": {"generation": {"repetition_penalty": 1.1}}}
+    answered = SimpleNamespace(pipeline="single_shot", answer="A pool of threads.", models={"generation": "d"},
+                               metrics={"config": config})
+    old_refusal = SimpleNamespace(pipeline="single_shot", answer="No relevant documents found.",
+                                  models={"generation": "llama3.1:8b"}, metrics={"config": stale})
+    new_refusal = SimpleNamespace(pipeline="single_shot", answer="No relevant documents found.",
+                                  models={"generation": None}, metrics={"config": {"engines": {"embedding": "ollama"}}})
+    rows = [answered, old_refusal, new_refusal]
+    assert compare._answering_engines(rows) == {"embedding": ["ollama"], "generation": ["gonka"]}
+    assert compare._answering_penalties(rows) == {"generation": [1.0]}
+    # the agent answers NO_RESULTS after its calls, when a hop narrated or ran out, and that row did call
+    narrated = SimpleNamespace(pipeline="agent", answer="No relevant documents found.", models={"generation": "d"},
+                               metrics={"config": config})
+    assert compare._asked_the_generator(narrated) is True

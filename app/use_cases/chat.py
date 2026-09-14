@@ -384,8 +384,10 @@ def _retrieval_snapshot(rows, sources) -> dict:
 
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
                      ef_search: int | None = None, model: str | None = None,
-                     language: str | None = None, placed_during: dict | None = None) -> dict:
+                     language: str | None = None, placed_during: dict | None = None,
+                     generated: bool = True) -> dict:
     return run_snapshot.of_run(
+        generated=generated,
         language=language,
         variant=variant,
         use_rerank=use_rerank,
@@ -406,9 +408,11 @@ def _log_answer(
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
     placed_during: dict | None = None,
 ) -> None:
+    # no context, no call: the stand answered NO_RESULTS itself, and the default generator was stamped on it
+    generated = bool(context)
     # read before the session: each registry read inside it took a second connection from the pool
     models = {
-        "generation": ans.metrics.model,
+        "generation": ans.metrics.model if generated else None,
         "embedding": llm.resolve_name("embedding"),
         **({"reranking": llm.resolve_name("reranking")} if use_rerank else {}),
     }
@@ -433,7 +437,7 @@ def _log_answer(
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
                     rerank_device, variant, ef_search, ans.metrics.model, lang,
-                    placed_during=placed_during,
+                    placed_during=placed_during, generated=generated,
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand

@@ -142,6 +142,7 @@ def of_run(
     rerank_device=None,
     placed_during=None,
     cross_encoder_used=None,
+    generated: bool = True,
     **filled,
 ) -> dict:
     unknown = sorted(set(filled) - set(KEYS))
@@ -151,6 +152,9 @@ def of_run(
     # the agent's gate can call the reranker without `use_rerank`, and the record names it then too
     reranked = use_rerank if cross_encoder_used is None else cross_encoder_used
     roles = (*ANSWERING, Role.reranking) if reranked else ANSWERING
+    # a row answered with no generator call names no generator: the role's default was read as the arm's
+    if not generated:
+        roles = tuple(role for role in roles if role is not Role.generation)
     named, samplers, placed, added, cache_keys, parsers = _by_role(picked, roles)
     # read while the role worked: a phased run writes its rows after the embedder has left the card
     placed |= {role: on for role, on in llm.placed_in_calls().items() if on is not None}
@@ -170,7 +174,7 @@ def of_run(
         "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
         # the commit both pipelines ran, so two arms can be shown to have run the same code
         "code_version": version.CODE_VERSION,
-        "context_length": _window(picked),
+        "context_length": _window(picked) if generated else None,
         "engines": named,
         "engine_refused": {role: seen.dropped for role, seen in samplers.items()},
         "engine_added": added,

@@ -584,7 +584,7 @@ def test_the_guest_sends_one_human_message_as_the_standard_does(monkeypatch):
     )
     monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
     monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
-    monkeypatch.setattr(llm, "_complete", lambda spec, name, messages, params: sent.append(messages) or reply)
+    monkeypatch.setattr(llm, "_complete", lambda spec, name, messages, params, role=None: sent.append(messages) or reply)
     guest_llm.OurClient().generate_text("the prompt")
     assert sent == [[{"role": "user", "content": "the prompt"}]]
 
@@ -606,7 +606,7 @@ def test_the_old_ruler_stays_callable_for_a_bridge_and_says_so_in_the_stamp(monk
     )
     monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
     monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
-    monkeypatch.setattr(llm, "_complete", lambda spec, name, messages, params: sent.append(messages) or reply)
+    monkeypatch.setattr(llm, "_complete", lambda spec, name, messages, params, role=None: sent.append(messages) or reply)
     guest_llm.OurClient(messages="empty_system").generate_text("the prompt")
     assert sent == [[{"role": "system", "content": ""}, {"role": "user", "content": "the prompt"}]]
     assert job_specs.JudgeGuestAxes(run_name="r", messages="empty_system").messages == "empty_system"
