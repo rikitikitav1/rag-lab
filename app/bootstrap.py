@@ -208,15 +208,24 @@ def _reconcile_with_ollama(spec) -> None:
             .join(Engine, Engine.id == Model.engine_id)
             .where(Engine.id == spec.id)
         ).all()
+        ready = []
         for model, engine_id in rows:
             if ollama.add_tags([model.name])[0] in pulled:
                 model.status = Status.ready
+                ready.append(model.name)
                 if None in (model.weights_id, model.quant, model.size_bytes):
                     to_fill.append(model.name)
             else:
                 model.status = Status.loading
                 to_pull.append((model.name, engine_id))
         session.commit()
+
+    # bases before the windowed tags made from them; a model pulled by hand never got the penalty
+    for name in sorted(ready, key=lambda n: ollama.windowed(n) is not None):
+        try:
+            ollama.hold_repetition_penalty(name, spec)
+        except Exception as e:
+            log.warning("bootstrap.repetition_penalty_not_held", model=name, error=str(e))
 
     for name, engine_id in to_pull:
         # a pull still waiting from the last boot answers this one, as it does for vLLM

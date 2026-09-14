@@ -5,7 +5,7 @@ import logging_setup
 import version
 from engines import answer_parsers, card
 from errors import StandFault
-from models.registry import Role
+from models.registry import SAMPLING_ROLES, Role
 
 import db
 
@@ -76,7 +76,8 @@ def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict, dict, dic
             named[role] = spec.name
             samplers[role] = llm.sampler(role, chosen)
             placed[role] = card.model_on_card(spec, chosen.name)
-            added[role] = engines.added_by(spec, chosen.name)
+            added[role] = {key: value for key, value in engines.added_by(spec, chosen.name).items()
+                           if role in SAMPLING_ROLES or key != "repetition_penalty"}
             if key := llm.cache_key_of(spec):
                 cache_keys[role] = key
             parsers[role] = answer_parsers.label(getattr(chosen, "parser", answer_parsers.NONE))

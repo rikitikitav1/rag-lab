@@ -415,6 +415,7 @@ def run(
     allow_cpu: bool = False,
     variant: str | None = None,
     resume: bool = False,
+    generation_sampler: dict | None = None,
 ) -> int:
     pipeline = Pipeline(pipeline)
     variant = variant or config.settings.corpus.variant
@@ -458,14 +459,15 @@ def run(
     )
 
     try:
-        if phased and pipeline == Pipeline.single_shot:
-            answered, cancelled = run_phased(
-                texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
-            )
-        else:
-            answered, cancelled = _run_sequential(
-                texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
-            )
+        with llm.run_sampler(generation_sampler):
+            if phased and pipeline == Pipeline.single_shot:
+                answered, cancelled = run_phased(
+                    texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
+                )
+            else:
+                answered, cancelled = _run_sequential(
+                    texts, run_name, spec, job_id=job_id, allow_cpu=allow_cpu
+                )
     except BaseException:
         # a resume is stopped again for the reasons it is resumed, and what it wrote by then still says so
         if resume:

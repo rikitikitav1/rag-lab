@@ -204,6 +204,8 @@ def compare(runs: dict[str, list]) -> dict:
         "residency": residency,
         # the treatment, not a fault: two generators on two engines is what a pair of arms compares
         "answering_engines_by_run": {name: _answering_engines(logs) for name, logs in runs.items()},
+        # vLLM against ollama on one model compared 1.05 with 1.1 until the record named it: aligned first, then compared
+        **_answering_penalties_of(runs),
         # the correlation's own predicate, called not restated: one label stood over two selections
         "correlation_population": {
             "predicate": JOINS_BOTH_JUDGES,
@@ -381,6 +383,26 @@ def _answering_engines(logs: list) -> dict[str, list[str]]:
         for role, engine in (((ql.metrics or {}).get("config") or {}).get("engines") or {}).items():
             seen.setdefault(str(role), set()).add(engine)
     return {role: sorted(engines) for role, engines in sorted(seen.items())}
+
+
+# the penalty each answering role ran with: sent where the call named it, else what its engine applied on its own
+def _answering_penalties(logs: list) -> dict[str, list]:
+    seen: dict[str, set] = {}
+    for ql in logs:
+        cfg = (ql.metrics or {}).get("config") or {}
+        sent, added = cfg.get("samplers") or {}, cfg.get("engine_added") or {}
+        for role in (set(sent) | set(added)) - {"embedding", "reranking"}:
+            value = (sent.get(role) or {}).get("repetition_penalty", (added.get(role) or {}).get("repetition_penalty"))
+            seen.setdefault(str(role), set()).add(value)
+    return {role: sorted(values, key=str) for role, values in sorted(seen.items())}
+
+
+# a row from before the penalty was stamped reads as unknown, and unknown matches nothing
+def _answering_penalties_of(runs: dict[str, list]) -> dict:
+    by_run = {name: _answering_penalties(logs) for name, logs in runs.items()}
+    held = {value for roles in by_run.values() for value in roles.get("generation") or [None]}
+    one = None if len(by_run) < 2 or None in held or "unknown" in held else len(held) == 1
+    return {"answering_penalties_by_run": by_run, "one_answering_penalty": one}
 
 
 # two arms judged across a reload are two instruments: 14% of scores move on identical input

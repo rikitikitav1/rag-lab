@@ -1,4 +1,4 @@
-KEYS = ("temperature", "max_tokens", "seed")
+KEYS = ("temperature", "max_tokens", "seed", "repetition_penalty")
 MAX_TOKENS = 65536
 
 
@@ -20,4 +20,7 @@ def check(options: dict) -> dict:
     seed = options.get("seed")
     if seed is not None and (not _whole(seed) or seed < 0):
         raise ValueError(f"seed is a whole number from 0, got {seed!r}")
+    penalty = options.get("repetition_penalty")
+    if penalty is not None and (isinstance(penalty, bool) or not isinstance(penalty, int | float) or not 1 <= penalty <= 2):
+        raise ValueError(f"repetition_penalty is a number from 1 to 2, got {penalty!r}")
     return options

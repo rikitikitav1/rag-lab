@@ -253,6 +253,15 @@ def _snapshot(repo: str) -> Path | None:
     return seen[-1] if seen else None
 
 
+# the file the server reads for what a call leaves out (`--generation-config auto`)
+def model_default(repo: str, key: str):
+    try:
+        snap = _snapshot(repo)
+        return json.loads((snap / "generation_config.json").read_text()).get(key) if snap else None
+    except Exception:
+        return None
+
+
 HUB = "https://huggingface.co"
 
 

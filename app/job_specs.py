@@ -13,9 +13,10 @@ from enum import StrEnum
 from typing import Literal
 
 import limits
+import samplers
 from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.index import VARIANT_RE
@@ -52,6 +53,13 @@ class EvalRunFields(Spec):
     restate_tools: bool = False
     # answer only what a stopped run left unanswered, on the options it ran with
     resume: bool = False
+    # the generator's sampler in this run alone: the judge shares a vLLM model with it and keeps its own
+    generation_sampler: dict | None = None
+
+    @field_validator("generation_sampler")
+    @classmethod
+    def _sampler_keys(cls, value):
+        return samplers.check(value) if value else value
 
 
 # what the queue accepts is what a door may offer plus what the stand attaches to its own jobs

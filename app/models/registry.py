@@ -20,6 +20,10 @@ class Role(StrEnum):
     ragas_embedding = "ragas_embedding"
 
 
+# the roles whose model writes tokens: an embedder or a cross-encoder scores and samples nothing
+SAMPLING_ROLES = frozenset({Role.generation, Role.judging, Role.paraphrasing, Role.ragas})
+
+
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
 MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*(:[a-zA-Z0-9._-]+)?$")
 # the shape check lived on the HTTP door alone, and a job is a second door onto one pull

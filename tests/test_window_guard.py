@@ -12,9 +12,11 @@ def test_a_windowed_tag_is_made_from_its_base_with_its_own_window(monkeypatch):
     # the OpenAI door takes no num_ctx per call, so the guest's window has to live in the model
     asked = []
     monkeypatch.setattr(ollama, "post", lambda path, payload, spec=None, timeout=None: asked.append((path, payload)))
+    monkeypatch.setattr(ollama, "hold_repetition_penalty", lambda model, spec=None: asked.append(("held", model)))
     ollama.pull_model("qwen2.5:7b-w16384")
     assert asked[0] == ("/api/pull", {"model": "qwen2.5:7b", "stream": False})
-    assert asked[1] == ("/api/create", {"model": "qwen2.5:7b-w16384", "from": "qwen2.5:7b",
+    assert asked[1] == ("held", "qwen2.5:7b"), "the base first, so the tag made from it carries the penalty"
+    assert asked[2] == ("/api/create", {"model": "qwen2.5:7b-w16384", "from": "qwen2.5:7b",
                                         "parameters": {"num_ctx": 16384}, "stream": False})
     assert ollama.windowed("qwen2.5:7b") is None and ollama.windowed("llama3.1:8b") is None
 
@@ -93,3 +95,23 @@ def test_a_guest_axis_over_the_window_is_dropped_however_ragas_wrapped_it():
     except RuntimeError as wrapped:
         assert judging._chain_has(wrapped, llm.InputOverWindow)
     assert not judging._chain_has(RuntimeError("other"), llm.InputOverWindow)
+
+
+def test_the_penalty_is_written_into_a_model_only_where_it_is_missing(monkeypatch):
+    # the OpenAI door drops a penalty per call and a pull resets the model, so it lives in the model under its own name
+    import config
+
+    asked = []
+    monkeypatch.setattr(config.settings.llm, "repetition_penalty", 1.1)
+    monkeypatch.setattr(ollama, "post", lambda path, payload, spec=None, timeout=None: asked.append((path, payload)))
+    monkeypatch.setattr(ollama, "unload", lambda model, spec=None: asked.append(("unloaded", model)))
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": ["completion"], "parameters": 'stop "<x>"'})
+    assert ollama.hold_repetition_penalty("llama3.1:8b")
+    assert asked == [("/api/create", {"model": "llama3.1:8b", "from": "llama3.1:8b",
+                                      "parameters": {"repeat_penalty": 1.1}, "stream": False}),
+                     ("unloaded", "llama3.1:8b")], "a loaded runner keeps its old parameters until it loads again"
+    asked.clear()
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": ["completion"], "parameters": "repeat_penalty 1.1"})
+    assert not ollama.hold_repetition_penalty("llama3.1:8b") and asked == [], "held already: no second runner"
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": ["embedding"]})
+    assert not ollama.hold_repetition_penalty("bge-m3") and asked == []

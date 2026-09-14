@@ -451,3 +451,21 @@ def test_a_remote_judge_is_read_as_having_no_residency_and_not_as_an_old_row():
     said = compare._what_to_read_first(True, True, None, True, True, remote_judge=True)
     assert "remote judge has no residency" in said
     assert "before this was recorded" in compare._what_to_read_first(True, True, None, True, True)
+
+
+def _row(generation_sent=None, generation_added=None):
+    config = {"samplers": {"generation": generation_sent or {}, "embedding": {}},
+              "engine_added": {"generation": generation_added or {}, "embedding": {"repetition_penalty": 1.1}}}
+    return SimpleNamespace(metrics={"config": config})
+
+
+def test_two_generators_read_as_one_only_when_they_ran_one_penalty():
+    # vLLM against ollama on one model compared 1.05 with 1.1 until the record named it
+    vllm = [_row(generation_added={"repetition_penalty": 1.05})]
+    ollama = [_row(generation_added={"repetition_penalty": 1.1})]
+    aligned = [_row(generation_sent={"repetition_penalty": 1.1}, generation_added={"repetition_penalty": 1.05})]
+    old = [_row()]
+    assert compare._answering_penalties(vllm) == {"generation": [1.05]}, "the embedder samples nothing and is not read"
+    assert compare._answering_penalties_of({"a": vllm, "b": ollama})["one_answering_penalty"] is False
+    assert compare._answering_penalties_of({"a": aligned, "b": ollama})["one_answering_penalty"] is True, "what was sent wins"
+    assert compare._answering_penalties_of({"a": old, "b": ollama})["one_answering_penalty"] is None, "unstamped matches nothing"

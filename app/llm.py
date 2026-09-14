@@ -416,10 +416,24 @@ def sampler_of(role, picked=None) -> dict:
     return sampler(role, picked).sent
 
 
+# the generator's sampler for one run, over its role's and its model's; no other role reads it
+_run_sampler: contextvars.ContextVar[dict | None] = contextvars.ContextVar("llm_run_sampler", default=None)
+
+
+@contextlib.contextmanager
+def run_sampler(options: dict | None):
+    token = _run_sampler.set(options or None)
+    try:
+        yield
+    finally:
+        _run_sampler.reset(token)
+
+
 # both halves in one read: what went out, and what the role and the model asked for and the engine refused
 def sampler(role, picked=None) -> engines.Sampler:
     picked = picked or resolve(role)
-    opts = {**config.settings.llm.roles[role].options, **(getattr(picked, "options", None) or {})}
+    for_run = (_run_sampler.get() or {}) if str(getattr(role, "value", role)) == "generation" else {}
+    opts = {**config.settings.llm.roles[role].options, **(getattr(picked, "options", None) or {}), **for_run}
     # at temperature 0 the sampler does not roll, but a batching server needs the run to say
     wanted = {k: opts[k] for k in engines.SAMPLER_KEYS if k in opts}
     return engines.translate(picked.engine, wanted)
@@ -427,7 +441,10 @@ def sampler(role, picked=None) -> engines.Sampler:
 
 # `response_format` and `tools` bypass `translate`: an engine that cannot do them refuses loudly
 def _params(role, schema, picked) -> dict:
-    params = sampler(role, picked).sent
+    params = dict(sampler(role, picked).sent)
+    # the OpenAI client knows no penalty field, and vLLM reads it from the body's extras
+    if "repetition_penalty" in params:
+        params["extra_body"] = {"repetition_penalty": params.pop("repetition_penalty")}
     if schema:
         params["response_format"] = {
             "type": "json_schema",

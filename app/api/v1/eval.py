@@ -213,6 +213,8 @@ class CompareResponse(BaseModel):
     schema_version: int = Field(alias="schema")
     residency: dict
     answering_engines_by_run: dict
+    answering_penalties_by_run: dict | None = None
+    one_answering_penalty: bool | None = None
     correlation_population: dict
     verdicts: dict | None
 
@@ -416,6 +418,7 @@ async def enqueue_eval_run(
             "restate_tools": request.restate_tools,
             "variant": request.variant,
             "resume": False,
+            "generation_sampler": request.generation_sampler,
         },
     )
 

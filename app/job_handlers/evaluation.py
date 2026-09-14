@@ -64,6 +64,7 @@ def eval_run(options: dict) -> None:
             job_id=options.get("_job_id"),
             variant=options.get("variant"),
             resume=resume,
+            generation_sampler=options.get("generation_sampler"),
         )
     # the worker's retry would answer every question again beside the rows already written
     except StandFault as e:

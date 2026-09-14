@@ -14,11 +14,12 @@ LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
 
 SAMPLER_KEYS = samplers.KEYS
 
-# full in every row today, so nothing is dropped: a real limit belongs to an engine, not a kind
+# ollama's OpenAI door drops the penalty (measured), so it lives in the model; the OpenAI spec has no such field
+_NOT_PER_CALL = frozenset({"repetition_penalty"})
 ACCEPTS = {
-    EngineKind.ollama: frozenset(SAMPLER_KEYS),
+    EngineKind.ollama: frozenset(SAMPLER_KEYS) - _NOT_PER_CALL,
     EngineKind.vllm: frozenset(SAMPLER_KEYS),
-    EngineKind.openai_compatible: frozenset(SAMPLER_KEYS),
+    EngineKind.openai_compatible: frozenset(SAMPLER_KEYS) - _NOT_PER_CALL,
 }
 
 # the seeded engine, whose address predates the table and still comes from the old variable
@@ -172,7 +173,11 @@ def added_by(spec: EngineSpec, model: str) -> dict:
     if spec.kind is EngineKind.ollama:
         from . import ollama
 
-        return _named({"num_ctx": ollama.context_length(model, spec)})
+        return _named({
+            "num_ctx": ollama.context_length(model, spec),
+            "repetition_penalty": ollama.repetition_penalty_served(model, spec),
+            "server_version": ollama.server_version(spec),
+        })
     # a paid engine's host is not asked vLLM's routes, and its key goes to nothing but its calls
     if spec.kind is not EngineKind.vllm:
         return {}
@@ -186,6 +191,8 @@ def added_by(spec: EngineSpec, model: str) -> dict:
         "batch_invariant": _vllm_env(spec).get("VLLM_BATCH_INVARIANT"),
         "started_at": started,
         "tool_calls_probed": vllm.known_probe(spec, model, started),
+        # what the server applies where a call names none, from the model's own generation_config
+        "repetition_penalty": vllm.model_default(model, "repetition_penalty"),
         **_weights_as_served(spec),
     })
 

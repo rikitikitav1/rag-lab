@@ -156,12 +156,67 @@ def windowed(model: str) -> tuple[str, int] | None:
 def pull_model(model, spec=None):
     derived = windowed(model)
     if derived is None:
-        return post("/api/pull", {"model": model, "stream": False}, spec, timeout=PULL_TIMEOUT)
+        pulled = post("/api/pull", {"model": model, "stream": False}, spec, timeout=PULL_TIMEOUT)
+        hold_repetition_penalty(model, spec)
+        return pulled
     base, window = derived
     post("/api/pull", {"model": base, "stream": False}, spec, timeout=PULL_TIMEOUT)
-    # the same weights under a second name, loaded with this window
+    # the base first: the tag made from it carries its penalty along with its own window
+    hold_repetition_penalty(base, spec)
     return post("/api/create", {"model": model, "from": base, "parameters": {"num_ctx": window}, "stream": False},
                 spec, timeout=PULL_TIMEOUT)
+
+
+# the penalty a server applies where the model names none, measured byte for byte; another version is unknown
+MEASURED_REPEAT_PENALTY = {"0.32.0": 1.1}
+
+
+def server_version(spec=None) -> str | None:
+    try:
+        return get("/api/version", spec).get("version")
+    except Exception as e:
+        log.warning("ollama.version_unknown", error=str(e))
+        return None
+
+
+# `/api/show` lists parameters one to a line, `stop` repeating
+def _parameters(seen: dict) -> dict:
+    held = {}
+    for line in (seen.get("parameters") or "").splitlines():
+        name, _, value = line.strip().partition(" ")
+        if name:
+            held[name] = value.strip().strip('"')
+    return held
+
+
+# a stamp must not die on a silent server: unread is absent, an unmeasured version says so
+def repetition_penalty_served(model: str, spec=None):
+    try:
+        held = _parameters(shown(model, spec)).get("repeat_penalty")
+    except Exception as e:
+        log.warning("ollama.repetition_penalty_unread", model=model, error=str(e))
+        return None
+    if held is not None:
+        return float(held)
+    version = server_version(spec)
+    return None if version is None else MEASURED_REPEAT_PENALTY.get(version, "unknown")
+
+
+# the penalty lives in the model, recreated under its own name; only when it is missing, and the old runner goes
+def hold_repetition_penalty(model: str, spec=None) -> bool:
+    wanted = config.settings.llm.repetition_penalty
+    seen = shown(model, spec)
+    if "embedding" in (seen.get("capabilities") or []):
+        return False
+    held = _parameters(seen).get("repeat_penalty")
+    if held is not None and float(held) == wanted:
+        return False
+    post("/api/create", {"model": model, "from": model, "parameters": {"repeat_penalty": wanted}, "stream": False},
+         spec, timeout=PULL_TIMEOUT)
+    # a runner already loaded keeps the parameters it started with until it loads again
+    unload(model, spec)
+    log.info("ollama.repetition_penalty_held", model=model, was=held, now=wanted)
+    return True
 
 
 def unload(model: str, spec=None) -> None:
