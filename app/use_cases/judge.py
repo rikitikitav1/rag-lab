@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field, ValidationError
 from timing_wrappers import measure_elapsed
 
 
+# the output limit ended the reply before its score: "no JSON object" read as a broken format, not a cut
+class JudgeCut(ValueError):
+    pass
+
+
 class Score(BaseModel):
     reason: str
     score: int = Field(ge=0, le=10)
@@ -116,7 +121,15 @@ def judge(system_prompt, user_prompt, purpose=None, prompt_version=None, model=N
         system=system_prompt, user=user_prompt, role="judging",
         schema=SCORE_SCHEMA, model=model,
     )
-    parsed = _verdict_of(completion.text)
+    cut = token_fields.cut(getattr(completion, "finish_reason", None))
+    try:
+        parsed = _verdict_of(completion.text)
+    except ValueError as e:
+        if cut:
+            raise JudgeCut(
+                f"the judge hit its output limit at {completion.completion_tokens} tokens before its score"
+            ) from e
+        raise
     return Verdict(
         score=parsed.score,
         reason=parsed.reason,
@@ -127,7 +140,7 @@ def judge(system_prompt, user_prompt, purpose=None, prompt_version=None, model=N
         completion_tokens=completion.completion_tokens,
         parser=getattr(completion, "parser", None),
         answer_parse=answer_parsers.record(getattr(completion, "parsed", None)),
-        cut_by_length=token_fields.cut(getattr(completion, "finish_reason", None)),
+        cut_by_length=cut,
     )
 
 

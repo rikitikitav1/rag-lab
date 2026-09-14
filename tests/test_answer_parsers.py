@@ -238,3 +238,33 @@ def test_a_verdict_the_limit_cut_says_so_on_its_row():
     whole = SimpleNamespace(reason="r", elapsed=1.0, model="m", prompt_tokens=1, completion_tokens=10)
     assert judging._axis_metric(cut)["judge_cut_by_length"] is True
     assert "judge_cut_by_length" not in judging._axis_metric(whole)
+
+
+def test_a_reply_the_limit_ended_before_its_score_fails_as_a_cut_and_its_axis_says_so(monkeypatch):
+    # the judge wrote a reason, then tabs until its limit, and the row read "no JSON object"
+    from types import SimpleNamespace
+
+    from job_handlers import judging
+    from use_cases import judge
+
+    said = SimpleNamespace(text='{\n  "reason": "grounded"\n\n \t\t\t\t\n', prompt_tokens=1937,
+                           completion_tokens=1024, finish_reason="length")
+    monkeypatch.setattr(judge.llm, "ask", lambda **kw: said)
+    with pytest.raises(judge.JudgeCut, match="limit at 1024 tokens before its score"):
+        judge.judge("system", "user", model="m")
+    err = judging._error_text(judge.JudgeCut("the judge hit its output limit at 1024 tokens before its score"))
+    assert judging._errored_metric({}, "faithfulness", err)["judge_cut_by_length"] is True
+    assert "judge_cut_by_length" not in judging._errored_metric({}, "faithfulness", "ValueError: no JSON object")
+    said.finish_reason = "stop"
+    with pytest.raises(ValueError, match="no JSON object") as broken:
+        judge.judge("system", "user", model="m")
+    assert not isinstance(broken.value, judge.JudgeCut), "a reply that ended on its own is a broken format"
+
+
+def test_arms_judged_under_different_json_rules_read_as_two_rulers():
+    from evals import compare
+
+    said = compare._what_to_read_first(True, True, True, True, True, one_parser=True, one_grammar=False)
+    assert "measures the grammar" in said
+    assert compare._grammar_of({"num_ctx": 8192}) != compare._grammar_of(
+        {"json_backend": "xgrammar", "json_disable_any_whitespace": "True"})

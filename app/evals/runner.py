@@ -135,7 +135,9 @@ def _run_sequential(
             if not walk.before_row():
                 return answered, True
             try:
-                answered += _answer_one(text, run_name, spec)
+                with llm.placements():
+                    answered += _answer_one(text, run_name, spec)
+                    walk.after_row(llm.placed_in_calls())
             except StandFault:
                 raise
             except Exception as e:

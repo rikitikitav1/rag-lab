@@ -263,6 +263,17 @@ def test_the_stamp_says_whether_the_server_had_batch_invariance_on(monkeypatch):
     assert engines.added_by(VLLM, "m") == {"batch_invariant": True}
 
 
+def test_the_stamp_says_the_dtype_the_server_loaded_rather_than_the_one_the_weights_declare(monkeypatch):
+    # a pair "only the engine" could compare bf16 with F16, and nothing in the record said which
+    from engines import vllm
+
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: None)
+    said = ("ModelConfig(model='Qwen/Q', dtype=torch.float16, quantization=auto_awq, seed=0), "
+            "CacheConfig(kv_cache_dtype=auto), SpeculativeConfig(dtype=torch.bfloat16, quantization=None)")
+    monkeypatch.setattr(core, "_asked", lambda spec, path, key: said if key == "vllm_config" else None)
+    assert engines.added_by(VLLM, "m") == {"dtype": "float16", "quantization": "auto_awq", "kv_cache_dtype": "auto"}
+
+
 def test_a_server_without_dev_mode_leaves_the_flag_out_rather_than_calling_it_off(monkeypatch):
     from engines import vllm
 
@@ -354,3 +365,15 @@ def test_an_ollama_card_reading_tells_a_stopped_server_from_a_silent_one(monkeyp
     assert ollama.residency(OLLAMA) == ollama.card_reading(OLLAMA)[1] != []
     # no address configured means the server runs nowhere
     assert ollama.card_reading(SECOND)[0] == "down"
+
+
+def test_the_stamp_names_the_rules_the_judge_json_was_decoded_by(monkeypatch):
+    # with free whitespace one reply wrote tabs until its limit, and nothing in the record said which rules held
+    from engines import vllm
+
+    monkeypatch.setattr(vllm, "max_model_len", lambda spec, model: None)
+    said = ("ModelConfig(model='Qwen/Q', dtype=torch.float16, quantization=auto_awq), SchedulerConfig(backend='x'), "
+            "StructuredOutputsConfig(backend='xgrammar', disable_any_whitespace=True, reasoning_parser='')")
+    monkeypatch.setattr(core, "_asked", lambda spec, path, key: said if key == "vllm_config" else None)
+    added = engines.added_by(VLLM, "m")
+    assert added["json_backend"] == "xgrammar" and added["json_disable_any_whitespace"] == "True"
