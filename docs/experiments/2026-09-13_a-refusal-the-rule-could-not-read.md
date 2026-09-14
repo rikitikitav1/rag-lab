@@ -70,3 +70,23 @@ the two generators is a point estimate on 100 questions per pool, with the sprea
 - The pattern is a few subject nouns in two languages. A refusal phrased another way ("I found
   nothing about...") stays unread until rule 3.
 - A refusal longer than 400 characters is read as an answer under both rules.
+
+## Correction, measured on 2026-09-14
+
+Rule 3 replaced rule 2 (`outcome_rule: 3`). After "does not contain" or "не содержит" it now wants a
+word for what the answer needed (information, details, answer, data, mention, and their Russian
+stems), because rule 2 read correct answers such as "The context does not contain a deadline unless
+you derive it with context.WithTimeout" as refusals. Read again on the four grid copies, nothing
+moved:
+
+| per 100 rows of the pool | llama A | DeepSeek A | llama B | DeepSeek B |
+|---|---|---|---|---|
+| off-domain refusals | 57 | 93 | 58 | 86 |
+| out-of-corpus refusals | 12 | 59 | 16 | 59 |
+| false refusals in corpus | 0 | 2 | 0 | 2 |
+
+The shares above hold under rule 3. On the engine pair (`arc5_engine_pair_*`) one row moved: in-corpus
+refusals per 100 rows went from 5 / 1 / 6 / 0 to 5 / 0 / 6 / 0 (vLLM a, ollama a, vLLM b, ollama b), a
+short "the context does not contain ..." with no word for information on `ollama_a`; the pair's means
+and intervals did not move. Read through `compare_pools` by the auditor; commit "Work the review's
+blocking findings…".
