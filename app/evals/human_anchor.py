@@ -426,9 +426,38 @@ def _verdict(delta: float, said: str) -> str:
     return "agreed" if (delta > 0) == (said == "A") else "disagreed"
 
 
-def read(stamp: str) -> dict:
+# a new judge rejudges copies, not the rows the sheet names: each side found by its run and its question
+def _deltas_from(pairs: list, asked: dict, copied: dict) -> dict:
+    out = {}
+    for pair in pairs:
+        a, b = (copied.get((side["run"], asked.get(side["log_id"]))) for side in (pair["A"], pair["B"]))
+        out[pair["n"]] = None if None in (a, b) else round(to_unit(a) - to_unit(b), 4)
+    return out
+
+
+def _ours_from_copies(pairs: list, copies: dict) -> dict:
+    from models.eval import QuestionLog
+    from orm.sync_db import Session
+    from sqlalchemy import select
+
+    named = [side["log_id"] for pair in pairs for side in (pair["A"], pair["B"])]
+    with Session() as session:
+        asked = {ql.id: ql.question_id for ql in session.scalars(select(QuestionLog).where(QuestionLog.id.in_(named)))}
+        copied = {(source, ql.question_id): ql.faithfulness
+                  for source, target in copies.items()
+                  for ql in session.scalars(select(QuestionLog).where(QuestionLog.run_name == target))}
+    deltas = _deltas_from(pairs, asked, copied)
+    missing = sorted(n for n, delta in deltas.items() if delta is None)
+    if missing:
+        raise Refused(f"pairs {missing} have a side the copies did not judge: rejudge every row the sheet names")
+    return deltas
+
+
+def read(stamp: str, copies: dict | None = None) -> dict:
     key = _key(stamp)
     _its_own(stamp, key)
+    # the delta the key froze when the sheet was built, or the one the copies' judge gives the same rows
+    ours = _ours_from_copies(key["pairs"]["sitting"], copies) if copies else None
     # by the pair of rows, like every other reader: joining by number scores a pair he never saw
     answered = _already(stamp)
     counted = {j: defaultdict(int) for j in ("ours", "guest")}
@@ -449,7 +478,8 @@ def read(stamp: str) -> dict:
             "neither_hit_gold" if pair.get("neither_hit_gold") else "hit_gold",
         ]
         for instrument in ("ours", "guest"):
-            got = _verdict(pair[instrument], said)
+            delta = ours[pair["n"]] if ours is not None and instrument == "ours" else pair[instrument]
+            got = _verdict(delta, said)
             counted[instrument][got] += 1
             for bucket in where:
                 by_covariate[instrument][bucket][got] += 1
@@ -476,6 +506,7 @@ def read(stamp: str) -> dict:
                      " depends on the population), and clean against a scaffolding leak in the body",
         "pairs_offered": len(key["pairs"]["sitting"]),
         "pairs_answered": answered_here,
+        "ours_read_from": {"copies": copies} if copies else "the key, as the sheet was built",
         "ours": judged("ours"),
         "guest": judged("guest"),
     }
