@@ -6,17 +6,37 @@ the generator writes a different answer, and only then does the judge read it. T
 two still and moves only the language of the answer.
 """
 
+import json
 import statistics
 
 import llm
 from evals.guest_probes import RESTATE, sentence_of
+from evals.measurements import FOLDER
 from use_cases.judge import faithful_verdict
 
-# 2 the row's own answer; 3 named rows; 4 the pass stamps the instrument; 5 the engine named
-SCHEMA = 5
+# 2 own answer; 3 named rows; 4 instrument; 5 engine; 6 panel; 7 panel rows, regime against a reference
+SCHEMA = 7
 
-# history of this instrument on the 3.2 sets: 96.4% and 95.6% at least 7, and it drifts on a reload
+# a floor that catches only the gross: history on the 3.2 sets was 96.4% and 95.6% at least 7
 CONTROL_FLOOR = 0.90
+
+# fixed English rows: the regime is a property of the instrument, so it is not read on the run it measures
+PANEL = FOLDER / "judge_language_panel_ids.txt"
+
+# the panel's first reading under today's ruler, rewritten only by the owner's word when the ruler changes
+REFERENCE = FOLDER / "judge_language_panel_reference.json"
+
+# a regime holds while at most this share of the panel crosses 7 against the reference, on either part
+MOVES_ALLOWED = 0.10
+
+
+def panel_ids() -> list[int]:
+    lines = PANEL.read_text(encoding="utf-8").splitlines()
+    return [int(x) for line in lines for x in line.split("#")[0].split()]
+
+
+def panel_reference() -> dict | None:
+    return json.loads(REFERENCE.read_text(encoding="utf-8")) if REFERENCE.exists() else None
 
 
 # the answer, not a line of the context: judging a restated context line is judging a non-answer
@@ -48,6 +68,7 @@ def measure(run_name: str, rows: int, note=None, stop=None, log_ids=None, stamp=
     ]
     # a declared group is named, not counted off the top: a cut is not the first rows of a run
     pool = [q for q in pool if q.id in set(log_ids)] if log_ids else pool[:rows]
+    panel_rows = judge_panel(stop)
     scored, originals = [], []
     for ql in pool:
         # two model calls a row: a cancelled probe that runs to the end is not cancelled
@@ -62,27 +83,73 @@ def measure(run_name: str, rows: int, note=None, stop=None, log_ids=None, stamp=
             if note:
                 note(f"{lang} {ql.id}: {scored[-1]['score']}")
     population = "the named rows" if log_ids else f"the first {rows} of the corpus pool"
-    return (report(scored) | control(originals)
+    return (report(scored) | regime(panel_rows, panel_reference()) | run_answers(originals)
             | {"run_name": run_name, "population": population, "n_asked": len(pool),
                # a control out of regime is unreadable without knowing what judged it
-               "instrument": stamp or {}, "rows": scored})
+               "instrument": stamp or {}, "rows": scored, "panel_rows": panel_rows})
 
 
-# pass 1 scored a grounded restatement zero in a fifth of pairs and nothing said the regime was off
-def control(originals: list) -> dict:
+# the panel's own answer gives the judge's regime, its English restatement the restating path's
+def judge_panel(stop=None) -> list[dict]:
+    from evals.loaders import load_logs
+
+    rows = []
+    for ql in load_logs(ids=panel_ids()):
+        if stop and stop():
+            break
+        english = llm.ask(RESTATE, ql.answer, role="generation").text or ""
+        for part, answer in (("own", ql.answer), ("restated", english)):
+            got, why = score(ql, answer)
+            rows.append({"row": ql.id, "part": part, "score": got, "reason": why})
+    return rows
+
+
+def _at_least_7(scores: list) -> dict:
     from evals.stats import score_of
 
-    got = [v for v in (score_of(x) for x in originals) if v is not None]
-    share = round(sum(1 for v in got if v >= 7) / len(got), 3) if got else None
-    return {
-        "control": {
-            "of": "our judge on the row's own answer, at least 7",
-            "n": len(got),
-            "share": share,
-            "threshold": CONTROL_FLOOR,
-            "in_regime": share is not None and share >= CONTROL_FLOOR,
-        }
+    got = [v for v in (score_of(x) for x in scores) if v is not None]
+    return {"n": len(got), "share": round(sum(1 for v in got if v >= 7) / len(got), 3) if got else None}
+
+
+def _crosses_7(score) -> bool | None:
+    from evals.stats import score_of
+
+    got = score_of(score)
+    return None if got is None else got >= 7
+
+
+# a fixed share measured the panel's answers as much as the judge; against a reference it reads drift
+def regime(panel_rows: list[dict], reference: dict | None) -> dict:
+    parts = {p: _at_least_7([r["score"] for r in panel_rows if r["part"] == p]) for p in ("own", "restated")}
+    control = {
+        "of": "our judge at least 7 on the fixed panel: its own answers and their English restatement",
+        "panel": PANEL.name,
+        **parts,
+        "floor": CONTROL_FLOOR,
+        "above_floor": all(p["share"] is not None and p["share"] >= CONTROL_FLOOR for p in parts.values()),
     }
+    if reference is None:
+        return {"control": control | {
+            "reference": None, "moved_vs_reference": None, "in_regime": None,
+            "why": "no reference reading yet: the first reading under a ruler is kept by the owner's word",
+        }}
+    # a verdict lost, or a row the reference never read, counts as moved
+    was = {(r["row"], r["part"]): _crosses_7(r["score"]) for r in reference["rows"]}
+    moved = {p: sum(1 for r in panel_rows if r["part"] == p
+                    and was.get((r["row"], p), "unread") != _crosses_7(r["score"]))
+             for p in ("own", "restated")}
+    allowed = int(len(panel_ids()) * MOVES_ALLOWED)
+    return {"control": control | {
+        "reference": {"file": REFERENCE.name, "taken": reference.get("taken")},
+        "moved_vs_reference": moved,
+        "moves_allowed": allowed,
+        "in_regime": all(n <= allowed for n in moved.values()),
+    }}
+
+
+# a run's own rows mix the judge's state with the run's quality, so they are the run's, not a regime
+def run_answers(originals: list) -> dict:
+    return {"run_answers": {"of": "our judge on the run's own answers, at least 7", **_at_least_7(originals)}}
 
 
 def report(rows: list[dict]) -> dict:
