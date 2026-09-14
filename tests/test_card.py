@@ -472,6 +472,12 @@ def test_a_run_that_reranks_names_the_reranker_and_keeps_what_was_read_while_rol
                                 distance_threshold=None, cross_encoder_used=True)
     assert gated["engines"][Role.reranking] == "vllm-rerank", "the agent's gate called it"
     assert gated["rerank"] is False, "the knob stays what was asked"
+    # a row the stand refused before any call stamped the default generator and its penalty as the arm's
+    unasked = run_snapshot.of_run(variant="baseline", use_rerank=False, k=5, ef_search=100,
+                                  distance_threshold=None, generated=False)
+    assert Role.generation not in unasked["engines"] and Role.generation not in unasked["samplers"]
+    assert Role.generation not in unasked["engine_added"] and unasked["context_length"] is None
+    assert unasked["engines"][Role.embedding] == "ollama", "the question was still embedded"
 
 
 def test_no_process_of_ours_holds_the_cross_encoder_on_the_card():

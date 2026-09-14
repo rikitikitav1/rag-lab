@@ -90,6 +90,12 @@ class OurEmbeddings(BaseRagasEmbeddings):
         return await asyncio.to_thread(self.embed_documents, texts)
 
 
+def _broker_key(spec) -> str | None:
+    from engines.core import key_fingerprint
+
+    return key_fingerprint(spec) if engines.is_cloud(spec.kind) else None
+
+
 # `ragas` is in neither image, so a guest number that cannot name its process cannot be placed
 def _runtime() -> str:
     from pathlib import Path
@@ -117,6 +123,8 @@ def stamp(messages: str = MESSAGES, model: str | None = None) -> dict:
         "window": engines.window_or_configured(picked.engine, picked.name),
         "parser": answer_parsers.label(picked.parser),
         "cache_key": llm.cache_key_of(picked.engine),
+        # which account the guest's calls went out on: a pass resumed on another key is billed twice
+        "broker_key": _broker_key(picked.engine),
         # one guest measures with vectors, and its embedder never reached the record
         "embedding_model": llm.resolve_name(EMBEDDING_ROLE),
         "embedding_role": EMBEDDING_ROLE,

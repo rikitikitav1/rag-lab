@@ -411,3 +411,15 @@ def test_the_judge_s_vllm_says_the_penalty_its_model_file_would_apply(monkeypatc
     assert vllm.model_default("Qwen/Q", "repetition_penalty") == 1.05
     monkeypatch.setattr(vllm, "_snapshot", lambda repo: None)
     assert vllm.model_default("Qwen/Q", "repetition_penalty") is None
+
+
+def test_a_cloud_engine_stamps_which_key_it_spent_on_and_never_the_key(monkeypatch):
+    # a guest resumed on a second account's key, and nothing in its rows said the bill had moved
+    import hashlib
+
+    monkeypatch.setenv("CLOUD_API_KEY", "fakefakefakefake")
+    got = engines.added_by(CLOUD, "m")
+    assert got == {"key_fingerprint": hashlib.sha256(b"fakefakefakefake").hexdigest()[:12]}
+    assert "fakefakefakefake" not in str(got)
+    monkeypatch.delenv("CLOUD_API_KEY")
+    assert engines.added_by(CLOUD, "m") == {}, "no key, no fingerprint, and nothing invented"

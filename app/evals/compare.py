@@ -378,11 +378,22 @@ def _one_retrieval(runs: dict[str, list]) -> bool | None:
     return True if compared else None
 
 
+# a single-shot row with no context answered NO_RESULTS itself, and rows written before that was stamped named a generator
+def _asked_the_generator(ql) -> bool:
+    if "generation" in (getattr(ql, "models", None) or {}) and ql.models["generation"] is None:
+        return False
+    return not (getattr(ql, "pipeline", None) == "single_shot"
+                and (getattr(ql, "answer", None) or "").strip() == outcomes.NO_RESULTS)
+
+
 # read off the run snapshot's `config.engines`, per role; a row older than that key names nothing
 def _answering_engines(logs: list) -> dict[str, list[str]]:
     seen: dict[str, set] = {}
     for ql in logs:
+        asked = _asked_the_generator(ql)
         for role, engine in (((ql.metrics or {}).get("config") or {}).get("engines") or {}).items():
+            if str(role) == "generation" and not asked:
+                continue
             seen.setdefault(str(role), set()).add(engine)
     return {role: sorted(engines) for role, engines in sorted(seen.items())}
 
@@ -391,6 +402,8 @@ def _answering_engines(logs: list) -> dict[str, list[str]]:
 def _answering_penalties(logs: list) -> dict[str, list]:
     seen: dict[str, set] = {}
     for ql in logs:
+        if not _asked_the_generator(ql):
+            continue
         cfg = (ql.metrics or {}).get("config") or {}
         sent, added = cfg.get("samplers") or {}, cfg.get("engine_added") or {}
         for role in (set(sent) | set(added)) - {"embedding", "reranking"}:
@@ -413,11 +426,11 @@ def residencies(runs: dict[str, list]) -> dict:
 
     live = registered_names()
     seen, engines_seen, names_seen, prompts_seen, parsers_seen = {}, {}, {}, {}, {}
-    choices_seen, budgets_seen, cuts_seen, grammars_seen = {}, {}, {}, {}
+    choices_seen, budgets_seen, cuts_seen, grammars_seen, keys_seen = {}, {}, {}, {}, {}
     gone = set()
     remote_judge = False
     for name, logs in runs.items():
-        ids, addresses, named = set(), set(), set()
+        ids, addresses, named, keys = set(), set(), set(), set()
         versions = {axis: set() for axis in rejudge.AXES}
         parsers = {axis: set() for axis in rejudge.AXES}
         choices = {axis: set() for axis in rejudge.AXES}
@@ -456,6 +469,12 @@ def residencies(runs: dict[str, list]) -> dict:
                 cuts += bool(stamp.get(token_fields.JUDGE_CUT))
                 if isinstance(stamp.get("engine_added"), dict):
                     grammars[axis].add(_grammar_of(stamp["engine_added"]))
+                    keys.add(stamp["engine_added"].get("key_fingerprint"))
+            # a cloud generator's key sits in the run snapshot, a cloud judge's in its verdict stamp
+            for added in (((ql.metrics or {}).get("config") or {}).get("engine_added") or {}).values():
+                if isinstance(added, dict):
+                    keys.add(added.get("key_fingerprint"))
+        keys_seen[name] = sorted(k for k in keys if k)
         seen[name] = sorted(ids)
         # the address, because it is the one field every era of this record carries
         engines_seen[name] = sorted(addresses)
@@ -474,6 +493,9 @@ def residencies(runs: dict[str, list]) -> dict:
     one_grammar = _one_ruler(grammars_seen)
     one_name = _all_agree(names_seen)
     one_retrieval = _one_retrieval(runs)
+    # a key is an account, not an instrument: two keys are one ruler billed twice, and the record says so
+    spent_on = {key for held in keys_seen.values() for key in held}
+    one_key = None if not spent_on else len(spent_on) == 1
     return {
         "by_run": seen,
         "one_residency": one,
@@ -497,6 +519,8 @@ def residencies(runs: dict[str, list]) -> dict:
         # the sources and their ranks on the questions both arms answered, equal or not at all
         "one_deterministic": one_retrieval,
         "remote_judge": remote_judge,
+        "broker_keys_by_run": keys_seen,
+        "one_broker_key": one_key,
         "read_this_first": _what_to_read_first(
             one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser, one_grammar=one_grammar,
             remote_judge=remote_judge, one_sampler=one_sampler, one_budget=one_budget,
