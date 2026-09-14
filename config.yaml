@@ -4,15 +4,20 @@ retrieval:
   # 0.55 cuts the hybrid pool and never empties it over 1643 questions; 0.39 weak, 0.44 off-topic
   # tuned: file=datasets/measurements/threshold_calibration_20260830.json
   distance_threshold: 0.55      # cosine distance, 0 to 2
-  # this is `k`: how many chunks the generator sees, and what the context guard multiplies
+  # this is `k`, what the context guard multiplies: level with k=10 on every axis at half the chunks
+  # tuned: file=docs/experiments/2026-07-28_k-sweep-re-judged-with-a.md
+  # tuned: file=docs/experiments/2026-07-28_paired-significance-testing-lands-in-the.md
   results_limit: 5
+  # not measured: no run has moved either leg's depth
   limit_vector: 20              # candidates the vector leg hands to the fusion
   limit_keywords: 20            # the same for the text leg
+  # not measured: the constant of the paper that introduced RRF, and every run here used it
   rrf_k: 60
   # AND over every lexeme: OR costs 0.15-0.23 MRR on paraphrases
   # tuned: file=datasets/measurements/2026-08-26_keyword_switch_grid.txt
   keyword:                      # named as a run's record names them
     query: and
+    # rank and norm not measured: the grid above moved only the query
     rank: ts_rank
     norm: 0
     # ask each text-search config about the question's own function words, else the alphabet
@@ -42,9 +47,13 @@ rerank:
   # off: worth +0.0454 of section MRR, and the 8b the agent needs takes its card room
   # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md
   enabled: false
+  # not measured: the pool the cross-encoder reorders, and every reranking record ran at 20
   candidates: 20
 agent:
+  # not measured as a choice: a ceiling, and where hops were read the agent took about two
   max_hops: 4
+  # the policy that stayed the default after its A/B against the fallback
+  # tuned: file=docs/experiments/2026-08-24_corpus-first-and-the-fallback-that-never.md
   fallback_policy: corpus_first
   gate:
     # which signal decides that retrieval is weak, picked by A/B rather than by taste
@@ -64,6 +73,7 @@ agent:
     ru: 0.4560
     en: 0.4374
 ingestion:
+  # not measured: sizes of an embedder call and of a transaction, which move speed and not the index
   batch_size: 100               # chunks per embedder call
   commit_size: 1000             # rows per commit
 corpus:
@@ -99,12 +109,13 @@ ingest_quality:
     # the primer breaches and stays breaching: its nine large files do repeat navigation
     boilerplate: { max: 0.1 }
     tiny: { max: 0.15 }              # max 0.0599, mean 0.0046
-  # the score sorts variants of one source; it never decides the verdict
+  # the score sorts variants of one source and never decides the verdict; its weights are set by hand, not measured
   weights:
     section_coverage: 40
     prefix_dominates: 15
     dup_in_source: 10
     tiny: 10
+  # not measured: how many reports are kept, a matter of disk and not of quality
   history_per_variant: 20       # reports kept per variant
   # written into every report, so a score from another formula is not read as this one
   score_formula: v1
@@ -112,6 +123,7 @@ ingest_quality:
 fts:
   # index-time: changing this re-indexes the corpus, it does not re-rank a query
   languages: { en: english, ru: russian }
+  # not measured: the language most of the corpus is written in
   fallback: english
 repos_dir: /repos
 prompts_dir: prompts
