@@ -115,8 +115,8 @@ def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
     return {"comparisons": comparisons, "population": BLENDED, **family}
 
 
-# 1 before the field; 2 Bonferroni; 3 Holm and the family named; 4 the population named and counted
-SCHEMA = 4
+# 1 before the field; 2 Bonferroni; 3 Holm and the family named; 4 the population named and counted; 5 the refusal rule stored
+SCHEMA = 5
 
 
 def compute_results(param: str, param_values: list, run_names: list[str]) -> dict:
@@ -138,6 +138,7 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
             "off_domain_grounding": gen["off_domain_grounding"],
             "off_domain_refusal_rate": gen["off_domain_refusal_rate"],
             "supported_rate": gen["supported_rate"],
+            "outcome_rule": gen.get("outcome_rule"),
             "n_off_domain_scored": gen["n_off_domain_scored"],
             "unsupported_external": gen["unsupported_external"],
             "unsupported_off_domain": gen["unsupported_off_domain"],
@@ -167,6 +168,8 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
     return {
         "schema": SCHEMA,
         "param": param,
+        # outcomes are read at aggregation, so the stored numbers carry the rule they were read with
+        "outcome_rule": next((b.get("outcome_rule") for b in per_value.values()), None),
         "per_value": per_value,
         "composite": {
             "method": "rrf",

@@ -289,15 +289,25 @@ def judge_language(options: dict) -> None:
     # the generator may sit on another card engine and give the card back, which is not a spill
     walk = Pass(job_id, (Seat(Role.judging), Seat(Role.generation, spill_from=None)),
                 residency=lambda: _residency(job_id))
+    halted = []
+
+    def stop() -> bool:
+        halted.append(not walk.before_row())
+        return halted[-1]
+
     # the control read out of regime twice, and nothing said whether the judge was whole on the card
     out = probe.measure(
         run_name, rows,
         note=lambda line: log.info("judge_language.pair", pair=line),
-        stop=lambda: not walk.before_row(),
+        stop=stop,
         log_ids=options.get("log_ids"),
         stamp=stamp_of(judge_width(options.get("judge_width")), walk.get()),
     )
     walk.close(owed=out.get("n_asked", 0), done=sum(1 for row in out.get("rows", ()) if row["score"] is not None))
+    # a stopped probe read part of its panel, and a file of it would be cited as a whole reading
+    if any(halted):
+        log.info("judge_language.stopped", run_name=run_name, panel_rows=len(out.get("panel_rows", ())))
+        return
     # the path is derived, never taken from options: a number with no file cannot be cited
     where = measurements.record("judge_language", run_name, out)
     log.info("judge_language.done", run_name=run_name, wrote=where, result=out)

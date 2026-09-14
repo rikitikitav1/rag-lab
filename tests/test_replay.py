@@ -418,6 +418,12 @@ def test_the_probe_refuses_its_own_numbers_when_it_is_out_of_regime():
     assert lost["moved_vs_reference"]["own"] == 7 and lost["in_regime"] is False
     assert jl.regime(rows([8] * 60, [8] * 60), None)["control"]["in_regime"] is None
 
+    # an empty panel read "in regime" off zero moves, and a cut one off the rows it reached
+    empty = jl.regime([], reference)["control"]
+    assert empty["moved_vs_reference"] == {"own": 60, "restated": 60} and empty["in_regime"] is False
+    cut = jl.regime(rows([8] * 50, [8] * 50), reference)["control"]
+    assert cut["moved_vs_reference"] == {"own": 10, "restated": 10} and cut["in_regime"] is False
+
 
 def test_the_probe_reads_its_regime_on_the_panel_not_on_the_run(monkeypatch):
     # a Russian run pulled the run's own share down, so the probe was calibrated by what it measures

@@ -133,10 +133,12 @@ def regime(panel_rows: list[dict], reference: dict | None) -> dict:
             "reference": None, "moved_vs_reference": None, "in_regime": None,
             "why": "no reference reading yet: the first reading under a ruler is kept by the owner's word",
         }}
-    # a verdict lost, or a row the reference never read, counts as moved
+    # a verdict lost, a row the reference never read, or one this reading never reached counts as moved
     was = {(r["row"], r["part"]): _crosses_7(r["score"]) for r in reference["rows"]}
+    seen = {(r["row"], r["part"]) for r in panel_rows}
     moved = {p: sum(1 for r in panel_rows if r["part"] == p
                     and was.get((r["row"], p), "unread") != _crosses_7(r["score"]))
+                + sum(1 for row, part in was if part == p and (row, part) not in seen)
              for p in ("own", "restated")}
     allowed = int(len(panel_ids()) * MOVES_ALLOWED)
     return {"control": control | {

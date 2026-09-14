@@ -189,3 +189,17 @@ def test_every_door_s_run_meets_the_taken_name_in_the_worker(monkeypatch):
     monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (3, []))
     evaluation.eval_run({"run_name": "r", "_job_id": 2743, "attempts": 1})
     assert seen["resume"] is True
+
+
+def test_a_run_reclaimed_after_a_restart_resumes_its_own_rows(monkeypatch):
+    import job_queue
+    from job_handlers import evaluation
+
+    seen = {}
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda *a, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda *a, **kw: None)
+    monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 1)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (3, []))
+    evaluation.eval_run(job_queue.reclaimed({"run_name": "r", "_job_id": 2743}))
+    assert seen["resume"] is True
+    assert job_queue.reclaimed({"attempts": 1})["attempts"] == 2

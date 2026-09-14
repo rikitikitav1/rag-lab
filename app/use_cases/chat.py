@@ -318,26 +318,31 @@ def answer_from_rows(
         user = f"{context}\n\nQuestion: {question}"
         # always, not only when a run forced one: without it the model follows whatever it last read
         user = told_to_answer_in(user, lang)
-        response = llm.ask(
-            system=prompt_repo.active_template(Purpose.generate_answer),
-            user=user,
-            model=model,
-        )
-        metrics = AnswerMetric(
-            prompt_tokens=response.prompt_tokens,
-            completion_tokens=response.completion_tokens,
-            answer_parse=answer_parsers.record(getattr(response, "parsed", None)),
-        )
-        if model:
-            metrics.model = model
-        ans = Answer(
-            text=response.text,
-            success=True,
-            sources=take_sources(rows, rerank_scores, variant),
-            metrics=metrics,
-        )
-        if add_context:
-            ans.context = context
+        try:
+            response = llm.ask(
+                system=prompt_repo.active_template(Purpose.generate_answer),
+                user=user,
+                model=model,
+            )
+        # an input past the window fails its row, not the run: the question had no row and the chat a 500
+        except llm.InputOverWindow as e:
+            response, ans = None, Answer(text=f"not answered: {e}")
+        if response is not None:
+            metrics = AnswerMetric(
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                answer_parse=answer_parsers.record(getattr(response, "parsed", None)),
+            )
+            if model:
+                metrics.model = model
+            ans = Answer(
+                text=response.text,
+                success=True,
+                sources=take_sources(rows, rerank_scores, variant),
+                metrics=metrics,
+            )
+            if add_context:
+                ans.context = context
 
     ans.elapsed = round(time.perf_counter() - start, 3)
 

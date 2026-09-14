@@ -91,7 +91,8 @@ def model_node(state: State, config) -> dict:
             state["messages"], tools=_schemas(ctx, state["external"]), role=ctx["role"],
             model=ctx["model"],
         )
-    except RuntimeError as e:
+    # the window guard refuses before the call, and a refusal it did not see wrote the row empty
+    except (RuntimeError, llm.InputOverWindow) as e:
         log.error("graph.hop_failed", hop=hop, error=str(e))
         ctx["result"].failed = True
         return {"hops": hop, "finished": True}
@@ -300,7 +301,7 @@ def final_node(state: State, config) -> dict:
     started = time.perf_counter()
     try:
         final = ctx["chat"](messages, role=ctx["role"], model=ctx["model"])
-    except RuntimeError as e:
+    except (RuntimeError, llm.InputOverWindow) as e:
         log.error("graph.final_failed", error=str(e))
         return update
     ctx["result"].took("model", started)

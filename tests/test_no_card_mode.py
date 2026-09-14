@@ -128,7 +128,7 @@ def test_a_card_engine_down_points_to_the_no_card_mode_and_a_processor_one_does_
         ("judging", engines.Resolved("Qwen/Q", vllm)),
         ("generation", engines.Resolved("llama3.1:8b", cpu)),
     ])
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: False)
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: False)
     monkeypatch.setattr(card_wait, "reranker_needed", lambda **kw: False)
 
     judging, generation = stand_health.roles_down()
@@ -154,7 +154,7 @@ def test_a_down_card_engine_on_a_stand_already_without_a_card_points_to_the_seat
 
     vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
     monkeypatch.setattr(stand_health, "_roles", lambda: [("judging", engines.Resolved("Qwen/Q", vllm))])
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: False)
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: False)
     monkeypatch.setattr(card_wait, "reranker_needed", lambda **kw: False)
     monkeypatch.setattr(stand_health.config, "CONFIG_OVERLAY", "config.cpu.yaml")
 
@@ -174,12 +174,12 @@ def test_an_optional_role_nobody_seated_is_not_down_and_a_seated_one_whose_engin
     roles = [("generation", engines.Resolved("llama3.1:8b", cpu)), ("paraphrasing", None),
              ("judging", None)]
     monkeypatch.setattr(stand_health, "_roles", lambda: roles)
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: True)
     monkeypatch.setattr(card_wait, "reranker_needed", lambda **kw: False)
     assert stand_health.roles_down() == ["judging: no model is seated"]
 
     roles[1] = ("paraphrasing", engines.Resolved("gemma2:9b", cpu))
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: False)
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: False)
     assert "paraphrasing: ollama-cpu does not answer" in stand_health.roles_down()
 
 

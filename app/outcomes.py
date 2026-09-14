@@ -18,10 +18,11 @@ MISSING_MARKERS = (
 SOURCE_MARKERS = (
     "source", "available", "corpus", "context", "документ", "источник", "материал", "корпус",
 )
-# "does not contain" is prose about anything, so it refuses only with the sources as its subject
+# "does not contain" is prose about anything: it refuses only when the sources lack the answer itself
 SOURCES_LACK = re.compile(
-    r"(контекст\w*|источник\w*|материал\w*|документ\w*|фрагмент\w*) не содерж"
+    r"(контекст\w*|источник\w*|материал\w*|документ\w*|фрагмент\w*) не содерж\w* (информаци|сведени|ответ|данны|упоминани)"
     r"|(context|sources?|documents?|materials?|passages?) (does not|doesn't|do not|don't) contain"
+    r" (any |enough |the |specific |relevant )?(information|details|answer|data|mention)"
 )
 
 
@@ -58,7 +59,7 @@ def narrated_tool_call(text: str | None, names=(), prefixes=()) -> bool:
 REFUSAL_MAX_CHARS = 400
 
 # outcomes are read from the text on every read, so a cited refusal share carries the rule it was read with
-RULE = 2
+RULE = 3
 
 
 def refusal(text: str) -> bool:

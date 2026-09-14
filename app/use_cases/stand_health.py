@@ -133,7 +133,7 @@ def engines_section() -> dict:
         "vllm_sleeping": {
             spec.name: vllm.is_sleeping(spec) for spec in engines.card_engines(EngineKind.vllm)
         },
-        "answers": {spec.name: _answers(spec) for spec in engines.registered()},
+        "answers": {spec.name: engine_answers(spec) for spec in engines.registered()},
     }
 
 
@@ -161,7 +161,7 @@ def roles_down() -> list[str]:
             # an optional role nobody seated is not down; the reranker stops being optional once used
             if role in config.REQUIRED_ROLES or role == Role.reranking:
                 down.append(f"{role}: no model is seated")
-        elif _answers(picked.engine) is not True:
+        elif engine_answers(picked.engine) is not True:
             down.append(f"{role}: {picked.engine.name} does not answer{_no_card_hint(picked.engine)}")
         # an ollama that lost the card still answers, and loads its models on the processor
         elif card_holder.spilled(picked.engine, picked.name):
@@ -190,8 +190,8 @@ def _parserless(picked) -> bool:
     return vllm.probe_now(spec, picked.name) is False
 
 
-# a health read waits seconds, not the two minutes a completion may take; a paid engine wants its key
-def _answers(spec) -> bool | None:
+# one answer for every door, in seconds: an engine with no address or key is unconfigured (None), not down
+def engine_answers(spec) -> bool | None:
     try:
         return engines.served_models(spec) is not None
     except engines.Unconfigured:
@@ -255,11 +255,14 @@ def samplers() -> dict:
 
 def stand() -> dict:
     # the card of the generator's engine: with a second ollama a bare ask reads as no residency
-    picked = llm.resolve("generation")
+    def residency() -> list:
+        picked = llm.resolve("generation")
+        return ollama.residency(picked.engine) if picked.engine.kind is EngineKind.ollama else []
+
+    # an unseated generator answered 500 here, on the page that exists to say so
     return {
         "card": card(),
-        "residency": _or_error("residency", lambda: ollama.residency(picked.engine)
-                               if picked.engine.kind is EngineKind.ollama else []),
+        "residency": _or_error("residency", residency),
         "window": _or_error("window", window),
         "repetition_penalty": _or_error("repetition_penalty", repetition_penalty),
         "roles_on_card": _or_error("roles_on_card", roles_on_card),

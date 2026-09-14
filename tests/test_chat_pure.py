@@ -59,6 +59,18 @@ def test_answer_from_rows_empty_is_a_refusal(monkeypatch):
     assert ans.text == chat.NO_RESULTS
 
 
+def test_an_input_past_the_window_fails_its_row_instead_of_raising(monkeypatch):
+    _stub_generation(monkeypatch)
+
+    def refused(**kw):
+        raise chat.llm.InputOverWindow("the input is at least 9000 tokens against the 8192-token window of m")
+
+    monkeypatch.setattr(chat.llm, "ask", refused)
+    ans = chat.answer_from_rows("q", [_row("a.md")], k=5, variant="baseline")
+    assert ans.success is False
+    assert ans.text.startswith("not answered: the input is at least 9000 tokens")
+
+
 def test_answer_from_rows_logs_phased_flag(monkeypatch):
     logged = _stub_generation(monkeypatch)
     chat.answer_from_rows("q", [_row("a.md")], k=5, phased=True, variant="baseline")

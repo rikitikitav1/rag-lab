@@ -8,6 +8,7 @@ from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from use_cases import stand_health
 
 router = APIRouter(prefix="/engine", tags=["engines"])
 
@@ -162,7 +163,7 @@ async def patch_engine(
 async def probe_engine(id: int, session: AsyncSession = Depends(get_session)):
     row = await get_or_404(Engine, id, session)
     # a synchronous call with a 120 second timeout would hold the loop for every other request
-    reachable = await run_in_threadpool(_answers, _spec(row))
+    reachable = await run_in_threadpool(stand_health.engine_answers, _spec(row))
     return EngineResponse.of(row, _address(row), reachable)
 
 
@@ -195,14 +196,6 @@ def _running(spec) -> bool:
         return False
     except Exception:
         return True
-
-
-# seconds, with the key: the completion client waited two minutes and retried once
-def _answers(spec) -> bool:
-    try:
-        return engines.served_models(spec) is not None
-    except engines.Unconfigured:
-        return False
 
 
 @router.delete("/{id}", response_model=EngineResponse)

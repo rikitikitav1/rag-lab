@@ -128,8 +128,14 @@ def requeue_stale(queues: list[str]) -> list[int]:
         ids = [job.id for job in jobs]
         for job in jobs:
             job.status = JobStatus.new
+            job.options = reclaimed(job.options)
         session.commit()
         return ids
+
+
+# a restart is an attempt: without the mark a run met its own rows and refused itself as taken
+def reclaimed(options: dict) -> dict:
+    return {**options, "attempts": options.get("attempts", 0) + 1}
 
 
 def complete(id: int, elapsed: float | None = None) -> None:

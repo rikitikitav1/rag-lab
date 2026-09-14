@@ -92,16 +92,22 @@ async def enqueue_job(
 ):
     if request.type not in job_specs.SPECS and request.type not in job_specs.FREE:
         raise HTTPException(status_code=400, detail=f"no such job type: {request.type}")
+    options = request.options
+    if request.type == "eval_run" and options.get("resume"):
+        from api.v1.eval import resumed_options
+
+        extra = sorted(set(options) - {"run_name", "resume"})
+        options = await resumed_options(session, options.get("run_name"), extra)
     try:
-        job_specs.check(request.type, request.options)
+        job_specs.check(request.type, options)
     except job_specs.Refused as bad:
         raise HTTPException(status_code=400, detail=str(bad)) from bad
-    if request.type == "eval_run" and request.options.get("run_name") and not request.options.get("resume"):
+    if request.type == "eval_run" and options.get("run_name") and not options.get("resume"):
         from api.v1.eval import refuse_a_taken_run
 
-        await refuse_a_taken_run(session, request.options["run_name"])
+        await refuse_a_taken_run(session, options["run_name"])
 
-    job = job_queue.add_job(session, request.type, request.options)
+    job = job_queue.add_job(session, request.type, options)
     await session.commit()
     await session.refresh(job)
     return job

@@ -48,6 +48,9 @@ def test_a_thing_that_does_not_contain_something_is_prose():
     for text in (
         "Индекс не содержит NULL, поэтому документ попадает в выборку целиком.",
         "The array does not contain duplicates, so the source order is kept.",
+        "The context does not contain a deadline unless you derive it with context.WithTimeout.",
+        "Embedded documents do not contain an _id field unless you add one.",
+        "Этот фрагмент не содержит утечки: defer закрывает файл.",
     ):
         assert not outcomes.refusal(text), text[:60]
 

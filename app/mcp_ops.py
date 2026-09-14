@@ -3,7 +3,6 @@ from typing import Annotated, Literal
 import job_queue
 import limits
 import logging_setup
-import outcomes
 from evals import (
     compare,
     generation_metrics,
@@ -308,8 +307,9 @@ def experiment_results(
             "conclusion": exp.conclusion,
             **{k: v for k, v in read.items() if k != "deltas"},
         }
+        # the rule the stored numbers were read with, not today's: an older report names none
         if exp.kind != ExperimentKind.retrieval:
-            out["outcome_rule"] = outcomes.RULE
+            out["outcome_rule"] = (exp.results or {}).get("outcome_rule")
         guests = session.execute(
             select(Job.status).where(
                 Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])

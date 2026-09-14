@@ -159,7 +159,7 @@ def test_a_role_whose_engine_does_not_answer_is_named(monkeypatch):
              "ragas_embedding": _engine("ollama", "ollama", "gpu")}
     monkeypatch.setattr(stand_health.llm, "resolve", lambda role: engines.Resolved(role, specs[role]))
     alive = {"ollama": True, "vllm": False, "vllm-rerank": None}
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: alive[spec.name])
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: alive[spec.name])
     monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", False)
     assert stand_health.roles_down() == [
         "judging: vllm does not answer; a host without a card runs `scripts/up.sh --cpu`"
@@ -175,7 +175,7 @@ def test_a_generator_seated_unasked_is_named_once_its_probe_says_no(monkeypatch)
 
     vllm = _engine("vllm", "vllm", "gpu")
     monkeypatch.setattr(stand_health.llm, "resolve", lambda role: engines.Resolved("Qwen/Q", vllm))
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: True)
     monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", False)
     monkeypatch.setattr(stand_health.vllm, "started_at", lambda spec: "t0")
     probe = [None]
@@ -230,7 +230,7 @@ def test_an_unseated_role_is_named_and_the_others_still_read(monkeypatch):
     monkeypatch.setattr(stand_health.card_holder, "model_on_card", lambda spec, name: True)
     seen = stand_health.roles_on_card()
     assert seen["reranking"]["model"] is None and seen["generation"]["on_card"] is True
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: True)
     monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", True)
     assert stand_health.roles_down() == ["reranking: no model is seated"]
 
@@ -264,7 +264,7 @@ def test_a_role_loaded_off_the_card_of_an_ollama_that_answers_is_named(monkeypat
     ollama_spec = _engine("ollama", "ollama", "gpu")
     monkeypatch.setattr(stand_health, "_roles",
                         lambda: [("generation", engines.Resolved("llama3.1:8b", ollama_spec))])
-    monkeypatch.setattr(stand_health, "_answers", lambda spec: True)
+    monkeypatch.setattr(stand_health, "engine_answers", lambda spec: True)
     monkeypatch.setattr(stand_health.config.settings.rerank, "enabled", False)
     whole = [True]
     monkeypatch.setattr(stand_health.card_holder, "spilled", lambda spec, name: not whole[0])
@@ -287,3 +287,16 @@ def test_a_model_s_own_sampler_is_shown_as_an_override_and_not_as_drift(monkeypa
     out = stand_health.samplers()
     assert out["ragas"]["sampler"]["max_tokens"] == 4096 and out["ragas"]["overrides"] == ["max_tokens"]
     assert out["embedding"]["overrides"] == []
+
+
+def test_every_door_gives_one_answer_to_whether_an_engine_answers(monkeypatch):
+    # the engine door said false where health said null for a cloud engine with no key
+    from use_cases import stand_health
+
+    def unconfigured(spec):
+        raise stand_health.engines.Unconfigured("no key")
+
+    monkeypatch.setattr(stand_health.engines, "served_models", unconfigured)
+    assert stand_health.engine_answers(object()) is None
+    monkeypatch.setattr(stand_health.engines, "served_models", lambda spec: None)
+    assert stand_health.engine_answers(object()) is False

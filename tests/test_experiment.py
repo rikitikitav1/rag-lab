@@ -480,7 +480,7 @@ def test_every_kind_of_report_declares_its_schema():
     from evals import generation_metrics, judge_correlation, retrieval_metrics
     from use_cases import experiment, rejudge, retrieval_compare, run_snapshot
 
-    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (4, 5, 3)
+    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (5, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
     assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (7, 6, 13)
     # the judge-against-judge report is a record of its own, and its predictions were declared
@@ -811,8 +811,8 @@ def test_the_generation_report_declares_a_new_schema_when_its_shape_moves(monkey
         for p in _shape_of(report)
     })
 
-    # every key the record carries under schema 4
-    assert (exp.SCHEMA, shape) == (4, SCHEMA_4_SHAPE)
+    # every key the record carries under schema 5: schema 4 and the refusal rule the numbers were read with
+    assert (exp.SCHEMA, shape) == (5, sorted([*SCHEMA_4_SHAPE, ".outcome_rule", ".per_value.<arm>.outcome_rule"]))
 
 
 def test_the_holm_door_returns_the_tests_it_promises_not_their_count():

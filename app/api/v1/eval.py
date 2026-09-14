@@ -369,20 +369,25 @@ async def refuse_a_taken_run(session, run_name: str) -> None:
 # a resumed run changes nothing: it runs on the stopped job's own options and asks only the unanswered
 async def _resume(session, request: EvalRunRequest) -> JobEnqueuedResponse:
     extra = sorted(request.model_fields_set - {"run_name", "resume"})
-    if not request.run_name or extra:
+    return await _enqueue(session, "eval_run", await resumed_options(session, request.run_name, extra))
+
+
+# both doors that queue a run resume through here, or /v1/job finished a run on other options
+async def resumed_options(session, run_name: str | None, extra: list[str]) -> dict:
+    if not run_name or extra:
         raise HTTPException(
             status_code=422,
             detail="resume takes run_name alone: a resumed run changes nothing"
             + (f", and {', '.join(extra)} would" if extra else ""),
         )
-    jobs = await _eval_runs_named(session, request.run_name)
+    jobs = await _eval_runs_named(session, run_name)
     if not jobs:
-        raise HTTPException(status_code=404, detail=f"no eval_run named {request.run_name} to resume")
+        raise HTTPException(status_code=404, detail=f"no eval_run named {run_name} to resume")
     if any(job.status in job_queue.ACTIVE for job in jobs):
-        raise HTTPException(status_code=409, detail=f"run {request.run_name} is still queued or running")
+        raise HTTPException(status_code=409, detail=f"run {run_name} is still queued or running")
     # the worker's own bookkeeping belongs to the attempt that stopped, not to the resumed one
     options = {k: v for k, v in jobs[0].options.items() if k not in job_specs.WORKER_KEYS}
-    return await _enqueue(session, "eval_run", {**options, "resume": True})
+    return {**options, "resume": True}
 
 
 @router.post("/run", response_model=JobEnqueuedResponse)
