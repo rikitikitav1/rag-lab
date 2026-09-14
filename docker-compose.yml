@@ -217,7 +217,9 @@ services:
        "--enforce-eager", "--max-num-seqs", "16",
        "--enable-sleep-mode",
        # a generator on this vLLM must return tool calls; the judge sends no tools and never meets it
-       "--enable-auto-tool-choice", "--tool-call-parser", "hermes"]
+       "--enable-auto-tool-choice", "--tool-call-parser", "hermes",
+       # JSON whitespace let the judge write tabs until its limit instead of the score; per request it is ignored
+       "--structured-outputs-config", '{"backend": "xgrammar", "disable_any_whitespace": true}']
     # no port on the host: dev mode opens `/collective_rpc` and `/pause` without a key
     environment:
       # the sleep routes and `/server_info` exist only in dev mode
@@ -271,7 +273,9 @@ services:
        "--dtype", "${VLLM_CPU_DTYPE:-float16}",
        "--max-model-len", "${VLLM_MAX_MODEL_LEN:-8192}",
        "--enforce-eager",
-       "--enable-auto-tool-choice", "--tool-call-parser", "hermes"]
+       "--enable-auto-tool-choice", "--tool-call-parser", "hermes",
+       # the same judge on the processor: its JSON follows the card's rules
+       "--structured-outputs-config", '{"backend": "xgrammar", "disable_any_whitespace": true}']
     environment:
       VLLM_CPU_KVCACHE_SPACE: "${VLLM_CPU_KVCACHE_SPACE:-4}"
       HF_HUB_OFFLINE: "${VLLM_HF_OFFLINE:-0}"

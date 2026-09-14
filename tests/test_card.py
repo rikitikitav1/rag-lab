@@ -438,11 +438,13 @@ def test_the_run_snapshot_stamps_each_answering_role_placement(monkeypatch):
                         lambda role, spec: engines.Sampler({}, {}))
     monkeypatch.setattr(run_snapshot.card, "model_on_card",
                         lambda spec, name: {"llama3.1:8b": False, "bge-m3": True}[name])
-    named, _, placed, cache_keys, parsers = run_snapshot._by_role(engines.Resolved("llama3.1:8b", OLLAMA))
+    monkeypatch.setattr(run_snapshot.engines, "added_by", lambda spec, name: {"num_ctx": 8192})
+    named, _, placed, added, cache_keys, parsers = run_snapshot._by_role(engines.Resolved("llama3.1:8b", OLLAMA))
     assert placed == {Role.generation: False, Role.embedding: True}
+    assert added == {Role.generation: {"num_ctx": 8192}, Role.embedding: {"num_ctx": 8192}}
     assert parsers == {Role.generation: "none@1", Role.embedding: "none@1"}
     assert cache_keys == {}, "a local engine keeps no broker cache"
-    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 12
+    assert "on_card" in run_snapshot.KEYS and run_snapshot.SCHEMA == 13
 
 
 def test_a_run_that_reranks_names_the_reranker_and_keeps_what_was_read_while_roles_worked(monkeypatch):
@@ -823,3 +825,39 @@ def test_a_model_partly_on_the_card_is_handed_again_rather_than_taken_as_held(mo
     handed.clear()
     handler.take(OLLAMA, "gemma2:9b", allow_spill=True)
     assert handed == [], "a run that allows the processor keeps what it already has"
+
+
+def test_a_row_keeps_where_its_embedder_sat_during_the_call_after_the_generator_took_the_card(monkeypatch):
+    # a vLLM generator woke after the search, ollama let go, and the row read the embedder as unknown
+    from models.registry import Role
+    from use_cases import run_snapshot
+
+    reads = {"bge-m3": True}
+    monkeypatch.setattr(card, "model_on_card", lambda spec, name: reads.get(name))
+    with llm.placements():
+        llm._note_placement(Role.embedding, OLLAMA, "bge-m3")
+        reads.clear()
+        llm._note_placement(Role.embedding, OLLAMA, "bge-m3")
+        assert llm.placed_in_calls() == {"embedding": True}, "a later unknown does not erase a reading"
+        monkeypatch.setattr(run_snapshot.llm, "resolve", lambda role: engines.Resolved("bge-m3", OLLAMA))
+        monkeypatch.setattr(run_snapshot.llm, "sampler", lambda role, spec: engines.Sampler({}, {}))
+        monkeypatch.setattr(run_snapshot, "_window", lambda picked: 8192)
+        monkeypatch.setattr(run_snapshot, "_generator", lambda model: engines.Resolved("Qwen/Q", VLLM))
+        monkeypatch.setattr(run_snapshot.db, "fingerprint_or_none", lambda variant: None)
+        snap = run_snapshot.of_run(variant="baseline", use_rerank=False, k=5, ef_search=100,
+                                   distance_threshold=None)
+        assert snap["on_card"][Role.embedding] is True
+    assert llm.placed_in_calls() == {}, "the reading belongs to its row"
+
+
+def test_a_spill_in_any_call_of_the_row_stays_and_no_row_no_reading(monkeypatch):
+    from models.registry import Role
+
+    reads = iter([True, False, True])
+    monkeypatch.setattr(card, "model_on_card", lambda spec, name: next(reads))
+    with llm.placements():
+        for _ in range(3):
+            llm._note_placement(Role.embedding, OLLAMA, "bge-m3")
+        assert llm.placed_in_calls() == {"embedding": False}
+    monkeypatch.setattr(card, "model_on_card", lambda spec, name: pytest.fail("read outside a row"))
+    llm._note_placement(Role.embedding, OLLAMA, "bge-m3")

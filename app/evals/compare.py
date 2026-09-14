@@ -229,6 +229,7 @@ def _what_to_read_first(
     one_sampler: bool | None = None,
     one_budget: bool | None = None,
     cut: int = 0,
+    one_grammar: bool | None = None,
 ) -> str | None:
     if one_engine_name is False:
         return (
@@ -255,6 +256,12 @@ def _what_to_read_first(
         return (
             "arms whose judge answers were cut by different parsers read different texts: the cut "
             "shapes what the score is read from, so this contrast measures the parser"
+        )
+    if one_grammar is False:
+        return (
+            "arms whose judge decoded its JSON by different rules wrote different replies: with free "
+            "whitespace one reply wrote tabs until its limit, and without it the same row got another "
+            "reason and a score, so this contrast measures the grammar"
         )
     if one_sampler is False:
         return (
@@ -310,6 +317,11 @@ def _what_to_read_first(
         "than inheriting a zero. A reading that rests on the reason text holds only here, and "
         "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
     )
+
+
+# a stamp from before the server's JSON rules were read carries neither key, and reads as its own rule
+def _grammar_of(added: dict) -> str:
+    return f"{added.get('json_backend')}:{added.get('json_disable_any_whitespace')}"
 
 
 # per axis, because three axes carry three versions and their union is three by construction
@@ -377,7 +389,7 @@ def residencies(runs: dict[str, list]) -> dict:
 
     live = registered_names()
     seen, engines_seen, names_seen, prompts_seen, parsers_seen = {}, {}, {}, {}, {}
-    choices_seen, budgets_seen, cuts_seen = {}, {}, {}
+    choices_seen, budgets_seen, cuts_seen, grammars_seen = {}, {}, {}, {}
     gone = set()
     remote_judge = False
     for name, logs in runs.items():
@@ -386,6 +398,7 @@ def residencies(runs: dict[str, list]) -> dict:
         parsers = {axis: set() for axis in rejudge.AXES}
         choices = {axis: set() for axis in rejudge.AXES}
         budgets = {axis: set() for axis in rejudge.AXES}
+        grammars = {axis: set() for axis in rejudge.AXES}
         # judged before the sampler was stamped: beside stamped rows the arm cannot say it held one sampler
         bare = set()
         cuts = 0
@@ -417,6 +430,8 @@ def residencies(runs: dict[str, list]) -> dict:
                 elif stamp.get("engine"):
                     bare.add(axis)
                 cuts += bool(stamp.get(token_fields.JUDGE_CUT))
+                if isinstance(stamp.get("engine_added"), dict):
+                    grammars[axis].add(_grammar_of(stamp["engine_added"]))
         seen[name] = sorted(ids)
         # the address, because it is the one field every era of this record carries
         engines_seen[name] = sorted(addresses)
@@ -426,11 +441,13 @@ def residencies(runs: dict[str, list]) -> dict:
         choices_seen[name] = {axis: sorted(v, key=str) for axis, v in choices.items() if v and axis not in bare}
         budgets_seen[name] = {axis: sorted(v, key=str) for axis, v in budgets.items() if v and axis not in bare}
         cuts_seen[name] = cuts
+        grammars_seen[name] = {axis: sorted(v) for axis, v in grammars.items() if v}
     # an arm that recorded nothing cannot agree with one that did: silence is not a match
     one = _all_agree(seen)
     one_engine, one_prompt = _all_agree(engines_seen), _one_ruler(prompts_seen)
     one_parser = _one_ruler(parsers_seen)
     one_sampler, one_budget = _one_ruler(choices_seen), _one_ruler(budgets_seen)
+    one_grammar = _one_ruler(grammars_seen)
     one_name = _all_agree(names_seen)
     one_retrieval = _one_retrieval(runs)
     return {
@@ -446,6 +463,8 @@ def residencies(runs: dict[str, list]) -> dict:
         "one_judge_prompt": one_prompt,
         "judge_parsers_by_run": parsers_seen,
         "one_judge_parser": one_parser,
+        "judge_grammars_by_run": grammars_seen,
+        "one_judge_grammar": one_grammar,
         "judge_samplers_by_run": choices_seen,
         "one_judge_sampler": one_sampler,
         "judge_budgets_by_run": budgets_seen,
@@ -455,7 +474,7 @@ def residencies(runs: dict[str, list]) -> dict:
         "one_deterministic": one_retrieval,
         "remote_judge": remote_judge,
         "read_this_first": _what_to_read_first(
-            one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser,
+            one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser, one_grammar=one_grammar,
             remote_judge=remote_judge, one_sampler=one_sampler, one_budget=one_budget,
             cut=sum(cuts_seen.values()),
         ),

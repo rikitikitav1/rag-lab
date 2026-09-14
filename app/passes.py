@@ -63,12 +63,13 @@ def _on_card(picked) -> bool | None:
 
 
 # one reading per seat, kept: the row stamps the same reading the pass stopped or went on by
-def _read_spills(checked, allow_spill: bool) -> dict:
+def _read_spills(checked, allow_spill: bool, known: dict | None = None) -> dict:
     seen, off = {}, []
     for seat, picked in checked:
         if picked is None:
             continue
-        seen[seat.role] = on = _on_card(picked)
+        on = (known or {}).get(seat.role)
+        seen[seat.role] = on = _on_card(picked) if on is None else on
         if card.spilled_reading(picked.engine, on):
             off.append(f"{seat.role}={picked.name}")
     if off and not allow_spill:
@@ -119,6 +120,12 @@ class Pass:
         checked = [(s, now[s]) for s in self.seats if s.spill_from is not None and row >= s.spill_from]
         self._local.on_card = _read_spills(checked, self.allow_spill)
         return True
+
+    # read by the row's own calls: before the next row, another role's engine may hold the card and hide this one
+    def after_row(self, placed: dict) -> None:
+        checked = [(seat, _resolve(seat)) for seat in self.seats if placed.get(seat.role) is not None]
+        # one reading per seat per row: `on_card` answers with the call's reading from here on
+        self._local.on_card = getattr(self._local, "on_card", {}) | _read_spills(checked, self.allow_spill, known=placed)
 
     # the card as this thread's last row read it, for the row to stamp
     def on_card(self, role) -> bool | None:

@@ -132,3 +132,43 @@ def test_a_budget_changed_mid_pass_stops_it_as_a_reseat_does(monkeypatch):
     assert walk.before_row()
     with pytest.raises(passes.SeatChanged, match="max_tokens"):
         walk.before_row()
+
+
+def test_the_row_answers_with_what_its_calls_read_once_they_are_in(monkeypatch):
+    # the start of the row read a card another engine held, and the call saw the embedder on the cpu
+    monkeypatch.setattr(passes, "_resolve", lambda seat: engines.Resolved("bge-m3", OLLAMA))
+    monkeypatch.setattr(passes.card, "model_on_card", lambda spec, name: None)
+    walk = passes.Pass(None, (passes.Seat(Role.embedding),), allow_spill=True)
+    assert walk.before_row() and walk.on_card(Role.embedding) is None
+    walk.after_row({"embedding": False})
+    assert walk.on_card(Role.embedding) is False
+
+
+@pytest.mark.parametrize("sweep", [None, 1])
+def test_a_sweep_that_judges_none_of_its_leftovers_ends_them_rather_than_failing_the_experiment(monkeypatch, sweep):
+    # one row the judge cut at its budget every time failed the sweep, and the experiment with it
+    import job_queue
+    from job_handlers import judging
+
+    after = []
+    monkeypatch.setattr(passes, "_resolve", lambda seat: engines.Resolved("qwen", OLLAMA))
+    monkeypatch.setattr(passes, "_read_spills", lambda checked, allow_spill: {})
+    monkeypatch.setattr(job_queue, "is_cancelled", lambda id: False)
+    monkeypatch.setattr(judging, "_judge_log", lambda log_id, **kw: False)
+    monkeypatch.setattr(judging, "_bench_from", lambda o: SimpleNamespace(model=None, template=lambda p: "t"))
+    monkeypatch.setattr(judging, "require_role_ready", lambda role, **kw: None)
+    monkeypatch.setattr(judging, "require_card", lambda role, model=None: None)
+    monkeypatch.setattr(judging, "_refuse_a_second_judge", lambda run_name, model: None)
+    monkeypatch.setattr(judging, "_target_log_ids", lambda s, o: [42359])
+    monkeypatch.setattr(judging.experiment, "revive_for_run", lambda r: None)
+    monkeypatch.setattr(judging.Session, "__enter__", lambda self: None, raising=False)
+    monkeypatch.setattr(judging, "_sweep_again_if_rows_are_still_owed", lambda o, r: after.append("sweep"))
+    monkeypatch.setattr(judging.experiment, "try_aggregate_for_run", lambda r: after.append("aggregate"))
+    options = {"run_name": "r", "_job_id": 77, **({"sweep": sweep} if sweep else {})}
+    if sweep is None:
+        with pytest.raises(passes.NothingDone, match="0 of 1"):
+            judging.judge_answers(options)
+        assert after == [], "a first pass that judged nothing is a broken judge"
+    else:
+        judging.judge_answers(options)
+        assert after == ["sweep", "aggregate"]

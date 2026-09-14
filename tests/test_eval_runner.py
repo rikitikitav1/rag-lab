@@ -617,3 +617,28 @@ def test_a_resume_after_a_dead_worker_keeps_one_row_per_question():
     assert left == {"a": {"log_ids": [1], "outcome": "error", "failed": "http 500"}}
     todo, replaced = runner._split_answered(["a", "b"], rows)
     assert todo == ["b"] and list(replaced) == ["b"]
+
+
+def test_the_sequential_path_stops_on_an_embedder_its_own_call_saw_on_the_cpu(monkeypatch):
+    # read at the next row's start, a vLLM generator held the card and the embedder read as unknown
+    import engines
+    from stand_specs import OLLAMA, VLLM
+
+    during = {"call": False}
+    monkeypatch.setattr(runner.passes, "_resolve", lambda seat: engines.Resolved("bge-m3", OLLAMA)
+                        if seat.role == runner.Role.embedding else engines.Resolved("Qwen/Q", VLLM))
+    monkeypatch.setattr(runner.card, "model_on_card",
+                        lambda spec, name: False if during["call"] else (True if spec is VLLM else None))
+
+    def answer(text, run_name, spec):
+        during["call"] = True
+        runner.llm._note_placement(runner.Role.embedding, OLLAMA, "bge-m3")
+        during["call"] = False
+        return True
+
+    monkeypatch.setattr(runner, "_answer_one", answer)
+    monkeypatch.setattr(runner, "_release", lambda role="embedding", model=None: None)
+    spec = runner.RunSpec(variant="baseline", pipeline=runner.Pipeline.agent, model="Qwen/Q")
+    with pytest.raises(runner.card.CardNotHanded, match="embedding=bge-m3"):
+        runner._run_sequential(["q1", "q2"], "run", spec, job_id=None, allow_cpu=False)
+    assert runner._run_sequential(["q1", "q2"], "run", spec, job_id=None, allow_cpu=True) == (2, False)

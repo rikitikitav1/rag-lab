@@ -250,8 +250,8 @@ def judge_answers(options: dict) -> None:
         width=width,
         cancelled=stopped or None,
     )
-    # a forced pass over named rows can find each of them owing nothing, and that is not a broken judge
-    walk.close(owed=0 if force else len(log_ids), done=judged)
+    # a forced pass can find its rows owing nothing, and a sweep takes only rows that already failed: neither is broken
+    walk.close(owed=0 if force or options.get("sweep") else len(log_ids), done=judged)
     # a sweep after a cancellation queues the work again, which is the opposite of cancelling
     if run_name and not stopped:
         _sweep_again_if_rows_are_still_owed(options, run_name)
@@ -860,7 +860,9 @@ def _errored_metric(metrics: dict, axis: str, err: str) -> dict:
     was = metrics.get(axis) or {}
     # a row judged again is no longer skipped, and both marks at once read as neither
     was = {k: v for k, v in was.items() if k != "skipped"}
-    return {**was, "error": err[:_ERROR_CHARS], "attempts": was.get("attempts", 0) + 1}
+    # an axis the limit cut has no verdict stamp, and the cut counters read this mark instead
+    cut = {token_fields.JUDGE_CUT: True} if err.startswith(f"{judge.JudgeCut.__name__}:") else {}
+    return {**was, "error": err[:_ERROR_CHARS], "attempts": was.get("attempts", 0) + 1, **cut}
 
 
 def _run_axis(log_id, axis, verdict_fn, *args):

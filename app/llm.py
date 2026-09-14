@@ -2,6 +2,7 @@ import contextlib
 import contextvars
 import functools
 import json
+import re
 import threading
 from dataclasses import dataclass
 from typing import Any
@@ -10,14 +11,12 @@ import config
 import engines
 import logging_setup
 import token_fields
-from engines import answer_parsers
+from engines import answer_parsers, card
 from engines import vllm as vllm_engine
 from engines.lookup import Resolved
 from errors import StandFault
 from models.registry import EngineKind
 from openai import APIStatusError, OpenAIError
-
-# where the seeded engine answers; every other engine says so through its own `env_prefix`
 
 log = logging_setup.get_logger(__name__)
 
@@ -190,6 +189,40 @@ def carried(fn):
     return run
 
 
+# per row: by the row's stamp the next role may have taken the card, and the one before read as unknown
+_placed: contextvars.ContextVar[dict | None] = contextvars.ContextVar("llm_placed", default=None)
+
+
+@contextlib.contextmanager
+def placements():
+    token = _placed.set({})
+    try:
+        yield
+    finally:
+        _placed.reset(token)
+
+
+def placed_in_calls() -> dict:
+    return dict(_placed.get() or {})
+
+
+# a spill in any call of the row stays: that call answered with the processor's kernels
+def _note_placement(role, spec, name: str) -> None:
+    seen = _placed.get()
+    if seen is None:
+        return
+    try:
+        on = card.model_on_card(spec, name)
+    except StandFault:
+        raise
+    except Exception as e:
+        log.warning("llm.placement_unread", role=str(role), model=name, error=str(e))
+        on = None
+    key = str(getattr(role, "value", role))
+    if on is False or seen.get(key) is None:
+        seen[key] = on
+
+
 def _count(role, engine, model: str, prompt: int | None, completion: int | None,
            finish_reason: str | None = None, input_cut: bool = False) -> None:
     for tally in _tallies.get():
@@ -201,8 +234,10 @@ class InputOverWindow(ValueError):
     pass
 
 
-# cl100k reads Russian about a fifth longer than qwen and English about as long: divided, it never overcounts
-_OVERCOUNT = 1.25
+# against qwen2.5's own tokenizer on live rows and docs, cl100k reads Latin as long and Cyrillic up to 1.6 times longer
+_LATIN_DIVISOR = 1.02
+_CYRILLIC_EXTRA = 0.65
+_LETTER = re.compile(r"[^\W\d_]")
 
 
 @functools.lru_cache(maxsize=1)
@@ -212,19 +247,28 @@ def _encoding():
     return tiktoken.get_encoding("cl100k_base")
 
 
+def _cyrillic_share(text: str) -> float:
+    letters = _LETTER.findall(text)
+    return sum(1 for ch in letters if "Ѐ" <= ch <= "ӿ") / len(letters) if letters else 0.0
+
+
+# the share over the whole input: a Russian question beside English context already reads a tenth longer
 def _least_tokens(messages) -> int:
     texts = [m.get("content") if isinstance(m, dict) else getattr(m, "content", None) for m in messages]
-    return int(sum(len(_encoding().encode(t if isinstance(t, str) else json.dumps(t or ""))) for t in texts) / _OVERCOUNT)
+    texts = [t if isinstance(t, str) else json.dumps(t or "") for t in texts]
+    divisor = _LATIN_DIVISOR + _CYRILLIC_EXTRA * _cyrillic_share("\n".join(texts))
+    return int(sum(len(_encoding().encode(t)) for t in texts) / divisor)
 
 
 # ollama cuts an input longer than the window to its head and a tail, and answers as if it had read it all
-def _refuse_an_input_over_the_window(spec, name: str, messages) -> int | None:
+def _refuse_an_input_over_the_window(spec, name: str, messages) -> tuple[int | None, int | None]:
     if spec.kind is not EngineKind.ollama:
-        return None
+        return None, None
     window = engines.window_or_configured(spec, name)
-    if window and (least := _least_tokens(messages)) > window:
+    least = _least_tokens(messages)
+    if window and least > window:
         raise InputOverWindow(f"the input is at least {least} tokens against the {window}-token window of {name}")
-    return window
+    return window, least
 
 
 # the cut the check above could not see: ollama 0.32 answers a cut input with exactly this many prompt tokens
@@ -296,7 +340,7 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
     name = picked.name
     # no system at all is not an empty one: a template drops its default only for a system it was given
     messages = ([] if system is None else [{"role": "system", "content": system}]) + [{"role": "user", "content": user}]
-    window = _refuse_an_input_over_the_window(picked.engine, name, messages)
+    window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
     params = _params(role, schema, picked)
     resp = _complete(picked.engine, name, messages, params)
 
@@ -312,6 +356,8 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
         model=name,
         engine=picked.engine.name,
         prompt_tokens=usage.prompt_tokens,
+        # beside the server's count, the guard's estimate is calibrated from these lines
+        least_tokens=least,
         completion_tokens=usage.completion_tokens,
     )
     parsed = _parsed(picked, resp.choices[0].message, getattr(resp.choices[0], "finish_reason", None))
@@ -331,7 +377,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     params = _params(role, None, picked)
     if tools:
         params["tools"] = tools
-    window = _refuse_an_input_over_the_window(picked.engine, name, messages)
+    window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
     resp = _complete(picked.engine, name, messages, params)
 
     choice = resp.choices[0]
@@ -350,6 +396,7 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
         tool_calls=len(message.tool_calls or []),
         finish_reason=choice.finish_reason,
         prompt_tokens=usage.prompt_tokens,
+        least_tokens=least,
         completion_tokens=usage.completion_tokens,
     )
     parsed = _parsed(picked, message, choice.finish_reason)
@@ -407,6 +454,7 @@ def score_pairs(pairs: list, role="reranking") -> list[float]:
             said = _without_the_body(e)
             log.error("llm.rerank_failed", model=name, engine=spec.name, error=said)
             raise RuntimeError(f"LLM rerank failed ({name} on {spec.name}): {said}") from e
+        _note_placement(role, spec, name)
     log.info("llm.rerank", model=name, engine=spec.name, count=len(pairs))
     return scores
 
@@ -445,6 +493,7 @@ def _embeddings(picked, texts, role="embedding") -> list:
             resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
         except OpenAIError as e:
             raise _failed(e, picked.engine, name, "embed") from e
+        _note_placement(role, picked.engine, name)
     # on a cloud the tokens are the quota, so a reply without them stops the run; locally it is a gap
     usage = _usage(resp, picked.engine) if engines.is_cloud(picked.engine.kind) else getattr(resp, "usage", None)
     prompt = getattr(usage, "prompt_tokens", None)

@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -185,7 +186,26 @@ def added_by(spec: EngineSpec, model: str) -> dict:
         "batch_invariant": _vllm_env(spec).get("VLLM_BATCH_INVARIANT"),
         "started_at": started,
         "tool_calls_probed": vllm.known_probe(spec, model, started),
+        **_weights_as_served(spec),
     })
+
+
+_SERVED_AS = re.compile(r"\b(dtype|quantization|kv_cache_dtype)=([^,)\s]+)")
+_GRAMMAR = re.compile(r"StructuredOutputsConfig\(([^)]*)\)")
+_GRAMMAR_AS = re.compile(r"\b(backend|disable_any_whitespace)=([^,)\s]+)")
+
+
+# what the server loaded, not what the weights declare: `--dtype auto` and an AWQ checkpoint settle it at load
+def _weights_as_served(spec: EngineSpec) -> dict:
+    said = str(_asked(spec, "/server_info", "vllm_config") or "")
+    seen = {}
+    for key, value in _SERVED_AS.findall(said):
+        if value != "None":
+            seen.setdefault(key, value.strip("'\"").removeprefix("torch."))
+    # the rules a judge's JSON is decoded by: free whitespace let one reply write tabs until its limit
+    if grammar := _GRAMMAR.search(said):
+        seen |= {f"json_{key}": value.strip("'\"") for key, value in _GRAMMAR_AS.findall(grammar.group(1))}
+    return seen
 
 
 # `/server_info` exists only under VLLM_SERVER_DEV_MODE, and its absence is silence, not a false

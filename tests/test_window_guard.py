@@ -29,13 +29,50 @@ def test_an_input_past_the_window_never_reaches_ollama(monkeypatch):
     monkeypatch.setattr(llm.engines, "window_or_configured", lambda spec, name: 100)
     with pytest.raises(llm.InputOverWindow, match="window"):
         llm._refuse_an_input_over_the_window(OLLAMA, "qwen2.5:7b", [{"role": "user", "content": "слово " * 400}])
-    assert llm._refuse_an_input_over_the_window(OLLAMA, "qwen2.5:7b", [{"role": "user", "content": "short"}]) == 100
+    assert llm._refuse_an_input_over_the_window(OLLAMA, "qwen2.5:7b", [{"role": "user", "content": "short"}]) == (100, 0)
 
 
-def test_the_count_errs_low_so_a_fitting_input_is_never_refused():
-    # cl100k read Russian 1.21 times longer than qwen on the stand's own docs
-    text = "Семантический поиск находит куски корпуса по смыслу вопроса. " * 50
-    assert llm._least_tokens([{"content": text}]) * llm._OVERCOUNT <= len(llm._encoding().encode(text)) + 1
+# a live answer and a live context chunk from the stand, counted by qwen2.5's own tokenizer
+RUSSIAN_ANSWER = (
+    "Связь между признаком и предсказуемым результатом (целевой переменной) является **критически важным "
+    "фактором** при определении важности признаков и последующем выборе признаков [source]. Для оценки этой "
+    "связи используются такие метрики, как коэффициент корреляции Пирсона (для линейной связи между числовыми "
+    "переменными), точечно-бисериальная корреляция (для связи между бинарной и непрерывной переменной) и "
+    "\\(R^2\\) для непрерывных целевых переменных [source].\n\nОднако при использовании корреляции для выбора "
+    "признаков есть распространённые ошибки: корреляционные метрики, особенно \\(r\\), плохо улавливают "
+    "нелинейные связи, а также может игнорироваться избыточность — даже если два признака имеют умеренную "
+    "корреляцию с целевой переменной, один из них может быть избыточным, если они сильно коррелируют друг с "
+    "другом [source]."
+)
+RUSSIAN_QWEN = 255
+ENGLISH_CHUNK = (
+    "[redis-doc/commands/cluster-failover.md]\n# CLUSTER FAILOVER\n## Implementation details and notes\n"
+    "* `CLUSTER FAILOVER`, unless the **TAKEOVER** option is specified, does not execute a failover synchronously.\n"
+    "  It only *schedules* a manual failover, bypassing the failure detection stage.\n"
+    "* An `OK` reply is no guarantee that the failover will succeed.\n"
+    "* A replica can only be promoted to a master if it is known as a replica by a majority of the masters in the "
+    "cluster.\n  If the replica is a new node that has just been added to the cluster (for example after upgrading "
+    "it), it may not yet be known to all the masters in the cluster.\n  To check that the masters are aware of a new "
+    "replica, you can send `CLUSTER NODES` or `CLUSTER REPLICAS` to each of the master nodes and check that it "
+    "appears as a replica, before sending `CLUSTER FAILOVER` to the replica.\n* To check that the failover has "
+    "actually happened you can use `ROLE`, `INFO REPLICATION` (which indicates \"role:master\" after successful "
+    "failover), or `CLUSTER NODES` to verify that the state of the cluster has changed sometime after the command "
+    "was sent."
+)
+ENGLISH_QWEN = 271
+
+
+def test_the_estimate_never_passes_qwens_own_count_in_either_language():
+    # a flat 1.25 read this answer as 279 tokens, over its 255, and would refuse a fitting input
+    assert len(llm._encoding().encode(RUSSIAN_ANSWER)) / 1.25 > RUSSIAN_QWEN
+    assert llm._least_tokens([{"content": RUSSIAN_ANSWER}]) <= RUSSIAN_QWEN
+    assert 0.95 * ENGLISH_QWEN <= llm._least_tokens([{"content": ENGLISH_CHUNK}]) <= ENGLISH_QWEN
+
+
+def test_the_share_is_read_over_the_whole_input_not_per_message():
+    whole = llm._least_tokens([{"content": RUSSIAN_ANSWER}, {"content": ENGLISH_CHUNK}])
+    assert whole <= RUSSIAN_QWEN + ENGLISH_QWEN
+    assert llm._cyrillic_share(ENGLISH_CHUNK) == 0 and llm._cyrillic_share(RUSSIAN_ANSWER) > 0.95
 
 
 def test_a_cut_the_server_made_is_read_off_its_prompt_count():

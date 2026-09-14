@@ -1,4 +1,5 @@
 import config
+import engines
 import llm
 import logging_setup
 import version
@@ -10,8 +11,8 @@ import db
 
 log = logging_setup.get_logger(__name__)
 
-# 5 engine per role; 6 engine refused; 7 renamed; 8 where each role sat; 9 reranker; 10 parser; 11 cache key; 12 samplers
-SCHEMA = 12
+# 5 engine per role; 6 refused; 7 renamed; 8 placement; 9 reranker; 10 parser; 11 cache key; 12 samplers; 13 engine added
+SCHEMA = 13
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -46,6 +47,8 @@ KEYS = (
     "engines",
     # what a role asked of its engine and the engine would not carry: never read as applied
     "engine_refused",
+    # per role, what the engine set on its own: a vLLM and an ollama arm may run one model in two dtypes
+    "engine_added",
     # per role, what went out: a budget set on the model changes the run's ruler, and the record must say
     "samplers",
     # per role, read from the server: a generator half on the cpu answered with other kernels
@@ -62,8 +65,8 @@ ANSWERING = (Role.generation, Role.embedding)
 
 
 # a report must not die on an unreachable registry: the engine is extra, the run is the record
-def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict, dict]:
-    named, samplers, placed, cache_keys, parsers = {}, {}, {}, {}, {}
+def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict, dict, dict]:
+    named, samplers, placed, added, cache_keys, parsers = {}, {}, {}, {}, {}, {}
     for role in roles:
         try:
             chosen = picked if role is Role.generation else model_of(role)
@@ -73,12 +76,13 @@ def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict, dict]:
             named[role] = spec.name
             samplers[role] = llm.sampler(role, chosen)
             placed[role] = card.model_on_card(spec, chosen.name)
+            added[role] = engines.added_by(spec, chosen.name)
             if key := llm.cache_key_of(spec):
                 cache_keys[role] = key
             parsers[role] = answer_parsers.label(getattr(chosen, "parser", answer_parsers.NONE))
         except Exception as e:
             log.warning("run_snapshot.engine_unread", role=role, error=str(e))
-    return named, samplers, placed, cache_keys, parsers
+    return named, samplers, placed, added, cache_keys, parsers
 
 
 # by the role's own engine, and a failed read is unknown rather than a reason to stop the run
@@ -146,8 +150,9 @@ def of_run(
     # the agent's gate can call the reranker without `use_rerank`, and the record names it then too
     reranked = use_rerank if cross_encoder_used is None else cross_encoder_used
     roles = (*ANSWERING, Role.reranking) if reranked else ANSWERING
-    named, samplers, placed, cache_keys, parsers = _by_role(picked, roles)
+    named, samplers, placed, added, cache_keys, parsers = _by_role(picked, roles)
     # read while the role worked: a phased run writes its rows after the embedder has left the card
+    placed |= {role: on for role, on in llm.placed_in_calls().items() if on is not None}
     placed |= placed_during or {}
     common = {
         "schema": SCHEMA,
@@ -167,6 +172,7 @@ def of_run(
         "context_length": _window(picked),
         "engines": named,
         "engine_refused": {role: seen.dropped for role, seen in samplers.items()},
+        "engine_added": added,
         "samplers": {role: seen.sent for role, seen in samplers.items()},
         "on_card": placed,
         "answer_parsers": parsers,
