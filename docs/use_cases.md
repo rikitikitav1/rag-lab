@@ -14,7 +14,7 @@ Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthroug
 curl -sX POST localhost:8000/v1/chat/question -H 'Content-Type: application/json' \
   -d '{"text":"What is a hash table?"}' | python3 -m json.tool
 ```
-Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Add `"rerank": true` to apply the cross-encoder for this single request. It is off by default since 30.08 (the generator the agent needs takes its room on the card), and it costs 86 ms a question on the card against 2.76 s on CPU.
+Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Reranking is off by default (the generator the agent needs takes its room on the card), and the chat answers 409 to `"rerank": true` in the default layout, because the reranker and the generator are two engines of the card. A run can rerank once the `rerank` profile is up ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)); scoring costs 86 ms a question on the card.
 
 ## Scenario 2: mini-eval from scratch to numbers
 
@@ -98,11 +98,9 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=elapsed&sort_order=desc" | 
 ## Scenario 6: engines, models and roles
 
 ```bash
-# what the seed registered: ollama, vllm (the judge) and vllm-rerank
+# what the seed registered: every engine under `engines:` in config.yaml, six of them
 curl -s localhost:8000/v1/engine | python3 -m json.tool
-# an engine the seed does not register: vLLM on the processor, up with its profile (stand_modes.md, mode 4)
-curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
-  -d '{"name":"vllm-cpu","kind":"vllm","env_prefix":"VLLM_CPU","placement":"cpu"}'
+# POST is for an engine the seed does not know, a cloud broker for one (stand_modes.md, "A cloud engine");
 # `vllm` again is a 409: one row per engine name, and the seed made this one; the address comes
 # from VLLM_BASE_URL, never from the row
 curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
@@ -110,7 +108,7 @@ curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
 # ask the engine itself whether it answers, by the id the list shows
 curl -s localhost:8000/v1/engine/<id>/live | python3 -m json.tool
 # register a model: an engine that pulls gets a pull job, one that does not is asked whether it serves the name
-curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' -d '{"name":"qwen2.5:14b"}'
+curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' -d '{"name":"qwen2.5:14b","engine":"ollama"}'
 curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' \
   -d '{"name":"Qwen/Qwen2.5-7B-Instruct","engine":"vllm-cpu"}'
 # list models / roles; one name may live on two engines, so the list names the engine
@@ -125,7 +123,7 @@ curl -sX POST localhost:8000/v1/job -H 'Content-Type: application/json' \
 
 ## Scenario 7: prompt versioning
 
-Prompt sources live in `prompts/<purpose>.v<N>.txt` and are seeded into the DB. To ship a new version: add `prompts/generate_answer.v2.txt`, re-run the seed, then activate it.
+Prompt sources live in `prompts/<enum member>.v<N>.txt` (`generate_answer` for the purpose `generate.answer`) and are seeded into the DB. To ship a new version: add the next number, `prompts/generate_answer.v4.txt` while v1 to v3 exist, re-run the seed, then activate it.
 
 ```bash
 docker compose run --rm seed                                  # loads new prompt versions (inactive)
@@ -201,7 +199,7 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=id&sort_order=desc&limit=6"
 # per-run numbers once a run is judged
 docker compose exec rag-lab python -m evals.generation_metrics paraphrased_ru_agent_<ts>_k_05
 ```
-Set temperature to 0 (config `llm.roles.generation`) so the swept parameter is the only variable. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
+Every arm takes the generator's sampler (`temperature: 0.1` by default), so the arms differ only in the swept parameter; sampling still moves answers between two runs of one arm, and the floors in the README say by how much. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
 
 ## Command reference
 
@@ -222,7 +220,7 @@ uv sync                 # install from uv.lock
 uv add <pkg>            # add a dependency
 
 # Rebuild images (after editing Dockerfile / pyproject / uv add)
-docker compose build    # rebuilds ALL app services (rag-lab, worker, seed, bootstrap)
+docker compose build    # rebuilds ALL app services (rag-lab, worker, seed, bootstrap, repos-owner)
 # GOTCHA: compose keeps a separate image per build service. After `uv add` rebuild with no args,
 #         otherwise worker/seed stay on the old image and crash on ModuleNotFoundError.
 
