@@ -1,0 +1,53 @@
+direction: down
+
+up: "scripts/up.sh, read left to right" {
+  grid-rows: 1
+  grid-gap: 48
+  cpu: "no: it says why,\nand offers\nscripts/up.sh --cpu" {style.stroke-dash: 3}
+  card: "Docker sees the card\nthrough CDI?" {shape: diamond}
+  judge: "the judge's model\nread from config.yaml"
+  free: "vLLM about to start:\nollama's models unloaded\nso it finds the card free"
+  compose: "docker compose up -d"
+  card -> cpu: no {style.stroke-dash: 3}
+  card -> judge: yes
+  judge -> free -> compose
+}
+
+postgresql: "postgresql"
+dbmate: "dbmate: migrations"
+seed: "seed: prompts\nand the question bank"
+
+ollama: "ollama"
+ollama_cpu: "ollama-cpu"
+vllm: "vllm: takes the card first;\nthe first start downloads\nthe weights"
+
+bootstrap: "bootstrap, read left to right" {
+  grid-rows: 1
+  grid-gap: 48
+  sleep: "vllm put to sleep,\nunless a job\nholds the card"
+  rows: "model rows from config,\nroles seated; vLLM rows\nfilled from what it serves"
+  reconcile: "ollama reconciled: a missing\nmodel queues a pull, the\nrepetition penalty is written in"
+  index: "a corpus indexed only if\nthe database holds none;\nmissing vector indexes built"
+  embed: "questions without\na vector queued"
+  sleep -> rows -> reconcile -> index -> embed
+}
+
+repos_owner: "repos-owner:\nthe volume to the host's user"
+api: "rag-lab: the API" {style.bold: true}
+worker: "worker: the job queue" {style.bold: true}
+profiles: "by --profile:\nvllm-embed, vllm-rerank" {style.stroke-dash: 3}
+
+up -> postgresql
+up -> ollama
+up -> ollama_cpu
+up -> vllm
+postgresql -> dbmate: healthy
+dbmate -> seed: done
+seed -> bootstrap: done
+ollama -> bootstrap: healthy
+ollama_cpu -> bootstrap: healthy
+vllm -> bootstrap: healthy
+bootstrap -> api: done
+bootstrap -> worker: done
+repos_owner -> worker: done
+bootstrap -> profiles: "done" {style.stroke-dash: 3}

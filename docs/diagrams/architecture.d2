@@ -28,6 +28,11 @@ lab: rag-lab (docker compose, runtime) {
     gen: llama3.1:8b
     embed: bge-m3
     para: gemma2:9b
+    ragas: "qwen2.5:7b\n(RAGAS guest)"
+  }
+
+  ollama_cpu: "ollama-cpu (processor)" {
+    ragas_embed: "bge-m3\n(RAGAS guest's embedder)"
   }
 
   vllm: "vLLM (GPU),\nasleep unless it holds the card" {
@@ -56,6 +61,7 @@ lab.api -> lab.postgres: enqueue jobs {style.stroke-dash: 3}
 lab.worker -> lab.postgres: claim jobs\nFOR UPDATE SKIP LOCKED
 
 lab.worker.default -> lab.ollama: generate / embed
+lab.worker.default -> lab.ollama_cpu: guest embeddings
 lab.worker.default -> lab.vllm: judge
 lab.worker.default -> lab.rerank: score pairs
 lab.worker.default -> lab.vllm: "hand the card:\nsleep one engine, wake the other" {style.stroke-dash: 3}
