@@ -1,10 +1,34 @@
 # Stand modes: how to switch the stand, and how to come back
 
 This page holds one question: how to put the stand into a given layout of engines and roles, what
-that costs, and how to leave it. What exists (services, profiles, variables) is in the README
-tables; the scenarios in [use_cases.md](use_cases.md) run on a stand that is already up and point
+that costs, and how to leave it. Services and profiles are in the README table, variables with their
+defaults in [`.env.example`](../.env.example); the scenarios in [use_cases.md](use_cases.md) run on a stand that is already up and point
 here for the mode they need. Measured numbers live in the [experiment journal](experiments.md); this
 page gives only the constants of the device and orders of magnitude.
+
+| Mode | Up beyond postgres, API, worker | Holds the card | Where the roles sit |
+|---|---|---|---|
+| 1. Default | `ollama`, `ollama-cpu`, `vllm` | `vllm` for the judge, `ollama` for the rest, handed through the queue | generation, embedding, paraphrasing, ragas: `ollama`; judging: `vllm`; ragas_embedding: `ollama-cpu`; reranking seated, its service down |
+| 2. With reranking | + `vllm-rerank`, 0.3 of the card | as 1, and the reranker for one scoring pass | reranking: `vllm-rerank`; the rest as 1 |
+| 3. The embedder on vLLM | + `vllm-embed` | as 1, and `vllm-embed` for each embedding call; the chat answers 409 | embedding: `vllm-embed`, with its own corpus variant; the rest as 1 |
+| 4. On the processor | + `vllm-cpu`, its whole model in host memory: `free` first | a role on the processor never takes it | the moved role: `vllm-cpu` or `ollama-cpu`; the rest as 1 |
+| 5. Generation on vLLM | as 1 | `vllm`: generator and judge in one process; `ollama` for the embedder; the chat answers 409 | generation: `vllm`; the rest as 1 |
+| 6. The judge on ollama | as 1 | `ollama`; the judge's residency restarts at every judging pass | judging: `qwen2.5:7b` on `ollama`; the rest as 1 |
+| 8. Without a card | `ollama-cpu` only, no `ollama`, no `vllm` | nobody | every role on `ollama-cpu`; no reranker; a timeout of 600 s |
+| A cloud engine | nothing: a remote broker | the cloud role never takes it | generation, judging or ragas on the broker; the rest as 1 |
+
+Mode 7, the card is stuck, is a failure rather than a layout; its signs and fixes are in its section.
+
+How the card moves between engines, in every mode that has one:
+
+<details>
+<summary>Diagram: how the card moves between engines</summary>
+
+![Card handover: who asks, the one road, each step and where a failed check leads](diagrams/card_handover.svg)
+
+</details>
+
+After a handover to a vLLM that serves the generator, the job also asks the woken server whether it returns tool calls; a failed probe is recorded as the probe's, not as a lost card.
 
 **Where you are, read in this order, every time:** the ops MCP tool `engines` (who holds the card,
 which vLLM is asleep, which engine answers), then `GET /v1/health/stand` (where each role's model
@@ -23,10 +47,15 @@ it for its own call): a sleep or a wake sent to a server by hand is invisible to
 And a mode with a profile is left in the opposite order it was entered: seat the role back first,
 then stop the service, or the role reads as down and `/readiness` turns `degraded`.
 
+What the environment changes between modes: `LLM_TIMEOUT` holds in the default mode and `LLM_TIMEOUT_CPU`
+replaces it in mode 8; the card share of each vLLM service is its own variable (`VLLM_GPU_UTIL`,
+`VLLM_RERANK_GPU_UTIL`, `VLLM_EMBED_GPU_UTIL`) and matters only while its profile is up; `VLLM_CPU_*` sets vLLM on
+the processor for the `cpu` profile. Every other variable is the same in every mode.
+
 ## 1. Default
 
 ```bash
-docker compose up -d
+scripts/up.sh
 ```
 
 The generator (`llama3.1:8b`), the embedder (`bge-m3`) and the paraphraser (`gemma2:9b`) sit on
@@ -38,7 +67,7 @@ not counted as a fault while no run asks for reranking.
 
 What the record says: the judge's axes carry `engine_name: vllm` and a residency read off the
 server's process start (`vllm /metrics process start`). Numbers judged this way compare with each
-other; numbers judged before 11.09 used another judge on another engine and compare only in mode 6.
+other; numbers judged before 2026-09-11 used another judge on another engine and compare only in mode 6.
 
 ## 2. With reranking
 
@@ -59,8 +88,6 @@ Leave it: stop asking for reranking, then `docker compose stop vllm-rerank`.
 
 ```bash
 docker compose --profile embed up -d vllm-embed
-curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
-  -d '{"name":"vllm-embed","kind":"vllm","env_prefix":"VLLM_EMBED","placement":"gpu"}'
 curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' \
   -d '{"name":"BAAI/bge-m3","engine":"vllm-embed"}'
 curl -sX PUT localhost:8000/v1/role/embedding -H 'Content-Type: application/json' -d '{"model_id": <id>}'
@@ -94,8 +121,6 @@ variant indexed by vLLM stays refused under ollama's embedder until it is remove
 ```bash
 free -g && docker stats --no-stream
 docker compose --profile cpu up -d vllm-cpu
-curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
-  -d '{"name":"vllm-cpu","kind":"vllm","env_prefix":"VLLM_CPU","placement":"cpu"}'
 ```
 
 A role on a processor engine never takes the card. The price is host memory, not the card:
@@ -127,14 +152,14 @@ What the record says: the generator's engine is `vllm`, and its window is the se
 
 Leave it: seat `generation` back on `llama3.1:8b` on `ollama`.
 
-## 6. The judge on ollama: the ruler of arcs 1 to 4
+## 6. The judge on ollama: the ruler of the older journal entries
 
 ```bash
 curl -sX PUT localhost:8000/v1/role/judging -H 'Content-Type: application/json' \
   -d '{"model_id": <id of qwen2.5:7b on ollama>}'
 ```
 
-Every number judged before 11.09 was judged by `qwen2.5:7b` on ollama, and this is the only mode
+Every number judged before 2026-09-11 was judged by `qwen2.5:7b` on ollama, and this is the only mode
 that reproduces them. The judge and the generator then share one ollama, so each run evicts the
 judge and its residency starts again at every judging pass; its noise floor across reloads is in the
 journal.
@@ -226,6 +251,56 @@ Leave it on a host with a card: `scripts/up.sh` first (drop `COMPOSE_FILE` from 
 each role back on its card engine with `PUT /v1/role`. The other order fails: with the card engines
 not started the door refuses the seat with 503.
 
-## After MR 3: a cloud engine
+## A cloud engine
 
-Written with the cloud engine.
+```bash
+# in .env, one pair per engine row, named by its env_prefix; compose reads .env only on `up`
+#   GONKA_BASE_URL=...   GONKA_API_KEY=...
+docker compose up -d worker rag-lab
+curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
+  -d '{"name":"gonka","kind":"openai_compatible","env_prefix":"GONKA","placement":"remote"}'
+curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' \
+  -d '{"name":"deepseek-ai/DeepSeek-V4-Flash-0731","engine":"gonka"}'
+```
+
+A model whose answers carry a thinking trace or call markup gets its parser on the model row,
+`PATCH /v1/model/{id}` with `answer_parser`, one of the parsers the stand has. Then use it: seat a role
+with `PUT /v1/role`, or name it in one arm only, as the generator of a `generation` arm, the `judge_model`
+of a rejudge or the `guest_model` of a guest pass.
+
+<details>
+<summary>Diagram: a cloud call</summary>
+
+![A cloud call: how it is asked, what an answer passes through, and where each refusal leads](diagrams/cloud_call.svg)
+
+</details>
+
+A cloud role never takes the card, and a call answers in seconds. What differs from a local engine:
+
+- The broker keeps a cache keyed by the whole request body, so every call carries its job in `user`: a
+  second pass is a second job and a fresh answer, not a copy from the cache.
+- Tokens are counted on every call, and a broker that sends no usage stops the run. Money is read from
+  the broker: the ops MCP tool `broker_balances`, and each job's balance before and after. The balance
+  belongs to the key, so anything else spent on that key lands in it too.
+- A failure stops the run instead of failing one row: a refused key (401, 403), a quota or a rate limit
+  (402, 429), a 5xx after the client's own four retries.
+- At gonka a 429 has two causes. One is a daily cap counted by UTC (on 2026-09-13 it came after about 1.7
+  million tokens on one key); the other is a throttle on the rate of calls, which came after about
+  twenty calls on 2026-09-14 and did not care which key made them. A 429 that names its pause in
+  `Retry-After` (up to 600 s) is waited and the call asked again, up to five times in a row, and the
+  wait lands on the job as `paced` and `paced_seconds` beside its tokens. A 429 without a pause, with a
+  longer one, or past the fifth wait stops the run; it is queued again by hand, after 00:00 UTC for
+  the cap, and a guest pass queued again answers only the rows it still owes. Every 429 writes the
+  broker's rate headers to the worker's log. On 2026-09-14 gonka's 429 named a pause of 5 s and sent no
+  `x-ratelimit-*` headers: its throttle is a short pause, and the rule waits it out.
+- The broker decides the weights, their precision and the node. A cloud judge moved 27% of its
+  verdicts between two passes in different hours
+  ([the entry](experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md)), so a floor is measured in
+  one window with the arms it is read against.
+
+What the record says: the engine row has `placement: remote`, a remote judge has no residency and
+`compare_pools` says so (`remote_judge: true`), and the run's tokens and the jobs' balances sit beside
+its verdicts.
+
+Leave it: seat the roles back on their local engines. The engine row can stay; `DELETE /v1/engine/{id}`
+removes it once no model points at it.

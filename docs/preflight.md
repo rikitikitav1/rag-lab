@@ -5,7 +5,7 @@ whether the code is right on fixed inputs; this asks whether the stand is still 
 numbers will claim it was.
 
 ```bash
-python scripts/preflight_grid.py                       # sixteen checks, exit 1 on any failure
+python scripts/preflight_grid.py                       # eighteen checks, exit 1 on any failure
 python scripts/preflight_grid.py --verify RUN [RUN..]  # a finished run instead of the stand
 ```
 
@@ -30,7 +30,7 @@ Most of these checks exist because the corresponding trap had already cost a gri
 true, the incident is named below, because a check whose reason is forgotten is a check somebody
 deletes.
 
-## The sixteen checks
+## The eighteen checks
 
 ### Is the code that runs the code we think runs
 
@@ -59,16 +59,24 @@ turns a forty-minute arm into a day and looks like nothing but slowness.
 It names the role beside the model, because a job runs one model and the others being resident
 proves nothing about the one that matters.
 
-The cross-encoder reranker is torch inside the API and worker processes rather than an ollama model,
-so this check cannot see where it sits, and a probe from outside cannot either: `docker compose exec`
-starts a new process where the model is never loaded. What the preflight reports about the card is
-therefore the driver's own numbers, free and total, which are honest from any process. Where the
-reranker actually sits is asked by the run, in the process that holds it, and a run refuses on a
-spill exactly as it refuses when ollama drops a model to the CPU.
+The reranker is a role like the others, on the `vllm-rerank` server, and is read the same way. An
+asleep vLLM is reported as not on the card rather than as a spill, and the line ends with the
+driver's own numbers for the card, free and total.
 
-The incident that put it there: on 30.08 a paraphrasing model left resident with
+The incident that put it there, from when the reranker still ran inside the processes: on 2026-08-30
+a paraphrasing model left resident with
 `keep_alive: Forever` took 6.4 GB of an 8 GB card, the reranker fell back to the CPU with a warning,
 and the run would have taken thirteen times longer with identical numbers. It was caught by eye.
+
+**`roles_match_the_config`** compares the model `config.yaml` declares for each role against the one
+the database serves, by engine as well as by name. Which model serves a role is switched at runtime
+and outlives the run that switched it, so a file that says otherwise misleads the next reader about
+what the numbers were measured with. `PUT /v1/role` or an edit to the file settles it.
+
+**`role_engines_answer`** asks each role's engine whether it answers, the same reading `/readiness`
+reports as `roles_down`, and whether an ollama model sits whole on the card. A role whose server is
+down does not stop the stand at start; it fails the first job that calls it, hours into a queue. The
+reranking role is not counted while nothing asks for reranking.
 
 **`window_matches_config`** compares the context window the config declares against the window the
 server reports for the generator that is actually loaded. A stray environment variable in a running
@@ -117,7 +125,7 @@ construction, and the record says the run used hnsw at some depth. Nothing anywh
 substitution.
 
 It asks every indexed variant because the crossover moves with what is in the table, and because it
-turned out to be a property of the **variant**, not of the table alone: on 30.08 a variant with
+turned out to be a property of the **variant**, not of the table alone: on 2026-08-30 a variant with
 7,102 rows had its planner walking its smaller partial index to 400 while two variants of 12,102 and
 13,068 rows in the same table stopped at 200. Checking only the served variant is how the crossover
 moved twice before anybody noticed.
@@ -139,8 +147,8 @@ not the gate on depth; that gate is `max_mrr_loss`, measured on the full criteri
 
 **`marks_are_reachable`** finds questions whose marked source file exists in no chunk of the served
 variant. Such a question can never be answered correctly: it counts as a miss on every arm, in every
-comparison, forever. On the sets a verdict is read on (`retrieval.criterion_sets` and
-`retrieval.veto_sets`) this refuses; elsewhere it prints a note. The list of decisive sets is asked
+comparison, forever. On the sets a verdict is read on (`verdict.criterion_sets` and
+`verdict.veto_sets`) this refuses; elsewhere it prints a note. The list of decisive sets is asked
 of the worker rather than written in the script, because the script's own copy said
 `paraphrased_ru` for a day after every measurement had moved to `paraphrased_v2_ru`, and nothing
 complained.
@@ -157,7 +165,7 @@ disk declares (`keyword_query`, `keyword_rank`, `keyword_norm`, `query_lang`, an
 against the switches recorded in the most recent answer log. It runs `python -c` inside the worker
 container, which reads `config.yaml` fresh, so it sees the file rather than the memory of the
 process that is actually serving: a worker running yesterday's code is caught by
-`worker_started_after_newest_source`, not here. A switch flipped between two arms is invisible in
+`worker_newer_than_sources`, not here. A switch flipped between two arms is invisible in
 the numbers, and both arms look like valid measurements of different things.
 
 It compares the **resolved** depth rather than the declared one, and resolves it for the variant the
@@ -168,7 +176,7 @@ logged row was taken on.
 **`halves_of_pairs_are_counted`** prints how many originals are missing half of their pair. Every
 original produces two rows, an English paraphrase and its Russian translation, and a job that died
 between them leaves a half. That is a fact worth seeing and not a reason to stop, so it prints as a
-note. Standing among the sixteen checks made it look like a gate with a permanently green
+note. Standing among the checks made it look like a gate with a permanently green
 light, which is why it was moved out.
 
 ## `--verify`: the same idea, after the fact
@@ -179,7 +187,7 @@ mean anything:
 - one row per question, no duplicates, and the same question set across the runs being compared;
 - fewer than a tenth of rows are errors;
 - for agent runs, the snapshot carries the orchestrator and the context window, and there is exactly
-  one of each across the run. An options payload without an orchestrator silently runs the
+  one of each across the run. A row without an orchestrator was answered by the retired
   hand-rolled loop, which is a different system;
 - every setting in `PINNED` is identical across the arms: corpus fingerprint, variant and its cut
   policy, keyword switches, depth, `k`, hops, gates, context window, reranking, distance threshold,
