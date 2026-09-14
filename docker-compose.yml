@@ -47,7 +47,7 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
       # the chat answers in this process, and it read no timeout but its own default
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       # the tree is mounted: bytecode written here outlived a restart as a mutant the tests had made
       PYTHONDONTWRITEBYTECODE: "1"
       <<: *engine-env
@@ -105,7 +105,7 @@ services:
       <<: *engine-env
       HF_TOKEN: ${HF_TOKEN:-}
       # the acceptance probe calls the model, and it waited the code's default whatever the stand was told
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       # as root on the mounted tree, it left bytecode the host could not remove
       PYTHONDONTWRITEBYTECODE: "1"
     depends_on:
@@ -158,7 +158,7 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       HOME: /tmp
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
       # read by the judge and capped by the slots ollama was started with
       JUDGE_WIDTH: ${JUDGE_WIDTH:-1}

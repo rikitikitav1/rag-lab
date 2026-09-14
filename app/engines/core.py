@@ -10,7 +10,7 @@ from models.registry import EngineKind, Placement
 from openai import OpenAI
 from redaction import redact
 
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "300"))
 
 SAMPLER_KEYS = samplers.KEYS
 
