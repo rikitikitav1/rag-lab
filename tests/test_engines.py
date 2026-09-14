@@ -233,7 +233,10 @@ def test_ollama_adds_the_window_it_was_started_with(monkeypatch):
     from engines import ollama
 
     monkeypatch.setattr(ollama, "context_length", lambda model, spec=None: 8192)
-    assert engines.added_by(OLLAMA, "qwen2.5:7b") == {"num_ctx": 8192}
+    monkeypatch.setattr(ollama, "repetition_penalty_served", lambda model, spec=None: 1.1)
+    monkeypatch.setattr(ollama, "server_version", lambda spec=None: "0.32.0")
+    assert engines.added_by(OLLAMA, "qwen2.5:7b") == {"num_ctx": 8192, "repetition_penalty": 1.1,
+                                                      "server_version": "0.32.0"}
 
 
 def test_a_server_that_answers_nothing_leaves_the_key_out(monkeypatch):
@@ -241,6 +244,8 @@ def test_a_server_that_answers_nothing_leaves_the_key_out(monkeypatch):
     from engines import ollama
 
     monkeypatch.setattr(ollama, "context_length", lambda model, spec=None: None)
+    monkeypatch.setattr(ollama, "repetition_penalty_served", lambda model, spec=None: None)
+    monkeypatch.setattr(ollama, "server_version", lambda spec=None: None)
     assert engines.added_by(OLLAMA, "qwen2.5:7b") == {}
 
 
@@ -377,3 +382,32 @@ def test_the_stamp_names_the_rules_the_judge_json_was_decoded_by(monkeypatch):
     monkeypatch.setattr(core, "_asked", lambda spec, path, key: said if key == "vllm_config" else None)
     added = engines.added_by(VLLM, "m")
     assert added["json_backend"] == "xgrammar" and added["json_disable_any_whitespace"] == "True"
+
+
+def test_the_penalty_ollama_applies_is_the_model_s_else_the_measured_default_of_its_version(monkeypatch):
+    # 0.32.0 applied 1.1 where the Modelfile named none, byte for byte; a version never measured is unknown
+    from engines import ollama
+
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"parameters": 'num_ctx 16384\nrepeat_penalty 1.2\nstop "<x>"'})
+    assert ollama.repetition_penalty_served("m") == 1.2
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"parameters": 'stop "<x>"'})
+    monkeypatch.setattr(ollama, "server_version", lambda spec=None: "0.32.0")
+    assert ollama.repetition_penalty_served("m") == 1.1
+    monkeypatch.setattr(ollama, "server_version", lambda spec=None: "0.33.1")
+    assert ollama.repetition_penalty_served("m") == "unknown"
+
+    def silent(model, spec=None):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(ollama, "shown", silent)
+    assert ollama.repetition_penalty_served("m") is None, "an unread server is absent in the stamp, not a guess"
+
+
+def test_the_judge_s_vllm_says_the_penalty_its_model_file_would_apply(monkeypatch, tmp_path):
+    from engines import vllm
+
+    (tmp_path / "generation_config.json").write_text('{"repetition_penalty": 1.05, "temperature": 0.7}')
+    monkeypatch.setattr(vllm, "_snapshot", lambda repo: tmp_path)
+    assert vllm.model_default("Qwen/Q", "repetition_penalty") == 1.05
+    monkeypatch.setattr(vllm, "_snapshot", lambda repo: None)
+    assert vllm.model_default("Qwen/Q", "repetition_penalty") is None

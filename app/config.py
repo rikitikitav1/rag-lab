@@ -204,6 +204,7 @@ class LlmCfg(_Strict):
     base_url: str
     roles: dict[str, RoleCfg]
     context_length: int
+    repetition_penalty: float
 
     # a role on another engine is registered through `/v1/model`, not pulled through `/api/pull`
     @property

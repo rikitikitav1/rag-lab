@@ -6,6 +6,15 @@ import pytest
 sys.dont_write_bytecode = True
 
 
+# every stamp reads each ollama model's parameters and the server's version; a test that means them patches its own
+@pytest.fixture(autouse=True)
+def no_ollama_reads(monkeypatch):
+    from engines import ollama
+
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {})
+    monkeypatch.setattr(ollama, "server_version", lambda spec=None: None)
+
+
 @pytest.fixture
 def client(monkeypatch):
     import bootstrap

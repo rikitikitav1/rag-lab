@@ -129,6 +129,8 @@ engines:
 llm:
   # what we expect OLLAMA_CONTEXT_LENGTH to be; the server is the authority
   context_length: 8192          # tokens
+  # held in every ollama model a role uses: its OpenAI door drops a penalty per call, and a pull resets the model
+  repetition_penalty: 1.1
   base_url: http://ollama:11434
   # in the order the pipeline uses them
   roles:
@@ -137,7 +139,7 @@ llm:
     # 8b: gemma3 reports no tool calling in ollama, so the agent path refuses every question
     generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
     # evaluation on vLLM: the same scale without ollama's drift, served by `vllm`
-    judging:      { model: Qwen/Qwen2.5-7B-Instruct-AWQ, engine: vllm, options: { max_tokens: 1024, temperature: 0, seed: 0 } }
+    judging:      { model: Qwen/Qwen2.5-7B-Instruct-AWQ, engine: vllm, options: { max_tokens: 1024, temperature: 0, seed: 0, repetition_penalty: 1.05 } }
     # the guest axes: 1024 cut 36 of 338 calls, 4096 none; a 16384 window holds the inputs 8192 cut, and fits the card
     ragas:        { model: qwen2.5:7b-w16384, options: { max_tokens: 4096, temperature: 0, seed: 0 } }
     # answer relevancy embeds a handful of texts a row: on the processor, so the card holds the guest's model alone

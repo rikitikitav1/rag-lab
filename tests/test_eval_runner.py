@@ -642,3 +642,44 @@ def test_the_sequential_path_stops_on_an_embedder_its_own_call_saw_on_the_cpu(mo
     with pytest.raises(runner.card.CardNotHanded, match="embedding=bge-m3"):
         runner._run_sequential(["q1", "q2"], "run", spec, job_id=None, allow_cpu=False)
     assert runner._run_sequential(["q1", "q2"], "run", spec, job_id=None, allow_cpu=True) == (2, False)
+
+
+def test_a_run_s_generation_sampler_reaches_the_generator_and_no_other_role(monkeypatch):
+    # on vLLM the judge and the generator are one model row, so the arm's penalty cannot live on the row
+    import engines
+
+    seen = []
+    monkeypatch.setattr(runner, "_target_texts", lambda set_name, ids: ["q1"])
+    monkeypatch.setattr(runner.db, "corpus_variants", lambda: [{"variant": "baseline"}])
+    monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: False)
+    monkeypatch.setattr(runner.search_depth, "resolve", lambda *a, **kw: 100)
+    monkeypatch.setattr(runner, "_walks_the_index", lambda variant, depth: True)
+    monkeypatch.setattr(runner.job_queue, "enqueue", lambda *a, **kw: None)
+    from models.registry import EngineKind, Placement
+
+    vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    picked = engines.Resolved("Qwen/Q", vllm)
+
+    def answer(text, **kw):
+        seen.append((runner.llm.sampler("generation", picked).sent, runner.llm.sampler("judging", picked).sent))
+        return SimpleNamespace(failed=None, outcome="answered")
+
+    monkeypatch.setattr(runner.agent, "run", answer)
+    runner.run("run", set_name="s", pipeline="agent", generation_sampler={"repetition_penalty": 1.1})
+    generation, judging = seen[0]
+    assert generation["repetition_penalty"] == 1.1
+    assert judging["repetition_penalty"] == 1.05, "the judge keeps the penalty its role names"
+    assert runner.llm.sampler("generation", picked).sent.get("repetition_penalty") is None, "the run's layer ends with it"
+
+
+def test_a_run_s_sampler_is_held_to_the_same_rule_as_a_role_s():
+    import job_specs
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    with _pytest.raises(ValidationError, match="sampler keys only"):
+        job_specs.EvalRun(run_name="r", set_name="s", generation_sampler={"top_k": 20})
+    with _pytest.raises(ValidationError, match="repetition_penalty"):
+        job_specs.EvalRun(run_name="r", set_name="s", generation_sampler={"repetition_penalty": 3})
+    ok = job_specs.EvalRun(run_name="r", set_name="s", generation_sampler={"repetition_penalty": 1.1})
+    assert ok.generation_sampler == {"repetition_penalty": 1.1}

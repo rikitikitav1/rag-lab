@@ -861,3 +861,17 @@ def test_a_spill_in_any_call_of_the_row_stays_and_no_row_no_reading(monkeypatch)
         assert llm.placed_in_calls() == {"embedding": False}
     monkeypatch.setattr(card, "model_on_card", lambda spec, name: pytest.fail("read outside a row"))
     llm._note_placement(Role.embedding, OLLAMA, "bge-m3")
+
+
+def test_an_embedder_s_row_carries_no_penalty_it_never_applied(monkeypatch):
+    from models.registry import Role
+    from use_cases import run_snapshot
+
+    monkeypatch.setattr(run_snapshot.llm, "resolve", lambda role: engines.Resolved("bge-m3", OLLAMA))
+    monkeypatch.setattr(run_snapshot.llm, "sampler", lambda role, spec: engines.Sampler({}, {}))
+    monkeypatch.setattr(run_snapshot.card, "model_on_card", lambda spec, name: True)
+    monkeypatch.setattr(run_snapshot.engines, "added_by",
+                        lambda spec, name: {"num_ctx": 8192, "repetition_penalty": 1.1})
+    _, _, _, added, _, _ = run_snapshot._by_role(engines.Resolved("llama3.1:8b", OLLAMA))
+    assert added[Role.generation] == {"num_ctx": 8192, "repetition_penalty": 1.1}
+    assert added[Role.embedding] == {"num_ctx": 8192}

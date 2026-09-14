@@ -7,7 +7,7 @@ import logging_setup
 from engines import card as card_holder
 from engines import ollama, vllm
 from models.jobs import Job
-from models.registry import Engine, EngineKind, Model, ModelRole, Role
+from models.registry import SAMPLING_ROLES, Engine, EngineKind, Model, ModelRole, Role
 from orm.sync_db import Session
 from sqlalchemy import func, select
 from use_cases import search_depth
@@ -229,6 +229,17 @@ def roles_on_card() -> dict:
     return seen
 
 
+# declared once and held in each ollama model of a role: a model pulled by hand or recreated shows here
+def repetition_penalty() -> dict:
+    served = {}
+    for role, picked in _roles():
+        if picked is None or picked.engine.kind is not EngineKind.ollama or Role(role) not in SAMPLING_ROLES:
+            continue
+        served[engines.label(picked.name, picked.engine.name)] = ollama.repetition_penalty_served(picked.name, picked.engine)
+    declared = config.settings.llm.repetition_penalty
+    return {"declared": declared, "served": served, "drift": sorted(n for n, v in served.items() if v != declared)}
+
+
 # what each seated role's calls send: a model row overriding its role is the design, not drift
 def samplers() -> dict:
     out = {}
@@ -250,6 +261,7 @@ def stand() -> dict:
         "residency": _or_error("residency", lambda: ollama.residency(picked.engine)
                                if picked.engine.kind is EngineKind.ollama else []),
         "window": _or_error("window", window),
+        "repetition_penalty": _or_error("repetition_penalty", repetition_penalty),
         "roles_on_card": _or_error("roles_on_card", roles_on_card),
         "roles_down": _or_error("roles_down", roles_down),
         "engines": _or_error("engines", engines_section),
