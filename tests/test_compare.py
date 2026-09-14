@@ -9,6 +9,11 @@ _TEXT = {
 }
 
 
+def test_the_report_names_the_refusal_rule_it_read_with():
+    result = compare.compare({"a": [_log(kind="in_corpus", faith=5)]})
+    assert result["outcome_rule"] == compare.outcomes.RULE
+
+
 def _log(
     question_id=1,
     kind=None,

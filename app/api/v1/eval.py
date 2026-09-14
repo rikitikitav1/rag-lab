@@ -215,6 +215,7 @@ class CompareResponse(BaseModel):
     answering_engines_by_run: dict
     answering_penalties_by_run: dict | None = None
     one_answering_penalty: bool | None = None
+    outcome_rule: int | None = None
     correlation_population: dict
     verdicts: dict | None
 

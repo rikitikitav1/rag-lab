@@ -8,7 +8,7 @@ from evals.pools import has_remote_evidence as _has_remote_evidence
 from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
 from evals.stats import mean_of, score_of
-from outcomes import Outcome
+from outcomes import RULE, Outcome
 from use_cases import rejudge
 
 # an answer standing on nothing the corpus gave it, whichever way it got there
@@ -122,6 +122,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
 
     return {
         "schema": SCHEMA,
+        "outcome_rule": RULE,
         # what the silence in an axis means: an abstention is not a low score and not a missing pass
         "axes_abstain_on": _abstentions(),
         "n_logs": len(logs),
