@@ -56,6 +56,7 @@ class DataChunk(Base):
     prefix_len: Mapped[int | None]
     content: Mapped[str]
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
+    embedded_by: Mapped[str | None]
     chunk_index: Mapped[int]
     category: Mapped[str] = mapped_column(LtreeType)
     language: Mapped[str]

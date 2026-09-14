@@ -4,10 +4,10 @@ A lab journal of RAG-quality experiments: question → setup → result → deci
 
 ## Methodology
 
-- **Eval sets** live in the question bank (`set_name`). The discriminating set is `paraphrased_ru`: interview questions paraphrased and translated to Russian, so retrieval must work cross-lingually (ru query over an en corpus, FTS misses, vector-only) instead of matching source text verbatim. Raw interview questions are near-verbatim to their source (hit@k ~99%), so they hide quality differences.
-- **Metrics** come from `question_logs` per `run_name`: retrieval (hit@k / MRR against `marked_sources`), generation (faithfulness / relevance / completeness / refusal via LLM-as-judge, judge = `qwen2.5:7b`, neutral to the generator to avoid co-hallucination).
+- **Eval sets** live in the question bank (`set_name`). Verdicts are read on `paraphrased_v2_ru` and `paraphrased_v2` (`verdict.criterion_sets` in `config.yaml`; older entries used `paraphrased_ru`): interview questions paraphrased, and for the `_ru` sets translated to Russian, so retrieval must work cross-lingually (ru query over an en corpus, FTS misses, vector-only) instead of matching source text verbatim. Raw interview questions are near-verbatim to their source (hit@k ~99%), so they hide quality differences.
+- **Metrics** come from `question_logs` per `run_name`: retrieval (hit@k / MRR against `marked_sources`), generation (faithfulness / relevance / completeness / refusal via LLM-as-judge, judge = `Qwen/Qwen2.5-7B-Instruct-AWQ` on vLLM since 2026-09-11, `qwen2.5:7b` on ollama before that and reproduced by [stand mode 6](stand_modes.md), neutral to the generator to avoid co-hallucination).
 - **Isolation**: change one variable at a time; hold the rest constant.
-- **Reproducibility**: generation `temperature: 0` during tuning so a metric change is attributable to the change under test, not to sampling noise.
+- **Reproducibility**: the generator's sampler is recorded with the run; the default is `temperature: 0.1`, and a run pins another with `generation_sampler`. Even at temperature 0 two runs of one generator differ, so a change is read against the generator's own floor (README, "Why the numbers hold"), not against zero.
 - Each run is one `eval_run` job (answers, bulk) → one `judge_answers` job (verdicts, bulk).
 
 ## How an entry is written
@@ -83,6 +83,7 @@ Rules that decide whether an entry is worth keeping:
 - [2026-08-27 - Corpus hygiene that moved the number, and four instruments that were lying](experiments/2026-08-27_hygiene-that-moved-the-number.md)
 - [2026-08-28 - A third heading level in the cut, and what it did not buy](experiments/2026-08-28_a-third-heading-level-in-the-cut.md)
 - [2026-08-28 - A gate that degenerated the other way](experiments/2026-08-28_a-gate-that-degenerated-the-other-way.md)
+- [2026-08-28 - Reranking and the language of the question, and why the switch is not the language](experiments/2026-08-28_reranking-and-the-language-of-the-question.md)
 - [2026-08-29 - Generator grid: 4b against 8b, reranking, and two languages](experiments/2026-08-29_generator-grid-4b-against-8b.md)
 - [2026-08-29 - The same question in two languages](experiments/2026-08-29_the-same-question-in-two-languages.md)
 - [2026-08-30 - The questions the criterion cannot see](experiments/2026-08-30_the-questions-the-criterion-cannot-see.md)
@@ -95,3 +96,13 @@ Rules that decide whether an entry is worth keeping:
 - [2026-09-07 - The phases split, and the replay that checked it without asking a model twice](experiments/2026-09-07_the-phases-split-and-the-replay-that-checked-it.md)
 - [2026-09-07 - What moving onto the standard was worth, and what it cost](experiments/2026-09-07_what-the-standard-was-worth.md)
 - [2026-09-08 - The directive nobody gave, and what our judge charges for Russian](experiments/2026-09-08_the-directive-nobody-gave.md)
+- [2026-09-09 - What batch invariance costs on an AWQ judge, and what it buys](experiments/2026-09-09_what-batch-invariance-costs-on-an-awq-judge.md)
+- [2026-09-09 - The same rows judged by two engines, and what that comparison cannot say](experiments/2026-09-09_the-same-rows-judged-by-two-engines.md)
+- [2026-09-13 - The judge that looped on whitespace, and a grammar rule that moved 17% of its verdicts](experiments/2026-09-13_the-judge-that-looped-on-whitespace.md)
+- [2026-09-13 - A refusal the rule could not read: "the context does not contain"](experiments/2026-09-13_a-refusal-the-rule-could-not-read.md)
+- [2026-09-13 - The penalty nobody asked for, and a door that drops it](experiments/2026-09-13_the-penalty-nobody-asked-for.md)
+- [2026-09-13 - Fifteen pairs the owner judged, read again by the new judge](experiments/2026-09-13_fifteen-pairs-the-owner-judged.md)
+- [2026-09-13 - The same generator on two engines, and a refusal that was a rule](experiments/2026-09-13_the-same-generator-on-two-engines.md)
+- [2026-09-13 - A bigger model at the same retrieval, and where it refuses](experiments/2026-09-13_a-bigger-model-at-the-same-retrieval.md)
+- [2026-09-14 - A cloud judge on the same answers, two and a half points kinder on grounding](experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md)
+- [2026-09-14 - A panel for the language probe, and a regime read against a reference](experiments/2026-09-14_a-panel-for-the-language-probe.md)

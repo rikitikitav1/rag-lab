@@ -1,0 +1,10 @@
+# The language probe's calibration panel: its regime is read on these rows, never on the run's own.
+# question_logs ids: all sixty English corpus rows of paraphrased_single_shot_1788245198_variant_clean_1024
+# (set paraphrased, variant clean_1024) answered with sources, the whole pool, chosen by no score.
+# Sixty rather than thirty: at thirty one row flipped the regime, and two of the answers score low under any judge.
+33222 33223 33224 33225 33226 33227 33228 33229 33230 33231
+33232 33233 33234 33235 33236 33237 33238 33239 33240 33241
+33242 33243 33244 33245 33246 33247 33248 33249 33250 33251
+33252 33253 33254 33255 33256 33257 33258 33259 33260 33261
+33262 33263 33264 33265 33266 33267 33268 33269 33270 33271
+33272 33273 33274 33275 33276 33277 33278 33279 33280 33281

@@ -397,13 +397,63 @@ def test_the_probe_refuses_its_own_numbers_when_it_is_out_of_regime():
     # pass 1 scored a grounded restatement zero in a fifth of pairs, and nothing said the regime slid
     from evals import judge_language as jl
 
-    good = jl.control([7] * 96 + [0] * 4)
-    assert good["control"]["share"] == 0.96 and good["control"]["in_regime"] is True
+    def rows(own, restated):
+        return ([{"row": i, "part": "own", "score": s, "reason": ""} for i, s in enumerate(own)]
+                + [{"row": i, "part": "restated", "score": s, "reason": ""} for i, s in enumerate(restated)])
+
+    reference = {"taken": "2026-09-14", "rows": rows([8] * 60, [8] * 60)}
+
+    # six of sixty crossing 7 is drift within the regime, whatever the floor says
+    held = jl.regime(rows([8] * 54 + [0] * 6, [8] * 60), reference)["control"]
+    assert held["moved_vs_reference"] == {"own": 6, "restated": 0} and held["in_regime"] is True
+    assert held["above_floor"] is True and held["own"]["share"] == 0.9
 
     # the share pass 1 actually produced, against a history of 96.4% and 95.6%
-    bad = jl.control([7] * 62 + [0] * 38)
-    assert bad["control"]["share"] == 0.62 and bad["control"]["in_regime"] is False
-    assert jl.control([])["control"]["in_regime"] is False
+    slid = jl.regime(rows([8] * 60, [8] * 38 + [0] * 22), reference)["control"]
+    assert slid["moved_vs_reference"]["restated"] == 22 and slid["in_regime"] is False
+    assert slid["above_floor"] is False
+
+    # a lost verdict moved, and without a reference the regime is unread rather than guessed
+    lost = jl.regime(rows([None] * 7 + [8] * 53, [8] * 60), reference)["control"]
+    assert lost["moved_vs_reference"]["own"] == 7 and lost["in_regime"] is False
+    assert jl.regime(rows([8] * 60, [8] * 60), None)["control"]["in_regime"] is None
+
+    # an empty panel read "in regime" off zero moves, and a cut one off the rows it reached
+    empty = jl.regime([], reference)["control"]
+    assert empty["moved_vs_reference"] == {"own": 60, "restated": 60} and empty["in_regime"] is False
+    cut = jl.regime(rows([8] * 50, [8] * 50), reference)["control"]
+    assert cut["moved_vs_reference"] == {"own": 10, "restated": 10} and cut["in_regime"] is False
+
+
+def test_the_probe_reads_its_regime_on_the_panel_not_on_the_run(monkeypatch):
+    # a Russian run pulled the run's own share down, so the probe was calibrated by what it measures
+    from types import SimpleNamespace as NS
+
+    from evals import judge_language as jl
+    from evals import loaders
+
+    ids = jl.panel_ids()
+    assert len(ids) == 60 and len(set(ids)) == 60
+
+    def row(i, faithfulness):
+        return NS(id=i, answered=True, contexts=["c"], answer="a", question_text="q",
+                  faithfulness=faithfulness, question=NS(kind=None, marked_sources=["a.md"]))
+
+    panel = [row(i, 9) for i in ids]
+    run = [row(1, 2), row(2, 2)]
+    monkeypatch.setattr(loaders, "load_logs", lambda run_name=None, ids=None: panel if ids else run)
+    monkeypatch.setattr(jl.llm, "ask", lambda *a, **kw: NS(text="restated"))
+    monkeypatch.setattr(jl, "faithful_verdict", lambda q, answer, context: NS(score=9, reason="ok"))
+
+    reference = {"taken": "2026-09-14", "rows": [{"row": i, "part": p, "score": 9, "reason": ""}
+                                                 for i in ids for p in ("own", "restated")]}
+    monkeypatch.setattr(jl, "panel_reference", lambda: reference)
+
+    out = jl.measure("r", 2)
+
+    assert out["control"]["own"]["n"] == 60 and out["control"]["in_regime"] is True
+    assert len(out["panel_rows"]) == 120 and out["control"]["moved_vs_reference"] == {"own": 0, "restated": 0}
+    assert out["run_answers"] == {"of": "our judge on the run's own answers, at least 7", "n": 2, "share": 0.0}
 
 
 def test_the_bare_arm_still_gets_its_ceiling_re_derived():

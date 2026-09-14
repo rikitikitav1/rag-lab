@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 import job_queue
 import limits
@@ -7,9 +7,11 @@ from evals import (
     compare,
     generation_metrics,
     judge_correlation,
+    pools,
     question_sets,
     retrieval_metrics,
     run_debts,
+    run_tokens,
     stats,
 )
 from evals.loaders import load_logs
@@ -40,7 +42,8 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
         "its rows cannot owe it: per guest axis the rows owed, scored and abstained, "
         "which of question_text/answer/contexts/reference the others lack, the seconds "
         "one row of this run costs on that axis, and what finishing the debt would cost. "
-        "Read debts before spending a judge or a guest pass on a run."
+        "Read debts before spending a judge or a guest pass on a run. tokens says what the run cost: "
+        + run_tokens.READS + "."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -49,8 +52,14 @@ def run_metrics(
 ) -> dict:
     _named_runs([run_name.strip()] if run_name.strip() else [])
     gen = generation_metrics.evaluate(run_name)
+    # a mistyped name read as a measured zero on retrieval
+    if not gen.get("n_logs"):
+        raise ToolError(f"no logs for run {run_name!r}")
     ret = retrieval_metrics.evaluate(run_name)
-    return {"run_name": run_name, **gen, **ret, "debts": run_debts.safely(run_name)}
+    return {
+        "run_name": run_name, **gen, **ret, "debts": run_debts.safely(run_name),
+        "tokens": run_tokens.of(run_name),
+    }
 
 
 @mcp_ops.tool(
@@ -78,11 +87,45 @@ def list_question_sets(
     return found
 
 
+@mcp_ops.tool(
+    name="questions",
+    description=(
+        "The questions themselves, one row each, for picking the question_ids of a run: id, set, "
+        "language, pool, the text, whether a reference answer is there, how many sources are "
+        "marked, and which embedder embedded it. The pool is the rule question_sets counts with, "
+        "so the rows of a pool add up to its count there. question_sets says what a set holds; "
+        "this says which rows."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def list_questions(
+    set_name: Annotated[str | None, Field(description="Only this set.")] = None,
+    language: Annotated[str | None, Field(description="Only this language, as stored.")] = None,
+    pool: Annotated[Literal[pools.POOLS] | None, Field(description="Only this pool.")] = None,
+    limit: Annotated[int, Field(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> list[dict]:
+    named = (set_name or "").strip() or None
+    # a mistyped set read as an empty one while picking question_ids
+    if named and not question_sets.inventory(named):
+        raise ToolError(f"no question set named {set_name!r}")
+    return question_sets.rows(named, language, pool, limit, offset)
+
+
 def _named_runs(run_names: list[str]) -> list[str]:
     try:
         return compare.named_runs(run_names)
     except ValueError as e:
         raise ToolError(str(e)) from e
+
+
+# a name with no rows came back as a measured zero, and once as the winner
+def _logged(run_names: list[str]) -> list[str]:
+    names = _named_runs(run_names)
+    empty = [name for name in names if not load_logs(name)]
+    if empty:
+        raise ToolError(f"no logs for runs: {empty}")
+    return names
 
 
 @mcp_ops.tool(
@@ -157,8 +200,11 @@ def compare_runs(
         list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)
     ],
 ) -> dict:
-    names = _named_runs(run_names)
-    return experiment_uc.compute_results("run", names, names)
+    names = _logged(run_names)
+    try:
+        return experiment_uc.compute_results("run", names, names)
+    except pools.Ambiguous as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp_ops.tool(
@@ -184,7 +230,7 @@ def language_cost(
 ) -> dict:
     from evals import language_cost as costs
 
-    _named_runs([before, after] + ([floor_against] if floor_against else []))
+    _logged([before, after] + ([floor_against] if floor_against else []))
     return costs.measure(before, after, floor_against)
 
 
@@ -195,7 +241,9 @@ def language_cost(
         "returns judged counts, the three judged axes, how often the answer "
         "came from a remote tool against the corpus, how often the coverage gate "
         "fired, latency (avg and p50) and the outcome histogram. Per pair of runs "
-        "returns a paired Wilcoxon test over the same questions. Use instead of "
+        "returns a paired Wilcoxon test over the same questions. For exactly two runs, "
+        "verdicts counts the judge's scores that moved on shared questions, per axis, which "
+        "a mean hides when moves cancel. Use instead of "
         "compare_runs when the question is where a difference comes from, not "
         "which run wins on average."
     ),
@@ -207,10 +255,14 @@ def compare_pools(
     ],
 ) -> dict:
     runs = {name: load_logs(name) for name in _named_runs(run_names)}
+    # the same refusal `_logged` makes, on logs already loaded here
     empty = [name for name, logs in runs.items() if not logs]
     if empty:
         raise ToolError(f"no logs for runs: {empty}")
-    return compare.compare(runs)
+    try:
+        return compare.compare(runs)
+    except pools.Ambiguous as e:
+        raise ToolError(str(e)) from e
 
 
 READING = {
@@ -255,6 +307,20 @@ def experiment_results(
             "conclusion": exp.conclusion,
             **{k: v for k, v in read.items() if k != "deltas"},
         }
+        # the rule the stored numbers were read with, not today's: an older report names none
+        if exp.kind != ExperimentKind.retrieval:
+            out["outcome_rule"] = (exp.results or {}).get("outcome_rule")
+        guests = session.execute(
+            select(Job.status).where(
+                Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])
+            )
+        ).scalars().all()
+        if guests:
+            out["guest_passes"] = {
+                "done": sum(1 for status in guests if status == JobStatus.done), "of": len(guests),
+                "reads": "guest numbers are read per question_id, not compared here; "
+                         "run_metrics debts.guests says what a copy still owes",
+            }
         deltas = read["deltas"]
         if pair is not None:
             if pair not in deltas:
@@ -266,6 +332,38 @@ def experiment_results(
             for name, body in deltas.items()
         }
         return out
+
+
+@mcp_ops.tool(
+    name="engines",
+    description=(
+        "Which engine holds the GPU right now and which models it has there, whether each vLLM "
+        "on the card is asleep, and whether every registered engine answers. Read from the "
+        "servers, not from a table. Use before a run or a judging pass to see who owns the card."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def engines_on_the_stand() -> dict:
+    from use_cases import stand_health
+
+    # one reader for `/health` and this tool, so the two can never tell different stories
+    return stand_health.engines_section()
+
+
+@mcp_ops.tool(
+    name="broker_balances",
+    description=(
+        "What is left on each cloud engine's key, read from the broker's own service route: the "
+        "balance in the broker's unit, which reader read it and when. A cloud with no reader named, "
+        "or one that did not answer, says why instead of dropping out. Free to call: nothing is "
+        "generated. Read it before and after a cloud run to see what the run cost."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def broker_balances() -> list[dict]:
+    from engines import balances
+
+    return balances.summary()
 
 
 @mcp_ops.tool(
@@ -299,6 +397,10 @@ def list_jobs(
                 "status": j.status,
                 "run_name": (j.options or {}).get("run_name"),
                 "elapsed": j.elapsed,
+                # per role, per engine and model; null for a job from before the count
+                "tokens": j.tokens,
+                # per cloud, the broker's balance before and after; null for a job that called no cloud
+                "balances": j.balances,
             }
             for j in session.scalars(stmt)
         ]

@@ -3,9 +3,10 @@ from datetime import datetime, timedelta, timezone
 
 import job_specs
 import logging_setup
+import token_fields
 from models import Job, JobStatus
 from orm.sync_db import Session
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, text
 
 log = logging_setup.get_logger(__name__)
 
@@ -21,14 +22,22 @@ class ClaimedJob:
 def enqueue(type: str, options: dict | None = None, queue: str | None = None) -> int:
     job_specs.check(type, options)
     with Session() as session:
-        job = Job(type=type, options=options or {}, queue=queue or job_specs.lane(type))
+        job = Job(type=type, options=options or {}, queue=_lane(type, queue))
         session.add(job)
         session.commit()
         return job.id
 
 
-# the options matter as well as the type: two variants may each wait for their own index
-def pending_of_type(type: str, **options) -> bool:
+# one lane for the card: a caller naming another lane would let two card jobs run at once
+def _lane(type: str, asked: str | None) -> str:
+    lane = job_specs.lane(type)
+    if asked is not None and asked != lane:
+        raise ValueError(f"{type} lives in the {lane} lane, not in {asked}")
+    return lane
+
+
+# options matter as well as the type; the id, so a door answers with it rather than queue a second
+def pending_of_type(type: str, **options) -> int | None:
     with Session() as session:
         query = select(Job.id).where(
             Job.type == type,
@@ -40,7 +49,34 @@ def pending_of_type(type: str, **options) -> bool:
                 query = query.where(Job.options[key].astext.is_(None))
             else:
                 query = query.where(Job.options[key].astext == str(value))
-        return bool(session.scalar(query.limit(1)))
+        return session.scalar(query.limit(1))
+
+
+def running_of_type(type: str) -> bool:
+    with Session() as session:
+        return bool(session.scalar(
+            select(Job.id).where(Job.type == type, Job.status == JobStatus.running).limit(1)
+        ))
+
+
+# one rule for a handover already waiting: the same engine, the same model if named, the same seat
+def pending_handover(engine_id: int, model: str | None = None, seat: str | None = None) -> int | None:
+    asked = {"engine_id": engine_id, "model": model, "seat": seat}
+    return pending_of_type("hand_card", **{k: v for k, v in asked.items() if v is not None})
+
+
+# the card's lane: a job running there may hold the card, and nothing from outside takes it away
+def running_in_lane(lane: str) -> bool:
+    with Session() as session:
+        return bool(session.scalar(
+            select(Job.id).where(Job.queue == lane, Job.status == JobStatus.running).limit(1)
+        ))
+
+
+# the row a door answers with once the job is queued in another session
+def get(job_id: int) -> Job:
+    with Session() as session:
+        return session.get(Job, job_id)
 
 
 def add_job(
@@ -48,9 +84,19 @@ def add_job(
 ) -> Job:
     # stage a job in the caller's transaction (caller commits); async-safe: .add() is sync
     job_specs.check(type, options)
-    job = Job(type=type, options=options or {}, queue=queue or job_specs.lane(type))
+    job = Job(type=type, options=options or {}, queue=_lane(type, queue))
     session.add(job)
     return job
+
+
+# a job takes the card in its own turn, so the turn is the job's type, and an old job goes early
+def _turn():
+    ranked = case(job_specs.PRIORITY, value=Job.type, else_=0)
+    starved = Job.created_at < func.now() - text(
+        f"interval '{job_specs.STARVED_AFTER_MINUTES} minutes'"
+    )
+    # raised, never lowered: a starved API handover keeps its own place ahead
+    return case((starved, func.least(ranked, -1)), else_=ranked)
 
 
 def claim_next(queues: list[str]) -> ClaimedJob | None:
@@ -62,7 +108,7 @@ def claim_next(queues: list[str]) -> ClaimedJob | None:
                 Job.queue.in_(queues),
                 Job.apply_since <= func.now(),
             )
-            .order_by(Job.apply_since)
+            .order_by(_turn(), Job.apply_since)
             .with_for_update(skip_locked=True)
             .limit(1)
         ).first()
@@ -82,8 +128,14 @@ def requeue_stale(queues: list[str]) -> list[int]:
         ids = [job.id for job in jobs]
         for job in jobs:
             job.status = JobStatus.new
+            job.options = reclaimed(job.options)
         session.commit()
         return ids
+
+
+# a restart is an attempt: without the mark a run met its own rows and refused itself as taken
+def reclaimed(options: dict) -> dict:
+    return {**options, "attempts": options.get("attempts", 0) + 1}
 
 
 def complete(id: int, elapsed: float | None = None) -> None:
@@ -98,6 +150,58 @@ def fail(id: int, error: dict, elapsed: float | None = None) -> None:
     if elapsed is not None:
         fields["elapsed"] = elapsed
     _update(id, **fields)
+
+
+# added to earlier attempts, on a cancelled job too; one that spent nothing writes {}, null is before the count
+def add_tokens(id: int, record: dict | None) -> None:
+    with Session() as session:
+        job = session.get(Job, id)
+        if job is None:
+            return
+        job.tokens = merged_tokens(job.tokens, record or {})
+        session.commit()
+
+
+def add_balances(id: int, before: dict, after: dict) -> None:
+    with Session() as session:
+        job = session.get(Job, id)
+        if job is None:
+            return
+        job.balances = merged_balances(job.balances, before, after)
+        session.commit()
+
+
+# the first attempt's before and the last one's after: what the whole job took off the key, retries included
+def merged_balances(was: dict | None, before: dict, after: dict) -> dict:
+    out = {name: dict(entry) for name, entry in (was or {}).items()}
+    for name, seen in after.items():
+        held = out.setdefault(name, {})
+        why = None
+        if "before" not in held:
+            start = before.get(name)
+            held.update(before=(start or {}).get("balance"), before_at=(start or {}).get("read_at"))
+            why = start.get("why") if start else "not read before the attempt"
+        held.update(after=seen.get("balance"), after_at=seen.get("read_at"), unit=seen.get("unit") or held.get("unit"))
+        held["why"] = seen.get("why") or why or held.get("why")
+    return out
+
+
+def merged_tokens(was: dict | None, more: dict) -> dict:
+    out = {role: [dict(entry) for entry in entries] for role, entries in (was or {}).items()}
+    for role, entries in more.items():
+        held = out.setdefault(role, [])
+        for entry in entries:
+            same = next((e for e in held if (e["engine"], e["model"]) == (entry["engine"], entry["model"])), None)
+            if same is None:
+                held.append(dict(entry))
+                continue
+            for key in token_fields.SUMMED:
+                if key in entry or key in same:
+                    same[key] = same.get(key, 0) + entry.get(key, 0)
+            for key in token_fields.MAXED:
+                if key in entry or key in same:
+                    same[key] = max(same.get(key, 0), entry.get(key, 0))
+    return out
 
 
 def reschedule(
@@ -165,6 +269,8 @@ def cancel(ids: list[int]) -> list[int]:
             if j.type in EXPERIMENT_JOBS and (j.options or {}).get("run_name")
         ]
         for job in jobs:
+            if job.status == JobStatus.new and job.tokens is None:
+                job.tokens = {}
             job.status = JobStatus.cancelled
         session.commit()
     # after the commit: an experiment waiting on a cancelled arm waits for ever
@@ -187,8 +293,42 @@ def is_cancelled(id: int) -> bool:
 def _update(id: int, **fields) -> None:
     with Session() as session:
         job = session.get(Job, id)
-        if job is None or job.status == JobStatus.cancelled:
+        if job is None:
             return
+        # a cancel is final, but how long the job ran before it is still the job's
+        if job.status == JobStatus.cancelled:
+            fields = {k: v for k, v in fields.items() if k == "elapsed"}
         for key, value in fields.items():
             setattr(job, key, value)
         session.commit()
+
+
+# the judge wakes once per batch of live answers, and the batch waits this long for company
+LIVE_BATCH_SECONDS = 300
+
+
+# appended only while nobody has taken the job: a running one read its rows when it was claimed
+def judge_live(log_id: int) -> int:
+    with Session() as session:
+        waiting = session.execute(text("""
+            UPDATE jobs
+            SET options = jsonb_set(options, '{log_ids}', (options->'log_ids') || to_jsonb(:log_id))
+            WHERE id = (
+                SELECT id FROM jobs
+                WHERE type = 'judge_answers' AND status = 'new' AND options->>'live' = 'true'
+                ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id
+        """), {"log_id": log_id}).first()
+        if waiting is not None:
+            session.commit()
+            return waiting[0]
+        options = {"log_ids": [log_id], "live": True}
+        job_specs.check("judge_answers", options)
+        job = Job(
+            type="judge_answers", options=options, queue=_lane("judge_answers", None),
+            apply_since=datetime.now(timezone.utc) + timedelta(seconds=LIVE_BATCH_SECONDS),
+        )
+        session.add(job)
+        session.commit()
+        return job.id

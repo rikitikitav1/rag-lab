@@ -3,6 +3,7 @@ import contextlib
 import job_queue
 import llm
 import logging_setup
+from engines import card
 from evals import build_paraphrased, build_veto
 from models.registry import Role
 
@@ -17,8 +18,12 @@ def _released(role: Role):
     try:
         yield
     finally:
-        # `llm.unload` swallows and logs its own failures, so a job never dies here
-        llm.unload(role=str(role))
+        # a release that fails must not hide the failure the job itself ended on
+        try:
+            picked = llm.resolve_for(str(role))
+            card.release_model(picked.engine, picked.name)
+        except Exception as e:
+            log.warning("dataprep.release_failed", role=str(role), error=str(e))
 
 
 @register("paraphrase_questions")

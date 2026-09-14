@@ -1,3 +1,34 @@
+# the local engines' addresses; a cloud's pair comes through `.env`, so a new one needs no edit here
+x-engine-env: &engine-env
+  VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm:8000}
+  VLLM_API_KEY: ${VLLM_API_KEY:-}
+  VLLM_CPU_BASE_URL: ${VLLM_CPU_BASE_URL:-http://vllm-cpu:8000}
+  VLLM_CPU_API_KEY: ${VLLM_CPU_API_KEY:-}
+  VLLM_EMBED_BASE_URL: ${VLLM_EMBED_BASE_URL:-http://vllm-embed:8000}
+  VLLM_EMBED_API_KEY: ${VLLM_EMBED_API_KEY:-}
+  VLLM_RERANK_BASE_URL: ${VLLM_RERANK_BASE_URL:-http://vllm-rerank:8000}
+  VLLM_RERANK_API_KEY: ${VLLM_RERANK_API_KEY:-}
+  OLLAMA_CPU_BASE_URL: ${OLLAMA_CPU_BASE_URL:-http://ollama-cpu:11434}
+  # `orm/dsn.py` still reads these on the host, and one left in .env would move the containers
+  POSTGRES_HOST: ""
+  OLLAMA_BASE_URL: ""
+  ENGINE_HF_CACHE: /engine_weights
+
+# pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
+x-vllm-image: &vllm-image vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
+
+# CDI, not the runtime hook: a `systemctl daemon-reload` took the card from running containers
+x-gpu: &gpu
+  resources:
+    reservations:
+      devices:
+        - driver: cdi
+          device_ids: ["nvidia.com/gpu=all"]
+          capabilities: [gpu]
+
+# the host's user: the worker writes the weight cache and /repos as it, and `repos-owner` hands /repos over
+x-host-user: &host-user "${UID:-1000}:${GID:-1000}"
+
 services:
   rag-lab:
     depends_on:
@@ -8,25 +39,29 @@ services:
     command:
       ["uvicorn", "server:app",
        "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    env_file:
+      - path: .env
+        required: false
     environment:
-      RERANK_DEVICE: cuda
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      # the chat answers in this process, and it read no timeout but its own default
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
+      # the tree is mounted: bytecode written here outlived a restart as a mutant the tests had made
+      PYTHONDONTWRITEBYTECODE: "1"
+      <<: *engine-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8000:8000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
     volumes:
       - .:/app
       - ${HOME}/working_docs/notes:/notes:ro
       - repos_data:/repos
-      - hf_cache:/root/.cache/huggingface
+      # the role gate reads a vLLM model's quant from its weights, before a handover is wasted on it
+      - ${HOME}/.cache/huggingface:/engine_weights:ro
 
   postgresql:
     image: pgvector/pgvector:pg17
@@ -47,7 +82,7 @@ services:
   dbmate:
     image: ghcr.io/amacneil/dbmate:2.34.1
     command: ["up"]
-    user: "${UID:-1000}:${GID:-1000}"
+    user: *host-user
     depends_on:
       postgresql:
         condition: service_healthy
@@ -63,57 +98,90 @@ services:
       dockerfile: Dockerfile
     command: ["python", "app/bootstrap.py"]
     restart: "no"
+    env_file:
+      - path: .env
+        required: false
     environment:
+      <<: *engine-env
       HF_TOKEN: ${HF_TOKEN:-}
+      # the acceptance probe calls the model, and it waited the code's default whatever the stand was told
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
+      # as root on the mounted tree, it left bytecode the host could not remove
+      PYTHONDONTWRITEBYTECODE: "1"
     depends_on:
       seed:
         condition: service_completed_successfully
       ollama:
         condition: service_healthy
+      # the bootstrap reads every ollama, and a cpu one that is still starting reads as absent
+      ollama-cpu:
+        condition: service_healthy
+      # asleep before ollama loads a role; optional: compose waits while it starts, a dead one holds nothing
+      vllm:
+        condition: service_healthy
+        required: false
     volumes:
       - .:/app
-      - hf_cache:/root/.cache/huggingface
+      # the bootstrap checks vLLM weights by their hashes in the same host cache the server reads
+      - ${HOME}/.cache/huggingface:/engine_weights:ro
 
   seed:
     build:
       dockerfile: Dockerfile
     command: ["python", "app/seed.py"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
     depends_on:
       dbmate:
         condition: service_completed_successfully
     volumes:
       - .:/app
 
+  # the volume is root's and the worker clones as the host's user; not -R: old clones stay readable
+  repos-owner:
+    build:
+      dockerfile: Dockerfile
+    user: "0:0"
+    command: ["chown", *host-user, "/repos"]
+    volumes:
+      - repos_data:/repos
+
   worker:
     build:
       dockerfile: Dockerfile
     command: ["python", "app/worker.py"]
+    # the worker writes pulled weights into the host's cache, and as root they were not the host's
+    user: *host-user
+    env_file:
+      - path: .env
+        required: false
     environment:
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-120}
+      PYTHONDONTWRITEBYTECODE: "1"
+      HOME: /tmp
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
-      RERANK_DEVICE: ${WORKER_RERANK_DEVICE:-cuda}
       # read by the judge and capped by the slots ollama was started with
       JUDGE_WIDTH: ${JUDGE_WIDTH:-1}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      # without this sentence_transformers asks huggingface whether the weights moved
+      # the hub library stays offline; a pull opens it for its subprocess, and sizes are asked by http
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      <<: *engine-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       bootstrap:
+        condition: service_completed_successfully
+      repos-owner:
         condition: service_completed_successfully
     volumes:
       - .:/app
       - repos_data:/repos
       - ${HOME}/working_docs/notes:/notes:ro
-      - hf_cache:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+      # where `pull_llm_model` puts vLLM weights: the same host cache the `vllm` service reads
+      - ${HOME}/.cache/huggingface:/engine_weights
+    deploy: *gpu
 
   ollama:
     image: ollama/ollama
@@ -123,6 +191,7 @@ services:
       OLLAMA_MAX_LOADED_MODELS: "2"
       # pinned: unset, ollama picks slots from free VRAM and two arms differ as instruments
       OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
+      # held until a handover unloads it: a reload mid-run starts another residency
       OLLAMA_KEEP_ALIVE: "-1"
       # the server defaults to 4096 and drops whole messages to fit, reporting the trimmed count
       OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-8192}"
@@ -135,16 +204,139 @@ services:
       retries: 20
     volumes:
       - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    deploy: *gpu
+
+  vllm:
+    image: *vllm-image
+    command:
+      # the judge is named in config.yaml and scripts/up.sh passes it; this default only mirrors it
+      ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}",
+       "--max-model-len", "${VLLM_MAX_MODEL_LEN:-8192}",
+       # 0.95 died of CUDA OOM beside a sleeping `vllm-rerank`: every sleeper keeps ~200 MiB
+       "--gpu-memory-utilization", "${VLLM_GPU_UTIL:-0.9}",
+       "--enforce-eager", "--max-num-seqs", "16",
+       "--enable-sleep-mode",
+       # a generator on this vLLM must return tool calls; the judge sends no tools and never meets it
+       "--enable-auto-tool-choice", "--tool-call-parser", "hermes",
+       # JSON whitespace let the judge write tabs until its limit instead of the score; per request it is ignored
+       "--structured-outputs-config", '{"backend": "xgrammar", "disable_any_whitespace": true}']
+    # no port on the host: dev mode opens `/collective_rpc` and `/pause` without a key
+    environment:
+      # the sleep routes and `/server_info` exist only in dev mode
+      VLLM_SERVER_DEV_MODE: "1"
+      # off by default: the floor is zero without it at width one, and with it a pass costs 8.7x
+      VLLM_BATCH_INVARIANT: "${VLLM_BATCH_INVARIANT:-0}"
+      # online by default: on a clean machine the server downloads its own model on the first start
+      HF_HUB_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      TRANSFORMERS_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      HF_TOKEN: ${HF_TOKEN:-}
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      # a minute with the weights cached; the first start downloads about 5 GB and takes far longer
+      start_period: 3600s
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      # the weights live in the host cache, where the server downloads them on its first start
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy: *gpu
+
+  # always up: ollama loads a model on the first call and gives the memory back after the keep-alive
+  ollama-cpu:
+    image: ollama/ollama
+    environment:
+      # hidden from the card on purpose: this engine answers on the processor or not at all
+      CUDA_VISIBLE_DEVICES: ""
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
+      # not -1 as on the card: a model held forever here holds host memory the judge sleeps in
+      OLLAMA_KEEP_ALIVE: "${OLLAMA_CPU_KEEP_ALIVE:-10m}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-8192}"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      start_period: 120s
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    volumes:
+      # the same weights as the card's ollama: one pull serves both
+      - ollama_data:/root/.ollama
+
+  # by profile: it holds its whole model in host memory while it lives, 19 GB for a 7B; `free` first
+  vllm-cpu:
+    profiles: ["cpu"]
+    image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo@sha256:66064cf683152e60eff2e5b18ec2d4ace236fb063c0a241f918691db9caddcf4
+    # shared memory of its own, not the host's IPC namespace
+    shm_size: 4gb
+    command:
+      ["--model", "${VLLM_CPU_MODEL:-Qwen/Qwen2.5-7B-Instruct}",
+       "--dtype", "${VLLM_CPU_DTYPE:-float16}",
+       "--max-model-len", "${VLLM_MAX_MODEL_LEN:-8192}",
+       "--enforce-eager",
+       "--enable-auto-tool-choice", "--tool-call-parser", "hermes",
+       # the same judge on the processor: its JSON follows the card's rules
+       "--structured-outputs-config", '{"backend": "xgrammar", "disable_any_whitespace": true}']
+    environment:
+      VLLM_CPU_KVCACHE_SPACE: "${VLLM_CPU_KVCACHE_SPACE:-4}"
+      HF_HUB_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      TRANSFORMERS_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+
+  # by profile: a generating vLLM cannot embed, and it starts after the bootstrap put the judge to sleep
+  vllm-embed:
+    profiles: ["embed"]
+    image: *vllm-image
+    command:
+      ["--model", "${VLLM_EMBED_MODEL:-BAAI/bge-m3}",
+       "--runner", "pooling", "--dtype", "float16",
+       "--max-model-len", "8192",
+       "--gpu-memory-utilization", "${VLLM_EMBED_GPU_UTIL:-0.45}",
+       "--enforce-eager", "--enable-sleep-mode"]
+    environment:
+      VLLM_SERVER_DEV_MODE: "1"
+      HF_HUB_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      TRANSFORMERS_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      HF_TOKEN: ${HF_TOKEN:-}
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy: *gpu
+
+  # by profile: the cross-encoder left the API and the worker, whose torch held card the handover missed
+  vllm-rerank:
+    profiles: ["rerank"]
+    image: *vllm-image
+    command:
+      ["--model", "${VLLM_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}",
+       "--runner", "pooling", "--dtype", "float16",
+       "--max-model-len", "8192",
+       "--gpu-memory-utilization", "${VLLM_RERANK_GPU_UTIL:-0.3}",
+       "--enforce-eager", "--enable-sleep-mode"]
+    # no port on the host, as for `vllm`: the stand reaches it over the compose network
+    environment:
+      VLLM_SERVER_DEV_MODE: "1"
+      HF_HUB_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      TRANSFORMERS_OFFLINE: "${VLLM_HF_OFFLINE:-0}"
+      HF_TOKEN: ${HF_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      start_period: 600s
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy: *gpu
 
 volumes:
   ollama_data:
   repos_data:
   pg_data:
-  hf_cache:

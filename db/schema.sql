@@ -85,7 +85,8 @@ CREATE TABLE public.data_chunks (
     variant text NOT NULL,
     section text,
     content_hash text,
-    prefix_len integer
+    prefix_len integer,
+    embedded_by text
 );
 
 
@@ -145,6 +146,42 @@ CREATE SEQUENCE public.data_sources_id_seq
 --
 
 ALTER SEQUENCE public.data_sources_id_seq OWNED BY public.data_sources.id;
+
+
+--
+-- Name: engines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.engines (
+    id integer NOT NULL,
+    name text NOT NULL,
+    kind text NOT NULL,
+    env_prefix text NOT NULL,
+    placement text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    balance_reader text DEFAULT 'none'::text NOT NULL,
+    CONSTRAINT engines_env_prefix_shape CHECK ((env_prefix ~ '^[A-Z][A-Z0-9_]{0,31}$'::text))
+);
+
+
+--
+-- Name: engines_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.engines_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: engines_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.engines_id_seq OWNED BY public.engines.id;
 
 
 --
@@ -210,7 +247,9 @@ CREATE TABLE public.jobs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     elapsed double precision,
-    queue text DEFAULT 'default'::text NOT NULL
+    queue text DEFAULT 'default'::text NOT NULL,
+    tokens jsonb,
+    balances jsonb
 );
 
 
@@ -292,7 +331,15 @@ CREATE TABLE public.model_roles (
 CREATE TABLE public.models (
     id integer NOT NULL,
     name text NOT NULL,
-    status text DEFAULT 'available'::text NOT NULL
+    status text DEFAULT 'available'::text NOT NULL,
+    engine_id integer NOT NULL,
+    quant text,
+    weights_id integer,
+    size_bytes bigint,
+    tool_probe boolean,
+    tool_probe_start text,
+    answer_parser text DEFAULT 'none'::text NOT NULL,
+    options jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -417,7 +464,8 @@ CREATE TABLE public.questions (
     kind text,
     status text,
     embedding public.vector(1024),
-    source_question_id integer
+    source_question_id integer,
+    embedded_by text
 );
 
 
@@ -451,6 +499,38 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: weights; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.weights (
+    id integer NOT NULL,
+    name text NOT NULL,
+    params text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: weights_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.weights_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: weights_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.weights_id_seq OWNED BY public.weights.id;
+
+
+--
 -- Name: data_chunks id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -462,6 +542,13 @@ ALTER TABLE ONLY public.data_chunks ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public.data_sources ALTER COLUMN id SET DEFAULT nextval('public.data_sources_id_seq'::regclass);
+
+
+--
+-- Name: engines id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engines ALTER COLUMN id SET DEFAULT nextval('public.engines_id_seq'::regclass);
 
 
 --
@@ -514,6 +601,13 @@ ALTER TABLE ONLY public.questions ALTER COLUMN id SET DEFAULT nextval('public.qu
 
 
 --
+-- Name: weights id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.weights ALTER COLUMN id SET DEFAULT nextval('public.weights_id_seq'::regclass);
+
+
+--
 -- Name: data_chunks data_chunks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -535,6 +629,22 @@ ALTER TABLE ONLY public.data_sources
 
 ALTER TABLE ONLY public.data_sources
     ADD CONSTRAINT data_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: engines engines_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engines
+    ADD CONSTRAINT engines_name_key UNIQUE (name);
+
+
+--
+-- Name: engines engines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engines
+    ADD CONSTRAINT engines_pkey PRIMARY KEY (id);
 
 
 --
@@ -578,11 +688,11 @@ ALTER TABLE ONLY public.model_roles
 
 
 --
--- Name: models models_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: models models_engine_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.models
-    ADD CONSTRAINT models_name_key UNIQUE (name);
+    ADD CONSTRAINT models_engine_name_key UNIQUE (engine_id, name);
 
 
 --
@@ -642,6 +752,22 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: weights weights_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.weights
+    ADD CONSTRAINT weights_name_key UNIQUE (name);
+
+
+--
+-- Name: weights weights_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.weights
+    ADD CONSTRAINT weights_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: data_chunks_category_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -674,6 +800,13 @@ CREATE INDEX data_chunks_source_id_idx ON public.data_chunks USING btree (source
 --
 
 CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (variant, source_id);
+
+
+--
+-- Name: data_chunks_variant_embedded_by_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_variant_embedded_by_idx ON public.data_chunks USING btree (variant, embedded_by);
 
 
 --
@@ -725,6 +858,22 @@ ALTER TABLE ONLY public.data_chunks
 
 ALTER TABLE ONLY public.model_roles
     ADD CONSTRAINT model_roles_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: models models_engine_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.models
+    ADD CONSTRAINT models_engine_id_fkey FOREIGN KEY (engine_id) REFERENCES public.engines(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: models models_weights_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.models
+    ADD CONSTRAINT models_weights_id_fkey FOREIGN KEY (weights_id) REFERENCES public.weights(id) ON DELETE RESTRICT;
 
 
 --
@@ -790,4 +939,16 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260831000001'),
     ('20260831000002'),
     ('20260906000001'),
-    ('20260906000002');
+    ('20260906000002'),
+    ('20260909000001'),
+    ('20260909000002'),
+    ('20260909000003'),
+    ('20260911000001'),
+    ('20260911000002'),
+    ('20260911000003'),
+    ('20260912000001'),
+    ('20260912000002'),
+    ('20260912000003'),
+    ('20260912000004'),
+    ('20260912000005'),
+    ('20260912000006');

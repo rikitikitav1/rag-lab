@@ -5,8 +5,10 @@ import logging_setup
 from models.eval import Question
 from orm.sync_db import Session
 from sqlalchemy import select
+from use_cases.index import question_needs_embedding
 
 from .base import register, require_embedder_ready
+from .card import clear_the_engine_for
 
 log = logging_setup.get_logger(__name__)
 
@@ -17,6 +19,7 @@ def index_data(options: dict) -> None:
     import use_cases.index
 
     require_embedder_ready()
+    clear_the_engine_for("embedding")
     built = list(sources.factory.all_sources())
     # written by the bootstrap and read by nobody: a job for one source re-indexed all 177
     wanted = options.get("source") or "all"
@@ -87,15 +90,18 @@ def analyze_source(options: dict) -> None:
 @register("embed_questions")
 def embed_questions(options: dict) -> None:
     require_embedder_ready()
+    clear_the_engine_for("embedding")
     size = config.settings.ingestion.batch_size
+    label = llm.embedder_label()
     with Session() as session:
-        pending = session.scalars(
-            select(Question).where(Question.embedding.is_(None))
-        ).all()
+        # a vector from another embedder is as missing as none: search would refuse it anyway
+        pending = session.scalars(select(Question).where(question_needs_embedding(label))).all()
         for i in range(0, len(pending), size):
             batch = pending[i : i + size]
-            vectors = llm.request_embeddings_batch([q.original_text for q in batch])
+            # the label of the embedder that made these vectors, even if the role moved mid-job
+            made_by, vectors = llm.embed_labelled([q.original_text for q in batch])
             for question, vector in zip(batch, vectors, strict=True):
                 question.embedding = vector
+                question.embedded_by = made_by
             session.commit()
     log.info("worker.embed_questions", embedded=len(pending))

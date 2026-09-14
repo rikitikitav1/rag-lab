@@ -7,6 +7,9 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
+import token_fields
+from engines import answer_parsers
+from errors import StandFault
 from langgraph.graph import END, StateGraph
 from models.registry import Purpose
 from use_cases import agent_policy as policy
@@ -37,6 +40,7 @@ class State(TypedDict, total=False):
     prompt_tokens: Annotated[int, operator.add]
     completion_tokens: Annotated[int, operator.add]
     max_prompt_tokens: Annotated[int, _keep_max]
+    answer_parse: Annotated[list, operator.add]
     hops: int
     nudges: int
     external: bool
@@ -87,7 +91,8 @@ def model_node(state: State, config) -> dict:
             state["messages"], tools=_schemas(ctx, state["external"]), role=ctx["role"],
             model=ctx["model"],
         )
-    except RuntimeError as e:
+    # the window guard refuses before the call, and a refusal it did not see wrote the row empty
+    except (RuntimeError, llm.InputOverWindow) as e:
         log.error("graph.hop_failed", hop=hop, error=str(e))
         ctx["result"].failed = True
         return {"hops": hop, "finished": True}
@@ -100,6 +105,7 @@ def model_node(state: State, config) -> dict:
         "prompt_tokens": turn.prompt_tokens,
         "completion_tokens": turn.completion_tokens,
         "max_prompt_tokens": turn.prompt_tokens,
+        "answer_parse": [turn.parsed],
         "turn": turn,
     }
     if turn.tool_calls:
@@ -119,7 +125,7 @@ def model_node(state: State, config) -> dict:
     update["messages"] = [turn.message or {"role": "assistant", "content": turn.text or ""}]
     update["text"] = turn.text or ""
     update["finished"] = True
-    if turn.finish_reason == "length":
+    if token_fields.cut(turn.finish_reason):
         log.warning("graph.truncated", hops=hop)
     return update
 
@@ -295,7 +301,7 @@ def final_node(state: State, config) -> dict:
     started = time.perf_counter()
     try:
         final = ctx["chat"](messages, role=ctx["role"], model=ctx["model"])
-    except RuntimeError as e:
+    except (RuntimeError, llm.InputOverWindow) as e:
         log.error("graph.final_failed", error=str(e))
         return update
     ctx["result"].took("model", started)
@@ -304,6 +310,7 @@ def final_node(state: State, config) -> dict:
         *update.get("messages", []),
         final.message or {"role": "assistant", "content": final.text or ""},
     ]
+    update["answer_parse"] = [*update.get("answer_parse", []), final.parsed]
     update.update(
         hops=state["hops"] + 1,
         prompt_tokens=final.prompt_tokens,
@@ -311,7 +318,7 @@ def final_node(state: State, config) -> dict:
         max_prompt_tokens=final.prompt_tokens,
         text=final.text or "",
     )
-    if final.finish_reason == "length":
+    if token_fields.cut(final.finish_reason):
         log.warning("graph.truncated", hops=state["hops"] + 1)
     return update
 
@@ -409,6 +416,8 @@ def invoke(question, system, ctx, result) -> None:
                 "recursion_limit": recursion_limit(ctx["max_hops"]),
             },
         )
+    except StandFault:
+        raise
     except Exception as e:
         # a run that raises here writes no row at all, and a missing row breaks every pairing
         log.error("graph.failed", error=str(e))
@@ -428,6 +437,7 @@ def invoke(question, system, ctx, result) -> None:
     result.hops = state["hops"]
     result.prompt_tokens = state["prompt_tokens"]
     result.completion_tokens = state["completion_tokens"]
+    result.answer_parse = answer_parsers.summarize(state.get("answer_parse") or [])
     result.max_prompt_tokens = state["max_prompt_tokens"]
     result.text = state.get("text") or ""
     result.finished_by = str(state.get("finished_by") or policy.FinishedBy.answer)

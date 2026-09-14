@@ -2,11 +2,16 @@ import statistics
 import sys
 
 import limits
+import outcomes
+import token_fields
+from engines import DANGLING, answer_parsers, engine_of, registered_names
+from engines.card import NO_RESIDENCY
 from evals.loaders import load_logs
 from evals.pools import (
     ALL_OUTCOMES,
     JOINS_BOTH_JUDGES,
     POOLS,
+    Ambiguous,
     by_question,
     has_remote_evidence,
     joins_both_judges,
@@ -105,11 +110,63 @@ def paired(left, right, axis) -> dict:
     return result
 
 
-# 1 pools and blend; 2 residency; 3 engine and population; 4 the prompt; 5 p never null; 6 `p`
-SCHEMA = 6
+def _judged(ql, axis) -> dict:
+    return (ql.metrics or {}).get(axis) or {}
+
+
+# a mean can hold still while the ruler moves: 1 to 0 on one row and 0 to 1 on another cancel
+def verdicts(left: list, right: list) -> dict:
+    before, after = by_question(left), by_question(right)
+    shared = [q for q in after if q in before]
+    axes = {}
+    for axis in AXES:
+        both = [(before[q], after[q]) for q in shared
+                if getattr(before[q], axis) is not None and getattr(after[q], axis) is not None]
+        tokens = [(_judged(a, axis).get(token_fields.JUDGE_PROMPT),
+                   _judged(b, axis).get(token_fields.JUDGE_PROMPT)) for a, b in both]
+        pair = paired(left, right, axis)
+        axes[axis] = {
+            "comparable": len(both),
+            "disagree": sum(1 for a, b in both if float(getattr(a, axis)) != float(getattr(b, axis))),
+            # scored on one side only: neither a match nor a clash, and left out of both counts
+            "one_sided": sum(1 for q in shared
+                             if (getattr(before[q], axis) is None) != (getattr(after[q], axis) is None)),
+            # the means `paired` reports for this axis, over the same rows scored on both sides
+            "left": pair["left"],
+            "right": pair["right"],
+            # the judge read fewer tokens on one side: its context was cut, or the tokenizer differs
+            "prompt_tokens_differ": sum(1 for a, b in tokens
+                                        if a is not None and b is not None and a != b),
+            "seconds_left": mean_of((_judged(a, axis).get("elapsed") for a, _ in both), digits=1),
+            "seconds_right": mean_of((_judged(b, axis).get("elapsed") for _, b in both), digits=1),
+        }
+    comparable = sum(a["comparable"] for a in axes.values())
+    disagree = sum(a["disagree"] for a in axes.values())
+    return {
+        "questions": len(shared),
+        "comparable": comparable,
+        "disagree": disagree,
+        "disagree_rate": round(disagree / comparable, 3) if comparable else None,
+        "axes": axes,
+    }
+
+
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote; 12 sampler; 13 penalty, grammar, key, rule
+SCHEMA = 13
+
+
+class TwoJudges(Ambiguous):
+    pass
 
 
 def compare(runs: dict[str, list]) -> dict:
+    residency = residencies(runs)
+    # two judges are two rulers: a difference of their means measures nothing
+    if residency["one_engine_name"] is False:
+        raise TwoJudges(
+            f"{residency['read_this_first']}: judged on {residency['engine_names_by_run']}."
+            " Read each arm alone through `run_metrics`, or rejudge one arm on the other's engine"
+        )
     by_pool = {name: split(logs) for name, logs in runs.items()}
     names = list(runs)
 
@@ -145,7 +202,12 @@ def compare(runs: dict[str, list]) -> dict:
     return {
         "schema": SCHEMA,
         "runs": names,
-        "residency": residencies(runs),
+        "outcome_rule": outcomes.RULE,
+        "residency": residency,
+        # the treatment, not a fault: two generators on two engines is what a pair of arms compares
+        "answering_engines_by_run": {name: _answering_engines(logs) for name, logs in runs.items()},
+        # two servers apply their own penalty unasked (1.05 against 1.1): aligned first, then compared
+        **_answering_penalties_of(runs),
         # the correlation's own predicate, called not restated: one label stood over two selections
         "correlation_population": {
             "predicate": JOINS_BOTH_JUDGES,
@@ -154,30 +216,85 @@ def compare(runs: dict[str, list]) -> dict:
         },
         "pools": pools,
         "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
+        # a pair only: with three runs the question is which pair, and the caller names it
+        "verdicts": verdicts(*runs.values()) if len(runs) == 2 else None,
     }
 
 
-# in disqualifying order: a backend, then the ruler, then the reload, then what was not recorded
+# in disqualifying order: a backend, then the arms themselves, then the ruler, then the reload
 def _what_to_read_first(
-    one_engine: bool | None, one_prompt: bool | None, one_residency: bool | None
+    one_engine: bool | None,
+    one_prompt: bool | None,
+    one_residency: bool | None,
+    one_engine_name: bool | None,
+    one_deterministic: bool | None,
+    one_parser: bool | None = None,
+    remote_judge: bool = False,
+    one_sampler: bool | None = None,
+    one_budget: bool | None = None,
+    cut: int = 0,
+    one_grammar: bool | None = None,
 ) -> str | None:
+    if one_engine_name is False:
+        return (
+            "arms judged on differently named engines are not comparable, and the address cannot "
+            "show it: two engines take the same host and port in turn"
+        )
     if one_engine is False:
         return (
             "arms judged on different engines are not comparable: batching, kernels and "
             "quantisation all differ, and residency does not even mean the same thing on both"
+        )
+    if one_deterministic is False:
+        return (
+            "the arms retrieved different sources or ranked them differently on the same questions, "
+            "so they are not one arm read twice: unless retrieval is the treatment, this contrast "
+            "measures a pipeline that changed underneath it"
         )
     if one_prompt is False:
         return (
             "arms scored by different judge prompt versions are two rulers, not one instrument "
             "read twice: unless the prompt is the treatment, this contrast measures the prompt"
         )
+    if one_parser is False:
+        return (
+            "arms whose judge answers were cut by different parsers read different texts: the cut "
+            "shapes what the score is read from, so this contrast measures the parser"
+        )
+    if one_grammar is False:
+        return (
+            "arms whose judge decoded its JSON by different rules wrote different replies: with free "
+            "whitespace one reply wrote tabs until its limit, and without it the same row got another "
+            "reason and a score, so this contrast measures the grammar"
+        )
+    if one_sampler is False:
+        return (
+            "arms whose judge sampled by a different temperature or seed chose their tokens by "
+            "different rules, so this contrast measures the sampler"
+        )
+    if one_budget is False and cut:
+        return (
+            f"arms whose judge had different output budgets differ where a budget cut: {cut} verdicts "
+            "ended on the limit, and there this contrast measures the budget"
+        )
     if one_residency is False:
         return (
-            "arms judged across a reload are not comparable directly: the same judge moves 14% of "
-            "its scores and 58% of its reason texts on byte-identical input"
+            "arms judged across a reload are not comparable directly: measured on ollama, the same "
+            "judge moves 14% of its scores and 58% of its reason texts on byte-identical input, and "
+            "a pair whose own floor was never measured cannot borrow that one"
+        )
+    if one_residency is None and remote_judge:
+        return (
+            "a remote judge has no residency: two passes are one instrument only while the broker "
+            "keeps serving the same weights, and nothing the stand reads can tell"
         )
     if one_residency is None:
         return "rows judged before this was recorded carry no residency, so nothing can be said"
+    if one_engine_name is None:
+        return (
+            "at least one arm recorded no engine name, so which engine stood behind it cannot be "
+            "said, and the address alone does not tell two engines apart"
+        )
     if one_engine is None:
         return (
             "the residency matches, but at least one arm recorded no engine, so whether both ran "
@@ -188,12 +305,27 @@ def _what_to_read_first(
             "rows judged before the prompt version reached the row carry none, so whether both "
             "arms were scored by one ruler cannot be said"
         )
+    if one_deterministic is None:
+        return (
+            "no question was retrieved by both arms with its sources recorded, so whether the "
+            "deterministic half of the pipeline held still cannot be said"
+        )
+    if one_budget is False:
+        return (
+            "the arms' judge had different output budgets and no verdict reached either limit, so the "
+            "budget changed nothing here; the rest of the reading holds as for one residency"
+        )
     return (
         "one residency is necessary, not sufficient: two arms with identical rows, order and "
         "prompt still differed on 4 of 50 rows, so this contrast measures its own floor rather "
         "than inheriting a zero. A reading that rests on the reason text holds only here, and "
         "`seed` at temperature zero says the sampler took no part, not that a pass repeats"
     )
+
+
+# a stamp from before the server's JSON rules were read carries neither key, and reads as its own rule
+def _grammar_of(added: dict) -> str:
+    return f"{added.get('json_backend')}:{added.get('json_disable_any_whitespace')}"
 
 
 # per axis, because three axes carry three versions and their union is three by construction
@@ -217,39 +349,184 @@ def _all_agree(by_run: dict) -> bool | None:
     return len({one for seen in by_run.values() for one in seen}) == 1
 
 
+# the floats beside the ranks are not read: a distance that moved is the embedder's own story
+def _footprint(ql) -> tuple | None:
+    seen = ql.sources
+    if not seen:
+        return None
+    return tuple(
+        (one.get("source"), one.get("hop"), one.get("vector_rank"), one.get("keyword_rank"))
+        for one in seen
+    )
+
+
+# the deterministic half must be equal, not close: two arms that retrieved differently are two arms
+def _one_retrieval(runs: dict[str, list]) -> bool | None:
+    by_run = {name: by_question(logs) for name, logs in runs.items()}
+    if len(by_run) < 2:
+        return None
+    shared = set.intersection(*(set(seen) for seen in by_run.values()))
+    compared = 0
+    for question in shared:
+        prints = [_footprint(by_run[name][question]) for name in by_run]
+        # a row that recorded no source says nothing about the pipeline, and silence is not a clash
+        if any(one is None for one in prints):
+            continue
+        compared += 1
+        if len(set(prints)) != 1:
+            return False
+    return True if compared else None
+
+
+# a single-shot row with no context answered NO_RESULTS itself, and rows written before that was stamped named a generator
+def _asked_the_generator(ql) -> bool:
+    if "generation" in (getattr(ql, "models", None) or {}) and ql.models["generation"] is None:
+        return False
+    return not (getattr(ql, "pipeline", None) == "single_shot"
+                and (getattr(ql, "answer", None) or "").strip() == outcomes.NO_RESULTS)
+
+
+# read off the run snapshot's `config.engines`, per role; a row older than that key names nothing
+def _answering_engines(logs: list) -> dict[str, list[str]]:
+    seen: dict[str, set] = {}
+    for ql in logs:
+        asked = _asked_the_generator(ql)
+        for role, engine in (((ql.metrics or {}).get("config") or {}).get("engines") or {}).items():
+            if str(role) == "generation" and not asked:
+                continue
+            seen.setdefault(str(role), set()).add(engine)
+    return {role: sorted(engines) for role, engines in sorted(seen.items())}
+
+
+# the penalty each answering role ran with: sent where the call named it, else what its engine applied on its own
+def _answering_penalties(logs: list) -> dict[str, list]:
+    seen: dict[str, set] = {}
+    for ql in logs:
+        if not _asked_the_generator(ql):
+            continue
+        cfg = (ql.metrics or {}).get("config") or {}
+        sent, added = cfg.get("samplers") or {}, cfg.get("engine_added") or {}
+        for role in (set(sent) | set(added)) - {"embedding", "reranking"}:
+            value = (sent.get(role) or {}).get("repetition_penalty", (added.get(role) or {}).get("repetition_penalty"))
+            seen.setdefault(str(role), set()).add(value)
+    return {role: sorted(values, key=str) for role, values in sorted(seen.items())}
+
+
+# a row from before the penalty was stamped reads as unknown, and unknown matches nothing
+def _answering_penalties_of(runs: dict[str, list]) -> dict:
+    by_run = {name: _answering_penalties(logs) for name, logs in runs.items()}
+    held = {value for roles in by_run.values() for value in roles.get("generation") or [None]}
+    one = None if len(by_run) < 2 or None in held or "unknown" in held else len(held) == 1
+    return {"answering_penalties_by_run": by_run, "one_answering_penalty": one}
+
+
 # two arms judged across a reload are two instruments: 14% of scores move on identical input
 def residencies(runs: dict[str, list]) -> dict:
     from use_cases import rejudge
 
-    seen, engines_seen, prompts_seen = {}, {}, {}
+    live = registered_names()
+    seen, engines_seen, names_seen, prompts_seen, parsers_seen = {}, {}, {}, {}, {}
+    choices_seen, budgets_seen, cuts_seen, grammars_seen, keys_seen = {}, {}, {}, {}, {}
+    gone = set()
+    remote_judge = False
     for name, logs in runs.items():
-        ids, engines = set(), set()
+        ids, addresses, named, keys = set(), set(), set(), set()
         versions = {axis: set() for axis in rejudge.AXES}
+        parsers = {axis: set() for axis in rejudge.AXES}
+        choices = {axis: set() for axis in rejudge.AXES}
+        budgets = {axis: set() for axis in rejudge.AXES}
+        grammars = {axis: set() for axis in rejudge.AXES}
+        # judged before the sampler was stamped: beside stamped rows the arm cannot say it held one sampler
+        bare = set()
+        cuts = 0
         for ql in logs:
             for axis in rejudge.AXES:
                 stamp = ((ql.metrics or {}).get(axis) or {})
                 if stamp.get("residency_id") is not None:
                     ids.add(stamp["residency_id"])
-                if stamp.get("engine"):
-                    engines.add(stamp["engine"])
+                remote_judge = remote_judge or stamp.get("residency_source") == NO_RESIDENCY
+                read = engine_of(stamp, live)
+                if read.address:
+                    addresses.add(read.address)
+                if read.name:
+                    named.add(read.name)
+                if read.state == DANGLING:
+                    gone.add(read.name)
                 # the version sits beside the model, in `prompts`, and never reached the stamp
                 version = (ql.prompts or {}).get(f"judge_{axis}")
                 if version is not None:
                     versions[axis].add(version)
+                # a verdict stamped before the parser was recorded came from a local judge: no cut
+                if stamp.get("model"):
+                    parsers[axis].add(stamp.get("judge_parser") or answer_parsers.NO_PARSER)
+                # a verdict from before the sampler was stamped says nothing, and silence is not a match
+                sent = stamp.get("sampler")
+                if isinstance(sent, dict):
+                    choices[axis].add((sent.get("temperature"), sent.get("seed")))
+                    budgets[axis].add(sent.get("max_tokens"))
+                elif stamp.get("engine"):
+                    bare.add(axis)
+                cuts += bool(stamp.get(token_fields.JUDGE_CUT))
+                if isinstance(stamp.get("engine_added"), dict):
+                    grammars[axis].add(_grammar_of(stamp["engine_added"]))
+                    keys.add(stamp["engine_added"].get("key_fingerprint"))
+            # a cloud generator's key sits in the run snapshot, a cloud judge's in its verdict stamp
+            for added in (((ql.metrics or {}).get("config") or {}).get("engine_added") or {}).values():
+                if isinstance(added, dict):
+                    keys.add(added.get("key_fingerprint"))
+        keys_seen[name] = sorted(k for k in keys if k)
         seen[name] = sorted(ids)
-        engines_seen[name] = sorted(engines)
+        # the address, because it is the one field every era of this record carries
+        engines_seen[name] = sorted(addresses)
+        names_seen[name] = sorted(named)
         prompts_seen[name] = {axis: sorted(v) for axis, v in versions.items() if v}
+        parsers_seen[name] = {axis: sorted(v) for axis, v in parsers.items() if v}
+        choices_seen[name] = {axis: sorted(v, key=str) for axis, v in choices.items() if v and axis not in bare}
+        budgets_seen[name] = {axis: sorted(v, key=str) for axis, v in budgets.items() if v and axis not in bare}
+        cuts_seen[name] = cuts
+        grammars_seen[name] = {axis: sorted(v) for axis, v in grammars.items() if v}
     # an arm that recorded nothing cannot agree with one that did: silence is not a match
     one = _all_agree(seen)
     one_engine, one_prompt = _all_agree(engines_seen), _one_ruler(prompts_seen)
+    one_parser = _one_ruler(parsers_seen)
+    one_sampler, one_budget = _one_ruler(choices_seen), _one_ruler(budgets_seen)
+    one_grammar = _one_ruler(grammars_seen)
+    one_name = _all_agree(names_seen)
+    one_retrieval = _one_retrieval(runs)
+    # a key is an account, not an instrument: two keys are one ruler billed twice, and the record says so
+    spent_on = {key for held in keys_seen.values() for key in held}
+    # silence is not a match: an arm with no recorded key leaves the question unread
+    one_key = None if not spent_on or not all(keys_seen.values()) else len(spent_on) == 1
     return {
         "by_run": seen,
         "one_residency": one,
         "engines_by_run": engines_seen,
         "one_engine": one_engine,
+        "engine_names_by_run": names_seen,
+        "one_engine_name": one_name,
+        # absent, not empty, when the table could not be read: silence is not "all were deleted"
+        **({} if live is None else {"engines_gone": sorted(gone)}),
         "judge_prompts_by_run": prompts_seen,
         "one_judge_prompt": one_prompt,
-        "read_this_first": _what_to_read_first(one_engine, one_prompt, one),
+        "judge_parsers_by_run": parsers_seen,
+        "one_judge_parser": one_parser,
+        "judge_grammars_by_run": grammars_seen,
+        "one_judge_grammar": one_grammar,
+        "judge_samplers_by_run": choices_seen,
+        "one_judge_sampler": one_sampler,
+        "judge_budgets_by_run": budgets_seen,
+        "one_judge_budget": one_budget,
+        "judge_cut_by_run": cuts_seen,
+        # the sources and their ranks on the questions both arms answered, equal or not at all
+        "one_deterministic": one_retrieval,
+        "remote_judge": remote_judge,
+        "broker_keys_by_run": keys_seen,
+        "one_broker_key": one_key,
+        "read_this_first": _what_to_read_first(
+            one_engine, one_prompt, one, one_name, one_retrieval, one_parser=one_parser, one_grammar=one_grammar,
+            remote_judge=remote_judge, one_sampler=one_sampler, one_budget=one_budget,
+            cut=sum(cuts_seen.values()),
+        ),
     }
 
 

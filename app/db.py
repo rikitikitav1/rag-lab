@@ -4,6 +4,7 @@ from typing import NamedTuple
 
 import config
 import logging_setup
+from errors import StandFault
 from langdetect import DetectorFactory, LangDetectException, detect
 from orm.sync_db import engine
 from sqlalchemy import text
@@ -64,7 +65,7 @@ def _by_function_words(text_, fts) -> str | None:
 
 def detect_language(text_, mode=None) -> str:
     """One rule for the search config and for the language the answer comes back in."""
-    return _detect(text_, mode or config.settings.retrieval.query_lang)
+    return _detect(text_, mode or config.settings.retrieval.keyword.query_lang)
 
 
 # a hop asks for the same question several times, and function_words costs a round trip
@@ -177,7 +178,30 @@ def corpus_variants() -> list[dict]:
         return [dict(r) for r in conn.execute(text(query)).mappings()]
 
 
-def nearest_distance(embedding, *, variant) -> float | None:
+class ForeignVectors(StandFault):
+    pass
+
+
+# a vector meets only vectors of its own embedder: nothing else refused a search across two of them
+def refuse_foreign_vectors(conn, variant: str, embedded_by: str) -> None:
+    # an unmarked vector is refused; marks come off the index, a filter on `embedding` cost 26 ms
+    seen = conn.execute(
+        text("SELECT DISTINCT embedded_by FROM data_chunks"
+             " WHERE variant = :variant AND embedded_by IS NOT NULL"
+             " UNION ALL SELECT NULL WHERE EXISTS (SELECT 1 FROM data_chunks WHERE variant = :variant"
+             " AND embedded_by IS NULL AND embedding IS NOT NULL)"),
+        {"variant": variant},
+    ).scalars().all()
+    foreign = sorted(label or "no recorded embedder" for label in set(seen) - {embedded_by})
+    if foreign:
+        raise ForeignVectors(
+            f"variant {variant!r} holds vectors of {', '.join(foreign)} and this search embeds"
+            f" with {embedded_by}: reindex the variant, or give the embedding role back"
+        )
+
+
+# the caller names the embedder: asked from here, it took a second pooled connection per search
+def nearest_distance(embedding, *, variant, embedded_by: str) -> float | None:
     # same filters as hybrid_search: the topic axis must not see what retrieval cannot
     query = f"""
         SELECT embedding <=> CAST(:embedding AS vector) AS distance
@@ -189,6 +213,7 @@ def nearest_distance(embedding, *, variant) -> float | None:
     from use_cases import search_depth
 
     with engine.connect() as conn:
+        refuse_foreign_vectors(conn, variant, embedded_by)
         # on the connection already held: `resolve` opens its own, and the pool is five plus five
         depth = search_depth.resolve(variant, conn=conn)
         conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
@@ -233,15 +258,16 @@ def hybrid_search(
     distance_threshold=None,
     ef_search=None,
     exact=False,
+    embedded_by: str,
 ):
     retrieval = config.settings.retrieval
     limit = limit or retrieval.results_limit
     if distance_threshold is None:
         distance_threshold = retrieval.distance_threshold
-    rank_fn = retrieval.keyword_rank
+    rank_fn = retrieval.keyword.rank
     if rank_fn not in RANK_FUNCTIONS:
         raise ValueError(f"keyword_rank must be one of {sorted(RANK_FUNCTIONS)}")
-    keyword_query = _keyword_query_sql(retrieval.keyword_query)
+    keyword_query = _keyword_query_sql(retrieval.keyword.query)
     cat_filter = "AND category ~ (:category)::lquery" if category else ""
     src_filter = f"AND {live_rows()}"
     query = f"""WITH vector_search AS (
@@ -288,7 +314,7 @@ def hybrid_search(
         "variant": variant,
         "rrf_k": config.settings.retrieval.rrf_k,
         "ts_config": _ts_config(question),
-        "keyword_norm": retrieval.keyword_norm,
+        "keyword_norm": retrieval.keyword.norm,
     }
     if category:
         params["category"] = f"*.{category}.*"
@@ -298,6 +324,7 @@ def hybrid_search(
     # an argument that names a switch and does not throw it labelled a run exact at 40
     depth = None if exact else search_depth.resolve(variant, ef_search)
     with engine.connect() as conn:
+        refuse_foreign_vectors(conn, variant, embedded_by)
         if exact:
             conn.execute(text("SET LOCAL enable_indexscan = off"))
         else:

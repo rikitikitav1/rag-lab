@@ -76,7 +76,9 @@ def test_the_dictionaries_the_stand_actually_builds_all_pass():
 
     job_specs.check("judge_answers", rejudge.arm_options({"judge_model": "q"}, "a1", 50, 3))
     job_specs.check("judge_answers", {"run_name": "r", "sweep": 2, "judge_prompts": {}})
-    job_specs.check("judge_answers", {"run_name": "r", "deferred_seconds": 90})
+    # the deferral is the worker's own bookkeeping, and it validates on the worker's side
+    job_specs.check("judge_answers", {"run_name": "r", "deferred_seconds": 90},
+                    from_the_worker=True)
     job_specs.check("judge_guest_axes", {"run_name": "r", "judge_width": None})
 
 
@@ -124,5 +126,40 @@ def test_the_guest_cap_counts_the_rows_the_pass_will_walk():
     from job_handlers import judging
 
     door = inspect.getsource(eval_mod.enqueue_guest_axes)
-    assert "min(owed, request.sample)" in door, "the door still caps the whole debt"
+    assert "guest_pass_refusal" in door and "request.sample" in door, "the door no longer asks the shared refusal"
+    assert "min(owed, sample)" in inspect.getsource(judging.guest_pass_refusal), "the refusal caps the whole debt"
     assert "MAX_GUEST_ROWS" in inspect.getsource(judging.judge_guest_axes)
+
+
+def test_a_retried_job_still_validates_with_the_counter_the_worker_wrote():
+    # the worker writes `attempts` into options on every retry, and the second end refused it
+    import job_specs
+
+    job_specs.check("pull_llm_model", {"name": "qwen2.5:7b", "engine_id": 1, "attempts": 2},
+                    from_the_worker=True)
+
+
+def test_the_bookkeeping_of_a_retry_is_not_accepted_from_a_caller():
+    # `attempts` past the cap makes a job give up on its first error, and nothing would say why
+    import job_specs
+    import pytest
+
+    with pytest.raises(job_specs.Refused, match="attempts"):
+        job_specs.check("pull_llm_model", {"name": "qwen2.5:7b", "attempts": 99})
+
+
+def test_every_door_that_queues_a_job_answers_with_the_whole_row():
+    # the eval doors answered three fields and the job door had no `job_id`: a client read ids two ways
+    from api.v1.eval import JobEnqueuedResponse, RejudgeResponse
+    from api.v1.job import JobResponse
+    from api.v1.llm_model import LoadQueuedResponse
+    from api.v1.model_role import SeatQueuedResponse
+    from stand_specs import queued_job
+
+    seen = JobResponse.model_validate(queued_job(options={"run_name": "r"}, id=7)).model_dump()
+    assert seen["job_id"] == seen["id"] == 7
+    assert seen["queue"] == "default" and seen["status"] == "new"
+    assert JobEnqueuedResponse is JobResponse, "one answer for one event"
+    # the rejudge, the load and the seat answered two or three fields of their own
+    for door in (RejudgeResponse, LoadQueuedResponse, SeatQueuedResponse):
+        assert issubclass(door, JobResponse), door.__name__

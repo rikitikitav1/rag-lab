@@ -1,121 +1,17 @@
-from __future__ import annotations
-
 from collections.abc import Sequence
 from operator import itemgetter
-from typing import TYPE_CHECKING
 
-import config
-import gpu
-import logging_setup
-
-if TYPE_CHECKING:
-    from sentence_transformers import CrossEncoder
-
-log = logging_setup.get_logger(__name__)
-
-_reranker: CrossEncoder | None = None
-
-
-def device() -> str:
-    if _reranker is not None:
-        return str(_reranker.model.device).split(":")[0]
-    return requested_device()
-
-
-def requested_device() -> str:
-    import os
-
-    import torch
-
-    if os.getenv("RERANK_DEVICE", "auto") == "cpu":
-        return "cpu"
-    return "cuda" if torch.cuda.is_available() else "cpu"
-
-
-# ollama cannot see this model, so the card arithmetic has no other source for it
-def residency() -> dict:
-    import torch
-
-    loaded = _reranker is not None
-    out = {
-        "model": config.settings.rerank.model,
-        "enabled": config.settings.rerank.enabled,
-        "loaded": loaded,
-        "requested": requested_device(),
-        "device": device() if loaded else None,
-    }
-    if torch.cuda.is_available():
-        out["vram_mb"] = round(torch.cuda.memory_allocated() / 2**20)
-        out["card_free_mb"], out["card_total_mb"] = gpu.memory_mb()
-    return out
-
-
-# the reranker is asked for, is on the card, and the card is where it was asked to be
-def off_the_card() -> str | None:
-    state = residency()
-    if not state["enabled"] or not state["loaded"]:
-        return None
-    if state["device"] != state["requested"]:
-        return f"{state['model']} asked for {state['requested']} and runs on {state['device']}"
-    return None
-
-
-# loaded before the phase asks: the guard fired only after the set was reranked on the cpu
-def warm() -> None:
-    if config.settings.rerank.enabled:
-        _model()
-
-
-def _model() -> CrossEncoder:
-    global _reranker
-
-    if _reranker is None:
-        import torch
-        from sentence_transformers import CrossEncoder
-
-        target = requested_device()
-        kwargs = {"torch_dtype": torch.float16} if target == "cuda" else {}
-        _reranker = CrossEncoder(
-            config.settings.rerank.model, device=target, model_kwargs=kwargs
-        )
-
-    return _reranker
-
-
-def _predict(pairs: list) -> list:
-    global _reranker
-    import torch
-
-    try:
-        return _model().predict(pairs)
-    except torch.cuda.OutOfMemoryError:
-        log.warning("rerank.cuda_oom_fallback", pairs=len(pairs))
-
-    from sentence_transformers import CrossEncoder
-
-    unload()
-    _reranker = CrossEncoder(config.settings.rerank.model, device="cpu")
-    return _reranker.predict(pairs)
+import engines
+import llm
 
 
 def score_pairs(pairs: list) -> list:
-    return _predict(pairs) if pairs else []
+    return llm.score_pairs(pairs)
 
 
-def unload() -> None:
-    global _reranker
-    if _reranker is None:
-        return
-    _reranker = None
-
-    import gc
-
-    import torch
-
-    if torch.cuda.is_available():
-        gc.collect()
-        torch.cuda.empty_cache()
-        log.info("rerank.unloaded", vram_mb=round(torch.cuda.memory_allocated() / 1e6))
+# the placement the reranking engine declares, not a reading of where its weights answered
+def device() -> str:
+    return "cuda" if llm.resolve("reranking").engine.placement in engines.CARD else "cpu"
 
 
 def rerank[R: Sequence](
@@ -126,8 +22,7 @@ def rerank[R: Sequence](
     if not rows:
         return []
 
-    pairs = [(question, row[0]) for row in rows]
-    scores = _predict(pairs)
+    scores = score_pairs([(question, row[0]) for row in rows])
     ranked = sorted(zip(rows, scores, strict=True), key=itemgetter(1), reverse=True)
 
     return [(row, float(score)) for row, score in ranked[:top]]

@@ -2,6 +2,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from conftest import stub_engines
 from use_cases import chat
 
 
@@ -58,6 +59,18 @@ def test_answer_from_rows_empty_is_a_refusal(monkeypatch):
     assert ans.text == chat.NO_RESULTS
 
 
+def test_an_input_past_the_window_fails_its_row_instead_of_raising(monkeypatch):
+    _stub_generation(monkeypatch)
+
+    def refused(**kw):
+        raise chat.llm.InputOverWindow("the input is at least 9000 tokens against the 8192-token window of m")
+
+    monkeypatch.setattr(chat.llm, "ask", refused)
+    ans = chat.answer_from_rows("q", [_row("a.md")], k=5, variant="baseline")
+    assert ans.success is False
+    assert ans.text.startswith("not answered: the input is at least 9000 tokens")
+
+
 def test_answer_from_rows_logs_phased_flag(monkeypatch):
     logged = _stub_generation(monkeypatch)
     chat.answer_from_rows("q", [_row("a.md")], k=5, phased=True, variant="baseline")
@@ -76,8 +89,8 @@ def _offline_snapshot(monkeypatch, device=None):
 
     monkeypatch.setattr(run_snapshot, "_rerank_device", lambda: device)
     monkeypatch.setattr(run_snapshot.db, "fingerprint_or_none", lambda *, variant: None)
-    monkeypatch.setattr(run_snapshot.llm, "server_context_length", lambda model: 8192)
-    monkeypatch.setattr(run_snapshot.llm, "resolve_name", lambda role: "stub")
+    monkeypatch.setattr("engines.ollama.context_length", lambda model, spec=None: 8192)
+    stub_engines(monkeypatch, run_snapshot)
 
 def test_config_snapshot_records_device_only_when_reranking(monkeypatch):
     _offline_snapshot(monkeypatch, device="cuda")
@@ -164,8 +177,10 @@ def test_one_place_decides_whether_a_run_reranks(monkeypatch):
     # True over a config already False: a resolver ignoring config passes the older test
     monkeypatch.setattr(config.settings.rerank, "enabled", True)
     seen = {}
-    monkeypatch.setattr(evaluation, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda role, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda role, model=None, allow_spill=False: None)
     monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 0)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (0, []))
 
     evaluation.eval_run({"run_name": "r", "set_name": "s"})
     assert seen["use_rerank"] is None
@@ -279,7 +294,7 @@ def test_a_piece_that_is_not_a_corpus_chunk_still_holds_its_place():
     refused = agent_tools.chunk_pieces({}, "No relevant documents found.")
     assert refused == [], "a call the gate emptied contributes neither text nor address"
 
-    # the run of 06.09: the gate replaced the content and the addresses outlived it, 133 rows of 300
+    # the gate replaced the content and the addresses outlived it, 133 rows of 300
     gated = agent_tools.chunk_pieces(
         {"chunks": [{"source": "a.md"}, {"source": "b.md"}]}, "No relevant documents found."
     )
@@ -290,3 +305,26 @@ def test_a_piece_that_is_not_a_corpus_chunk_still_holds_its_place():
         {"contexts": ["one", "two"], "chunks": [{"source": "a.md"}]}, "one\n\ntwo"
     )
     assert mismatched == [None, None]
+
+
+
+def test_a_live_answer_joins_the_batch_and_a_run_or_a_failure_does_not(monkeypatch):
+    from use_cases import chat
+
+    batched, single = [], []
+    monkeypatch.setattr(chat.job_queue, "judge_live", lambda log_id: batched.append(log_id))
+    monkeypatch.setattr(chat.job_queue, "enqueue", lambda *a, **kw: single.append(a))
+    chat.judge_later(SimpleNamespace(success=True), None, 7)
+    chat.judge_later(SimpleNamespace(success=True), "arc5_run", 8)
+    chat.judge_later(SimpleNamespace(success=False), None, 9)
+    assert batched == [7] and single == [], "one waiting batch, never a job per question"
+
+
+def test_the_agent_judges_its_live_answers_by_the_chat_s_rule():
+    # the agent queued a pass per answer beside the chat's batch, and took the card each time
+    import inspect
+
+    from use_cases import agent
+
+    source = inspect.getsource(agent)
+    assert "chat.judge_later(" in source and 'enqueue("judge_answers"' not in source

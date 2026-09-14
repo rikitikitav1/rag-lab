@@ -34,6 +34,27 @@ def test_a_weak_phrase_needs_the_sources_to_be_blamed():
     assert outcomes.refusal("The answer is not found in the available sources.")
 
 
+def test_sources_that_do_not_contain_the_answer_refuse():
+    for text in (
+        "Контекст не содержит информации об ионной и ковалентной связи. В предоставленных материалах "
+        "рассматриваются только вопросы по Ionic и CNN, и они не касаются химических типов связи.",
+        "Предоставленные фрагменты не содержат ответа на этот вопрос.",
+        "The provided context does not contain information about Delphi 7.",
+    ):
+        assert outcomes.refusal(text), text[:60]
+
+
+def test_a_thing_that_does_not_contain_something_is_prose():
+    for text in (
+        "Индекс не содержит NULL, поэтому документ попадает в выборку целиком.",
+        "The array does not contain duplicates, so the source order is kept.",
+        "The context does not contain a deadline unless you derive it with context.WithTimeout.",
+        "Embedded documents do not contain an _id field unless you add one.",
+        "Этот фрагмент не содержит утечки: defer закрывает файл.",
+    ):
+        assert not outcomes.refusal(text), text[:60]
+
+
 def test_a_long_essay_is_never_a_refusal():
     essay = "Replication is asynchronous, so a failover can lose the tail. " * 12
     assert len(essay) > outcomes.REFUSAL_MAX_CHARS

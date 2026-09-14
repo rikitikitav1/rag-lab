@@ -2,32 +2,27 @@ from typing import Literal
 
 import config
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
-from use_cases import chat
+from pydantic import BaseModel, ConfigDict, Field
+from use_cases import card_wait, chat
 
 import db
+from api.v1.card_door import wait_for_the_card
 from api.v1.schemas import AnswerSource
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-class QuestionOptions(BaseModel):
-    model: str | None = None
-    max_distance: float | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-
-
+# options and tags were accepted and never read: a client that chose a model got the default unsaid
 class QuestionFilter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     # the MCP door validated this and the REST doors did not, onto the same lquery
     category: str | None = Field(default=None, pattern=db.CATEGORY_RE.pattern)
-    tags: list[str] = []
 
 
 class QuestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     text: str
     filter: QuestionFilter | None = None
-    options: QuestionOptions | None = None
     rerank: bool | None = None
     language: Literal["ru", "en"] | None = None
     # 1..1000 is what the server accepts: a value it refuses dies after the embedding is paid
@@ -56,6 +51,7 @@ class RetrievalResponse(BaseModel):
 
 @router.post("/question", response_model=QuestionResponse)
 def ask(question: QuestionRequest) -> QuestionResponse:
+    wait_for_the_card(*card_wait.answering_roles(rerank_asked=question.rerank))
     category = question.filter.category if question.filter else None
     res = chat.answer(
         question.text,
@@ -80,6 +76,7 @@ def ask(question: QuestionRequest) -> QuestionResponse:
 
 @router.post("/fast_question", response_model=RetrievalResponse)
 def quick_ask(question: QuestionRequest) -> RetrievalResponse:
+    wait_for_the_card(*card_wait.retrieving_roles(rerank_asked=question.rerank))
     category = question.filter.category if question.filter else None
     res = chat.retrieve(
         question.text, category, variant=config.settings.corpus.variant,

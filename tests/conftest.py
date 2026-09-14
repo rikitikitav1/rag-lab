@@ -1,4 +1,18 @@
+import sys
+
 import pytest
+
+# the stand imports this tree, and a host-written .pyc of the same length once outlived a revert
+sys.dont_write_bytecode = True
+
+
+# every stamp reads each ollama model's parameters and the server's version; a test that means them patches its own
+@pytest.fixture(autouse=True)
+def no_ollama_reads(monkeypatch):
+    from engines import ollama
+
+    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {})
+    monkeypatch.setattr(ollama, "server_version", lambda spec=None: None)
 
 
 @pytest.fixture
@@ -66,3 +80,29 @@ class FakeSession:
     def rollback(self):
         pass
 
+
+
+# one engine on the stand, spelled once: six files were about to hold their own copy of it
+def stub_engine():
+    import engines
+    from models.registry import EngineKind, Placement
+
+    return engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+
+
+def stub_engines(monkeypatch, module):
+    import engines
+
+    spec = stub_engine()
+    monkeypatch.setattr(
+        module.llm, "resolve_for", lambda role, model=None: engines.Resolved(model or "stub", spec)
+    )
+    monkeypatch.setattr(module.llm, "resolve", lambda role: engines.Resolved("stub", spec))
+
+
+# requested only by the modules that carry `real_db.pytestmark`, so no postgres means a skip
+@pytest.fixture(scope="module")
+def db():
+    import real_db
+
+    yield from real_db.scratch()

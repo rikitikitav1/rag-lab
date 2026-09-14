@@ -2,9 +2,12 @@ import json
 import time
 
 import agent_tools
-import config
+import engines
+import engines.ollama
 import llm
 import logging_setup
+import token_fields
+from errors import StandFault
 from langchain_core.tools import StructuredTool
 from use_cases import agent_policy as policy
 from use_cases import chat
@@ -14,20 +17,24 @@ log = logging_setup.get_logger(__name__)
 
 def truncated(message) -> bool:
     meta = getattr(message, "response_metadata", None) or {}
-    return meta.get("finish_reason") == "length" or meta.get("done_reason") == "length"
+    return token_fields.cut(meta.get("finish_reason")) or token_fields.cut(meta.get("done_reason"))
 
 
+# the third client in the tree, and the only one that used to read the address out of the config
 def chat_model(role: str = "generation", model: str | None = None):
     from langchain_ollama import ChatOllama
 
-    opts = config.settings.llm.roles[role].options
+    picked = llm.resolve_for(role, model)
+    engines.ollama.refuse_unless_ollama(picked.engine, "the idiomatic orchestrator")
+    sent = llm.sampler(role, picked).sent
     return ChatOllama(
-        base_url=config.settings.llm.base_url,
-        model=model or llm.resolve_name(role),
-        temperature=opts.get("temperature"),
-        num_predict=opts.get("max_tokens"),
+        base_url=engines.base_url(picked.engine),
+        model=picked.name,
+        temperature=sent.get("temperature"),
+        num_predict=sent.get("max_tokens"),
+        seed=sent.get("seed"),
         # ChatOllama has no retry of its own, so this is one attempt where our client takes two
-        client_kwargs={"timeout": llm.LLM_TIMEOUT},
+        client_kwargs={"timeout": engines.LLM_TIMEOUT},
     )
 
 
@@ -117,6 +124,8 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
         # for this arm the limit is the budget, so reaching it is exhaustion, not a failure
         result.failed = False
         return
+    except StandFault:
+        raise
     except Exception as e:
         log.error("react.client_failed", error=str(e))
         result.text = ""

@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import engines
+from conftest import stub_engine
 from evals import guest_axes
 
 
@@ -61,7 +63,7 @@ def test_a_row_without_the_material_is_never_owed_the_axis():
 def test_a_guest_that_throws_records_the_try_and_moves_on(monkeypatch):
     from job_handlers import judging
 
-    def boom(axis, ql):
+    def boom(axis, ql, messages=None, **kw):
         raise RuntimeError("ragas is not installed here")
 
     monkeypatch.setattr(guest_axes, "score", boom)
@@ -73,11 +75,27 @@ def test_a_guest_that_throws_records_the_try_and_moves_on(monkeypatch):
     assert "RuntimeError" in ql.metrics["ragas_faithfulness"]["error"]
 
 
+def test_a_lost_card_on_a_guest_ends_the_pass_and_writes_no_error_into_the_row(monkeypatch):
+    import pytest
+    from engines.card import CardNotHanded
+    from job_handlers import judging
+
+    def lost(axis, ql, messages=None, **kw):
+        raise CardNotHanded("ollama did not let go of the card in 60s")
+
+    monkeypatch.setattr(guest_axes, "score", lost)
+    ql = _row(metrics={"relevance": {"reason": "ok"}})
+    monkeypatch.setattr(judging, "Session", _session_of(ql))
+    with pytest.raises(CardNotHanded):
+        judging._score_guests(1, {})
+    assert "ragas_faithfulness" not in ql.metrics
+
+
 def test_a_guest_stops_being_tried_after_the_same_cap_our_axes_have(monkeypatch):
     from job_handlers import judging
 
     tried = []
-    monkeypatch.setattr(guest_axes, "score", lambda axis, ql: tried.append(axis) or {})
+    monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None, **kw: tried.append(axis) or {})
     ql = _row(metrics={axis: {"attempts": judging._MAX_JUDGE_ATTEMPTS} for axis in guest_axes.NAMES})
     monkeypatch.setattr(judging, "Session", _session_of(ql))
     judging._score_guests(1, {})
@@ -106,18 +124,17 @@ def test_a_guest_pass_that_cannot_score_says_so_instead_of_walking(monkeypatch):
     from job_handlers import judging
 
     monkeypatch.setattr(judging, "guests_available", lambda: False)
-    with pytest.raises(ValueError, match="ragas"):
+    with pytest.raises(judging.Final, match="ragas"):
         judging.judge_guest_axes({"run_name": "r"})
 
 
 def test_a_guest_number_says_at_which_width_and_on_what_card_it_was_taken(monkeypatch):
     from job_handlers import judging
 
-    monkeypatch.setattr(guest_axes, "score", lambda axis, ql: {"score": 1.0, "abstained": False})
-    monkeypatch.setattr(judging, "judge_on_card", lambda: False)
+    monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None, **kw: {"score": 1.0, "abstained": False})
     ql = _row()
     monkeypatch.setattr(judging, "Session", _session_of(ql))
-    judging._score_guests(1, {"seed": 0, "width": 4})
+    judging._score_guests(1, {"seed": 0, "width": 4}, on_card=False)
     written = ql.metrics["ragas_faithfulness"]
     assert written["width"] == 4 and written["seed"] == 0 and written["score"] == 1.0
     assert written["on_card_at_this_row"] is False, "the row's own reading, beside the pass's"
@@ -128,27 +145,34 @@ def test_a_guest_number_names_the_process_that_took_it(monkeypatch):
     from evals import guest_llm
 
     monkeypatch.setattr(guest_llm.llm, "resolve_name", lambda role: "q:7b")
+    monkeypatch.setattr(guest_llm.llm, "resolve", lambda role: engines.Resolved("q:7b", stub_engine()))
+    monkeypatch.setattr(guest_llm.llm, "sampler_of", lambda role, spec=None: {"temperature": 0, "seed": 0})
     stamp = guest_llm.stamp()
     assert stamp["runtime"] in ("host", "container")
     assert stamp["ragas"] and stamp["model"] == "q:7b"
+    # the fields two guest numbers must share to be compared, and the guest's own seat
+    assert stamp["role"] == "ragas" and stamp["sampler"] == {"temperature": 0, "seed": 0}
+    assert (stamp["parser"], stamp["cache_key"]) == ("none@1", None) and stamp["engine"]
+    assert stamp["messages"] == "user_only", "the ruler changed with the empty system, and the stamp says which"
+    assert stamp["embedding_engine"] == stub_engine().name, "the embedder moved engines once, and the stamp says where"
 
 
 def test_the_card_is_read_from_the_one_holder_that_already_answers_it(monkeypatch):
     # a pass 9.6x as long as ours can lose the judge to a neighbour halfway
     from job_handlers import judging
 
-    monkeypatch.setattr(judging.llm, "resolve_name", lambda role: "q:7b")
+    monkeypatch.setattr(judging.llm, "resolve", lambda role: engines.Resolved("q:7b", stub_engine()))
     monkeypatch.setattr(
-        judging.llm, "residency", lambda: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
+        "engines.ollama.residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 100}]
     )
     assert judging.judge_on_card() is True
 
     monkeypatch.setattr(
-        judging.llm, "residency", lambda: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
+        "engines.ollama.residency", lambda spec=None: [{"model": "q:7b", "size_mb": 100, "vram_mb": 40}]
     )
     assert judging.judge_on_card() is False
 
-    monkeypatch.setattr(judging.llm, "residency", list)
+    monkeypatch.setattr("engines.ollama.residency", lambda spec=None: [])
     assert judging.judge_on_card() is None
 
 
@@ -365,7 +389,9 @@ def test_a_cancelled_judging_job_stops_instead_of_running_to_the_end(monkeypatch
     monkeypatch.setattr(judging, "_judge_log", lambda log_id, **kw: judged.append(log_id) or True)
     monkeypatch.setattr(judging, "_bench_from", lambda o: SimpleNamespace(
         model=None, template=lambda p: "t"))
-    monkeypatch.setattr(judging, "require_role_ready", lambda role: None)
+    monkeypatch.setattr(judging, "require_role_ready", lambda role, **kw: None)
+    monkeypatch.setattr(judging, "require_card", lambda role, model=None, asked_by=None: None)
+    monkeypatch.setattr(judging, "_refuse_a_second_judge", lambda run_name, model: None)
     monkeypatch.setattr(judging, "_target_log_ids", lambda s, o: [1, 2, 3, 4, 5])
     monkeypatch.setattr(judging.experiment, "revive_for_run", lambda r: None)
     monkeypatch.setattr(judging, "_sweep_again_if_rows_are_still_owed",
@@ -380,7 +406,7 @@ def test_a_cancelled_judging_job_stops_instead_of_running_to_the_end(monkeypatch
 
 
 def test_the_guest_pass_draws_a_seeded_subsample_and_redraws_the_same_rows():
-    # the owner's decision of 07.09: guests calibrate on a subsample, they cost 35x ours a row
+    # guests calibrate on a subsample, they cost 35x ours a row
     from job_handlers.judging import _drawn
 
     ids = list(range(100, 200))
@@ -461,3 +487,202 @@ def test_what_a_guest_reads_off_a_row_survives_the_session():
     assert guest_axes.carried(SimpleNamespace(
         question_text=None, answer=None, contexts=None, question=None
     )).question.reference_answer is None
+
+
+def test_a_guest_row_carries_what_its_calls_cost(monkeypatch):
+    # ragas asks the model several times for one row and keeps only the text; the stamp keeps the sum
+    import llm
+    from evals import guest_llm
+    from models.registry import EngineKind, Placement
+
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x", tool_calls=None), finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
+    )
+    monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
+    monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
+    monkeypatch.setattr(llm, "_complete", lambda *a, **kw: reply)
+    client = guest_llm.OurClient()
+
+    class Metric:
+        async def single_turn_ascore(self, sample):
+            client.generate_text("first")
+            client.generate_text("second")
+            return 0.5
+
+    monkeypatch.setattr(guest_axes, "_metric", lambda *a: Metric())
+    monkeypatch.setattr(guest_axes, "_sample", lambda ql: None)
+    monkeypatch.setattr(guest_llm, "stamp", lambda *a: {})
+    got = guest_axes.score("faithfulness", _row())
+    assert got["tokens"] == {"ragas": [{"engine": "ollama", "model": "m", "prompt": 20, "completion": 6, "calls": 2,
+                                        "max_prompt": 10}]}
+
+
+def test_two_guest_rows_in_two_threads_each_keep_their_own_count(monkeypatch):
+    # one counter per module mixed a neighbour's calls into a row once the pass ran wider than one
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    import llm
+    from evals import guest_llm
+    from models.registry import EngineKind, Placement
+
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x", tool_calls=None), finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
+    )
+    monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
+    monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
+    monkeypatch.setattr(llm, "_complete", lambda *a, **kw: reply)
+    together = threading.Barrier(2)
+    client = guest_llm.OurClient()
+
+    class Metric:
+        async def single_turn_ascore(self, calls):
+            together.wait(timeout=5)
+            for _ in range(calls):
+                await client.agenerate_text("p")
+            return 0.5
+
+    monkeypatch.setattr(guest_axes, "_metric", lambda *a: Metric())
+    monkeypatch.setattr(guest_axes, "_sample", lambda ql: ql.calls)
+    monkeypatch.setattr(guest_llm, "stamp", lambda *a: {})
+    with llm.accounting() as job:
+        with ThreadPoolExecutor(2) as pool:
+            got = list(pool.map(llm.carried(lambda ql: guest_axes.score("faithfulness", ql)),
+                                [_row(id=1, calls=1), _row(id=2, calls=3)]))
+    assert [row["tokens"]["ragas"][0]["calls"] for row in got] == [1, 3]
+    assert job.record()["ragas"][0]["calls"] == 4
+
+
+def test_the_guest_embeds_off_the_card_so_its_model_has_the_card_whole():
+    # gemma2:9b beside bge-m3 did not fit the card, for the sake of one axis that embeds twenty texts
+    import config
+    import job_specs
+    from evals import guest_llm
+    from models.registry import Role
+
+    assert job_specs.LOADS["judge_guest_axes"] == (Role.ragas, Role.ragas_embedding)
+    assert guest_llm.EMBEDDING_ROLE == "ragas_embedding"
+    seat = config.settings.llm.roles["ragas_embedding"]
+    assert (seat.model, seat.engine) == ("bge-m3", "ollama-cpu"), "the corpus embedder stays on its own seat"
+
+
+def test_the_guest_sends_one_human_message_as_the_standard_does(monkeypatch):
+    # an empty system switched the template's default off, and the standard's own wrapper sends none
+    import llm
+    from evals import guest_llm
+    from models.registry import EngineKind, Placement
+
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    sent = []
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x", tool_calls=None), finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
+    monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
+    monkeypatch.setattr(llm, "_complete", lambda spec, name, messages, params, role=None: sent.append(messages) or reply)
+    guest_llm.OurClient().generate_text("the prompt")
+    assert sent == [[{"role": "user", "content": "the prompt"}]]
+
+
+def test_the_old_ruler_stays_callable_for_a_bridge_and_says_so_in_the_stamp(monkeypatch):
+    # every older guest number sent an empty system; a bridge reads both rulers on the same rows
+    import job_specs
+    import llm
+    import pytest
+    from evals import guest_llm
+    from models.registry import EngineKind, Placement
+    from pydantic import ValidationError
+
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    sent = []
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="x", tool_calls=None), finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("m", local))
+    monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
+    monkeypatch.setattr(llm, "_complete", lambda spec, name, messages, params, role=None: sent.append(messages) or reply)
+    guest_llm.OurClient(messages="empty_system").generate_text("the prompt")
+    assert sent == [[{"role": "system", "content": ""}, {"role": "user", "content": "the prompt"}]]
+    assert job_specs.JudgeGuestAxes(run_name="r", messages="empty_system").messages == "empty_system"
+    with pytest.raises(ValidationError):
+        job_specs.JudgeGuestAxes(run_name="r", messages="bogus")
+
+
+
+def test_a_guest_bench_is_its_own_client_and_its_own_stamp(monkeypatch):
+    # the metric was cached per axis alone, so a second pass with another model scored with the first client
+    from evals import guest_llm
+
+    one = guest_axes._metric("ragas_faithfulness", "user_only", "qwen2.5:7b")
+    other = guest_axes._metric("ragas_faithfulness", "user_only", "deepseek-ai/DeepSeek-V4-Flash-0731")
+    assert one is not other and (one.llm.model, other.llm.model) == ("qwen2.5:7b", "deepseek-ai/DeepSeek-V4-Flash-0731")
+    asked = []
+    monkeypatch.setattr(guest_llm.llm, "resolve_for", lambda role, model=None: asked.append(model)
+                        or engines.Resolved(model or "q:7b", stub_engine()))
+    monkeypatch.setattr(guest_llm.llm, "resolve_name", lambda role: "bge-m3")
+    monkeypatch.setattr(guest_llm.llm, "resolve", lambda role: engines.Resolved("bge-m3", stub_engine()))
+    monkeypatch.setattr(guest_llm.llm, "sampler_of", lambda role, spec=None: {})
+    assert guest_llm.stamp("user_only", "m2")["model"] == "m2" and asked == ["m2"]
+
+
+def test_a_second_guest_model_on_one_run_is_refused(monkeypatch):
+    # a run scored by two guests is two rulers in one record; a copy through a rejudge arm is the way
+    import pytest
+    from job_handlers import judging
+
+    width = 2 * len(guest_axes.NAMES)
+    rows = [("qwen2.5:7b", "ollama") * len(guest_axes.NAMES), (None,) * width]
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, *_):
+            return SimpleNamespace(all=lambda: rows)
+
+    monkeypatch.setattr(judging, "Session", _Session)
+    monkeypatch.setattr(judging.llm, "resolve_for", lambda role, model=None: engines.Resolved(
+        model or "qwen2.5:7b", SimpleNamespace(name="gonka" if model else "ollama")))
+    judging._refuse_a_second_guest("r", None)
+    with pytest.raises(judging.Final, match="qwen2.5:7b@ollama"):
+        judging._refuse_a_second_guest("r", "deepseek-ai/DeepSeek-V4-Flash-0731")
+
+
+def test_a_rejudge_arm_may_name_the_guest_s_model_and_queues_its_pass():
+    import job_specs
+    from use_cases import rejudge
+
+    rejudge.validate_axes({"repeat": [1, 2], "guest_model": ["deepseek-ai/DeepSeek-V4-Flash-0731"]})
+    arm = {"repeat": 1, "guest_model": "deepseek-ai/DeepSeek-V4-Flash-0731"}
+    assert "guest_model" not in rejudge._prompt_axes(arm)
+    assert rejudge.guest_options(arm, "copy") == {"run_name": "copy", "guest_model": arm["guest_model"]}
+    assert rejudge.guest_options({"repeat": 1}, "copy") is None
+    assert job_specs.JudgeGuestAxes(**rejudge.guest_options(arm, "copy")).guest_model == arm["guest_model"]
+    # the override map reads the guest's key for the guest's role, not the generator's `model`
+    assert job_specs.MODEL_OVERRIDES["ragas"] == "guest_model"
+
+
+def test_a_guest_pass_is_refused_before_the_queue_at_both_doors(monkeypatch):
+    # an experiment's arm queued its guest past every check the guest's own door makes
+    import inspect
+
+    import limits
+    from api.v1 import experiment
+    from job_handlers import judging
+
+    monkeypatch.setattr(judging, "guests_available", lambda: True)
+    monkeypatch.setattr(judging, "guest_rows_of", lambda run_name: 0)
+    assert judging.guest_pass_refusal("r")[0] == 404
+    monkeypatch.setattr(judging, "guest_rows_of", lambda run_name: limits.MAX_GUEST_ROWS + 1)
+    assert judging.guest_pass_refusal("r")[0] == 400
+    assert judging.guest_pass_refusal("r", sample=50) is None
+    assert "guest_pass_refusal" in inspect.getsource(experiment._queue_arm)

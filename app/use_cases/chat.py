@@ -9,6 +9,7 @@ import logging_setup
 import outcomes
 import prompt_repo
 import sources.base
+from engines import answer_parsers
 from models.eval import Question, QuestionLog, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
@@ -58,6 +59,7 @@ class Retrieval:
 class AnswerMetric:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    answer_parse: dict | None = None
     distance_threshold: float = field(
         default_factory=lambda: round(config.settings.retrieval.distance_threshold, 3)
     )
@@ -153,11 +155,12 @@ def _hidden_by_cut(source: str, variant: str) -> bool:
 def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str,
                    ef_search: int | None = None):
     depth = search_depth.resolve(variant, ef_search)
+    label, vector = llm.embed_with_label(question)
     if not rerank_enabled:
         return (
             db.hybrid_search(
-                question, llm.embed(question), category, limit=k, variant=variant,
-                ef_search=depth,
+                question, vector, category, limit=k, variant=variant,
+                ef_search=depth, embedded_by=label,
             ),
             None,
             depth,
@@ -167,11 +170,12 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
 
     candidates = db.hybrid_search(
         question,
-        llm.embed(question),
+        vector,
         category,
         limit=config.settings.rerank.candidates,
         variant=variant,
         ef_search=depth,
+        embedded_by=label,
     )
     ranked = rerank.rerank(question, candidates, top=k)
     return [row for row, _ in ranked], [score for _, score in ranked], depth
@@ -299,6 +303,7 @@ def answer_from_rows(
     ef_search: int | None = None,
     *,
     variant: str,
+    placed_during: dict | None = None,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
     lang = resolve_language(question, language)
@@ -313,25 +318,31 @@ def answer_from_rows(
         user = f"{context}\n\nQuestion: {question}"
         # always, not only when a run forced one: without it the model follows whatever it last read
         user = told_to_answer_in(user, lang)
-        response = llm.ask(
-            system=prompt_repo.active_template(Purpose.generate_answer),
-            user=user,
-            model=model,
-        )
-        metrics = AnswerMetric(
-            prompt_tokens=response.prompt_tokens,
-            completion_tokens=response.completion_tokens,
-        )
-        if model:
-            metrics.model = model
-        ans = Answer(
-            text=response.text,
-            success=True,
-            sources=take_sources(rows, rerank_scores, variant),
-            metrics=metrics,
-        )
-        if add_context:
-            ans.context = context
+        try:
+            response = llm.ask(
+                system=prompt_repo.active_template(Purpose.generate_answer),
+                user=user,
+                model=model,
+            )
+        # an input past the window fails its row, not the run: the question had no row and the chat a 500
+        except llm.InputOverWindow as e:
+            response, ans = None, Answer(text=f"not answered: {e}")
+        if response is not None:
+            metrics = AnswerMetric(
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                answer_parse=answer_parsers.record(getattr(response, "parsed", None)),
+            )
+            if model:
+                metrics.model = model
+            ans = Answer(
+                text=response.text,
+                success=True,
+                sources=take_sources(rows, rerank_scores, variant),
+                metrics=metrics,
+            )
+            if add_context:
+                ans.context = context
 
     ans.elapsed = round(time.perf_counter() - start, 3)
 
@@ -339,7 +350,7 @@ def answer_from_rows(
         _log_answer(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
             _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
-            contexts=texts or None, chunks=chunks or None,
+            contexts=texts or None, chunks=chunks or None, placed_during=placed_during,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -378,8 +389,10 @@ def _retrieval_snapshot(rows, sources) -> dict:
 
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
                      ef_search: int | None = None, model: str | None = None,
-                     language: str | None = None) -> dict:
+                     language: str | None = None, placed_during: dict | None = None,
+                     generated: bool = True) -> dict:
     return run_snapshot.of_run(
+        generated=generated,
         language=language,
         variant=variant,
         use_rerank=use_rerank,
@@ -388,6 +401,7 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
         distance_threshold=distance_threshold,
         model=model,
         rerank_device=rerank_device,
+        placed_during=placed_during,
         # the agent has no phase and single_shot has no hops: each records None for the other
         phased=phased,
     )
@@ -397,7 +411,16 @@ def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
+    placed_during: dict | None = None,
 ) -> None:
+    # no context, no call: the stand answered NO_RESULTS itself, and the default generator was stamped on it
+    generated = bool(context)
+    # read before the session: each registry read inside it took a second connection from the pool
+    models = {
+        "generation": ans.metrics.model if generated else None,
+        "embedding": llm.resolve_name("embedding"),
+        **({"reranking": llm.resolve_name("reranking")} if use_rerank else {}),
+    }
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)
         log_row = QuestionLog(
@@ -411,10 +434,7 @@ def _log_answer(
             contexts=contexts,
             chunks=chunks,
             sources=[asdict(s) for s in ans.sources],
-            models={
-                "generation": ans.metrics.model,
-                "embedding": llm.resolve_name("embedding"),
-            },
+            models=models,
             prompts={
                 "generate_answer": prompt_repo.active_version(Purpose.generate_answer)
             },
@@ -422,6 +442,7 @@ def _log_answer(
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
                     rerank_device, variant, ef_search, ans.metrics.model, lang,
+                    placed_during=placed_during, generated=generated,
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand
@@ -430,6 +451,8 @@ def _log_answer(
                 "outcome": outcomes.classify(ans.text, bool(ans.sources)),
                 # the one fact both the judge and the report may read: neither re-derives it
                 "refusal": outcomes.reads_as_refusal(ans.text),
+                # what the parser cut from the answer, only when it cut something
+                **({"answer_parse": ans.metrics.answer_parse} if ans.metrics.answer_parse else {}),
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,
@@ -439,8 +462,13 @@ def _log_answer(
         session.commit()
         log_id = log_row.id
 
+    judge_later(ans, run_name, log_id)
+
+
+# a live answer joins the waiting batch; a run's answers are judged by the run's own job
+def judge_later(ans: Answer, run_name: str | None, log_id: int) -> None:
     if ans.success and run_name is None:
-        job_queue.enqueue("judge_answers", {"log_ids": [log_id]})
+        job_queue.judge_live(log_id)
 
 
 def _find_or_create_question(session, original_text, lang, set_name="live"):

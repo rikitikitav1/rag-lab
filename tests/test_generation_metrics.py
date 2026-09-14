@@ -46,6 +46,10 @@ def _evaluate(monkeypatch, logs):
     return generation_metrics.evaluate("run")
 
 
+def test_the_metrics_name_the_refusal_rule_they_read_with(monkeypatch):
+    assert _evaluate(monkeypatch, [_log(faith=7)])["outcome_rule"] == generation_metrics.RULE
+
+
 def test_axes_stay_on_the_in_corpus_pool(monkeypatch):
     logs = [
         _log(marked=["a.md"], faith=8, rel=9),
@@ -189,7 +193,7 @@ def test_a_refusal_does_not_drag_the_axis_means_of_the_answers(monkeypatch):
     m = _evaluate(monkeypatch, answers + [refusal])
 
     assert (m["faithfulness"], m["relevance"]) == (7.33, 5.33)
-    assert m["answered_only"] == {
+    assert m["answered_only"] == {"without_a_score": 0, 
         "n": 2, "faithfulness": 6.0, "relevance": 8.0, "completeness": None
     }
 

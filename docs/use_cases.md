@@ -4,8 +4,8 @@ Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthroug
 
 ## Prerequisites
 
-- Docker + an NVIDIA GPU (8 GB is enough).
-- First `docker compose up -d` pulls ~16 GB of models and builds the index (~5-10 min). Wait until `curl localhost:8000/readiness` returns ok; watch progress with `docker compose logs -f worker`.
+- Docker + an NVIDIA GPU (8 GB is enough), given to containers through CDI: the host check is in the README [Quickstart](../README.md#quickstart).
+- The first `docker compose up -d` downloads and indexes for a while; what and how long is in the README [Quickstart](../README.md#quickstart). Wait until `curl localhost:8000/readiness` returns ok; watch progress with `docker compose logs -f worker`.
 - The server answers before indexing finishes, so early requests may refuse until the corpus is populated.
 
 ## Scenario 1: ask a question (RAG live)
@@ -14,7 +14,7 @@ Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthroug
 curl -sX POST localhost:8000/v1/chat/question -H 'Content-Type: application/json' \
   -d '{"text":"What is a hash table?"}' | python3 -m json.tool
 ```
-Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Add `"rerank": true` to apply the cross-encoder for this single request. It is off by default since 30.08 (the generator the agent needs takes its room on the card), and it costs 86 ms a question on the card against 2.76 s on CPU.
+Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Reranking is off by default (the generator the agent needs takes its room on the card), and the chat answers 409 to `"rerank": true` in the default layout, because the reranker and the generator are two engines of the card. A run can rerank once the `rerank` profile is up ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)); scoring costs 86 ms a question on the card.
 
 ## Scenario 2: mini-eval from scratch to numbers
 
@@ -51,7 +51,8 @@ abstain without one; `question_sets` says which sets carry them before a run is 
 Run the same set with the cross-encoder on, then compare against the baseline. Reranking is off by
 default, so `demo_run` from scenario 2 is the arm without it and the run below is the arm with it.
 If the default is ever flipped back, one of the two arms has to say `"rerank": false` explicitly, or
-both arms rerank and the comparison is of a thing against itself.
+both arms rerank and the comparison is of a thing against itself. The reranker needs its server up
+first: [stand mode 2](stand_modes.md#2-with-reranking).
 
 ```bash
 curl -sX POST localhost:8000/v1/eval/run -H 'Content-Type: application/json' \
@@ -94,21 +95,32 @@ curl -s "localhost:8000/v1/eval/compare?runs=arm_a&runs=arm_b" | python3 -m json
 curl -s "localhost:8000/v1/job?type=eval_run&sort_by=elapsed&sort_order=desc" | python3 -m json.tool
 ```
 
-## Scenario 6: model lifecycle
+## Scenario 6: engines, models and roles
 
 ```bash
-# register a new model (enqueues an Ollama pull)
-curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' -d '{"name":"qwen2.5:14b"}'
-# list models / roles
+# what the seed registered: every engine under `engines:` in config.yaml, six of them
+curl -s localhost:8000/v1/engine | python3 -m json.tool
+# POST is for an engine the seed does not know, a cloud broker for one (stand_modes.md, "A cloud engine");
+# a name or a prefix already taken is a 409, and the address comes from the environment, never from the row
+# ask the engine itself whether it answers, by the id the list shows
+curl -s localhost:8000/v1/engine/<id>/live | python3 -m json.tool
+# register a model: an engine that pulls gets a pull job, one that does not is asked whether it serves the name
+curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' -d '{"name":"qwen2.5:14b","engine":"ollama"}'
+curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' \
+  -d '{"name":"Qwen/Qwen2.5-7B-Instruct","engine":"vllm-cpu"}'
+# list models / roles; one name may live on two engines, so the list names the engine
 curl -s localhost:8000/v1/model | python3 -m json.tool
 curl -s localhost:8000/v1/role  | python3 -m json.tool
-# assign a model to a role (switches at runtime)
+# assign a model to a role (switches at runtime, and moves the role to that model's engine)
 curl -sX PUT localhost:8000/v1/role/generation -H 'Content-Type: application/json' -d '{"model_id": 1}'
+# judge one run on another engine without moving the default judge
+curl -sX POST localhost:8000/v1/job -H 'Content-Type: application/json' \
+  -d '{"type":"judge_answers","options":{"run_name":"smoke","judge_model":"Qwen/Qwen2.5-7B-Instruct-AWQ"}}'
 ```
 
 ## Scenario 7: prompt versioning
 
-Prompt sources live in `prompts/<purpose>.v<N>.txt` and are seeded into the DB. To ship a new version: add `prompts/generate_answer.v2.txt`, re-run the seed, then activate it.
+Prompt sources live in `prompts/<enum member>.v<N>.txt` (`generate_answer` for the purpose `generate.answer`) and are seeded into the DB. To ship a new version: add the next number, `prompts/generate_answer.v4.txt` while v1 to v3 exist, re-run the seed, then activate it.
 
 ```bash
 docker compose run --rm seed                                  # loads new prompt versions (inactive)
@@ -184,7 +196,7 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=id&sort_order=desc&limit=6"
 # per-run numbers once a run is judged
 docker compose exec rag-lab python -m evals.generation_metrics paraphrased_ru_agent_<ts>_k_05
 ```
-Set temperature to 0 (config `llm.roles.generation`) so the swept parameter is the only variable. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
+Every arm takes the generator's sampler (`temperature: 0.1` by default), so the arms differ only in the swept parameter; sampling still moves answers between two runs of one arm, and the floors in the README say by how much. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
 
 ## Command reference
 
@@ -197,7 +209,7 @@ docker compose exec -it rag-lab python app/main.py --console
 
 # CLI eval runner (alternative to the route): python -m evals.runner <set_name> [run_name]
 
-# Unit tests (pure logic, no DB/Ollama)
+# Unit tests (no Ollama; real-database tests need TEST_POSTGRES_URL and are skipped without it)
 docker compose exec rag-lab pytest -q
 
 # Dependencies (uv)
@@ -205,7 +217,7 @@ uv sync                 # install from uv.lock
 uv add <pkg>            # add a dependency
 
 # Rebuild images (after editing Dockerfile / pyproject / uv add)
-docker compose build    # rebuilds ALL app services (rag-lab, worker, seed, bootstrap)
+docker compose build    # rebuilds ALL app services (rag-lab, worker, seed, bootstrap, repos-owner)
 # GOTCHA: compose keeps a separate image per build service. After `uv add` rebuild with no args,
 #         otherwise worker/seed stay on the old image and crash on ModuleNotFoundError.
 

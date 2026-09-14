@@ -3,7 +3,8 @@ from datetime import datetime
 from enum import StrEnum
 
 from orm import Base
-from sqlalchemy import Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy import BigInteger, Enum, ForeignKey, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -12,6 +13,15 @@ class Role(StrEnum):
     embedding = "embedding"
     judging = "judging"
     paraphrasing = "paraphrasing"
+    reranking = "reranking"
+    # the standard's judge: its own prompts, so its own seat rather than the judge's
+    ragas = "ragas"
+    # the one guest that measures with vectors, off the card so the guest's model has it whole
+    ragas_embedding = "ragas_embedding"
+
+
+# the roles whose model writes tokens: an embedder or a cross-encoder scores and samples nothing
+SAMPLING_ROLES = frozenset({Role.generation, Role.judging, Role.paraphrasing, Role.ragas})
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
@@ -23,6 +33,12 @@ ALLOWED_REGISTRIES = ("hf.co", "registry.ollama.ai")
 MAX_MODEL_NAME = 128
 
 
+# the hub cache spells `/` as `--`, so `a--b` would share the weights directory of `a/b`
+def refuse_shared_cache_dir(name: str) -> None:
+    if "--" in name:
+        raise ValueError(f"{name!r}: `--` would share another name's cache directory")
+
+
 def refuse_unknown_registry(name: str) -> None:
     # length and shape here too: the job door used to get only the half below
     if not name or len(name) > MAX_MODEL_NAME or not MODEL_NAME_RE.fullmatch(name):
@@ -30,6 +46,7 @@ def refuse_unknown_registry(name: str) -> None:
     parts = name.split("/")
     if any(part in ("", ".", "..") for part in parts) or len(parts) > 3:
         raise ValueError(f"invalid model name: {name!r}")
+    refuse_shared_cache_dir(name)
     if len(parts) == 3 and parts[0].lower() not in ALLOWED_REGISTRIES:
         raise ValueError(f"model registry host not allowed: {parts[0]!r}")
 
@@ -59,17 +76,80 @@ class Pipeline(StrEnum):
     agent = "agent"
 
 
-class Model(Base):
-    __tablename__ = "models"
+class EngineKind(StrEnum):
+    ollama = "ollama"
+    vllm = "vllm"
+    openai_compatible = "openai_compatible"
+
+
+# what the engine takes from the machine; `remote` is an answer, not a missing value
+class Placement(StrEnum):
+    gpu = "gpu"
+    cpu = "cpu"
+    gpu_and_cpu = "gpu+cpu"
+    remote = "remote"
+
+
+class Engine(Base):
+    __tablename__ = "engines"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(unique=True)
+    kind: Mapped[EngineKind] = mapped_column(Enum(EngineKind, native_enum=False))
+    # the address and the key live in the environment; a row you can read a key out of leaks
+    env_prefix: Mapped[str]
+    placement: Mapped[Placement] = mapped_column(Enum(Placement, native_enum=False))
+    # which reader in `engines.balances` asks this cloud's broker what is left on the key
+    balance_reader: Mapped[str] = mapped_column(default="none")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"Engine(id={self.id!r}, name={self.name!r}, kind={self.kind!r})"
+
+
+# a row, not a string on the model: the closing comparison joins on this and a typo splits it silently
+class Weights(Base):
+    __tablename__ = "weights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(unique=True)
+    params: Mapped[str | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"Weights(id={self.id!r}, name={self.name!r})"
+
+
+class Model(Base):
+    __tablename__ = "models"
+    # one name on two engines is two rows, and the same weights under two quantisations are two too
+    __table_args__ = (UniqueConstraint("engine_id", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+    engine_id: Mapped[int] = mapped_column(ForeignKey("engines.id", ondelete="RESTRICT"))
+    # `raise`, because a lazy load on an async session fails at runtime and no test could see it
+    engine: Mapped[Engine] = relationship(lazy="raise")
+    # null is not "the same weights": a comparison reads it as unknown and refuses
+    weights_id: Mapped[int | None] = mapped_column(
+        ForeignKey("weights.id", ondelete="RESTRICT"), default=None
+    )
+    quant: Mapped[str | None] = mapped_column(default=None)
+    # what this artifact takes on disk, so a pull can refuse before it starts, not halfway
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    # whether a vLLM serving it returns tool calls, and for which process start that was asked
+    tool_probe: Mapped[bool | None] = mapped_column(default=None)
+    tool_probe_start: Mapped[str | None] = mapped_column(default=None)
+    # how this model's answers on this engine are cut; `none` passes the text as it came
+    answer_parser: Mapped[str] = mapped_column(default="none")
+    # laid over the role's options when this model answers: a verbose model asks a larger budget anywhere
+    options: Mapped[dict] = mapped_column(JSONB, default=dict)
     status: Mapped[Status] = mapped_column(
         Enum(Status, native_enum=False), default=Status.available
     )
 
     def __repr__(self) -> str:
-        return f"Model(id={self.id!r}, name={self.name!r}, status={self.status!r})"
+        return f"Model(id={self.id!r}, name={self.name!r}, engine_id={self.engine_id!r})"
 
 
 class ModelRole(Base):

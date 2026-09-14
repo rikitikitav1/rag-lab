@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from models.jobs import Job, JobStatus
 from orm.async_db import get_session
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from query_utils import (
     Page,
     apply_created_between,
@@ -23,15 +23,24 @@ router = APIRouter(prefix="/job", tags=["jobs"])
 class JobResponse(BaseModel):
     id: int
     type: str
+    queue: str
     status: JobStatus
     options: dict
     error: dict | None
     elapsed: float | None
+    tokens: dict | None = None
+    balances: dict | None = None
     apply_since: datetime
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    # the field every door that queues a job answers with, so a client reads the id one way
+    @computed_field
+    @property
+    def job_id(self) -> int:
+        return self.id
 
 
 SORT_MAP = {
@@ -83,12 +92,22 @@ async def enqueue_job(
 ):
     if request.type not in job_specs.SPECS and request.type not in job_specs.FREE:
         raise HTTPException(status_code=400, detail=f"no such job type: {request.type}")
+    options = request.options
+    if request.type == "eval_run" and options.get("resume"):
+        from api.v1.eval import resumed_options
+
+        extra = sorted(set(options) - {"run_name", "resume"})
+        options = await resumed_options(session, options.get("run_name"), extra)
     try:
-        job_specs.check(request.type, request.options)
+        job_specs.check(request.type, options)
     except job_specs.Refused as bad:
         raise HTTPException(status_code=400, detail=str(bad)) from bad
+    if request.type == "eval_run" and options.get("run_name") and not options.get("resume"):
+        from api.v1.eval import refuse_a_taken_run
 
-    job = job_queue.add_job(session, request.type, request.options)
+        await refuse_a_taken_run(session, options["run_name"])
+
+    job = job_queue.add_job(session, request.type, options)
     await session.commit()
     await session.refresh(job)
     return job

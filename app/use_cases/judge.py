@@ -3,9 +3,16 @@ from dataclasses import dataclass, field
 
 import llm
 import prompt_repo
+import token_fields
+from engines import answer_parsers
 from models.registry import Purpose
 from pydantic import BaseModel, Field, ValidationError
 from timing_wrappers import measure_elapsed
+
+
+# the output limit ended the reply before its score: "no JSON object" read as a broken format, not a cut
+class JudgeCut(ValueError):
+    pass
 
 
 class Score(BaseModel):
@@ -61,6 +68,14 @@ class Verdict:
     # two verdicts differ by model or by prompt, and without both the difference is unrecorded
     purpose: Purpose | None = None
     prompt_version: int | None = None
+    # ollama drops whole messages to fit its window and says nothing: this count is the only witness
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    # the cut shapes the text the score is read from, so it is part of the ruler like the prompt
+    parser: str | None = None
+    answer_parse: dict | None = None
+    # a verdict the output limit ended: a budget changes the score only where it cut
+    cut_by_length: bool = False
 
     def __str__(self) -> str:
         return f"score: {self.score}, reason: {self.reason}, model: {self.model}, elapsed: {self.elapsed}"
@@ -106,13 +121,26 @@ def judge(system_prompt, user_prompt, purpose=None, prompt_version=None, model=N
         system=system_prompt, user=user_prompt, role="judging",
         schema=SCORE_SCHEMA, model=model,
     )
-    parsed = _verdict_of(completion.text)
+    cut = token_fields.cut(getattr(completion, "finish_reason", None))
+    try:
+        parsed = _verdict_of(completion.text)
+    except ValueError as e:
+        if cut:
+            raise JudgeCut(
+                f"the judge hit its output limit at {completion.completion_tokens} tokens before its score"
+            ) from e
+        raise
     return Verdict(
         score=parsed.score,
         reason=parsed.reason,
         model=model or llm.resolve_name("judging"),
         purpose=purpose,
         prompt_version=prompt_version,
+        prompt_tokens=completion.prompt_tokens,
+        completion_tokens=completion.completion_tokens,
+        parser=getattr(completion, "parser", None),
+        answer_parse=answer_parsers.record(getattr(completion, "parsed", None)),
+        cut_by_length=cut,
     )
 
 

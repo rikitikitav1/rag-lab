@@ -1,29 +1,45 @@
-import os
+import contextlib
+import contextvars
+import functools
+import json
+import math
+import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import config
+import engines
 import logging_setup
-import requests
-from models.registry import Model, ModelRole
-from openai import OpenAI, OpenAIError
-from orm.sync_db import Session
-from sqlalchemy import select
-
-# the compose hostname resolves inside the network only; a script on the host says where
-LLM_BASE = os.getenv("OLLAMA_BASE_URL") or config.settings.llm.base_url
-
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120"))
-
-_client = OpenAI(
-    base_url=f"{LLM_BASE}/v1",
-    api_key="ollama",
-    timeout=LLM_TIMEOUT,
-    max_retries=1,
-)
+import token_fields
+from engines import answer_parsers, card
+from engines import vllm as vllm_engine
+from engines.lookup import Resolved
+from errors import StandFault
+from models.registry import EngineKind
+from openai import APIStatusError, OpenAIError
 
 log = logging_setup.get_logger(__name__)
+
+# set by the worker alone: a job that calls a second role on the card takes it per call, the API never
+_before_call = None
+
+
+def take_the_card_before_calls(hook) -> None:
+    global _before_call
+    _before_call = hook
+
+
+# the hook may hand back what ends the call's hold on its engine, called once the answer is in
+@contextlib.contextmanager
+def _card_for(spec, name: str):
+    ended = _before_call(spec, name) if _before_call is not None else None
+    try:
+        yield
+    finally:
+        if ended is not None:
+            ended()
 
 
 @dataclass
@@ -31,6 +47,9 @@ class Completion:
     text: str
     prompt_tokens: int
     completion_tokens: int
+    parsed: answer_parsers.Parsed | None = None
+    parser: str = answer_parsers.NO_PARSER
+    finish_reason: str | None = None
 
 
 @dataclass
@@ -41,91 +60,459 @@ class ChatTurn:
     prompt_tokens: int
     completion_tokens: int
     finish_reason: str | None = None
+    parsed: answer_parsers.Parsed | None = None
+
+
+# a broker without usage fails every later row the same way, so the run stops on the first one
+class NoUsage(StandFault):
+    pass
+
+
+# past the client's own retries and the paced waits, a quota or a rate limit refuses every row alike
+class BrokerRefused(StandFault):
+    pass
+
+
+# a revoked or wrong key refuses every later row alike, and a seat on it is refused at acceptance
+class KeyRefused(BrokerRefused):
+    pass
+
+
+# after the client's own retry a 5xx is the server saying it is broken, and the next row meets the same
+class ServerFailed(StandFault):
+    pass
+
+
+# one reading of a failed call for chat and embeddings: which failures stop the run and which fail one row
+def _failed(e: OpenAIError, spec, name: str, what: str) -> Exception:
+    said = _without_the_body(e)
+    status = e.status_code if isinstance(e, APIStatusError) else None
+    if status in (401, 403):
+        log.error("llm.key_refused", model=name, engine=spec.name, status=status)
+        return KeyRefused(f"{spec.name} refused the key for {name}: {said}")
+    if status in (402, 429):
+        log.error("llm.broker_refused", model=name, engine=spec.name, status=status, headers=_rate_headers(e))
+        return BrokerRefused(f"{spec.name} refused {name}: {said}, a quota or a rate limit")
+    # a local 500 can be one reply the server could not build, as ollama's on a broken tool call
+    if status is not None and status >= 500 and engines.is_cloud(spec.kind):
+        log.error("llm.server_failed", model=name, engine=spec.name, status=status)
+        return ServerFailed(f"{spec.name} failed {name}: {said}, the server says it is broken")
+    log.error(f"llm.{what}_failed", model=name, engine=spec.name, error=said)
+    return RuntimeError(f"LLM {what} failed ({name} on {spec.name}): {said}")
+
+
+# a broker's Retry-After up to this is a pace to keep; a longer one is a cap, and the run stops
+PACE_CEILING_SECONDS = 600
+# paced waits in a row before the call gives up: a throttle that never lifts is a stop
+PACE_TRIES = 5
+
+
+# what a refusal said about its limit, kept in the log: which kind of 429 it was is read from these
+def _rate_headers(e: Exception) -> dict:
+    if not isinstance(e, APIStatusError):
+        return {}
+    return {k: v for k, v in e.response.headers.items()
+            if k.lower() in ("retry-after", "retry-after-ms") or k.lower().startswith("x-ratelimit")}
+
+
+# the pause a 429 names; a date form is read as no pause rather than parsed
+def _retry_after(e: Exception) -> float | None:
+    if not isinstance(e, APIStatusError) or e.status_code != 429:
+        return None
+    headers = e.response.headers
+    try:
+        if headers.get("retry-after-ms") is not None:
+            wait = float(headers["retry-after-ms"]) / 1000
+        elif headers.get("retry-after") is not None:
+            wait = float(headers["retry-after"])
+        else:
+            return None
+    except ValueError:
+        return None
+    # a nan or a negative pause passed the ceiling check and then broke the sleep
+    return wait if math.isfinite(wait) and wait >= 0 else None
+
+
+# the stand counts tokens on every call, so a broker that sends no usage is named, not read as zero
+def _usage(resp, engine):
+    if resp.usage is None:
+        raise NoUsage(f"{engine.name} returned no token usage")
+    return resp.usage
+
+
+# what a job or a row spent, per role and per engine and model; pool threads add to it under the lock
+class Tally:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._seen: dict[tuple[str, str, str], dict[str, int]] = {}
+
+    # the longest input against the window, and the calls the output limit cut: a sum hides both
+    def add(self, role: str, engine: str, model: str, prompt: int | None, completion: int | None,
+            cut: bool = False, input_cut: bool = False) -> None:
+        with self._lock:
+            got = self._seen.setdefault((role, engine, model), dict.fromkeys(token_fields.FIELDS, 0))
+            got["prompt"] += prompt or 0
+            got["completion"] += completion or 0
+            got["calls"] += 1
+            got["uncounted"] += prompt is None
+            got["max_prompt"] = max(got["max_prompt"], prompt or 0)
+            got["cut_by_length"] += cut
+            got["input_cut"] += input_cut
+
+    # a wait a broker asked for is the job's cost too, and no answer came of it, so it is not a call
+    def pace(self, role: str, engine: str, model: str, seconds: float) -> None:
+        with self._lock:
+            got = self._seen.setdefault((role, engine, model), dict.fromkeys(token_fields.FIELDS, 0))
+            got["paced"] += 1
+            got["paced_seconds"] = round(got["paced_seconds"] + seconds, 1)
+
+    def record(self) -> dict | None:
+        with self._lock:
+            out: dict[str, list[dict]] = {}
+            for (role, engine, model), counts in sorted(self._seen.items()):
+                out.setdefault(role, []).append({
+                    "engine": engine, "model": model,
+                    **{k: v for k, v in counts.items() if v or k not in token_fields.OPTIONAL},
+                })
+            return out or None
+
+
+# a context, not a global: the worker runs two lanes as two threads of one process
+_tallies: contextvars.ContextVar[tuple] = contextvars.ContextVar("llm_tallies", default=())
+
+# a broker answers a repeated body from its cache, so a cloud call carries its job in `user`: a second pass is another job
+_cache_key: contextvars.ContextVar[str | None] = contextvars.ContextVar("llm_cache_key", default=None)
+CACHE_KEY = "user=job"
+
+
+@contextlib.contextmanager
+def cache_keyed(key: str | None):
+    token = _cache_key.set(key)
+    try:
+        yield
+    finally:
+        _cache_key.reset(token)
+
+
+# only a broker keeps such a cache, and the model never sees the field
+def cache_key_of(spec) -> str | None:
+    return CACHE_KEY if engines.is_cloud(spec.kind) else None
+
+
+def _keyed(spec) -> dict:
+    key = _cache_key.get()
+    return {"user": key} if key and cache_key_of(spec) else {}
+
+
+# scopes nest: a guest row counts into its own tally and into the job's at once
+@contextlib.contextmanager
+def accounting(tally: Tally | None = None):
+    tally = tally or Tally()
+    token = _tallies.set((*_tallies.get(), tally))
+    try:
+        yield tally
+    finally:
+        _tallies.reset(token)
+
+
+# a pool thread starts with an empty context, so the task takes the caller's tallies and key along
+def carried(fn):
+    tallies, key = _tallies.get(), _cache_key.get()
+
+    def run(*args, **kwargs):
+        counted, keyed = _tallies.set(tallies), _cache_key.set(key)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _cache_key.reset(keyed)
+            _tallies.reset(counted)
+
+    return run
+
+
+# per row: by the row's stamp the next role may have taken the card, and the one before read as unknown
+_placed: contextvars.ContextVar[dict | None] = contextvars.ContextVar("llm_placed", default=None)
+
+
+@contextlib.contextmanager
+def placements():
+    token = _placed.set({})
+    try:
+        yield
+    finally:
+        _placed.reset(token)
+
+
+def placed_in_calls() -> dict:
+    return dict(_placed.get() or {})
+
+
+# a spill in any call of the row stays: that call answered with the processor's kernels
+def _note_placement(role, spec, name: str) -> None:
+    seen = _placed.get()
+    if seen is None:
+        return
+    try:
+        on = card.model_on_card(spec, name)
+    except StandFault:
+        raise
+    except Exception as e:
+        log.warning("llm.placement_unread", role=str(role), model=name, error=str(e))
+        on = None
+    key = str(getattr(role, "value", role))
+    if on is False or seen.get(key) is None:
+        seen[key] = on
+
+
+def _count(role, engine, model: str, prompt: int | None, completion: int | None,
+           finish_reason: str | None = None, input_cut: bool = False) -> None:
+    for tally in _tallies.get():
+        tally.add(str(getattr(role, "value", role)), engine.name, model, prompt, completion,
+                  cut=token_fields.cut(finish_reason), input_cut=input_cut)
+
+
+def _pace(role, engine, model: str, seconds: float) -> None:
+    for tally in _tallies.get():
+        tally.pace(str(getattr(role, "value", role)), engine.name, model, seconds)
+
+
+class InputOverWindow(ValueError):
+    pass
+
+
+# against qwen2.5's own tokenizer on live rows and docs, cl100k reads Latin as long and Cyrillic up to 1.6 times longer
+_LATIN_DIVISOR = 1.02
+_CYRILLIC_EXTRA = 0.65
+_LETTER = re.compile(r"[^\W\d_]")
+
+
+@functools.lru_cache(maxsize=1)
+def _encoding():
+    import tiktoken
+
+    return tiktoken.get_encoding("cl100k_base")
+
+
+def _cyrillic_share(text: str) -> float:
+    letters = _LETTER.findall(text)
+    return sum(1 for ch in letters if "Ѐ" <= ch <= "ӿ") / len(letters) if letters else 0.0
+
+
+# the share over the whole input: a Russian question beside English context already reads a tenth longer
+def _least_tokens(messages) -> int:
+    texts = [m.get("content") if isinstance(m, dict) else getattr(m, "content", None) for m in messages]
+    texts = [t if isinstance(t, str) else json.dumps(t or "") for t in texts]
+    divisor = _LATIN_DIVISOR + _CYRILLIC_EXTRA * _cyrillic_share("\n".join(texts))
+    return int(sum(len(_encoding().encode(t)) for t in texts) / divisor)
+
+
+# ollama cuts an input longer than the window to its head and a tail, and answers as if it had read it all
+def _refuse_an_input_over_the_window(spec, name: str, messages) -> tuple[int | None, int | None]:
+    if spec.kind is not EngineKind.ollama:
+        return None, None
+    window = engines.window_or_configured(spec, name)
+    least = _least_tokens(messages)
+    if window and least > window:
+        raise InputOverWindow(f"the input is at least {least} tokens against the {window}-token window of {name}")
+    return window, least
+
+
+# the cut the check above could not see: ollama 0.32 answers a cut input with exactly this many prompt tokens
+def _cut_by_the_server(window: int | None, params: dict, prompt_tokens: int | None) -> bool:
+    budget = params.get("max_tokens")
+    return bool(window and budget and prompt_tokens == window - budget + 2)
+
+
+# a call by engine and name, for a model no role holds yet: the probe before a seat
+def complete_on(spec, name: str, messages, params, role):
+    resp = _complete(spec, name, messages, params, role)
+    usage = _usage(resp, spec)
+    _count(role, spec, name, usage.prompt_tokens, usage.completion_tokens,
+           getattr(resp.choices[0], "finish_reason", None) if resp.choices else None)
+    log.info("llm.chat", role=str(getattr(role, "value", role)), model=name, engine=spec.name,
+             prompt_tokens=usage.prompt_tokens, completion_tokens=usage.completion_tokens)
+    return resp
+
+
+# one cut for every answer, after the call and before the judge, the guest or the agent reads it
+def _parsed(picked, message, finish_reason=None) -> answer_parsers.Parsed:
+    parsed = answer_parsers.parse(picked.parser, message.content,
+                                  getattr(message, "reasoning_content", None), finish_reason)
+    if parsed.leftover_markers:
+        log.warning("llm.leftover_markers", model=picked.name, engine=picked.engine.name,
+                    parser=picked.parser, markers=list(parsed.leftover_markers))
+    return parsed
+
+
+def resolve(role: str) -> Resolved:
+    return engines.spec_of_role(role)
 
 
 def resolve_name(role: str) -> str:
-    with Session() as session:
-        name = session.scalar(
-            select(Model.name)
-            .join(ModelRole, ModelRole.model_id == Model.id)
-            .where(ModelRole.role == role)
-        )
-    if name is None:
-        raise RuntimeError(f"no model assigned to role {role}")
-    return name
+    return resolve(role).name
+
+
+# a bare name was unambiguous while one engine held every model; two engines make it a question
+def resolve_for(role: str, model: str | None = None) -> Resolved:
+    if model is None:
+        return resolve(role)
+    mine = resolve(role)
+    # the override names a model, not an engine: the role's own engine answers if it has it
+    found = engines.find_model_on(model, lambda: mine.engine.id)
+    # a name the registry never saw still runs, on the engine the role would have used
+    return found or Resolved(model, mine.engine)
+
+
+# the upstream body can carry a fragment of the key we kept out of the database on purpose
+def _without_the_body(e: Exception) -> str:
+    if isinstance(e, APIStatusError):
+        return f"http {e.status_code}"
+    return type(e).__name__
 
 
 # one contract for a failed completion: the same log event and error text, written twice
-def _complete(name: str, messages, params):
-    try:
-        return _client.chat.completions.create(model=name, messages=messages, **params)
-    except OpenAIError as e:
-        log.error("llm.chat_failed", model=name, error=str(e))
-        raise RuntimeError(f"LLM chat failed ({name}): {e}") from e
+def _complete(spec, name: str, messages, params, role=None):
+    with _card_for(spec, name):
+        return _paced(spec, name, role, "chat", lambda: engines.client_for(spec).chat.completions.create(
+            model=name, messages=messages, **params, **_keyed(spec)
+        ))
+
+
+# one loop for chat and embeddings: the embedding path met a 429 with no pace at all
+def _paced(spec, name: str, role, what: str, call):
+    for tried in range(PACE_TRIES + 1):
+        try:
+            return call()
+        except OpenAIError as e:
+            # a throttle that names its pause is kept; one that does not, or a cap, stops the run
+            wait = _retry_after(e)
+            if wait is None or wait > PACE_CEILING_SECONDS or tried == PACE_TRIES:
+                raise _failed(e, spec, name, what) from e
+            log.warning("llm.broker_paced", model=name, engine=spec.name, seconds=wait, tried=tried + 1,
+                        headers=_rate_headers(e))
+            _pace(role, spec, name, wait)
+            time.sleep(wait)
+
+
+# ask and chat both read the server's own cut after the count, so the tokens it spent are kept
+def _refuse_a_cut_input(input_cut: bool, picked, usage, window) -> None:
+    if input_cut:
+        raise InputOverWindow(f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window")
 
 
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:
-    name = model or resolve_name(role)
-    resp = _complete(
-        name,
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        _params(role, schema),
-    )
+    picked = resolve_for(role, model)
+    name = picked.name
+    # no system at all is not an empty one: a template drops its default only for a system it was given
+    messages = ([] if system is None else [{"role": "system", "content": system}]) + [{"role": "user", "content": user}]
+    window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
+    params = _params(role, schema, picked)
+    resp = _complete(picked.engine, name, messages, params, role)
 
-    usage = resp.usage
+    usage = _usage(resp, picked.engine)
+    input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
+    # a reply with no choices still spent its tokens, and indexing before the count lost them
+    finish = getattr(resp.choices[0], "finish_reason", None) if resp.choices else None
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens, finish, input_cut=input_cut)
+    if not resp.choices:
+        raise RuntimeError(f"{picked.engine.name} returned no choices for {name}")
+    _refuse_a_cut_input(input_cut, picked, usage, window)
     log.info(
         "llm.chat",
+        role=role,
         model=name,
+        engine=picked.engine.name,
         prompt_tokens=usage.prompt_tokens,
+        # beside the server's count, the guard's estimate is calibrated from these lines
+        least_tokens=least,
         completion_tokens=usage.completion_tokens,
     )
+    parsed = _parsed(picked, resp.choices[0].message, getattr(resp.choices[0], "finish_reason", None))
     return Completion(
-        text=resp.choices[0].message.content,
+        text=parsed.text,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
+        parsed=parsed,
+        parser=answer_parsers.label(picked.parser),
+        finish_reason=getattr(resp.choices[0], "finish_reason", None),
     )
 
 
 def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
-    name = model or resolve_name(role)
-    params = _params(role, None)
+    picked = resolve_for(role, model)
+    name = picked.name
+    params = _params(role, None, picked)
     if tools:
         params["tools"] = tools
-    resp = _complete(name, messages, params)
+    window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
+    resp = _complete(picked.engine, name, messages, params, role)
 
-    choice = resp.choices[0]
+    usage = _usage(resp, picked.engine)
+    input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
+    choice = resp.choices[0] if resp.choices else None
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens,
+           choice.finish_reason if choice else None, input_cut=input_cut)
+    if choice is None:
+        raise RuntimeError(f"{picked.engine.name} returned no choices for {name}")
     message = choice.message
-    usage = resp.usage
+    _refuse_a_cut_input(input_cut, picked, usage, window)
     log.info(
         "llm.chat_tools",
+        role=role,
         model=name,
+        engine=picked.engine.name,
         tool_calls=len(message.tool_calls or []),
         finish_reason=choice.finish_reason,
         prompt_tokens=usage.prompt_tokens,
+        least_tokens=least,
         completion_tokens=usage.completion_tokens,
     )
+    parsed = _parsed(picked, message, choice.finish_reason)
     return ChatTurn(
-        text=message.content,
+        text=parsed.text,
         tool_calls=message.tool_calls or [],
         message=message,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
         finish_reason=choice.finish_reason,
+        parsed=parsed,
     )
 
 
 # the same dict the call is made with, so a stamp cannot drift from what was sent
-def sampler_of(role) -> dict:
-    return _params(role, None)
+def sampler_of(role, picked=None) -> dict:
+    return sampler(role, picked).sent
 
 
-def _params(role, schema) -> dict:
-    opts = config.settings.llm.roles[role].options
+# the generator's sampler for one run, over its role's and its model's; no other role reads it
+_run_sampler: contextvars.ContextVar[dict | None] = contextvars.ContextVar("llm_run_sampler", default=None)
+
+
+@contextlib.contextmanager
+def run_sampler(options: dict | None):
+    token = _run_sampler.set(options or None)
+    try:
+        yield
+    finally:
+        _run_sampler.reset(token)
+
+
+# both halves in one read: what went out, and what the role and the model asked for and the engine refused
+def sampler(role, picked=None) -> engines.Sampler:
+    picked = picked or resolve(role)
+    for_run = (_run_sampler.get() or {}) if str(getattr(role, "value", role)) == "generation" else {}
+    opts = {**config.settings.llm.roles[role].options, **(getattr(picked, "options", None) or {}), **for_run}
     # at temperature 0 the sampler does not roll, but a batching server needs the run to say
-    params = {k: opts[k] for k in ("temperature", "max_tokens", "seed") if k in opts}
+    wanted = {k: opts[k] for k in engines.SAMPLER_KEYS if k in opts}
+    return engines.translate(picked.engine, wanted)
+
+
+# `response_format` and `tools` bypass `translate`: an engine that cannot do them refuses loudly
+def _params(role, schema, picked) -> dict:
+    params = dict(sampler(role, picked).sent)
+    # the OpenAI client knows no penalty field, and vLLM reads it from the body's extras
+    if "repetition_penalty" in params:
+        params["extra_body"] = {"repetition_penalty": params.pop("repetition_penalty")}
     if schema:
         params["response_format"] = {
             "type": "json_schema",
@@ -134,183 +521,66 @@ def _params(role, schema) -> dict:
     return params
 
 
+# the cross-encoder is a role like the others: its engine answers, and the card is taken for it
+def score_pairs(pairs: list, role="reranking") -> list[float]:
+    if not pairs:
+        # the server refuses an empty list with a 400, and nothing is there to score
+        return []
+    picked = resolve(role)
+    name, spec = picked.name, picked.engine
+    if spec.kind is not EngineKind.vllm:
+        # a reranker on the wrong kind fails every row alike, so the run stops instead of forgiving each
+        raise StandFault(f"{name} on {spec.name}: only a vLLM pooling server scores pairs")
+    with _card_for(spec, name):
+        try:
+            scores = vllm_engine.score(spec, name, pairs)
+        except StandFault:
+            raise
+        except Exception as e:
+            said = _without_the_body(e)
+            log.error("llm.rerank_failed", model=name, engine=spec.name, error=said)
+            raise RuntimeError(f"LLM rerank failed ({name} on {spec.name}): {said}") from e
+        _note_placement(role, spec, name)
+    log.info("llm.rerank", model=name, engine=spec.name, count=len(pairs))
+    return scores
+
+
+# what wrote a vector: one model name on two engines writes two geometries
+def embedder_label(role="embedding") -> str:
+    picked = resolve(role)
+    return engines.label(picked.name, picked.engine.name)
+
+
 def embed(prompt, role="embedding"):
     return request_embeddings_batch([prompt], role)[0]
 
 
-# what the server says is loaded right now, or nothing: a probe must not break a run
-def _loaded_models() -> list:
-    try:
-        return _get_request("/api/ps").get("models") or []
-    except Exception as e:
-        log.warning("llm.ps_failed", error=str(e))
-        return []
-
-
-# one row of a run asks, the other 822 read this: the snapshot is written per answer
-_WINDOW_SECONDS = 60
-_windows: dict[str, tuple[float, int | None]] = {}
-
-
-def server_context_length(model: str) -> int | None:
-    seen_at, window = _windows.get(model, (0.0, None))
-    if time.monotonic() - seen_at < _WINDOW_SECONDS:
-        return window
-    # the full tag, or llama3.1:8b would read the window of a loaded llama3.1:70b
-    wanted = {model, f"{model}:latest"}
-    window = next(
-        (e.get("context_length") for e in _loaded_models() if e.get("name") in wanted), None
-    )
-    _windows[model] = (time.monotonic(), window)
-    return window
-
-
-# until an engine layer exists (arc 5), the backend is named by where it is served from
-def engine() -> str:
-    from urllib.parse import urlsplit
-
-    # host and port only: `netloc` carries userinfo, and this lands on every judged row
-    seen = urlsplit(LLM_BASE)
-    if not seen.hostname:
-        return "unnamed"
-    # a base without an explicit port stamped every row with the string `host:None`
-    return f"{seen.hostname}:{seen.port}" if seen.port else seen.hostname
-
-
-def list_models():
-    return [m["name"] for m in _get_request("/api/tags")["models"]]
-
-
-def residency() -> list[dict]:
-    return [
-        {
-            "model": m.get("name", "?"),
-            "size_mb": round((m.get("size") or 0) / 2**20),
-            "vram_mb": round((m.get("size_vram") or 0) / 2**20),
-        }
-        for m in _loaded_models()
-        if m.get("size")
-    ]
-
-
-# who serves the window: the configured generator when it is up, else whoever else is
-def window_model(loaded: list[dict] | None = None) -> str | None:
-    names = [m["model"] for m in (residency() if loaded is None else loaded)]
-    configured = resolve_name("generation")
-    if configured in names:
-        return configured
-    return next((n for n in names if "embed" not in n and "bge" not in n), None)
-
-
-# nothing in vram at all: the model answers from the processor
-def off_the_card(entry: dict) -> bool:
-    return entry["vram_mb"] == 0
-
-
-def warn_if_models_do_not_fit() -> list[str]:
-    spilled, off_card = [], []
-    for entry in residency():
-        if entry["vram_mb"] >= entry["size_mb"]:
-            continue
-        spilled.append(entry["model"])
-        if off_the_card(entry):
-            off_card.append(entry["model"])
-        log.warning(
-            "llm.model_spilled_to_cpu",
-            **entry,
-            context=config.settings.llm.context_length,
-        )
-    if off_card:
-        log.error("llm.gpu_unavailable", models=off_card)
-    return spilled
-
-
-def models_off_the_card() -> list[str]:
-    return [e["model"] for e in residency() if off_the_card(e)]
-
-
+# unlabelled, for vectors nobody stores, as the guest's; a writer of vectors takes `embed_labelled`
 def request_embeddings_batch(texts, role="embedding"):
-    name = resolve_name(role)
-    try:
-        resp = _client.embeddings.create(model=name, input=texts)
-    except OpenAIError as e:
-        log.error("llm.embed_failed", model=name, error=str(e))
-        raise RuntimeError(f"LLM embed failed ({name}): {e}") from e
-    log.info("llm.embed", model=name, count=len(texts))
+    return _embeddings(resolve(role), texts, role)
+
+
+# the label and the vectors from one resolution: read apart, a role seated between them mislabels
+def embed_labelled(texts, role="embedding") -> tuple[str, list]:
+    picked = resolve(role)
+    return engines.label(picked.name, picked.engine.name), _embeddings(picked, texts, role)
+
+
+# one text: the vector a search asks with and the label the rows it meets must carry
+def embed_with_label(text, role="embedding") -> tuple[str, list]:
+    label, vectors = embed_labelled([text], role)
+    return label, vectors[0]
+
+
+def _embeddings(picked, texts, role="embedding") -> list:
+    name = picked.name
+    with _card_for(picked.engine, name):
+        resp = _paced(picked.engine, name, role, "embed",
+                      lambda: engines.client_for(picked.engine).embeddings.create(model=name, input=texts))
+        _note_placement(role, picked.engine, name)
+    # on a cloud the tokens are the quota, so a reply without them stops the run; locally it is a gap
+    usage = _usage(resp, picked.engine) if engines.is_cloud(picked.engine.kind) else getattr(resp, "usage", None)
+    prompt = getattr(usage, "prompt_tokens", None)
+    _count(role, picked.engine, name, prompt, 0)
+    log.info("llm.embed", role=role, model=name, engine=picked.engine.name, count=len(texts), prompt_tokens=prompt)
     return [d.embedding for d in resp.data]
-
-
-_HTTP_TIMEOUT = 60
-_PULL_TIMEOUT = 3600
-
-
-def pull_model(model):
-    return _post_request("/api/pull", {"model": model, "stream": False}, timeout=_PULL_TIMEOUT)
-
-
-def unload(role="embedding", model=None):
-    # keep_alive 0 overrides the default; the lookup is inside the guard, teardown raises
-    name = model
-    try:
-        name = name or resolve_name(role)
-        _windows.pop(name, None)
-        _post_request("/api/generate", {"model": name, "keep_alive": 0})
-    except Exception as e:
-        log.warning("llm.unload_failed", model=name or role, error=str(e))
-
-
-# an empty generate loads the weights and answers nothing
-def load_into_memory(role="generation", model=None) -> dict:
-    name = model or resolve_name(role)
-    _post_request("/api/generate", {"model": name})
-    log.info("llm.loaded", model=name)
-    return {"model": name, "context_length": server_context_length(name)}
-
-
-def delete_model(model):
-    response = requests.delete(
-        f"{LLM_BASE}/api/delete", json={"model": model}, timeout=_HTTP_TIMEOUT
-    )
-    if response.status_code == 404:
-        log.info("llm.model_already_absent", model=model)
-        return None
-    return _check(response, "/api/delete")
-
-
-def add_tags(models) -> list:
-    return [m if ":" in m else f"{m}:latest" for m in models]
-
-
-def ensure_models() -> None:
-    for model in set(add_tags(config.settings.llm.pull_models)) - set(
-        add_tags(list_models())
-    ):
-        pull_model(model)
-
-
-def _check(response, path) -> Any:
-    if not response.ok:
-        try:
-            error = response.json().get("error", response.text)
-        except ValueError:
-            error = response.text
-
-        raise RuntimeError(f"Ollama {response.status_code} on {path}: {error}")
-
-    if not response.text:
-        return None
-
-    return response.json()
-
-
-# what the server says about a model before it is given a role, read rather than assumed
-def shown(model: str) -> dict:
-    return _post_request("/api/show", {"model": model}) or {}
-
-
-def _post_request(path, payload, timeout=_HTTP_TIMEOUT):
-    return _check(requests.post(f"{LLM_BASE}{path}", json=payload, timeout=timeout), path)
-
-
-def _get_request(path) -> dict:
-    return _check(requests.get(f"{LLM_BASE}{path}", timeout=_HTTP_TIMEOUT), path)

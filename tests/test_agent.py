@@ -951,3 +951,41 @@ def test_the_tools_are_said_again_after_a_tool_answer_only_when_asked(monkeypatc
     said = graph._restated(asked, state)
     assert len(said) == 1 and said[0]["role"] == "user"
     assert "search_corpus" in said[0]["content"]
+
+
+def test_an_answer_whose_gate_scored_with_the_cross_encoder_names_the_reranker(monkeypatch):
+    # the gate can call the reranker without `use_rerank`
+    from conftest import FakeSession
+
+    session, snapped = FakeSession(), []
+    monkeypatch.setattr(agent, "Session", lambda: session)
+    monkeypatch.setattr(agent.chat, "_find_or_create_question",
+                        lambda s, text, lang: SimpleNamespace(id=1, original_text=text,
+                                                              reference_answer=None))
+    monkeypatch.setattr(agent.chat, "resolve_rerank", lambda asked: bool(asked))
+    monkeypatch.setattr(agent.prompt_repo, "active_versions", lambda purposes: {})
+    monkeypatch.setattr(agent.llm, "resolve_name", lambda role: f"{role}-model")
+    monkeypatch.setattr(agent.run_snapshot, "of_run", lambda **kw: snapped.append(kw) or {})
+
+    for signal, named in (("cross_encoder", True), ("distance", False)):
+        gate = agent_policy.Gate(signal=signal)
+        agent._log_answer("q", agent.AgentResult(), "run", use_rerank=False,
+                          fallback_policy="corpus_first_weak", gate=gate, variant="baseline")
+        assert ("reranking" in session.added[-1].models) is named, signal
+        assert snapped[-1]["cross_encoder_used"] is named, signal
+    # no reranker seated: the row is still written
+    def unseated(role):
+        if role == "reranking":
+            raise agent.engines.Unnamed("no model assigned to role reranking")
+        return f"{role}-model"
+
+    monkeypatch.setattr(agent.llm, "resolve_name", unseated)
+    agent._log_answer("q", agent.AgentResult(), "run", use_rerank=False,
+                      fallback_policy="corpus_first_weak", gate=agent_policy.Gate(signal="either"),
+                      variant="baseline")
+    assert session.added[-1].models["reranking"] is None, "the row is written, the name is unknown"
+    monkeypatch.setattr(agent.llm, "resolve_name", lambda role: f"{role}-model")
+    monkeypatch.setattr(agent.config.settings.agent.gate, "signal", "cross_encoder")
+    agent._log_answer("q", agent.AgentResult(), "run", use_rerank=False,
+                      fallback_policy="corpus_first_weak", gate=None, variant="baseline")
+    assert "reranking" not in session.added[-1].models, "the idiomatic arm runs no gate"

@@ -8,7 +8,7 @@ from evals.pools import has_remote_evidence as _has_remote_evidence
 from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
 from evals.stats import mean_of, score_of
-from outcomes import Outcome
+from outcomes import RULE, Outcome
 from use_cases import rejudge
 
 # an answer standing on nothing the corpus gave it, whichever way it got there
@@ -29,14 +29,19 @@ def _distribution(scores) -> dict:
     }
 
 
+def _scored(ql) -> bool:
+    return any(getattr(ql, axis) is not None for axis in rejudge.AXES)
+
+
 # read off the rule rather than restated beside it: two spellings of one table is the usual defect
 def _abstentions() -> dict:
     return {
         "ours": {
-            "outcomes": ["refused"],
+            "outcomes": ["refused", "unsupported_answer"],
             "axes": list(rejudge.AXES),
-            "why": "on a refusal the axis does not apply, and the judge prompt is left alone",
-            "read_from": "metrics.refusal, written by both answering paths from one function",
+            "why": "on a refusal the axis does not apply; the judge scores answers that cite the corpus, and one "
+                   "without sources is counted in the unsupported shares instead",
+            "read_from": "metrics.refusal and the row's answered flag, both written by the answering paths",
         },
         # read off the guests themselves: a fourth axis was added and this table did not notice
         "guests": {
@@ -56,7 +61,7 @@ def _language_match(logs) -> dict:
         "target": "the run's recorded language, or the question's where the run recorded none",
         "population": "rows that answered: refusals, narrated calls, errors and exhaustion are out",
         # the detector reads a config mode, so a run and a rerun can disagree without the code moving
-        "detector": config.settings.retrieval.query_lang,
+        "detector": config.settings.retrieval.keyword.query_lang,
     }
 
 
@@ -90,7 +95,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
         pools["in_corpus"], pools["off_domain"], pools["out_of_corpus"]
     )
 
-    # an ungrounded answer is still an answer, and its low scores belong in this mean
+    # an ungrounded answer is still an answer, and its low scores belong here; one without sources has none
     answered_only = [
         ql for ql in in_corpus
         if _outcome(ql) not in SAID_NOTHING
@@ -117,6 +122,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
 
     return {
         "schema": SCHEMA,
+        "outcome_rule": RULE,
         # what the silence in an axis means: an abstention is not a low score and not a missing pass
         "axes_abstain_on": _abstentions(),
         "n_logs": len(logs),
@@ -143,7 +149,9 @@ def evaluate(run_name=None, verbose=False) -> dict:
         },
         # a refusal takes a ten and a zero by the prompts, so its share moves both means
         "answered_only": {
-            "n": len(answered_only),
+            # the rows a mean stands on, not the rows with text: an unsupported answer carries no score
+            "n": sum(1 for ql in answered_only if _scored(ql)),
+            "without_a_score": sum(1 for ql in answered_only if not _scored(ql)),
             "faithfulness": mean_of(ql.faithfulness for ql in answered_only),
             "relevance": mean_of(ql.relevance for ql in answered_only),
             "completeness": mean_of(ql.completeness for ql in answered_only),

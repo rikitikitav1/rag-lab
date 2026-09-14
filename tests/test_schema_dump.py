@@ -35,3 +35,22 @@ def test_no_enum_shaped_check_came_back_into_the_dump():
         if "CHECK" in line and "= ANY (ARRAY[" in line
     ]
     assert checks == [], "an enum belongs to the model, not to a constraint"
+
+
+def test_a_model_belongs_to_an_engine_and_says_which_weights_it_is():
+    # the same name lives on two engines, and the same weights come in two quantisations
+    from models.registry import Engine, Model, Placement
+
+    assert Model.__table__.c.engine_id.nullable is False
+    unique = {tuple(sorted(col.name for col in c.columns))
+              for c in Model.__table__.constraints
+              if c.__class__.__name__ == "UniqueConstraint"}
+    assert ("engine_id", "name") in unique, "one name on two engines is two rows"
+    assert Model.__table__.c.weights_id.nullable and Model.__table__.c.quant.nullable, (
+        "not recorded is a state of its own, and a comparison must refuse on it"
+    )
+    # a join key spelled by hand drifts, so the weights are a row and the model points at it
+    assert "weights" not in Model.__table__.c, "the free-text column was replaced by the table"
+    assert Engine.__table__.c.env_prefix.nullable is False
+    assert "base_url" not in Engine.__table__.c, "the address lives in the environment"
+    assert Placement.remote.value == "remote", "cloud is an answer, not a missing value"

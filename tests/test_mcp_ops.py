@@ -8,13 +8,14 @@ from fastmcp.exceptions import ToolError
 
 def test_run_metrics_merges_gen_retrieval_and_the_debt(monkeypatch):
     # n_scored says who was scored and nothing about why the rest was not
-    monkeypatch.setattr(mcp_ops.generation_metrics, "evaluate", lambda rn: {"faithfulness": 7})
+    monkeypatch.setattr(mcp_ops.generation_metrics, "evaluate", lambda rn: {"n_logs": 1, "faithfulness": 7})
     monkeypatch.setattr(mcp_ops.retrieval_metrics, "evaluate", lambda rn: {"hit_at_k": 0.9})
     monkeypatch.setattr(mcp_ops.run_debts, "of", lambda rn: {"ours_still_to_judge": 3})
+    monkeypatch.setattr(mcp_ops.run_tokens, "of", lambda rn: {"spent": None})
     out = mcp_ops.run_metrics("some_run")
     assert out == {
-        "run_name": "some_run", "faithfulness": 7, "hit_at_k": 0.9,
-        "debts": {"ours_still_to_judge": 3},
+        "run_name": "some_run", "n_logs": 1, "faithfulness": 7, "hit_at_k": 0.9,
+        "debts": {"ours_still_to_judge": 3}, "tokens": {"spent": None},
     }
 
 
@@ -84,11 +85,16 @@ class _SessionWith:
     def get(self, _model, _id):
         return self._row
 
+    # no guest pass was queued on these arms
+    def execute(self, *_):
+        return type("R", (), {"scalars": lambda self: type("S", (), {"all": lambda self: []})()})()
+
 
 def _experiment():
     from types import SimpleNamespace
 
     return SimpleNamespace(
+        run_names=[],
         id=36, name="judge_clause_language", kind="rejudge", status="concluded",
         conclusion="the clause that works is the one about meaning",
         results={
@@ -142,3 +148,84 @@ def test_question_sets_names_the_set_that_is_not_there(monkeypatch):
     with pytest.raises(ToolError) as ei:
         mcp_ops.list_question_sets("ghost")
     assert "ghost" in str(ei.value)
+
+
+def test_the_engines_tool_reads_what_health_reads(monkeypatch):
+    from use_cases import stand_health
+
+    seen = {"holder": ["vllm"], "on_card": {"vllm": ["Qwen/Q"]}}
+    monkeypatch.setattr(stand_health, "engines_section", lambda: seen)
+    assert mcp_ops.engines_on_the_stand() is seen, "one reader, so MCP and /health cannot disagree"
+
+
+def test_the_engines_section_says_who_holds_the_card_and_who_answers(monkeypatch):
+    import engines
+    from engines import card
+    from models.registry import EngineKind, Placement
+    from use_cases import stand_health
+
+    vllm_spec = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    cloud = engines.EngineSpec(9, "cloud", EngineKind.openai_compatible, "CLOUD", Placement.remote)
+    monkeypatch.setattr(card, "on_card", lambda: [card.Holding(vllm_spec, ("Qwen/Q",))])
+    monkeypatch.setattr(stand_health.engines, "card_engines", lambda kind=None: [vllm_spec])
+    monkeypatch.setattr(stand_health.vllm, "is_sleeping", lambda spec: False)
+    monkeypatch.setattr(stand_health.engines, "registered", lambda: [vllm_spec, cloud])
+    monkeypatch.setenv("VLLM_BASE_URL", "http://vllm:8000")
+    monkeypatch.delenv("CLOUD_BASE_URL", raising=False)
+
+    # the vLLM does not answer; the cloud has no key, and a missing key raises before any request
+    def listing(spec, timeout=3):
+        if spec.name == "cloud":
+            raise engines.Unconfigured("engine cloud: key is not configured")
+        return None
+
+    monkeypatch.setattr(stand_health.engines, "served_models", listing)
+    got = stand_health.engines_section()
+    assert got["holder"] == ["vllm"] and got["on_card"] == {"vllm": ["Qwen/Q"]}
+    assert got["vllm_sleeping"] == {"vllm": False}
+    # an engine with no address is not a dead one: nothing to ask is not a failed answer
+    assert got["answers"] == {"vllm": False, "cloud": None}
+
+
+def test_health_carries_the_engines_section(monkeypatch):
+    import engines
+    from models.registry import EngineKind, Placement
+    from use_cases import stand_health
+
+    spec = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    monkeypatch.setattr(stand_health.llm, "resolve", lambda role: engines.Resolved("llama", spec))
+    monkeypatch.setattr(stand_health.ollama, "residency", lambda spec: [])
+    monkeypatch.setattr(stand_health.ollama, "window_model", lambda name, loaded: None)
+    monkeypatch.setattr(stand_health, "card", lambda: {"cuda": None})
+    monkeypatch.setattr(stand_health, "engines_section", lambda: {"holder": ["vllm"]})
+    assert stand_health.stand()["engines"] == {"holder": ["vllm"]}
+
+
+def test_compare_runs_names_the_runs_without_logs_instead_of_crowning_one(monkeypatch):
+    # an empty run came back as the winner, and a repeated question as a bare error
+    monkeypatch.setattr(mcp_ops.compare, "named_runs", lambda names: names)
+    monkeypatch.setattr(mcp_ops, "load_logs", lambda run_name: [])
+    with pytest.raises(ToolError, match="ghost"):
+        mcp_ops.compare_runs(["ghost"])
+
+    def twice(*a):
+        raise mcp_ops.pools.Ambiguous("question 1 appears twice in run 'r'")
+
+    monkeypatch.setattr(mcp_ops, "load_logs", lambda run_name: [object()])
+    monkeypatch.setattr(mcp_ops.experiment_uc, "compute_results", twice)
+    with pytest.raises(ToolError, match="twice"):
+        mcp_ops.compare_runs(["r"])
+
+
+def test_run_metrics_on_a_run_with_no_logs_refuses(monkeypatch):
+    # a mistyped name read as a measured zero on retrieval
+    monkeypatch.setattr(mcp_ops.compare, "named_runs", lambda names: names)
+    monkeypatch.setattr(mcp_ops.generation_metrics, "evaluate", lambda rn: {"n_logs": 0})
+    with pytest.raises(ToolError, match="no logs"):
+        mcp_ops.run_metrics("tester_no_such_run")
+
+
+def test_questions_of_a_set_that_is_not_there_refuse(monkeypatch):
+    monkeypatch.setattr(mcp_ops.question_sets, "inventory", lambda name: [])
+    with pytest.raises(ToolError, match="no question set"):
+        mcp_ops.list_questions(set_name="tester_no_such_set")

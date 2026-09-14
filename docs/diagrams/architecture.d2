@@ -5,7 +5,7 @@ client: Client {
 }
 
 lab: rag-lab (docker compose, runtime) {
-  boot: "startup pipeline, runs to completion first:\ndbmate -> seed -> bootstrap\n(the API and the worker gate on it)" {
+  boot: "startup pipeline, runs to completion first:\ndbmate -> seed -> bootstrap\n(vLLM up and put to sleep first;\nthe API and the worker gate on it)" {
     style.stroke-dash: 3
   }
 
@@ -26,10 +26,26 @@ lab: rag-lab (docker compose, runtime) {
 
   ollama: Ollama (GPU) {
     gen: llama3.1:8b
-    judge: qwen2.5:7b
     embed: bge-m3
+    para: gemma2:9b
+    ragas: "qwen2.5:7b\n(RAGAS guest)"
+  }
+
+  ollama_cpu: "ollama-cpu (processor)" {
+    ragas_embed: "bge-m3\n(RAGAS guest's embedder)"
+  }
+
+  vllm: "vLLM (GPU),\nasleep unless it holds the card" {
+    judge: Qwen2.5-7B-Instruct-AWQ
+  }
+
+  rerank: "vllm-rerank\n(profile rerank)" {
+    style.stroke-dash: 3
+    reranker: bge-reranker-v2-m3
   }
 }
+
+hub: "huggingface.co\n(vLLM weights)"
 
 external: External MCP servers {
   deepwiki: DeepWiki
@@ -44,8 +60,13 @@ lab.api -> lab.postgres: ORM (sync + async)
 lab.api -> lab.postgres: enqueue jobs {style.stroke-dash: 3}
 lab.worker -> lab.postgres: claim jobs\nFOR UPDATE SKIP LOCKED
 
-lab.worker.default -> lab.ollama: generate / judge / embed
+lab.worker.default -> lab.ollama: generate / embed
+lab.worker.default -> lab.ollama_cpu: guest embeddings
+lab.worker.default -> lab.vllm: judge
+lab.worker.default -> lab.rerank: score pairs
+lab.worker.default -> lab.vllm: "hand the card:\nsleep one engine, wake the other" {style.stroke-dash: 3}
 lab.worker.io -> lab.ollama: model pull / delete\n(ollama downloads from hf.co / registry)
+lab.worker.io -> hub: "vLLM weights into\nthe host's HF cache"
 lab.api -> lab.ollama: chat, agent hops
 
 lab.worker.io -> external: health jobs

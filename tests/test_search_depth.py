@@ -35,7 +35,7 @@ def test_an_override_beats_both_the_config_and_the_planner(monkeypatch):
 
 def test_auto_takes_the_deepest_rung_the_plan_still_walks(monkeypatch):
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
-    monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
+    monkeypatch.setattr(config.settings.verdict.search_depth, "ef_ladder", [100, 200, 400])
     monkeypatch.setattr(search_depth, "_shape", lambda conn: (8959, 42668))
     # the plan walks the index at 100 and 200 and sorts at 400, as the table actually did
     monkeypatch.setattr(
@@ -46,7 +46,7 @@ def test_auto_takes_the_deepest_rung_the_plan_still_walks(monkeypatch):
 
 def test_the_answer_is_re_asked_when_the_row_estimate_moves(monkeypatch):
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
-    monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
+    monkeypatch.setattr(config.settings.verdict.search_depth, "ef_ladder", [100, 200, 400])
     shape = {"pages": 8959, "rows": 42668}
     monkeypatch.setattr(search_depth, "_shape", lambda conn: (shape["pages"], shape["rows"]))
     monkeypatch.setattr(
@@ -61,7 +61,7 @@ def test_the_answer_is_re_asked_when_the_row_estimate_moves(monkeypatch):
 
 def test_a_table_no_rung_walks_serves_the_floor_and_says_so(monkeypatch, caplog):
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
-    monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
+    monkeypatch.setattr(config.settings.verdict.search_depth, "ef_ladder", [100, 200, 400])
     monkeypatch.setattr(search_depth, "_shape", lambda conn: (1, 1))
     monkeypatch.setattr(search_depth, "uses_index", lambda conn, variant, ef: False)
     assert search_depth.resolve("clean_1024", conn=CONN) == 100
@@ -98,7 +98,7 @@ def test_the_probe_asks_for_the_index_back_before_it_looks(monkeypatch):
 def test_a_table_no_rung_walks_is_not_remembered(monkeypatch):
     # a poisoned session answers "no rung" too, and a poisoned answer that sticks is worse
     monkeypatch.setattr(config.settings.retrieval, "ef_search", "auto")
-    monkeypatch.setattr(config.settings.retrieval, "ef_ladder", [100, 200, 400])
+    monkeypatch.setattr(config.settings.verdict.search_depth, "ef_ladder", [100, 200, 400])
     monkeypatch.setattr(search_depth, "_shape", lambda conn: (8959, 42668))
     walks = {"any": False}
     monkeypatch.setattr(search_depth, "uses_index", lambda conn, v, ef: walks["any"])
@@ -138,7 +138,8 @@ def test_an_exact_search_resolves_no_depth(monkeypatch):
             return _R()
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True)
+    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
     assert not any("hnsw.ef_search" in q for q in issued)
 
 
@@ -168,6 +169,7 @@ def test_an_exact_search_turns_the_index_off_on_its_own_connection(monkeypatch):
             return _R()
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True)
+    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
     assert any("enable_indexscan = off" in q for q in issued)
     assert not any("hnsw.ef_search" in q for q in issued)

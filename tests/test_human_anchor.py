@@ -239,3 +239,16 @@ def test_a_cyrillic_letter_that_looks_like_a_is_read_as_a(anchor, tmp_path):
         encoding="utf-8",
     )
     assert anchor._picked(sheet) == {1: "A", 2: "B", 3: None}
+
+
+def test_a_new_judge_is_read_off_the_copies_of_the_rows_the_sheet_names():
+    # the sheet names rows of two older runs; a rejudge writes its verdicts onto copies with new ids
+    from evals import human_anchor
+
+    pairs = [{"n": 1, "A": {"log_id": 10, "run": "left"}, "B": {"log_id": 20, "run": "right"}},
+             {"n": 2, "A": {"log_id": 11, "run": "left"}, "B": {"log_id": 21, "run": "right"}}]
+    asked = {10: 100, 20: 100, 11: 101, 21: 101}
+    copied = {("left", 100): "9", ("right", 100): "4", ("left", 101): "5"}
+    deltas = human_anchor._deltas_from(pairs, asked, copied)
+    assert deltas[1] == 0.5
+    assert deltas[2] is None, "a side the copies did not judge is not read as a tie"

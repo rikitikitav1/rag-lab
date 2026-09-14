@@ -8,6 +8,7 @@ from api.v1 import (
     agent,
     categories,
     chat,
+    engine,
     eval,
     experiment,
     job,
@@ -23,6 +24,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from mcp_ops import mcp_ops
 from mcp_server import mcp
+
+import db
 
 logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
 
@@ -48,6 +51,11 @@ app = FastAPI(lifespan=lifespan)
 @app.exception_handler(job_specs.Refused)
 async def _refused_options(request, bad: job_specs.Refused):
     return JSONResponse(status_code=400, content={"detail": str(bad)})
+
+
+@app.exception_handler(db.ForeignVectors)
+async def _foreign_vectors(request, bad: db.ForeignVectors):
+    return JSONResponse(status_code=409, content={"detail": str(bad)})
 
 
 app.mount("/mcp", mcp_app)
@@ -77,6 +85,7 @@ app.include_router(health.v1, prefix="/v1")
 app.include_router(chat.router, prefix="/v1")
 app.include_router(agent.router, prefix="/v1")
 app.include_router(categories.router, prefix="/v1")
+app.include_router(engine.router, prefix="/v1")
 app.include_router(llm_model.router, prefix="/v1")
 app.include_router(model_role.router, prefix="/v1")
 app.include_router(prompt.router, prefix="/v1")

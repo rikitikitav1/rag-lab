@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import config
+import engines
 import logging_setup
 from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
-from models.registry import Prompt, Purpose
+from models.registry import Engine, EngineKind, Placement, Prompt, Purpose
 from orm.sync_db import Session
 from sqlalchemy import exists, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -224,6 +225,23 @@ def seed_questions() -> None:
     log.info("seed.questions", total=len(rows), exported=len(exported))
 
 
+# the engines a clean database starts with, as `config.yaml` lists them; the migration seeded the first too
+def seed_engines() -> None:
+    for declared in config.settings.engines:
+        with Session() as session:
+            if session.scalar(select(exists().where(Engine.name == declared.name))):
+                continue
+            kind, placement = EngineKind(declared.kind), Placement(declared.placement)
+            # the door's rules hold for the file too: a remote kind on the card joined every handover
+            if engines.is_cloud(kind) != (placement is Placement.remote):
+                raise ValueError(f"engine {declared.name}: {kind.value} cannot be placed {placement.value}")
+            if session.scalar(select(exists().where(Engine.env_prefix == declared.env_prefix))):
+                raise ValueError(f"engine {declared.name}: prefix {declared.env_prefix} already names an engine")
+            session.add(Engine(name=declared.name, kind=kind, env_prefix=declared.env_prefix, placement=placement))
+            session.commit()
+        log.info("seed.engine", name=declared.name)
+
+
 MCP_INTEGRATIONS = [
     {
         "name": "deepwiki",
@@ -271,6 +289,7 @@ def seed_mcp_integrations() -> None:
 
 def main() -> None:
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
+    seed_engines()
     seed_prompts()
     seed_questions()
     seed_mcp_integrations()

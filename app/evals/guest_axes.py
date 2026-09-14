@@ -93,20 +93,24 @@ def _sample(ql):
     )
 
 
+# how the guest's prompt reaches the model; the second is the ruler every older guest number was taken with
+MESSAGE_FORMS = ("user_only", "empty_system")
+
 _METRICS: dict = {}
 
 
-def _metric(axis: str):
-    if axis not in _METRICS:
+# keyed by the model too: the worker lives long, and a second pass would score with the first one's client
+def _metric(axis: str, messages: str = MESSAGE_FORMS[0], model: str | None = None):
+    if (axis, messages, model) not in _METRICS:
         import ragas.metrics as guest_metrics
         from evals.guest_llm import OurClient, OurEmbeddings
 
         guest = AXES[axis]
         extra = {"embeddings": OurEmbeddings()} if guest.embeds else {}
-        _METRICS[axis] = getattr(guest_metrics, guest.metric)(
-            llm=OurClient(), **extra, **dict(guest.options)
+        _METRICS[(axis, messages, model)] = getattr(guest_metrics, guest.metric)(
+            llm=OurClient(model=model, messages=messages), **extra, **dict(guest.options)
         )
-    return _METRICS[axis]
+    return _METRICS[(axis, messages, model)]
 
 
 # nan is how the standard abstains, and JSONB has no place to put it
@@ -115,15 +119,19 @@ def _finite(score) -> float | None:
     return None if math.isnan(value) else round(value, 4)
 
 
-def score(axis: str, ql) -> dict:
+def score(axis: str, ql, messages: str = MESSAGE_FORMS[0], *, model: str | None = None) -> dict:
+    import llm
     from evals.guest_llm import stamp
 
     start = time.perf_counter()
-    value = asyncio.run(_metric(axis).single_turn_ascore(_sample(ql)))
+    # ragas asks the model several times for one row and keeps only the text; this scope keeps the sum
+    with llm.accounting() as row:
+        value = asyncio.run(_metric(axis, messages, model).single_turn_ascore(_sample(ql)))
     finite = _finite(value)
     return {
         "score": finite,
         "abstained": finite is None,
         "elapsed": round(time.perf_counter() - start, 3),
-        **stamp(),
+        "tokens": row.record(),
+        **stamp(messages, model),
     }

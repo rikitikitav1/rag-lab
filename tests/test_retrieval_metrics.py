@@ -163,7 +163,7 @@ def test_the_section_rank_is_a_rank_and_reads_the_leaf_of_the_path():
 
 
 def test_a_row_without_addresses_is_not_scored_on_sections(monkeypatch):
-    # `chunks` exists from 06.09 on, and the archive is never readable at this level
+    # older rows have no `chunks`, and the archive is never readable at this level
     log = _log([("gold.md", 1)])
     log.chunks = None
     m = _evaluate(monkeypatch, [log])

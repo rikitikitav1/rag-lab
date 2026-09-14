@@ -1,43 +1,74 @@
 import logging_setup
+from errors import StandFault
 from evals import runner
+from models import Job
+from models.eval import QuestionLog
 from models.registry import Pipeline, Role
 from orm.sync_db import Session
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 
-from .base import register, require_model_ready, require_role_ready
+from .base import Final, register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
+
+
+def _claims_on(run_name: str, job_id: int | None) -> tuple[int, list[int]]:
+    with Session() as session:
+        rows = session.scalar(select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == run_name))
+        others = list(session.scalars(
+            select(Job.id).where(Job.type == "eval_run", Job.options["run_name"].astext == run_name, Job.id != job_id)
+        ))
+    return rows or 0, others
 
 
 @register("eval_run")
 def eval_run(options: dict) -> None:
     model = options.get("model")
     if model:
-        require_model_ready(model)
+        require_model_ready(model, "generation")
     else:
-        require_role_ready(Role.generation)
-    require_role_ready(Role.embedding)
-    answered = runner.run(
-        run_name=options["run_name"],
-        set_name=options.get("set_name"),
-        question_ids=options.get("question_ids"),
-        # the runner resolves the default: two deciders is how a null became every run's procedure
-        use_rerank=options.get("rerank"),
-        pipeline=options.get("pipeline", Pipeline.single_shot),
-        language=options.get("language"),
-        k=options.get("k"),
-        max_hops=options.get("max_hops"),
-        model=model,
-        fallback_policy=options.get("fallback_policy"),
-        gate_signal=options.get("gate_signal"),
-        restate_tools=bool(options.get("restate_tools")),
-        weak_distance=options.get("weak_distance"),
-        orchestrator=options.get("orchestrator"),
-        allow_cpu=bool(options.get("allow_cpu")),
-        topic_threshold=options.get("topic_threshold"),
-        job_id=options.get("_job_id"),
-        variant=options.get("variant"),
-    )
+        require_role_ready(Role.generation, take_card=False)
+    # one preamble takes the card: two, on two engines, handed it back and forth and never started
+    require_role_ready(Role.embedding, take_card=False)
+    require_card("generation", model, allow_spill=bool(options.get("allow_cpu")))
+    resume = bool(options.get("resume"))
+    if not resume:
+        rows, others = _claims_on(options["run_name"], options.get("_job_id"))
+        # every door queues here, and only one of them refused a taken name
+        if others or (rows and not options.get("attempts")):
+            raise Final(
+                f"run {options['run_name']} is taken: {rows} rows, eval_run jobs {others[:5]};"
+                " pass resume to answer the rest on its own options, or name a new run"
+            )
+        # a retry of this very job answers what its first attempt left, not every question again
+        resume = bool(rows)
+    try:
+        answered = runner.run(
+            run_name=options["run_name"],
+            set_name=options.get("set_name"),
+            question_ids=options.get("question_ids"),
+            # the runner resolves the default: two deciders is how a null became every run's procedure
+            use_rerank=options.get("rerank"),
+            pipeline=options.get("pipeline", Pipeline.single_shot),
+            language=options.get("language"),
+            k=options.get("k"),
+            max_hops=options.get("max_hops"),
+            model=model,
+            fallback_policy=options.get("fallback_policy"),
+            gate_signal=options.get("gate_signal"),
+            restate_tools=bool(options.get("restate_tools")),
+            weak_distance=options.get("weak_distance"),
+            orchestrator=options.get("orchestrator"),
+            allow_cpu=bool(options.get("allow_cpu")),
+            topic_threshold=options.get("topic_threshold"),
+            job_id=options.get("_job_id"),
+            variant=options.get("variant"),
+            resume=resume,
+            generation_sampler=options.get("generation_sampler"),
+        )
+    # the worker's retry would answer every question again beside the rows already written
+    except StandFault as e:
+        raise Final(str(e)) from e
     log.info("eval_run.done", run_name=options["run_name"], answered=answered)
 
 

@@ -1,0 +1,1 @@
+{"data": {"label": "user-key", "usage": 6.919999999999999e-05, "limit": 1.42, "limit_remaining": 1.4199308, "balance": 1.4199308, "balance_cents": 141.99308, "is_provisioning_key": false, "is_free_tier": false, "rate_limit": {"requests": 1200, "interval": "1m"}}}

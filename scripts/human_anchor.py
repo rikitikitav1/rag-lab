@@ -19,10 +19,17 @@ if __name__ == "__main__":
     p.add_argument("action", choices=ACTIONS, nargs="?", default="build")
     p.add_argument("stamp", nargs="?", default=date.today().strftime("%Y%m%d"))
     p.add_argument("--record", action="store_true")
+    # source=copy, once per run the sheet names: our judge read off the copies a new judge rejudged
+    p.add_argument("--copy", action="append", default=[], metavar="SOURCE=COPY")
     args = p.parse_args()
+    if bad := [pair for pair in args.copy if "=" not in pair]:
+        p.error(f"--copy takes SOURCE=COPY, not {bad[0]}")
+    copies = dict(pair.split("=", 1) for pair in args.copy)
 
     try:
-        got = getattr(human_anchor, args.action)(args.stamp)
+        if copies and args.action != "read":
+            raise human_anchor.Refused("--copy reads our judge off copies, and only `read` does that")
+        got = human_anchor.read(args.stamp, copies) if copies else getattr(human_anchor, args.action)(args.stamp)
     except human_anchor.Refused as no:
         raise SystemExit(str(no)) from no
 

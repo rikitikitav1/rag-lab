@@ -3,18 +3,19 @@ from dataclasses import asdict, dataclass, field
 
 import agent_tools
 import config
-import job_queue
+import engines
 import llm
 import logging_setup
 import outcomes
 import prompt_repo
+from errors import StandFault
 from models.eval import QuestionLog
 from models.registry import Pipeline, Purpose
 from orchestrators import graph as orch_graph
 from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
-from use_cases import chat, run_snapshot
+from use_cases import card_wait, chat, run_snapshot
 from use_cases.agent_policy import (
     GONE,
     FallbackPolicy,
@@ -23,6 +24,7 @@ from use_cases.agent_policy import (
     GateSignal,
     Orchestrator,
     Topic,
+    gates_with_cross_encoder,
     required_values,
     signatures,
 )
@@ -46,6 +48,7 @@ class AgentResult:
     tools_offered: list = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    answer_parse: dict | None = None
     max_prompt_tokens: int = 0
     truncated_hops: int = 0
     last_prompt_tokens: int = 0
@@ -158,15 +161,15 @@ def run(
         gate.off_topic = True
         gate.drop_weak_context = True
     if policy == FallbackPolicy.corpus_first_weak:
-        gate.signal = GateSignal(gate_signal or config.settings.agent.gate_signal)
-        if gate.signal != GateSignal.distance:
-            gate.top = config.settings.agent.gate_candidates
-            gate.threshold = config.settings.agent.weak_threshold
+        gate.signal = GateSignal(gate_signal or config.settings.agent.gate.signal)
+        if gates_with_cross_encoder(policy, gate.signal):
+            gate.top = config.settings.agent.gate.candidates
+            gate.threshold = config.settings.agent.gate.weak_threshold
         if gate.signal != GateSignal.cross_encoder:
             gate.distance_threshold = (
                 weak_distance
                 if weak_distance is not None
-                else config.settings.agent.weak_distance
+                else config.settings.agent.gate.weak_distance
             )
         gate.drop_weak_context = gate.off_topic or bool(remote)
     orchestrator = Orchestrator(orchestrator or Orchestrator.langgraph_ported)
@@ -280,7 +283,10 @@ def _admissible(
 
 def _topic_score(question: str, variant: str) -> float | None:
     try:
-        return db.nearest_distance(llm.embed(question), variant=variant)
+        label, vector = llm.embed_with_label(question)
+        return db.nearest_distance(vector, variant=variant, embedded_by=label)
+    except StandFault:
+        raise
     except Exception as e:
         log.error("agent.topic_score_failed", error=str(e))
         return None
@@ -346,6 +352,14 @@ def _context_from_messages(messages) -> str:
     )
 
 
+# a stand with no reranker seated still writes its row: the gate's own call failed as a tool error
+def _seated(role: str) -> str | None:
+    try:
+        return llm.resolve_name(role)
+    except engines.Unnamed:
+        return None
+
+
 def _log_answer(
     question_text: str,
     result: AgentResult,
@@ -367,6 +381,11 @@ def _log_answer(
 ) -> None:
     use_rerank = chat.resolve_rerank(use_rerank)
     lang = chat.resolve_language(question_text, language)
+    # the doors' rule, fed what this answer ran with: no gate ran on the idiomatic arm
+    reranked = card_wait.reranker_needed(
+        use_rerank, agent=gate is not None, fallback_policy=fallback_policy,
+        gate_signal=gate.signal if gate else None,
+    )
     with Session() as session:
         question = chat._find_or_create_question(session, question_text, lang)
         log_row = QuestionLog(
@@ -385,6 +404,7 @@ def _log_answer(
             models={
                 "generation": model or llm.resolve_name("generation"),
                 "embedding": llm.resolve_name("embedding"),
+                **({"reranking": _seated("reranking")} if reranked else {}),
             },
             prompts=prompt_repo.active_versions(
                 [
@@ -396,6 +416,8 @@ def _log_answer(
             ),
             metrics={
                 "hops": result.hops,
+                # what the parser cut across the hops, only when it cut something
+                **({"answer_parse": result.answer_parse} if result.answer_parse else {}),
                 # which edge ended the graph, so no reader recomputes it from `hops >= ceiling`
                 "finished_by": result.finished_by,
                 # `contexts` is flat across hops and calls; this says which piece came from where
@@ -425,6 +447,7 @@ def _log_answer(
                 "config": run_snapshot.of_run(
                     variant=variant,
                     use_rerank=use_rerank,
+                    cross_encoder_used=reranked,
                     k=k or config.settings.retrieval.results_limit,
                     ef_search=result.ef_search,
                     distance_threshold=round(config.settings.retrieval.distance_threshold, 3),
@@ -465,5 +488,5 @@ def _log_answer(
         session.commit()
         log_id = log_row.id
 
-    if result.success and run_name is None:
-        job_queue.enqueue("judge_answers", {"log_ids": [log_id]})
+    # the chat's own rule: a pass per answer, as the agent had, took the card from the next question
+    chat.judge_later(result, run_name, log_id)
