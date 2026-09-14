@@ -208,13 +208,14 @@ def test_a_handover_waits_for_the_calls_on_the_engine_it_would_put_to_sleep(stan
         stand["calls"].append(f"started on {spec.name}")
 
     embed_ends, judge_ends = [], []
-    embed = threading.Thread(target=call, args=(OLLAMA, "bge-m3", embed_ends))
+    # daemons: a failed assert left them waiting on the lock and pytest never exited
+    embed = threading.Thread(target=call, args=(OLLAMA, "bge-m3", embed_ends), daemon=True)
     embed.start()
     embed.join(0.3)
     assert embed.is_alive() and "sleep" not in stand["calls"], "the judge's request is still out"
 
     # a new judge call does not overtake the handover that already waits
-    judge = threading.Thread(target=call, args=(VLLM, "Qwen/Q", judge_ends))
+    judge = threading.Thread(target=call, args=(VLLM, "Qwen/Q", judge_ends), daemon=True)
     judge.start()
     judge.join(0.3)
     assert judge.is_alive()

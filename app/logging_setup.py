@@ -7,7 +7,18 @@ from redaction import redact
 
 # an error text is the one place a key can reach a log line, quoted back by the server that got it
 def _redacted(_logger, _method, event: dict) -> dict:
-    return {k: redact(v) if isinstance(v, str) else v for k, v in event.items()}
+    return {k: _cut(v) for k, v in event.items()}
+
+
+# nested too: a dict or a list of error texts reached the log past a top-level-only cut
+def _cut(value):
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        return {k: _cut(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_cut(v) for v in value)
+    return value
 
 
 def configure(level: str = "INFO"):

@@ -129,6 +129,11 @@ def _take(target: EngineSpec, model: str | None, allow_spill: bool = False) -> N
     # a model half on the processor answers, with other kernels, in silence
     if model and spilled(target, model):
         if not allow_spill:
+            # left loaded, the half on the processor stayed and the next job loaded beside it
+            try:
+                taking.let_go(target, (model,))
+            except Exception as e:
+                log.warning("card.spill_unload_failed", engine=target.name, model=model, error=str(e))
             raise CardNotHanded(f"{model} loaded on {target.name}, but not whole on the card")
         # asked for by `allow_cpu`, and each row's `on_card: false` says so
         log.warning("card.spill_allowed", engine=target.name, model=model)

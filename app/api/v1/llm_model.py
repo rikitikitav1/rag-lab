@@ -145,6 +145,9 @@ class ModelCreateRequest(BaseModel):
 async def _engine_for(
     session: AsyncSession, engine_id: int | None, name: str | None = None
 ) -> Engine:
+    # both keys given, the name was silently dropped and the model landed on the other engine
+    if name and engine_id is not None:
+        raise HTTPException(status_code=422, detail="name the engine once: engine or engine_id, not both")
     if name and engine_id is None:
         found = await session.scalar(select(Engine).where(Engine.name == name))
         if found is None:
@@ -212,7 +215,7 @@ def _serves(engine: Engine, name: str) -> bool | None:
     spec = engines.EngineSpec(
         engine.id, engine.name, engine.kind, engine.env_prefix, engine.placement
     )
-    # seconds, not the completion client's two minutes and a retry
+    # seconds, not the completion client's five minutes and its retries
     try:
         seen = engines.served_models(spec)
     except engines.Unconfigured:

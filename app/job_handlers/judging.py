@@ -436,8 +436,15 @@ def _each(log_ids: list[int], width: int, one) -> int:
                 break
             done += bool(got)
         return done
-    with ThreadPoolExecutor(max_workers=width) as pool:
+    pool = ThreadPoolExecutor(max_workers=width)
+    try:
         return sum(1 for got in pool.map(llm.carried(one), log_ids) if got)
+    except StandFault:
+        # the rows already queued kept judging and writing after the run was stopped
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        pool.shutdown(wait=True)
 
 
 # read, close, score, merge: the lock went and the session stayed open through minutes of calls
@@ -868,8 +875,8 @@ def _error_text(e: Exception) -> str:
 
 def _errored_metric(metrics: dict, axis: str, err: str) -> dict:
     was = metrics.get(axis) or {}
-    # a row judged again is no longer skipped, and both marks at once read as neither
-    was = {k: v for k, v in was.items() if k != "skipped"}
+    # a row judged again is no longer skipped, and a cut mark belongs to the attempt that was cut
+    was = {k: v for k, v in was.items() if k not in ("skipped", token_fields.JUDGE_CUT)}
     # an axis the limit cut has no verdict stamp, and the cut counters read this mark instead
     cut = {token_fields.JUDGE_CUT: True} if err.startswith(f"{judge.JudgeCut.__name__}:") else {}
     return {**was, "error": err[:_ERROR_CHARS], "attempts": was.get("attempts", 0) + 1, **cut}

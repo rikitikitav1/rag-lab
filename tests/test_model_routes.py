@@ -1,4 +1,4 @@
-"""The happy path of `POST /v1/model`, which no test walked when `engine_id` became mandatory."""
+# the happy path of `POST /v1/model` with an engine required
 
 from types import SimpleNamespace
 

@@ -1,4 +1,4 @@
-# the three constraints this arc is about, asserted by the database rather than by metadata
+# the engine constraints, asserted by the database rather than by metadata
 import pytest
 from real_db import pytestmark  # noqa: F401
 from sqlalchemy import text
@@ -13,7 +13,7 @@ def _engine(c, name):
 
 
 def test_a_model_without_an_engine_is_refused_by_the_database(db):
-    # 745 tests were green while `POST /v1/model` built exactly this row and broke on it
+    # `POST /v1/model` built exactly this row while every unit test passed
     with db.connect() as c, pytest.raises(IntegrityError):
         c.execute(text("INSERT INTO models (name) VALUES ('orphan')"))
 

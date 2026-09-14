@@ -288,7 +288,7 @@ A cloud role never takes the card, and a call answers in seconds. What differs f
   million tokens on one key); the other is a throttle on the rate of calls, which came after about
   twenty calls on 2026-09-14 and did not care which key made them. A 429 that names its pause in
   `Retry-After` (up to 600 s) is waited and the call asked again, up to five times in a row, and the
-  wait lands on the job as `paced` and `paced_seconds` beside its tokens. A 429 without a pause, with a
+  wait lands on the job as `paced` and `paced_seconds` beside its tokens (the stand's own waits: the client's retries under them are not counted). A 429 without a pause, with a
   longer one, or past the fifth wait stops the run; it is queued again by hand, after 00:00 UTC for
   the cap, and a guest pass queued again answers only the rows it still owes. Every 429 writes the
   broker's rate headers to the worker's log. On 2026-09-14 gonka's 429 named a pause of 5 s and sent no

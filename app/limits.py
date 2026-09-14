@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import Annotated
 
 from pydantic import AfterValidator
@@ -18,7 +19,8 @@ MAX_TESTS = 200
 
 # a repeated id runs its question once and records the list as named
 def refuse_repeated_ids(ids: list[int] | None) -> list[int] | None:
-    repeated = sorted({i for i in ids or () if ids.count(i) > 1})
+    # counted once: a count per id was quadratic at the ten thousand ids a run may name
+    repeated = sorted(i for i, n in Counter(ids or ()).items() if n > 1)
     if repeated:
         raise ValueError(f"question ids repeat: {repeated[:20]}")
     return ids

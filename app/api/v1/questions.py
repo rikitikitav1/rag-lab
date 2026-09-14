@@ -50,7 +50,7 @@ class QuestionRow(BaseModel):
     paraphrase_of: int | None
 
 
-# where a run's question_ids come from; the MCP tool `questions` answers the same
+# where a run's question_ids come from; the MCP tool `questions` reads the same rows and refuses an unknown set
 @router.get("", response_model=list[QuestionRow])
 def list_questions(
     set_name: str | None = Query(default=None, max_length=200),

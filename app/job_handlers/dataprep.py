@@ -18,8 +18,12 @@ def _released(role: Role):
     try:
         yield
     finally:
-        picked = llm.resolve_for(str(role))
-        card.release_model(picked.engine, picked.name)
+        # a release that fails must not hide the failure the job itself ended on
+        try:
+            picked = llm.resolve_for(str(role))
+            card.release_model(picked.engine, picked.name)
+        except Exception as e:
+            log.warning("dataprep.release_failed", role=str(role), error=str(e))
 
 
 @register("paraphrase_questions")

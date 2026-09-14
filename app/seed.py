@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import config
+import engines
 import logging_setup
 from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
@@ -230,8 +231,13 @@ def seed_engines() -> None:
         with Session() as session:
             if session.scalar(select(exists().where(Engine.name == declared.name))):
                 continue
-            session.add(Engine(name=declared.name, kind=EngineKind(declared.kind),
-                               env_prefix=declared.env_prefix, placement=Placement(declared.placement)))
+            kind, placement = EngineKind(declared.kind), Placement(declared.placement)
+            # the door's rules hold for the file too: a remote kind on the card joined every handover
+            if engines.is_cloud(kind) != (placement is Placement.remote):
+                raise ValueError(f"engine {declared.name}: {kind.value} cannot be placed {placement.value}")
+            if session.scalar(select(exists().where(Engine.env_prefix == declared.env_prefix))):
+                raise ValueError(f"engine {declared.name}: prefix {declared.env_prefix} already names an engine")
+            session.add(Engine(name=declared.name, kind=kind, env_prefix=declared.env_prefix, placement=placement))
             session.commit()
         log.info("seed.engine", name=declared.name)
 

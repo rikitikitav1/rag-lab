@@ -443,9 +443,13 @@ def _ours_from_copies(pairs: list, copies: dict) -> dict:
     named = [side["log_id"] for pair in pairs for side in (pair["A"], pair["B"])]
     with Session() as session:
         asked = {ql.id: ql.question_id for ql in session.scalars(select(QuestionLog).where(QuestionLog.id.in_(named)))}
-        copied = {(source, ql.question_id): ql.faithfulness
-                  for source, target in copies.items()
-                  for ql in session.scalars(select(QuestionLog).where(QuestionLog.run_name == target))}
+        copied = {}
+        for source, target in copies.items():
+            for ql in session.scalars(select(QuestionLog).where(QuestionLog.run_name == target)):
+                # two rows for one question kept the last one silently, and a pair read whichever it was
+                if (source, ql.question_id) in copied:
+                    raise Refused(f"copy {target} holds two rows for question {ql.question_id}")
+                copied[(source, ql.question_id)] = ql.faithfulness
     deltas = _deltas_from(pairs, asked, copied)
     missing = sorted(n for n, delta in deltas.items() if delta is None)
     if missing:

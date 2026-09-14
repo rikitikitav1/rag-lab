@@ -12,7 +12,7 @@ def test_a_config_comment_and_its_provenance_lines_stay_within_three():
             worst, where = run, i
     assert worst <= 3, f"comment block of {worst} lines ending at config.yaml:{where}"
 
-# a comment longer than one line is a discussion, and its home is the arc log
+# a comment longer than one line is a discussion, and its home is the project's log
 LONG_COMMENT_BLOCKS = 0
 
 
@@ -103,7 +103,7 @@ def test_a_comment_says_what_the_code_does_and_not_how_it_came_to_be():
 
     history = re.compile(
         r"[\U0001F534-\U0001F7EB]|\b[0-3][0-9]\.(0[1-9]|1[0-2])\b|\breview\b|\baudit(or)?\b"
-        r"|\bowner'?s? (rule|decision)|\(owner"
+        r"|\bowner'?s? (rule|decision|word)|\(owner|\barc (log|[0-9])|\bthis arc\b|[\u2013\u2014]"
     )
     root = Path(__file__).resolve().parent.parent
     found = []

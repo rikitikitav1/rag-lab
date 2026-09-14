@@ -73,7 +73,9 @@ def context_length(model: str, spec=None) -> int | None:
     window = next(
         (e.get("context_length") for e in loaded_models(spec) if e.get("name") in wanted), None
     )
-    _windows[key] = (time.monotonic(), window)
+    # an unloaded model has no window yet: a cached None hid the real one for a minute after the load
+    if window is not None:
+        _windows[key] = (time.monotonic(), window)
     return window
 
 
@@ -238,6 +240,7 @@ def load_into_memory(model: str, spec=None) -> dict:
     else:
         post("/api/generate", {"model": model}, spec)
     log.info("ollama.loaded", model=model)
+    forget_window(model, spec)
     return {"model": model, "context_length": context_length(model, spec)}
 
 

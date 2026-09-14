@@ -489,10 +489,10 @@ def test_every_kind_of_report_declares_its_schema():
     assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 7)
     # the equality report is a record too: what it compared moved once already
     assert replay.SCHEMA == 1
-    # the reports this arc added or moved here: the guard is why the anchor left `scripts`
+    # the reports that moved here: the guard is why the anchor left `scripts`
     from evals import compare, human_anchor, language_cost
 
-    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (12, 1, 1)
+    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (13, 1, 1)
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():

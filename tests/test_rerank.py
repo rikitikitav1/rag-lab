@@ -40,7 +40,8 @@ def test_the_cross_encoder_is_a_role_that_takes_the_card_and_asks_its_engine(mon
 def test_only_a_vllm_scores_pairs(monkeypatch):
     ollama = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
     monkeypatch.setattr(llm, "resolve", lambda role: engines.Resolved("x", ollama))
-    with pytest.raises(RuntimeError, match="only a vLLM pooling server"):
+    # every row would meet the same wrong kind, so the run stops rather than failing each row
+    with pytest.raises(llm.StandFault, match="only a vLLM pooling server"):
         llm.score_pairs([("q", "d")])
 
 

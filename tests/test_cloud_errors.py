@@ -203,3 +203,17 @@ def test_a_run_reclaimed_after_a_restart_resumes_its_own_rows(monkeypatch):
     evaluation.eval_run(job_queue.reclaimed({"run_name": "r", "_job_id": 2743}))
     assert seen["resume"] is True
     assert job_queue.reclaimed({"attempts": 1})["attempts"] == 2
+
+
+def test_a_pause_that_is_not_a_number_of_seconds_is_no_pause():
+    # a nan passed the ceiling check and then broke the sleep inside the handler
+    import httpx
+    import llm
+    import openai
+
+    request = httpx.Request("POST", "https://b.example/v1/chat/completions")
+    for header in ("nan", "-1", "inf"):
+        throttled = openai.RateLimitError(
+            "slow down", response=httpx.Response(429, headers={"retry-after": header}, request=request), body=None
+        )
+        assert llm._retry_after(throttled) is None, header

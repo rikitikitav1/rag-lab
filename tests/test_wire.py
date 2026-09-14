@@ -1,4 +1,4 @@
-# what leaves for the server, recorded before the engine layer and compared after; why: the arc log
+# what leaves for the server, recorded before the engine layer and compared after
 import json
 from pathlib import Path
 

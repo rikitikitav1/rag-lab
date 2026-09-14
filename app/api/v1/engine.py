@@ -108,6 +108,9 @@ async def create_engine(
 ):
     if await session.scalar(select(exists().where(Engine.name == request.name))):
         raise HTTPException(status_code=409, detail=f"engine {request.name} already exists")
+    # two rows on one prefix are two holders of one process, and the handover slept and woke it forever
+    if await session.scalar(select(exists().where(Engine.env_prefix == request.env_prefix))):
+        raise HTTPException(status_code=409, detail=f"prefix {request.env_prefix} already names an engine")
     _refuse_a_placement_the_kind_cannot_have(request.kind, request.placement)
     _refuse_a_reader_off_the_cloud(request.kind, request.balance_reader)
     row = Engine(**request.model_dump())
@@ -162,7 +165,7 @@ async def patch_engine(
 @router.get("/{id}/live", response_model=EngineResponse)
 async def probe_engine(id: int, session: AsyncSession = Depends(get_session)):
     row = await get_or_404(Engine, id, session)
-    # a synchronous call with a 120 second timeout would hold the loop for every other request
+    # a synchronous call with the completion timeout would hold the loop for every other request
     reachable = await run_in_threadpool(stand_health.engine_answers, _spec(row))
     return EngineResponse.of(row, _address(row), reachable)
 

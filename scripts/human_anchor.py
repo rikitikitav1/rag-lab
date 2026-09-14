@@ -22,6 +22,8 @@ if __name__ == "__main__":
     # source=copy, once per run the sheet names: our judge read off the copies a new judge rejudged
     p.add_argument("--copy", action="append", default=[], metavar="SOURCE=COPY")
     args = p.parse_args()
+    if bad := [pair for pair in args.copy if "=" not in pair]:
+        p.error(f"--copy takes SOURCE=COPY, not {bad[0]}")
     copies = dict(pair.split("=", 1) for pair in args.copy)
 
     try:

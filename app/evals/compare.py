@@ -151,8 +151,8 @@ def verdicts(left: list, right: list) -> dict:
     }
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote; 12 sampler
-SCHEMA = 12
+# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote; 12 sampler; 13 penalty, grammar, key, rule
+SCHEMA = 13
 
 
 class TwoJudges(Ambiguous):
@@ -206,7 +206,7 @@ def compare(runs: dict[str, list]) -> dict:
         "residency": residency,
         # the treatment, not a fault: two generators on two engines is what a pair of arms compares
         "answering_engines_by_run": {name: _answering_engines(logs) for name, logs in runs.items()},
-        # vLLM against ollama on one model compared 1.05 with 1.1 until the record named it: aligned first, then compared
+        # two servers apply their own penalty unasked (1.05 against 1.1): aligned first, then compared
         **_answering_penalties_of(runs),
         # the correlation's own predicate, called not restated: one label stood over two selections
         "correlation_population": {
@@ -495,7 +495,8 @@ def residencies(runs: dict[str, list]) -> dict:
     one_retrieval = _one_retrieval(runs)
     # a key is an account, not an instrument: two keys are one ruler billed twice, and the record says so
     spent_on = {key for held in keys_seen.values() for key in held}
-    one_key = None if not spent_on else len(spent_on) == 1
+    # silence is not a match: an arm with no recorded key leaves the question unread
+    one_key = None if not spent_on or not all(keys_seen.values()) else len(spent_on) == 1
     return {
         "by_run": seen,
         "one_residency": one,

@@ -2,6 +2,7 @@ import contextlib
 import contextvars
 import functools
 import json
+import math
 import re
 import threading
 import time
@@ -67,7 +68,7 @@ class NoUsage(StandFault):
     pass
 
 
-# the client already asked once more; past that, a quota or a rate limit refuses every row alike
+# past the client's own retries and the paced waits, a quota or a rate limit refuses every row alike
 class BrokerRefused(StandFault):
     pass
 
@@ -121,10 +122,15 @@ def _retry_after(e: Exception) -> float | None:
     headers = e.response.headers
     try:
         if headers.get("retry-after-ms") is not None:
-            return float(headers["retry-after-ms"]) / 1000
-        return float(headers["retry-after"]) if headers.get("retry-after") is not None else None
+            wait = float(headers["retry-after-ms"]) / 1000
+        elif headers.get("retry-after") is not None:
+            wait = float(headers["retry-after"])
+        else:
+            return None
     except ValueError:
         return None
+    # a nan or a negative pause passed the ceiling check and then broke the sleep
+    return wait if math.isfinite(wait) and wait >= 0 else None
 
 
 # the stand counts tokens on every call, so a broker that sends no usage is named, not read as zero
@@ -367,20 +373,31 @@ def _without_the_body(e: Exception) -> str:
 # one contract for a failed completion: the same log event and error text, written twice
 def _complete(spec, name: str, messages, params, role=None):
     with _card_for(spec, name):
-        for tried in range(PACE_TRIES + 1):
-            try:
-                return engines.client_for(spec).chat.completions.create(
-                    model=name, messages=messages, **params, **_keyed(spec)
-                )
-            except OpenAIError as e:
-                # a throttle that names its pause is kept; one that does not, or a cap, stops the run
-                wait = _retry_after(e)
-                if wait is None or wait > PACE_CEILING_SECONDS or tried == PACE_TRIES:
-                    raise _failed(e, spec, name, "chat") from e
-                log.warning("llm.broker_paced", model=name, engine=spec.name, seconds=wait, tried=tried + 1,
-                            headers=_rate_headers(e))
-                _pace(role, spec, name, wait)
-                time.sleep(wait)
+        return _paced(spec, name, role, "chat", lambda: engines.client_for(spec).chat.completions.create(
+            model=name, messages=messages, **params, **_keyed(spec)
+        ))
+
+
+# one loop for chat and embeddings: the embedding path met a 429 with no pace at all
+def _paced(spec, name: str, role, what: str, call):
+    for tried in range(PACE_TRIES + 1):
+        try:
+            return call()
+        except OpenAIError as e:
+            # a throttle that names its pause is kept; one that does not, or a cap, stops the run
+            wait = _retry_after(e)
+            if wait is None or wait > PACE_CEILING_SECONDS or tried == PACE_TRIES:
+                raise _failed(e, spec, name, what) from e
+            log.warning("llm.broker_paced", model=name, engine=spec.name, seconds=wait, tried=tried + 1,
+                        headers=_rate_headers(e))
+            _pace(role, spec, name, wait)
+            time.sleep(wait)
+
+
+# ask and chat both read the server's own cut after the count, so the tokens it spent are kept
+def _refuse_a_cut_input(input_cut: bool, picked, usage, window) -> None:
+    if input_cut:
+        raise InputOverWindow(f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window")
 
 
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:
@@ -394,10 +411,12 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
 
     usage = _usage(resp, picked.engine)
     input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
-    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens,
-           getattr(resp.choices[0], "finish_reason", None), input_cut=input_cut)
-    if input_cut:
-        raise InputOverWindow(f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window")
+    # a reply with no choices still spent its tokens, and indexing before the count lost them
+    finish = getattr(resp.choices[0], "finish_reason", None) if resp.choices else None
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens, finish, input_cut=input_cut)
+    if not resp.choices:
+        raise RuntimeError(f"{picked.engine.name} returned no choices for {name}")
+    _refuse_a_cut_input(input_cut, picked, usage, window)
     log.info(
         "llm.chat",
         role=role,
@@ -428,14 +447,15 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
     resp = _complete(picked.engine, name, messages, params, role)
 
-    choice = resp.choices[0]
-    message = choice.message
     usage = _usage(resp, picked.engine)
     input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
-    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens, choice.finish_reason,
-           input_cut=input_cut)
-    if input_cut:
-        raise InputOverWindow(f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window")
+    choice = resp.choices[0] if resp.choices else None
+    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens,
+           choice.finish_reason if choice else None, input_cut=input_cut)
+    if choice is None:
+        raise RuntimeError(f"{picked.engine.name} returned no choices for {name}")
+    message = choice.message
+    _refuse_a_cut_input(input_cut, picked, usage, window)
     log.info(
         "llm.chat_tools",
         role=role,
@@ -509,7 +529,8 @@ def score_pairs(pairs: list, role="reranking") -> list[float]:
     picked = resolve(role)
     name, spec = picked.name, picked.engine
     if spec.kind is not EngineKind.vllm:
-        raise RuntimeError(f"{name} on {spec.name}: only a vLLM pooling server scores pairs")
+        # a reranker on the wrong kind fails every row alike, so the run stops instead of forgiving each
+        raise StandFault(f"{name} on {spec.name}: only a vLLM pooling server scores pairs")
     with _card_for(spec, name):
         try:
             scores = vllm_engine.score(spec, name, pairs)
@@ -554,10 +575,8 @@ def embed_with_label(text, role="embedding") -> tuple[str, list]:
 def _embeddings(picked, texts, role="embedding") -> list:
     name = picked.name
     with _card_for(picked.engine, name):
-        try:
-            resp = engines.client_for(picked.engine).embeddings.create(model=name, input=texts)
-        except OpenAIError as e:
-            raise _failed(e, picked.engine, name, "embed") from e
+        resp = _paced(picked.engine, name, role, "embed",
+                      lambda: engines.client_for(picked.engine).embeddings.create(model=name, input=texts))
         _note_placement(role, picked.engine, name)
     # on a cloud the tokens are the quota, so a reply without them stops the run; locally it is a gap
     usage = _usage(resp, picked.engine) if engines.is_cloud(picked.engine.kind) else getattr(resp, "usage", None)

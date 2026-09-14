@@ -18,5 +18,10 @@ def memory_mb() -> tuple[int, int] | None:
     if seen.returncode or not seen.stdout.strip():
         return None
     # the card with the most room: a model does not span two cards here, so a sum would overpromise
-    rows = [tuple(int(v) for v in line.split(",")) for line in seen.stdout.splitlines() if line.strip()]
+    try:
+        rows = [tuple(int(v) for v in line.split(",")) for line in seen.stdout.splitlines() if line.strip()]
+    # a driver without the numbers prints `[N/A]`, and a bare int() raised past every caller
+    except ValueError:
+        log.warning("gpu.memory_unparsed", said=seen.stdout.strip()[:80])
+        return None
     return max(rows)

@@ -14,16 +14,16 @@ from evals.guest_probes import RESTATE, sentence_of
 from evals.measurements import FOLDER
 from use_cases.judge import faithful_verdict
 
-# 2 own answer; 3 named rows; 4 instrument; 5 engine; 6 panel; 7 panel rows, regime against a reference
+# the report's shape, raised with every key it gains
 SCHEMA = 7
 
-# a floor that catches only the gross: history on the 3.2 sets was 96.4% and 95.6% at least 7
+# a floor that catches only the gross: the judge's history on these rows sat at 96.4% and 95.6% at least 7
 CONTROL_FLOOR = 0.90
 
 # fixed English rows: the regime is a property of the instrument, so it is not read on the run it measures
 PANEL = FOLDER / "judge_language_panel_ids.txt"
 
-# the panel's first reading under today's ruler, rewritten only by the owner's word when the ruler changes
+# the panel's first reading under today's ruler, rewritten by hand when the ruler changes, never by the probe
 REFERENCE = FOLDER / "judge_language_panel_reference.json"
 
 # a regime holds while at most this share of the panel crosses 7 against the reference, on either part
@@ -97,9 +97,17 @@ def judge_panel(stop=None) -> list[dict]:
     for ql in load_logs(ids=panel_ids()):
         if stop and stop():
             break
-        english = llm.ask(RESTATE, ql.answer, role="generation").text or ""
+        # one row that fails is one lost verdict, read as moved, not a panel paid for again on retry
+        try:
+            english = llm.ask(RESTATE, ql.answer, role="generation").text or ""
+        except RuntimeError as e:
+            rows += [{"row": ql.id, "part": part, "score": None, "reason": f"failed: {e}"} for part in ("own", "restated")]
+            continue
         for part, answer in (("own", ql.answer), ("restated", english)):
-            got, why = score(ql, answer)
+            try:
+                got, why = score(ql, answer)
+            except RuntimeError as e:
+                got, why = None, f"failed: {e}"
             rows.append({"row": ql.id, "part": part, "score": got, "reason": why})
     return rows
 
@@ -131,7 +139,7 @@ def regime(panel_rows: list[dict], reference: dict | None) -> dict:
     if reference is None:
         return {"control": control | {
             "reference": None, "moved_vs_reference": None, "in_regime": None,
-            "why": "no reference reading yet: the first reading under a ruler is kept by the owner's word",
+            "why": "no reference reading yet: the first reading under a ruler is kept by hand, never by the probe",
         }}
     # a verdict lost, a row the reference never read, or one this reading never reached counts as moved
     was = {(r["row"], r["part"]): _crosses_7(r["score"]) for r in reference["rows"]}

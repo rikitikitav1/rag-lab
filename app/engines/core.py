@@ -6,6 +6,7 @@ from enum import StrEnum
 from urllib.parse import urlsplit
 
 import config
+import requests
 import samplers
 from models.registry import EngineKind, Placement
 from openai import OpenAI
@@ -237,7 +238,6 @@ def _named(seen: dict) -> dict:
 
 def _asked(spec: EngineSpec, path: str, key: str):
     try:
-        import requests
 
         return requests.get(f"{base_url(spec)}{path}", headers=_auth(spec), timeout=5).json().get(key)
     except Exception:
@@ -259,7 +259,6 @@ def _auth(spec: EngineSpec) -> dict:
 
 # `/v1/models` with the key, raising as requests does, so a caller tells silence from a refusal
 def models_listing(spec: EngineSpec, timeout: float) -> list[dict]:
-    import requests
 
     seen = requests.get(f"{base_url(spec)}/v1/models", headers=bearer(spec), timeout=timeout)
     seen.raise_for_status()

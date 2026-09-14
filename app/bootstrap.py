@@ -91,6 +91,10 @@ def _ensure_roles(seeded) -> None:
     with Session() as session:
         assigned = set(session.scalars(select(ModelRole.role)).all())
         for role, cfg in config.settings.llm.roles.items():
+            # a misspelt role in the file died here as a bare ValueError and took the whole boot down
+            if role not in {r.value for r in Role}:
+                log.error("bootstrap.role_unknown", role=role, known=sorted(r.value for r in Role))
+                continue
             if Role(role) in assigned:
                 continue
             spec = _engine_of_role(role, cfg, seeded)
@@ -99,8 +103,9 @@ def _ensure_roles(seeded) -> None:
             model = session.scalar(
                 select(Model).where(Model.engine_id == spec.id, Model.name == cfg.model)
             )
+            fresh = None
             if model is None and spec.kind is EngineKind.vllm:
-                model = _register_what_vllm_serves(session, spec, role, cfg.model)
+                model = fresh = _register_what_vllm_serves(session, spec, role, cfg.model)
             # a role on an ollama the pull list does not cover: its row here, pulled by the reconcile
             new_row = model is None and spec.kind is EngineKind.ollama
             if model is None and not new_row:
@@ -114,6 +119,9 @@ def _ensure_roles(seeded) -> None:
                 model_acceptance.refuse_unfit_model(Role(role), cfg.model, spec.id)
             except ValueError as e:
                 log.error("bootstrap.role_refused", role=role, model=cfg.model, error=str(e))
+                # a refused model registered a line above stayed behind, a row with no role
+                if fresh is not None:
+                    session.delete(fresh)
                 continue
             # a boot cannot wait: a stopped engine is named by `/readiness`, a probe asked on its turn
             except (model_acceptance.EngineDown, model_acceptance.NeedsProbe) as e:
@@ -220,8 +228,12 @@ def _reconcile_with_ollama(spec) -> None:
                 to_pull.append((model.name, engine_id))
         session.commit()
 
+    # recreating a model unloads it, and a job running on it would lose its model mid-pass
+    held_by_a_job = job_queue.running_in_lane("default")
+    if held_by_a_job:
+        log.warning("bootstrap.repetition_penalty_left_to_next_boot", models=ready)
     # bases before the windowed tags made from them; a model pulled by hand never got the penalty
-    for name in sorted(ready, key=lambda n: ollama.windowed(n) is not None):
+    for name in [] if held_by_a_job else sorted(ready, key=lambda n: ollama.windowed(n) is not None):
         try:
             ollama.hold_repetition_penalty(name, spec)
         except Exception as e:

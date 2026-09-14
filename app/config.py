@@ -272,9 +272,10 @@ def _data(here: str, path: str):
 def _load(path: str, overlay: str | None = None) -> AppConfig:
     with open(path) as f:
         raw = yaml.safe_load(f)
-    if overlay:
-        raw["llm"]["roles"] = _roles_of(overlay)
     here = os.path.dirname(os.path.abspath(path))
+    # beside the config, as the sources are: from another directory the layer was not found
+    if overlay:
+        raw["llm"]["roles"] = _roles_of(os.path.join(here, overlay))
     if isinstance(raw.get("sources"), dict):
         raw["sources"] = {name: _data(here, file) for name, file in raw["sources"].items()}
     return AppConfig(**raw)

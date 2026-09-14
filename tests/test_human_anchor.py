@@ -242,7 +242,7 @@ def test_a_cyrillic_letter_that_looks_like_a_is_read_as_a(anchor, tmp_path):
 
 
 def test_a_new_judge_is_read_off_the_copies_of_the_rows_the_sheet_names():
-    # the sheet names rows of two arc 3 runs; a rejudge writes its verdicts onto copies with new ids
+    # the sheet names rows of two older runs; a rejudge writes its verdicts onto copies with new ids
     from evals import human_anchor
 
     pairs = [{"n": 1, "A": {"log_id": 10, "run": "left"}, "B": {"log_id": 20, "run": "right"}},

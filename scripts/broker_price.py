@@ -77,7 +77,8 @@ def _settled(spec: EngineSpec, before: float, wait: float = 90) -> float:
         if same >= 2:
             return now
         seen = now
-    return seen
+    # an unsettled balance priced the call on a debit still on its way
+    raise SystemExit(f"{spec.name}: the balance did not hold still within {wait:.0f} s")
 
 
 def measure(spec: EngineSpec, model: str) -> list[dict]:
@@ -90,6 +91,8 @@ def measure(spec: EngineSpec, model: str) -> list[dict]:
         )
         reply.raise_for_status()
         usage = reply.json().get("usage") or {}
+        if usage.get("prompt_tokens") is None or usage.get("completion_tokens") is None:
+            raise SystemExit(f"{spec.name} answered without usage: no price can be read off it")
         rows.append({
             "model": model, "case": case, "in": usage.get("prompt_tokens"), "out": usage.get("completion_tokens"),
             "spent_usd": round(before - _settled(spec, before), 7),
@@ -104,6 +107,8 @@ def solve(rows: list[dict]) -> dict:
     a1, b1, d1 = by["heavy_in"]["in"], by["heavy_in"]["out"], by["heavy_in"]["spent_usd"]
     a2, b2, d2 = by["heavy_out"]["in"], by["heavy_out"]["out"], by["heavy_out"]["spent_usd"]
     det = a1 * b2 - a2 * b1
+    if det == 0:
+        raise SystemExit("the two cases spent tokens in one proportion: the prices cannot be told apart")
     price_in, price_out = (d1 * b2 - d2 * b1) / det * 1e6, (a1 * d2 - a2 * d1) / det * 1e6
     check = by["check"]
     return {

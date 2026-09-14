@@ -267,7 +267,8 @@ services:
   vllm-cpu:
     profiles: ["cpu"]
     image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo@sha256:66064cf683152e60eff2e5b18ec2d4ace236fb063c0a241f918691db9caddcf4
-    ipc: host
+    # shared memory of its own, not the host's IPC namespace
+    shm_size: 4gb
     command:
       ["--model", "${VLLM_CPU_MODEL:-Qwen/Qwen2.5-7B-Instruct}",
        "--dtype", "${VLLM_CPU_DTYPE:-float16}",

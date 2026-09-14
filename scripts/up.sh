@@ -56,5 +56,8 @@ if grep -qE -- '-vllm-1 +(Recreate|Creat|Start)' <<<"$plan" || { [ -z "$plan" ] 
     [ -z "$(loaded_on_ollama || true)" ] && break
     sleep 1
   done
+  if [ -n "$(loaded_on_ollama || true)" ]; then
+    echo "ollama still holds a model after 30 s: vLLM may not find the card free" >&2
+  fi
 fi
 exec docker compose up -d "$@"

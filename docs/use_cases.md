@@ -101,10 +101,7 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=elapsed&sort_order=desc" | 
 # what the seed registered: every engine under `engines:` in config.yaml, six of them
 curl -s localhost:8000/v1/engine | python3 -m json.tool
 # POST is for an engine the seed does not know, a cloud broker for one (stand_modes.md, "A cloud engine");
-# `vllm` again is a 409: one row per engine name, and the seed made this one; the address comes
-# from VLLM_BASE_URL, never from the row
-curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
-  -d '{"name":"vllm","kind":"vllm","env_prefix":"VLLM","placement":"gpu"}'
+# a name or a prefix already taken is a 409, and the address comes from the environment, never from the row
 # ask the engine itself whether it answers, by the id the list shows
 curl -s localhost:8000/v1/engine/<id>/live | python3 -m json.tool
 # register a model: an engine that pulls gets a pull job, one that does not is asked whether it serves the name
@@ -212,7 +209,7 @@ docker compose exec -it rag-lab python app/main.py --console
 
 # CLI eval runner (alternative to the route): python -m evals.runner <set_name> [run_name]
 
-# Unit tests (pure logic, no DB/Ollama)
+# Unit tests (no Ollama; real-database tests need TEST_POSTGRES_URL and are skipped without it)
 docker compose exec rag-lab pytest -q
 
 # Dependencies (uv)

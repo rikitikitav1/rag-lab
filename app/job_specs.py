@@ -103,7 +103,7 @@ class JudgeGuestAxes(Spec):
     log_ids: list[int] | None = None
     sample: int | None = Field(default=None, ge=1, le=limits.MAX_GUEST_ROWS)
     seed: int | None = None
-    # the old ruler, an empty system beside the prompt, kept for a bridge to numbers taken with it
+    # `user_only` by default; the empty system beside the prompt is the old ruler, kept for a bridge
     messages: Literal[*MESSAGE_FORMS] = MESSAGE_FORMS[0]
     # the guest's own bench, as `judge_model` is the judge's: a copy scored by another model, no reseat
     guest_model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
