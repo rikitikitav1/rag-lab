@@ -1,0 +1,38 @@
+direction: down
+
+role: "the role's model,\non the broker's engine row"
+body: "the body: the role's sampler,\nand the job in user, since the\nbroker caches by the whole body"
+call: "the OpenAI client asks,\nretrying up to 4 times on its own"
+answered: "an answer came?" {shape: diamond}
+
+usage: "usage in the reply?" {shape: diamond}
+count: "tokens counted on the job,\nper role, engine and model"
+parse: "the model row's parser cuts\nthinking and call markup"
+text: "the text the judge, the guest\nor the agent reads" {style.bold: true}
+
+status: "what refused it?" {shape: diamond}
+pace: "Retry-After named,\nup to 600 s?" {shape: diamond}
+wait: "wait, count it on the job\nas paced and paced_seconds"
+
+stops: "the run stops, a stand fault:\nevery later row would meet the same" {
+  style.stroke-dash: 3
+}
+row_fails: "this row fails,\nthe run goes on" {
+  style.stroke-dash: 3
+}
+
+role -> body -> call -> answered
+answered -> usage: yes
+usage -> count: yes
+count -> parse -> text
+usage -> stops: "no: NoUsage" {style.stroke-dash: 3}
+
+answered -> status: no
+status -> stops: "401, 403:\nKeyRefused" {style.stroke-dash: 3}
+status -> pace: "429"
+status -> stops: "402: BrokerRefused" {style.stroke-dash: 3}
+pace -> wait: "yes, at most\n5 in a row"
+wait -> call: ask again
+pace -> stops: "no: BrokerRefused" {style.stroke-dash: 3}
+status -> stops: "5xx: ServerFailed" {style.stroke-dash: 3}
+status -> row_fails: anything else {style.stroke-dash: 3}
