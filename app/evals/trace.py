@@ -1,13 +1,15 @@
 from collections import Counter
 
-SCHEMA = 1
+SCHEMA = 2
 
 READS = (
     "hops counts the rows by the last hop their trace reached; nodes counts steps and the rows that"
     " reached each node; verdicts counts what the gate said per hop of retrieval; outcomes pairs the"
     " row's outcome with the hops it spent, so a run that answered on hop one is not read as one that"
     " spent three; rows without a trace are named, not counted as zero; a row whose every verdict came"
-    " back unreadable is named too, because its arm says it graded and nothing was graded"
+    " back unreadable is named too, because its arm says it graded and nothing was graded; the grader"
+    " block counts both paths, the graph node through its steps and the direct path through the block"
+    " it writes on the row, so a filtered arm of `single_shot` does not read as an arm that never graded"
 )
 
 
@@ -17,9 +19,22 @@ def report(rows: list) -> dict:
     graded, graded_in_name_only, asked, chunks_kept, cut_verdicts = 0, [], 0, 0, 0
     for row in rows:
         metrics = getattr(row, "metrics", None) or {}
+        cut_verdicts += sum(
+            1 for ask in (metrics.get("asks") or [])
+            if ask.get("stage") == "grade" and ask.get("cut")
+        )
         trace = metrics.get("trace")
         if not trace:
             no_trace.append(row.id)
+            # the direct path writes no trace and grades all the same: its block is one dict on the row
+            said = metrics.get("graded") or {}
+            if said.get("asked"):
+                graded += 1
+                asked += said["asked"]
+                chunks_kept += len(said.get("kept") or ())
+                unreadable += said.get("unreadable") or 0
+                if (said.get("unreadable") or 0) == said["asked"]:
+                    graded_in_name_only.append(row.id)
             continue
         last = max((step.get("hop") or 0) for step in trace)
         hops[last] += 1
@@ -49,10 +64,6 @@ def report(rows: list) -> dict:
             if row_unreadable == row_asked:
                 graded_in_name_only.append(row.id)
             unreadable += row_unreadable
-        cut_verdicts += sum(
-            1 for ask in (metrics.get("asks") or [])
-            if ask.get("stage") == "grade" and ask.get("cut")
-        )
     return {
         "schema": SCHEMA,
         "rows": len(rows),

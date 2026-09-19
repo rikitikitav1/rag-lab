@@ -405,3 +405,19 @@ def test_a_row_whose_every_asked_verdict_was_unreadable_is_named(monkeypatch):
     got = trace.report([row])["grader"]
 
     assert got["rows_graded_in_name_only"] == [8], "three memo hits must not hide two dead verdicts"
+
+
+def test_the_trace_counts_the_grader_of_the_direct_path_too():
+    # a filtered arm of `single_shot` writes no trace, and the report read it as an arm that never graded
+    from types import SimpleNamespace
+
+    from evals import trace
+
+    direct = SimpleNamespace(id=1, metrics={
+        "graded": {"asked": 5, "kept": [0, 1, 2], "unreadable": 0, "dropped": ["a#3", "a#4"]},
+        "asks": [{"stage": "grade", "key": "a#0"}],
+    })
+    silent = SimpleNamespace(id=2, metrics={"graded": {"asked": 2, "kept": [], "unreadable": 2}})
+    said = trace.report([direct, silent])["grader"]
+    assert said["rows"] == 2 and said["verdicts"] == 7 and said["kept"] == 3
+    assert said["rows_graded_in_name_only"] == [2], "every verdict unreadable is grading in name only"
