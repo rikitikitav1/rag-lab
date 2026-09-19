@@ -1,9 +1,4 @@
-"""One recorded row driven through a graph again, with the model and the tools replaced by it.
-
-What this compares is the machine, not the model: `chat` returns the turns the row recorded and
-`dispatch` returns the pieces it recorded, so any difference is the graph's own doing. A threshold
-would compare two samplings of a model instead, which is why the checklist refuses one here.
-"""
+"""One recorded row driven through a graph again, with the model and the tools replaced by it."""
 
 from dataclasses import dataclass
 

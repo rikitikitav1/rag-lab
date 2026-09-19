@@ -1,9 +1,4 @@
-"""Ranks under several settings at once, compared pairwise on the same questions.
-
-The generation experiment spends the card and a judge; this one reads where the right
-chunk landed, which costs minutes and neither. The measuring lives here rather than in
-the script so the job and the script cannot grow two different notions of a rank.
-"""
+"""Ranks under several settings at once, compared pairwise on the same questions."""
 
 import contextlib
 import itertools

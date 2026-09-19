@@ -1,8 +1,4 @@
-"""The standard's judged axes as guests on our own row.
-
-They ride the same judging pass as our three: same client, same seed, same row. What they are not
-is a second arm, and nothing here may decide whether the row counts as judged by us.
-"""
+"""The standard's judged axes as guests on our own row."""
 
 import asyncio
 import math

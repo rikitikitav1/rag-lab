@@ -1,8 +1,4 @@
-"""What each question set carries, and therefore which axes a run over it can be scored on.
-
-Written after an hour of card was spent scoring guests on two pools that hold no reference answer:
-the two context axes could not have produced a number, and the set knew that before the run did.
-"""
+"""What each question set carries, and therefore which axes a run over it can be scored on."""
 
 import collections
 

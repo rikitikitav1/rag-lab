@@ -1,8 +1,4 @@
-"""Does a variant still cut into the rows it holds?
-
-Row counts hide it: fourteen of the sixteen sources that changed under the new parser
-kept the same count. This compares the text itself.
-"""
+"""Does a variant still cut into the rows it holds?"""
 
 import hashlib
 import json

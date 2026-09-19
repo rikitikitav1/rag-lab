@@ -1,9 +1,4 @@
-"""Two judge prompt versions read by an external ruler, on the declared population only.
-
-The first pass of this comparison ran from a shell over every judged row of the run, which is 138
-rows where the declared population is 91. The population is the thing this arc keeps getting cut
-by, so it is taken here from `judge_correlation.rows_of`, the same predicate that counts.
-"""
+"""Two judge prompt versions read by an external ruler, on the declared population only."""
 
 import argparse
 import json

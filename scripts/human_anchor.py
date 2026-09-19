@@ -1,8 +1,4 @@
-"""The command line of the anchor: the sheet, its key and the two readings live in `evals`.
-
-A module that reads `sys.argv` cannot be called by a job or a test without a subprocess, and this
-one is now called by both.
-"""
+"""The command line of the anchor: the sheet, its key and the two readings live in `evals`."""
 
 import argparse
 import json

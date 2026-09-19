@@ -1,10 +1,4 @@
-"""What the guest faithfulness axis reads, probed by holding one thing still and moving the other.
-
-Three arms, all on rows of a real run. `paraphrase` keeps the meaning and destroys the overlap;
-`negated` keeps the overlap and breaks one claim; `code` strips the fenced code and leaves the prose.
-Every report carries the instrument's stamp and a bootstrap interval, because a point estimate on
-ten rows is what let a difference be called refuted once already.
-"""
+"""What the guest faithfulness axis reads, probed by holding one thing still and moving the other."""
 
 import statistics
 
@@ -75,6 +69,7 @@ def score(metric, ql, answer) -> tuple[float | None, int, str | None]:
         return None, 0, f"{type(e).__name__}: {redact(str(e))}"[:120]
 
 
+# a point estimate on ten rows is what let a difference be called refuted once already
 def interval(sample: list[float]) -> list[float] | None:
     if len(sample) < 2:
         return None

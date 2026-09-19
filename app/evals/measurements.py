@@ -1,9 +1,4 @@
-"""Where a job leaves a number so it can be cited later.
-
-Every measurement of this arc was saved by hand from a shell, so a job that computes one had
-nowhere to put it and logged it instead. The path is derived here and never taken from options:
-a job that writes to a path its caller names writes to someone else's disk.
-"""
+"""Where a job leaves a number so it can be cited later."""
 
 import json
 import os
@@ -41,6 +36,7 @@ def say_where(kind: str, run_name: str, payload: dict, asked: bool) -> str:
     return f"recorded: {record(kind, run_name, payload)}"
 
 
+# the path is derived here and never taken from options: a job writing where its caller says
 def record(kind: str, run_name: str, payload: dict, on: date | None = None) -> str:
     FOLDER.mkdir(parents=True, exist_ok=True)
     stamp = (on or date.today()).strftime("%Y%m%d")

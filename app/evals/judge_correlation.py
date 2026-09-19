@@ -1,8 +1,4 @@
-"""Our judge against the standard's, on the same rows, under the predictions written before it ran.
-
-The four predictions and what would refute each live in the arc log, section «Предрегистрация
-корреляции». This module only measures them; it does not decide what they meant.
-"""
+"""Our judge against the standard's, on the same rows, under the predictions written before it ran."""
 
 import math
 import re

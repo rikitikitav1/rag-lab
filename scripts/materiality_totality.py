@@ -1,9 +1,4 @@
-"""Does every materiality predicate answer on every row, or does NULL swallow some of them.
-
-The pair `guest_axes.HAS` and `judging.GUEST_MATERIAL` agreed going forward and parted under `NOT`:
-three-valued logic dropped rows from both sides at once. A substring in the compiled SQL cannot see
-that; only rows can. Yes plus no must be the whole table, per key.
-"""
+"""Does every materiality predicate answer on every row, or does NULL swallow some of them."""
 
 import argparse
 import json

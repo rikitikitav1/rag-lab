@@ -1,12 +1,4 @@
-"""How deep the hnsw walk goes, asked of the planner rather than remembered.
-
-Where the planner abandons the index is a property of the whole table: the alternative
-to the walk is a sequential read of data_chunks filtered by variant, so rows of every
-other variant pay into its cost. Indexing one more variant moved the crossover from
-about 197 to about 265, which is why a number written down on Tuesday describes
-Tuesday. There is no rule of thumb either: the crossover is nonlinear in rows and moves
-with random_page_cost. The plan is the only oracle, and it costs a millisecond to ask.
-"""
+"""How deep the hnsw walk goes, asked of the planner rather than remembered."""
 
 import contextlib
 

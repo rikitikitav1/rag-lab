@@ -1,7 +1,4 @@
-"""The guest-axis probes, from the command line.
-
-Every number it prints is `evals.guest_probes`; this file only chooses the arm, the rows and the file.
-"""
+"""The guest-axis probes, from the command line."""
 
 import argparse
 import json

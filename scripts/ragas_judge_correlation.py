@@ -1,7 +1,4 @@
-"""The judge-against-judge report, from the command line.
-
-Every number it prints is `evals.judge_correlation`; this file only chooses the rows and the file.
-"""
+"""The judge-against-judge report, from the command line."""
 
 import argparse
 import json

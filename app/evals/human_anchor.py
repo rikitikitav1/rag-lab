@@ -1,10 +1,4 @@
-"""A blind worksheet of answer pairs, and the agreement of each judge with the human who filled it.
-
-Both judges on this stand are language models, and so is the one writing this. The owner is the
-only reader of a different nature, so his verdict is a third instrument rather than a truth: what
-comes out is agreement, not correctness. The order of the list is fixed before he starts, so
-stopping early is not a choice made after seeing the answers.
-"""
+"""A blind worksheet of answer pairs, and the agreement of each judge with the human who filled it."""
 
 import hashlib
 import random

@@ -1,10 +1,4 @@
-"""Does our own faithfulness prompt lose a point on Russian, or does the loss live upstream.
-
-The guest judge does not penalise a Russian restatement of the same context (1.0 on nine of nine).
-Three links stand between that and the drop measured in 3.2: retrieval differs on a Russian query,
-the generator writes a different answer, and only then does the judge read it. This holds the first
-two still and moves only the language of the answer.
-"""
+"""Does our own faithfulness prompt lose a point on Russian, or does the loss live upstream."""
 
 import json
 import statistics

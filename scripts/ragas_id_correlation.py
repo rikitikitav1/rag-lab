@@ -1,8 +1,4 @@
-"""Our ranks against the standard's judge-free half: ID metrics over the same rows.
-
-Reads the archive, scores nothing with a model, touches no card. One of the three comparisons
-is an identity by construction and is declared as such in the checklist before this ran.
-"""
+"""Our ranks against the standard's judge-free half: ID metrics over the same rows."""
 
 import argparse
 import asyncio

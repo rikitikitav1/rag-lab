@@ -1,13 +1,4 @@
-"""What each job type accepts, checked at both ends of the queue.
-
-A door cannot be the only place a precondition lives: `eval_run` has four enqueuers and
-`judge_answers` five, and a typed door defends exactly one of them. These models are checked when a
-job is enqueued, whichever door or script enqueues it, and again when the worker takes it, so a row
-written straight into the table cannot walk past them either.
-
-Unknown keys are allowed for now: several callers build their options dictionary dynamically, and
-forbidding extras before those are read one by one would refuse work that is correct today.
-"""
+"""What each job type accepts, checked at both ends of the queue."""
 
 from enum import StrEnum
 from typing import Literal

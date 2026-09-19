@@ -1,11 +1,4 @@
-"""What our own axes charge when the answer comes back in the language it was asked in.
-
-The number of 08.09 was computed from a shell, so nothing could recompute it, and the group it was
-read on was carved out by the outcome of the change. Both cuts are here. The one to quote is
-declared from the record as it stood before: rows where the baseline answered in another language
-than the one asked. The other is the same reading on the group the outcome selected, kept beside it
-because it is what was published, not because it is the better cut.
-"""
+"""What our own axes charge when the answer comes back in the language it was asked in."""
 
 import config
 from evals.compare import SCHEMA as COMPARE_SCHEMA
