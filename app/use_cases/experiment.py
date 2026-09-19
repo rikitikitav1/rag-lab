@@ -115,7 +115,7 @@ def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
     return {"comparisons": comparisons, "population": BLENDED, **family}
 
 
-# 1 before the field; 2 Bonferroni; 3 Holm and the family named; 4 the population named and counted; 5 the refusal rule stored
+# the record's shape, raised with every field it gains
 SCHEMA = 5
 
 

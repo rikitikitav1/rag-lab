@@ -15,7 +15,7 @@ from evals.measurements import FOLDER
 from use_cases.judge import faithful_verdict
 
 # the report's shape, raised with every key it gains
-SCHEMA = 7
+SCHEMA = 8
 
 # a floor that catches only the gross: the judge's history on these rows sat at 96.4% and 95.6% at least 7
 CONTROL_FLOOR = 0.90
@@ -129,12 +129,18 @@ def _crosses_7(score) -> bool | None:
 # a fixed share measured the panel's answers as much as the judge; against a reference it reads drift
 def regime(panel_rows: list[dict], reference: dict | None) -> dict:
     parts = {p: _at_least_7([r["score"] for r in panel_rows if r["part"] == p]) for p in ("own", "restated")}
+    # a floor read on the verdicts that came back passed on two thirds of the panel
+    whole = all(part["n"] >= len(panel_ids()) for part in parts.values())
     control = {
         "of": "our judge at least 7 on the fixed panel: its own answers and their English restatement",
         "panel": PANEL.name,
+        "whole_panel": whole,
         **parts,
         "floor": CONTROL_FLOOR,
-        "above_floor": all(p["share"] is not None and p["share"] >= CONTROL_FLOOR for p in parts.values()),
+        "above_floor": (
+            all(p["share"] is not None and p["share"] >= CONTROL_FLOOR for p in parts.values())
+            if whole else None
+        ),
     }
     if reference is None:
         return {"control": control | {

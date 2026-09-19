@@ -84,7 +84,7 @@ def _share(logs, outcome) -> str:
 
 
 # 1 before `answered_ungrounded`; 2 those; 3 abstention; 4 settled; 5 language; 6 narrower; 7 guests
-SCHEMA = 7
+SCHEMA = 8
 
 
 def evaluate(run_name=None, verbose=False) -> dict:
@@ -102,7 +102,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
     ]
     faith = mean_of(ql.faithfulness for ql in in_corpus)
     relevance = mean_of(ql.relevance for ql in in_corpus)
-    completeness = mean_of(ql.completeness for ql in logs)
+    completeness = mean_of(ql.completeness for ql in in_corpus)
 
     if verbose:
         for ql in in_corpus:
@@ -145,7 +145,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
         "distribution": {
             "faithfulness": _distribution(ql.faithfulness for ql in in_corpus),
             "relevance": _distribution(ql.relevance for ql in in_corpus),
-            "completeness": _distribution(ql.completeness for ql in logs),
+            "completeness": _distribution(ql.completeness for ql in in_corpus),
         },
         # a refusal takes a ten and a zero by the prompts, so its share moves both means
         "answered_only": {

@@ -482,17 +482,17 @@ def test_every_kind_of_report_declares_its_schema():
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (5, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (7, 6, 13)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 13)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
-    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 7)
+    assert (judge_correlation.SCHEMA, guest_probes.SCHEMA, judge_language.SCHEMA) == (5, 1, 8)
     # the equality report is a record too: what it compared moved once already
     assert replay.SCHEMA == 1
     # the reports that moved here: the guard is why the anchor left `scripts`
     from evals import compare, human_anchor, language_cost
 
-    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (13, 1, 1)
+    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (14, 1, 1)
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():

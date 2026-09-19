@@ -13,7 +13,8 @@ def wilcoxon_p(deltas) -> float:
 
 def delta_stats(deltas: list, rng=None) -> dict:
     rng = rng if rng is not None else np.random.default_rng(42)
-    arr = np.array(deltas, dtype=float)
+    # sorted: the draw is over the values, and the caller's order must not move the interval
+    arr = np.sort(np.array(deltas, dtype=float))
     boot_means = rng.choice(arr, size=(BOOTSTRAP_N, arr.size), replace=True).mean(axis=1)
     p = wilcoxon_p(arr)
     return {

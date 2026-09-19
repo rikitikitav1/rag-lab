@@ -18,7 +18,7 @@ def rank_of_gold(sources, marked) -> int | None:
 
 
 # 6 scores a section only where the corpus has one; 5 added the axes; 4 added `file_precision`
-SCHEMA = 6
+SCHEMA = 7
 
 
 # the pair the standard takes as an id, collapsed as `ranked_lists` does: one metric, one spelling
@@ -147,11 +147,12 @@ def evaluate(run_name=None):
         else:
             misses.append(ql.question.original_text)
 
-    n = len(in_corpus) or 1
+    # no corpus row is nothing measured, not a measured zero: the other axes already read it so
+    n = len(in_corpus)
     return {
         "schema": SCHEMA,
-        "hit_at_k": round(hits / n, 3),
-        "mrr": round(rr_sum / n, 3),
+        "hit_at_k": round(hits / n, 3) if n else None,
+        "mrr": round(rr_sum / n, 3) if n else None,
         "hits": hits,
         "n": len(in_corpus),
         "misses": len(misses),

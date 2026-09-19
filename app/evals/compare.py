@@ -151,8 +151,8 @@ def verdicts(left: list, right: list) -> dict:
     }
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote; 12 sampler; 13 penalty, grammar, key, rule
-SCHEMA = 13
+# the report's shape, raised with every field it gains
+SCHEMA = 14
 
 
 class TwoJudges(Ambiguous):
@@ -216,8 +216,8 @@ def compare(runs: dict[str, list]) -> dict:
         },
         "pools": pools,
         "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
-        # a pair only: with three runs the question is which pair, and the caller names it
-        "verdicts": verdicts(*runs.values()) if len(runs) == 2 else None,
+        # a pair only, over the rows the rest of the report reads: another population, other shares
+        "verdicts": verdicts(*scored.values()) if len(scored) == 2 else None,
     }
 
 

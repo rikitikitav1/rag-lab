@@ -19,3 +19,15 @@ def test_a_test_the_step_down_never_reached_is_given_no_bar_to_have_failed():
     assert [t["significant_holm"] for t in tests] == [False, False, False]
     assert tests[0]["holm_threshold"] == round(0.05 / 3, 5), "the one that broke it was compared"
     assert [t["holm_threshold"] for t in tests[1:]] == [None, None]
+
+
+def test_the_interval_does_not_move_with_the_order_the_deltas_arrived_in():
+    # the draw was over the caller's order, so a rejudge reshuffling rows moved the interval
+    import random
+
+    from evals import stats
+
+    deltas = [3, -1, 0, 2, -2, 5, 1, 0, -3, 4, 2, -1]
+    shuffled = deltas[:]
+    random.Random(7).shuffle(shuffled)
+    assert stats.delta_stats(deltas)["ci95"] == stats.delta_stats(shuffled)["ci95"]
