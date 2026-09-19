@@ -16,7 +16,9 @@ PARAGRAPH = (
 # one call mostly input, one mostly output: two debits solve the two prices, the third checks them
 CASES = (
     ("heavy_in", [{"role": "user", "content": PARAGRAPH * 70 + "\n\nReply with the single word OK."}], 16),
-    ("heavy_out", [{"role": "user", "content": "Write a detailed essay of about 1200 words on how database indexes work."}], 1500),
+    ("heavy_out",
+     [{"role": "user", "content": "Write a detailed essay of about 1200 words on how database indexes work."}],
+     1500),
     ("check", [
         {"role": "system", "content": "You answer interview questions briefly and precisely."},
         {"role": "user", "content": "What is the difference between a process and a thread?"},

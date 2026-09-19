@@ -151,8 +151,8 @@ def verdicts(left: list, right: list) -> dict:
     }
 
 
-# 1 pools; 2 residency; 3 engine; 4 prompt; 5 `p` not null; 6 `p`; 7 name; 8 determinism; 9 verdicts; 10 parser; 11 remote; 12 sampler; 13 penalty, grammar, key, rule
-SCHEMA = 13
+# the report's shape, raised with every field it gains
+SCHEMA = 14
 
 
 class TwoJudges(Ambiguous):
@@ -216,8 +216,8 @@ def compare(runs: dict[str, list]) -> dict:
         },
         "pools": pools,
         "blended_do_not_rank": {name: summarize(logs) for name, logs in scored.items()},
-        # a pair only: with three runs the question is which pair, and the caller names it
-        "verdicts": verdicts(*runs.values()) if len(runs) == 2 else None,
+        # a pair only, over the rows the rest of the report reads: another population, other shares
+        "verdicts": verdicts(*scored.values()) if len(scored) == 2 else None,
     }
 
 
@@ -378,7 +378,7 @@ def _one_retrieval(runs: dict[str, list]) -> bool | None:
     return True if compared else None
 
 
-# a single-shot row with no context answered NO_RESULTS itself, and rows written before that was stamped named a generator
+# a single-shot row with no context answered NO_RESULTS itself, and older rows named a generator anyway
 def _asked_the_generator(ql) -> bool:
     if "generation" in (getattr(ql, "models", None) or {}) and ql.models["generation"] is None:
         return False

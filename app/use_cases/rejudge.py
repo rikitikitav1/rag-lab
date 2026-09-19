@@ -5,7 +5,7 @@ import re
 import job_specs
 import prompt_repo
 from evals import guest_axes, sampling
-from evals.stats import annotate_holm, deltas_over, mean_of, tally, wilcoxon_p
+from evals.stats import annotate_holm, bootstrap_ci, deltas_over, mean_of, tally, wilcoxon_p
 from models.eval import QuestionLog
 from models.registry import (
     MAX_MODEL_NAME,
@@ -20,7 +20,7 @@ from models.registry import (
 from orm.sync_db import Session
 from sqlalchemy import delete, func, insert, literal, select, text
 from use_cases import judge, retrieval_compare
-from use_cases.retrieval_compare import bootstrap_ci, half_of
+from use_cases.retrieval_compare import half_of
 
 # 1 means and deltas; 2 pairing and `source_scored`; 3 the source's judge; 4 Holm; 5 p unrounded
 SCHEMA = 5
@@ -45,6 +45,8 @@ def copy_run(source: str, target: str, question_ids=None) -> int:
 
     refuse_oversized_fanout(source, 1, question_ids=question_ids)
     with Session() as session:
+        # the fan-out refuses these, and one copy kept whichever row the database returned last
+        _refuse_repeated_questions(session, source, question_ids)
         _refuse_bad_pair(session, source, target)
 
         # RETURNING, not rowcount: an INSERT ... SELECT reports -1 through this driver

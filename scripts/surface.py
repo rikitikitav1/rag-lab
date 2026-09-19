@@ -1,10 +1,4 @@
-"""Everything this stand offers, in one screen: job types, MCP tools, routes.
-
-Written after two days in which the same drift cost real time: waiters were built beside a queue
-that already runs in order, chains beside the experiment entity that already orchestrates, a host
-loop beside `eval_run` which already takes question ids. Each was acting from memory of the project
-rather than from its surface. Reading this costs one command.
-"""
+"""Everything this stand offers, in one screen: job types, MCP tools, routes."""
 
 import argparse
 import re

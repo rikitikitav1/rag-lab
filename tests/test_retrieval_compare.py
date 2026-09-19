@@ -135,8 +135,7 @@ def test_an_axis_with_no_values_is_refused_before_the_row_is_running(client):
 
 
 def _stub_session(exp, rows_won: int | None = None):
-    """rows_won=None makes the stub decide the way Postgres would: the update lands only
-    while the row is still running, which is the transition the CAS exists for."""
+    """rows_won=None lets the stub land the update only while the row still runs, as Postgres would."""
     from models.experiment import ExperimentStatus
 
     class _Result:

@@ -1,10 +1,4 @@
-"""Does our own faithfulness prompt lose a point on Russian, or does the loss live upstream.
-
-The guest judge does not penalise a Russian restatement of the same context (1.0 on nine of nine).
-Three links stand between that and the drop measured in 3.2: retrieval differs on a Russian query,
-the generator writes a different answer, and only then does the judge read it. This holds the first
-two still and moves only the language of the answer.
-"""
+"""Does our own faithfulness prompt lose a point on Russian, or does the loss live upstream."""
 
 import json
 import statistics
@@ -12,10 +6,11 @@ import statistics
 import llm
 from evals.guest_probes import RESTATE, sentence_of
 from evals.measurements import FOLDER
+from evals.stats import bootstrap_ci
 from use_cases.judge import faithful_verdict
 
 # the report's shape, raised with every key it gains
-SCHEMA = 7
+SCHEMA = 8
 
 # a floor that catches only the gross: the judge's history on these rows sat at 96.4% and 95.6% at least 7
 CONTROL_FLOOR = 0.90
@@ -101,7 +96,10 @@ def judge_panel(stop=None) -> list[dict]:
         try:
             english = llm.ask(RESTATE, ql.answer, role="generation").text or ""
         except RuntimeError as e:
-            rows += [{"row": ql.id, "part": part, "score": None, "reason": f"failed: {e}"} for part in ("own", "restated")]
+            rows += [
+                {"row": ql.id, "part": part, "score": None, "reason": f"failed: {e}"}
+                for part in ("own", "restated")
+            ]
             continue
         for part, answer in (("own", ql.answer), ("restated", english)):
             try:
@@ -129,12 +127,18 @@ def _crosses_7(score) -> bool | None:
 # a fixed share measured the panel's answers as much as the judge; against a reference it reads drift
 def regime(panel_rows: list[dict], reference: dict | None) -> dict:
     parts = {p: _at_least_7([r["score"] for r in panel_rows if r["part"] == p]) for p in ("own", "restated")}
+    # a floor read on the verdicts that came back passed on two thirds of the panel
+    whole = all(part["n"] >= len(panel_ids()) for part in parts.values())
     control = {
         "of": "our judge at least 7 on the fixed panel: its own answers and their English restatement",
         "panel": PANEL.name,
+        "whole_panel": whole,
         **parts,
         "floor": CONTROL_FLOOR,
-        "above_floor": all(p["share"] is not None and p["share"] >= CONTROL_FLOOR for p in parts.values()),
+        "above_floor": (
+            all(p["share"] is not None and p["share"] >= CONTROL_FLOOR for p in parts.values())
+            if whole else None
+        ),
     }
     if reference is None:
         return {"control": control | {
@@ -171,8 +175,6 @@ def report(rows: list[dict]) -> dict:
         paired.setdefault(r["row"], {})[r["lang"]] = r["score"]
     deltas = [p["en"] - p["ru"] for p in paired.values()
               if p.get("en") is not None and p.get("ru") is not None]
-    from use_cases.retrieval_compare import bootstrap_ci
-
     return {
         "schema": SCHEMA,
         "n_rows": len(paired),

@@ -1,8 +1,4 @@
-"""The standard's metrics, asked through our own client rather than through theirs.
-
-A guest axis that reaches ollama by its own path records no seed, meets no card guard and carries
-no width stamp, which would make it the only number on this stand that cannot say what produced it.
-"""
+"""The standard's metrics, asked through our own client rather than through theirs."""
 
 import asyncio
 import os

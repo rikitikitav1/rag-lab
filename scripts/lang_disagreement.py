@@ -1,8 +1,4 @@
-"""How often the query-language rules disagree: the numbers under `query_lang` in the config.
-
-Compares every rule against the configured default. Bucketed by question length rather than by set,
-because the set grouping was a judgement and the length is what decides whether langdetect copes.
-"""
+"""How often the query-language rules disagree: the numbers under `query_lang` in the config."""
 
 
 import config

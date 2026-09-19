@@ -1,16 +1,11 @@
-"""What the guest faithfulness axis reads, probed by holding one thing still and moving the other.
-
-Three arms, all on rows of a real run. `paraphrase` keeps the meaning and destroys the overlap;
-`negated` keeps the overlap and breaks one claim; `code` strips the fenced code and leaves the prose.
-Every report carries the instrument's stamp and a bootstrap interval, because a point estimate on
-ten rows is what let a difference be called refuted once already.
-"""
+"""What the guest faithfulness axis reads, probed by holding one thing still and moving the other."""
 
 import statistics
 
 import llm
 from errors import StandFault
 from evals.guest_llm import stamp
+from evals.stats import bootstrap_ci
 from redaction import redact
 from use_cases.ingest_quality import FENCE
 
@@ -74,10 +69,8 @@ def score(metric, ql, answer) -> tuple[float | None, int, str | None]:
         return None, 0, f"{type(e).__name__}: {redact(str(e))}"[:120]
 
 
-# the stand already has one bootstrap, and it holds its own generator instead of seeding everyone's
+# a point estimate on ten rows is what let a difference be called refuted once already
 def interval(sample: list[float]) -> list[float] | None:
-    from use_cases.retrieval_compare import bootstrap_ci
-
     if len(sample) < 2:
         return None
     return [round(v, 4) for v in bootstrap_ci(list(sample))]
@@ -91,9 +84,10 @@ def report(arm: str, done: list[dict]) -> dict:
     for r in done:
         pairs.setdefault(r["row"], {})[r["arm"]] = r["score"]
     names = sorted(by)
-    left, right = (names[0], names[1]) if len(names) > 1 else (names[0], names[0])
+    # one arm cannot differ from itself: a half that never ran used to read as "no difference"
+    left, right = (names[0], names[1]) if len(names) > 1 else (None, None)
     deltas = [p[left] - p[right] for p in pairs.values()
-              if p.get(left) is not None and p.get(right) is not None]
+              if left and p.get(left) is not None and p.get(right) is not None]
     return {
         "schema": SCHEMA,
         "arm": arm,
@@ -110,10 +104,11 @@ def report(arm: str, done: list[dict]) -> dict:
             for name, rows in by.items() if any(r["score"] is not None for r in rows)
         },
         "paired": {
-            "of": f"{left} minus {right}",
+            "of": f"{left} minus {right}" if left else None,
+            "unreadable": None if left else f"only one arm carries this probe: {names}",
             "n": len(deltas),
             "mean": round(statistics.fmean(deltas), 4) if deltas else None,
-            "ci95": interval(deltas),
+            "ci95": interval(deltas) if deltas else None,
             "moved": sum(1 for d in deltas if d != 0),
         },
         "rows": done,

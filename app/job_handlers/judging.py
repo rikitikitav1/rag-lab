@@ -342,7 +342,10 @@ def judge_guest_axes(options: dict) -> None:
     walk = Pass(job_id, (Seat(Role.ragas, model), Seat(Role.ragas_embedding, spill_from=None)),
                 residency=lambda: _residency(job_id, model, role=Role.ragas))
     # the guest's own stamp names its engine and sampler; ours would hand the row a second spelling of each
-    stamp = {k: v for k, v in stamp_of(width, walk.get(), model, role=Role.ragas).items() if k not in ("engine", "sampler")}
+    stamp = {
+        k: v for k, v in stamp_of(width, walk.get(), model, role=Role.ragas).items()
+        if k not in ("engine", "sampler")
+    }
 
     def one(log_id):
         if not walk.before_row():
@@ -464,7 +467,10 @@ def _score_guests(log_id: int, stamp: dict, messages: str = guest_axes.MESSAGE_F
             continue
         try:
             # our stamp plus the card read here: the stamp's `on_card` is about the pass
-            scored[axis] = {**stamp, **guest_axes.score(axis, row, messages, model=model), "on_card_at_this_row": on_card}
+            scored[axis] = {
+                **stamp, **guest_axes.score(axis, row, messages, model=model),
+                "on_card_at_this_row": on_card,
+            }
             wrote = True
         except StandFault:
             raise

@@ -121,7 +121,7 @@ def test_a_run_reports_its_focus_beside_its_hits(monkeypatch):
     log = _log([("gold.md", 1), ("a.md", 1)])
     m = _evaluate(monkeypatch, [log])
 
-    assert m["schema"] == 6
+    assert m["schema"] == 7
     assert (m["hit_at_k"], m["file_precision"], m["n_precision_scored"]) == (1.0, 0.5, 1)
 
 
@@ -168,7 +168,7 @@ def test_a_row_without_addresses_is_not_scored_on_sections(monkeypatch):
     log.chunks = None
     m = _evaluate(monkeypatch, [log])
 
-    assert m["schema"] == 6
+    assert m["schema"] == 7
     assert m["n_section_scored"] == 0
     assert m["section_hit_at_k"] is None and m["section_mrr"] is None
 
@@ -176,4 +176,13 @@ def test_a_row_without_addresses_is_not_scored_on_sections(monkeypatch):
 def test_the_section_axes_declare_that_they_see_the_kept_chunks():
     from evals import retrieval_metrics as rm
 
-    assert rm.SCHEMA == 6
+    assert rm.SCHEMA == 7
+
+
+def test_a_run_without_a_corpus_question_measures_nothing_rather_than_zero(monkeypatch):
+    # `hit_at_k: 0.0` on a set with no marked sources read as a search that found nothing
+    from evals import retrieval_metrics
+
+    monkeypatch.setattr(retrieval_metrics, "load_logs", lambda run_name: [])
+    got = retrieval_metrics.evaluate("empty")
+    assert got["hit_at_k"] is None and got["mrr"] is None and got["n"] == 0

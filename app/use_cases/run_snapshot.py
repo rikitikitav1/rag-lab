@@ -11,7 +11,7 @@ import db
 
 log = logging_setup.get_logger(__name__)
 
-# 5 engine per role; 6 refused; 7 renamed; 8 placement; 9 reranker; 10 parser; 11 cache key; 12 samplers; 13 engine added
+# the snapshot's shape, raised with every key it gains
 SCHEMA = 13
 
 # every key a run records about how it was configured, written whether or not it applies

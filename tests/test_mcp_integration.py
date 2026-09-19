@@ -216,3 +216,18 @@ def test_classify_unwraps_the_fastmcp_runtime_wrapper():
 
 def test_classify_marks_server_side_tool_failures():
     assert mcp_client.classify(ToolError("unknown tool")) == "tool"
+
+
+def test_an_integration_that_carries_a_secret_keeps_its_host():
+    # the seeded hf row carries HF_TOKEN, and one PUT would have sent it to any address asked for
+    import api.v1.mcp_integration as door
+    import pytest
+    from fastapi import HTTPException
+
+    bearer = {"type": "bearer", "token_env": "HF_TOKEN"}
+    with pytest.raises(HTTPException) as refused:
+        door.refuse_a_moved_secret(bearer, "https://huggingface.co/mcp", "https://evil.example/mcp")
+    assert refused.value.status_code == 409
+    # the same host on another path is the same server, and a row without auth carries nothing to leak
+    door.refuse_a_moved_secret(bearer, "https://huggingface.co/mcp", "https://huggingface.co/mcp/v2")
+    door.refuse_a_moved_secret(None, "https://huggingface.co/mcp", "https://evil.example/mcp")

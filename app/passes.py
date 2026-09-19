@@ -125,7 +125,9 @@ class Pass:
     def after_row(self, placed: dict) -> None:
         checked = [(seat, _resolve(seat)) for seat in self.seats if placed.get(seat.role) is not None]
         # one reading per seat per row: `on_card` answers with the call's reading from here on
-        self._local.on_card = getattr(self._local, "on_card", {}) | _read_spills(checked, self.allow_spill, known=placed)
+        self._local.on_card = getattr(self._local, "on_card", {}) | _read_spills(
+            checked, self.allow_spill, known=placed
+        )
 
     # the card as this thread's last row read it, for the row to stamp
     def on_card(self, role) -> bool | None:

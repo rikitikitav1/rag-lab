@@ -244,10 +244,12 @@ def retrieve(
     *,
     variant: str,
     ef_search: int | None = None,
+    use_rerank: bool | None = None,
 ) -> Retrieval:
     k = k or config.settings.retrieval.results_limit
+    # the door waits for the card the request asked for, and search took the config's answer instead
     rows, rerank_scores, _depth = _retrieve_rows(
-        question, category, k, resolve_rerank(None), variant, ef_search
+        question, category, k, resolve_rerank(use_rerank), variant, ef_search
     )
     return Retrieval(sources=take_sources(rows, rerank_scores, variant))
 
@@ -413,8 +415,8 @@ def _log_answer(
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
     placed_during: dict | None = None,
 ) -> None:
-    # no context, no call: the stand answered NO_RESULTS itself, and the default generator was stamped on it
-    generated = bool(context)
+    # no call, no generator on the row: an answer refused over the window has a context and no call
+    generated = ans.success
     # read before the session: each registry read inside it took a second connection from the pool
     models = {
         "generation": ans.metrics.model if generated else None,

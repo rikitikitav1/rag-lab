@@ -73,7 +73,10 @@ def refuse_a_budget_over_the_window(engine_id: int, name: str, options: dict) ->
         return
     window = engines.window_or_configured(spec, name)
     if window is not None and budget >= window:
-        raise ValueError(f"max_tokens {budget} fills the {window}-token window of {name} on {spec.name}: no room for the input")
+        raise ValueError(
+            f"max_tokens {budget} fills the {window}-token window of {name} on {spec.name}:"
+            " no room for the input"
+        )
 
 
 def _refuse_remote(engine: Engine, name: str) -> None:
@@ -304,7 +307,9 @@ async def patch_model(
     id: int, request: ModelPatchRequest, session: AsyncSession = Depends(get_session)
 ):
     if request.quant is None and request.weights is None and request.answer_parser is None and request.options is None:
-        raise HTTPException(status_code=422, detail="nothing to change: name a quant, weights, answer_parser or options")
+        raise HTTPException(
+            status_code=422, detail="nothing to change: name a quant, weights, answer_parser or options"
+        )
     model = await get_or_404(Model, id, session)
     engine = await _engine_of(session, model)
     if request.quant is not None:

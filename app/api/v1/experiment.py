@@ -104,7 +104,10 @@ class ExperimentCreate(BaseModel):
                 )
             # the report compares our judge across arms; a guest bench is read per row through guest_passes
             if self.param == "guest_model":
-                raise ValueError("param reads our judge's verdicts across arms, and guest_model moves only the guest: name another axis, as repeat")
+                raise ValueError(
+                    "param reads our judge's verdicts across arms, and guest_model moves only"
+                    " the guest: name another axis, as repeat"
+                )
             self.param_values = list(axes[self.param])
             return self
         if not self.dataset:

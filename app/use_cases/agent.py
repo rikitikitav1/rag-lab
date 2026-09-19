@@ -66,6 +66,10 @@ class AgentResult:
     ef_search: int | None = None
     tool_errors: dict = field(default_factory=dict)
     stages: dict = field(default_factory=dict)
+    # every verdict a probe asked the model for, in order: a replay reads these instead of asking
+    asks: list = field(default_factory=list)
+    # what happened in which node of which hop: a report reads this instead of a query per question
+    trace: list = field(default_factory=list)
 
     # one number per question hides where it went: the model, our own probes, or the tools
     def took(self, stage: str, started: float) -> None:
@@ -73,6 +77,12 @@ class AgentResult:
         current = self.stages.setdefault(stage, {"ms": 0, "calls": 0})
         current["ms"] += spent
         current["calls"] += 1
+
+    def step(self, node: str, hop: int, **facts) -> None:
+        self.trace.append({"node": node, "hop": hop, **{k: v for k, v in facts.items() if v is not None}})
+
+    def note_ask(self, stage: str, key: str | None, text: str) -> None:
+        self.asks.append({"stage": stage, "key": key, "text": text})
 
     # only ollama's own api reports these, the openai-compat client has nothing to add
     def note_server_timings(self, meta: dict) -> None:
@@ -143,6 +153,7 @@ def run(
         result.took("topic", started)
 
     remote = {t.name: t for t in agent_tools.remote_tools()}
+    ask = ask_door(result, role, model)
     configured = sorted({name.split("__")[0] for name in remote})
     off_topic = topic.score is not None and topic.score >= topic.threshold
     admission_ran = False
@@ -152,7 +163,7 @@ def run(
     # admission costs one llm call per tool: an off-topic question has no tool left to admit
     elif remote and policy != FallbackPolicy.agent_choice:
         started = time.perf_counter()
-        remote = _admissible(question, remote, result, role=role, model=model)
+        remote = _admissible(question, remote, result, ask)
         result.took("admission", started)
         admission_ran = True
     external = policy == FallbackPolicy.agent_choice
@@ -192,7 +203,7 @@ def run(
             system,
             orch_graph.context(
                 remote=remote, gate=gate, external=external, k=k, use_rerank=use_rerank,
-                role=role, model=model, max_hops=max_hops, variant=variant,
+                role=role, model=model, max_hops=max_hops, variant=variant, ask=ask,
                 restate_tools=restate_tools,
             ),
             result,
@@ -253,9 +264,20 @@ def finish(result, tool_names: tuple, max_hops: int) -> None:
     result.success = bool(result.sources and result.text)
 
 
-def _admissible(
-    question: str, tools: dict, result: AgentResult, role: str = "generation", model=None
-) -> dict:
+# the one door every probe of the run asks through, so a replay can hand back what the row recorded
+def ask_door(result: AgentResult, role: str = "generation", model=None):
+    def ask(stage: str, key: str | None, system: str, user: str) -> str:
+        started = time.perf_counter()
+        completion = llm.ask(system=system, user=user, role=role, model=model)
+        result.took(stage, started)
+        text = (completion.text or "").strip()
+        result.note_ask(stage, key, text)
+        return text
+
+    return ask
+
+
+def _admissible(question: str, tools: dict, result: AgentResult, ask) -> dict:
     system = prompt_repo.active_template(Purpose.agent_tool_match)
     admitted = {}
     for name, tool in tools.items():
@@ -268,9 +290,9 @@ def _admissible(
             "Does the question state every required value? Answer yes or no."
         )
         try:
-            completion = llm.ask(system=system, user=user, role=role, model=model)
-            verdict = (completion.text or "").strip().lower()
-        except RuntimeError as e:
+            verdict = ask("tool_match", name, system, user).lower()
+        # an input over the window refuses as a ValueError, and the door answered 500 before the row
+        except (RuntimeError, llm.InputOverWindow) as e:
             log.error("agent.tool_match_failed", tool=name, error=str(e))
             result.tool_errors[name] = "tool_match"
             continue
@@ -443,6 +465,8 @@ def _log_answer(
                 # without this the report reads a guard that fired as a run that spent its hops
                 "failed": result.failed or None,
                 "stages": result.stages or None,
+                "asks": result.asks or None,
+                "trace": result.trace or None,
                 "tool_errors": result.tool_errors or None,
                 "config": run_snapshot.of_run(
                     variant=variant,

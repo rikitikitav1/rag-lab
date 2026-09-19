@@ -1,9 +1,4 @@
-"""How often the second tool call differs when the first one did not, with and without a drop.
-
-The live second layer put a divergence between the split graph and the code it replaced in the hop
-count, concentrated on rows the gate emptied. This asks whether two arms of the *same* code diverge
-there just as much, which would make it the model in that state rather than the split.
-"""
+"""How often the second tool call differs when the first one did not, with and without a drop."""
 
 import argparse
 import json

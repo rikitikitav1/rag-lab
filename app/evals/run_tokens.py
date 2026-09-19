@@ -110,7 +110,10 @@ def _guested(metrics: dict | None, embedder: bool = False):
     if any("tokens" not in s for s in stamps):
         return None, None
     # the guest's embedder is its own role, and folded in it made this disagree with `spent`
-    entries = [e for s in stamps for name, got in (s["tokens"] or {}).items() if (name in _EMBEDDERS) == embedder for e in got]
+    entries = [
+        e for s in stamps for name, got in (s["tokens"] or {}).items()
+        if (name in _EMBEDDERS) == embedder for e in got
+    ]
     return sum(e.get("prompt", 0) for e in entries), sum(e.get("completion", 0) for e in entries)
 
 

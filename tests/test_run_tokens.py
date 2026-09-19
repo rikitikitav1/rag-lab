@@ -13,7 +13,8 @@ def _axis(prompt, completion="absent"):
 def test_spent_sums_the_jobs_and_the_price_comes_from_the_rows_each_on_its_own():
     # a retried answer paid twice and its row carries one call: the two numbers are not the same thing
     jobs = [
-        ({"generation": [_entry("gonka", "mm", 3000, 1600, 2)], "embedding": [_entry("ollama", "bge-m3", 16, 0, 1)]}, "done"),
+        ({"generation": [_entry("gonka", "mm", 3000, 1600, 2)],
+          "embedding": [_entry("ollama", "bge-m3", 16, 0, 1)]}, "done"),
         ({"judging": [_entry("vllm", "qwen", 3880, 233, 3)]}, "done"),
         ({}, "done"),
         (None, "done"),

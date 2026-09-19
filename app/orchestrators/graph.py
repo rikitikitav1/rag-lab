@@ -95,16 +95,19 @@ def model_node(state: State, config) -> dict:
     except (RuntimeError, llm.InputOverWindow) as e:
         log.error("graph.hop_failed", hop=hop, error=str(e))
         ctx["result"].failed = True
+        ctx["result"].step("model", hop, failed=True)
         return {"hops": hop, "finished": True}
 
     ctx["result"].took("model", started)
+    ctx["result"].step("model", hop, tool_calls=len(turn.tool_calls or ()), answered=bool(turn.text))
     ctx["result"].note_prompt(turn.prompt_tokens)
     update = {
         "hops": hop,
         "tools_offered": [_offered(ctx, state["external"])],
-        "prompt_tokens": turn.prompt_tokens,
-        "completion_tokens": turn.completion_tokens,
-        "max_prompt_tokens": turn.prompt_tokens,
+        # a server that answers without counts reduced into `0 + None` and failed the whole row
+        "prompt_tokens": turn.prompt_tokens or 0,
+        "completion_tokens": turn.completion_tokens or 0,
+        "max_prompt_tokens": turn.prompt_tokens or 0,
         "answer_parse": [turn.parsed],
         "turn": turn,
     }
@@ -199,6 +202,11 @@ def retrieve_node(state: State, config) -> dict:
     verdict = policy.verdict([s for c in corpus for s in c[3]], gate) if corpus else None
     if gate.off_topic and corpus:
         verdict = policy.FallbackReason.off_topic
+    ctx["result"].step(
+        "retrieve", state["hops"], calls=len(calls), corpus=len(corpus),
+        sources=sum(len(c[3]) for c in corpus), verdict=str(verdict or policy.FallbackReason.none),
+        errors=len(errors_seen or {}),
+    )
     return {"pending": calls, "coverage": verdict or "", "tool_errors": errors_seen}
 
 
@@ -224,6 +232,11 @@ def fallback_node(state: State, config) -> dict:
         update["external"] = True
         update["fallback_opened"] = True
         log.info("graph.external_opened", hop=state["hops"], reason=verdict)
+    ctx["result"].step(
+        "fallback", state["hops"], verdict=str(verdict),
+        dropped=len(update.get("dropped_sources") or ()),
+        opened=bool(update.get("fallback_opened")), announced=bool(update.get("fallback_announced")),
+    )
     return update
 
 
@@ -282,6 +295,7 @@ def final_node(state: State, config) -> dict:
     ctx = _ctx(config)
     # the loop forces a final turn only when no turn produced text at all
     if state.get("text"):
+        ctx["result"].step("final", state["hops"], finished_by=str(policy.FinishedBy.answer))
         return {"finished_by": policy.FinishedBy.answer}
     messages = list(state["messages"])
     update = {}
@@ -313,9 +327,9 @@ def final_node(state: State, config) -> dict:
     update["answer_parse"] = [*update.get("answer_parse", []), final.parsed]
     update.update(
         hops=state["hops"] + 1,
-        prompt_tokens=final.prompt_tokens,
-        completion_tokens=final.completion_tokens,
-        max_prompt_tokens=final.prompt_tokens,
+        prompt_tokens=final.prompt_tokens or 0,
+        completion_tokens=final.completion_tokens or 0,
+        max_prompt_tokens=final.prompt_tokens or 0,
         text=final.text or "",
     )
     if token_fields.cut(final.finish_reason):

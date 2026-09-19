@@ -48,7 +48,8 @@ def test_the_door_takes_only_a_reader_the_stand_has():
     from pydantic import ValidationError
 
     assert EnginePatchRequest(balance_reader="gonka_key").balance_reader == "gonka_key"
-    assert EngineCreateRequest(name="c", kind="openai_compatible", env_prefix="C", placement="remote").balance_reader == "none"
+    cloud = EngineCreateRequest(name="c", kind="openai_compatible", env_prefix="C", placement="remote")
+    assert cloud.balance_reader == "none"
     with pytest.raises(ValidationError, match="unknown balance reader bogus"):
         EnginePatchRequest(balance_reader="bogus")
 
@@ -90,7 +91,9 @@ def test_the_worker_reads_every_cloud_before_a_job_and_after_it_before_the_statu
     events, left = [], iter([1.5, 1.4])
     monkeypatch.setitem(worker.HANDLERS, "spender", lambda options: events.append("handler"))
     monkeypatch.setitem(worker.job_specs.LOADS, "spender", ("generation",))
-    monkeypatch.setattr(worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=9, type="spender", options={}))
+    monkeypatch.setattr(
+        worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=9, type="spender", options={})
+    )
     monkeypatch.setattr(worker.job_specs, "check", lambda *a, **kw: None)
     monkeypatch.setattr(balances, "readable", lambda: [(CLOUD, "gonka_key")])
     monkeypatch.setattr(balances, "read", lambda spec, reader: events.append("read") or {
@@ -112,7 +115,9 @@ def test_a_job_that_calls_no_model_asks_no_broker(monkeypatch):
 
     monkeypatch.setitem(worker.HANDLERS, "quiet", lambda options: None)
     monkeypatch.setitem(worker.job_specs.LOADS, "quiet", ())
-    monkeypatch.setattr(worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=10, type="quiet", options={}))
+    monkeypatch.setattr(
+        worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=10, type="quiet", options={})
+    )
     monkeypatch.setattr(worker.job_specs, "check", lambda *a, **kw: None)
     monkeypatch.setattr(balances, "readable", unasked)
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: None)

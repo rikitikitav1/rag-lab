@@ -1,13 +1,4 @@
-"""What a run still owes each axis, and what the rest of its rows are missing to owe it.
-
-`n_scored` says how many rows carry a number. It says nothing about the others, and that silence
-cost an hour of card on 06.09: a guest pass ran over two pools holding no reference answer, so two
-of three axes could never have produced anything. This counts the debt and names what blocks it.
-
-Every count is taken over one population, the run's answered rows, and `reconciles` says the parts
-add up to it. That sum is the live guard on the materiality pair: a predicate answering NULL rather
-than false drops rows from both sides at once, and only the sum notices.
-"""
+"""What a run still owes each axis, and what the rest of its rows are missing to owe it."""
 
 import logging_setup
 from evals import guest_axes

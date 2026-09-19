@@ -10,4 +10,5 @@ def load_logs(run_name=None, ids=None):
             stmt = stmt.where(QuestionLog.run_name == run_name)
         if ids is not None:
             stmt = stmt.where(QuestionLog.id.in_(ids))
-        return list(session.scalars(stmt))
+        # ordered: a bootstrap drawn over rows in the order postgres felt like gave two intervals
+        return list(session.scalars(stmt.order_by(QuestionLog.id)))

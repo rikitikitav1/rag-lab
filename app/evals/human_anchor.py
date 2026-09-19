@@ -1,10 +1,4 @@
-"""A blind worksheet of answer pairs, and the agreement of each judge with the human who filled it.
-
-Both judges on this stand are language models, and so is the one writing this. The owner is the
-only reader of a different nature, so his verdict is a third instrument rather than a truth: what
-comes out is agreement, not correctness. The order of the list is fixed before he starts, so
-stopping early is not a choice made after seeing the answers.
-"""
+"""A blind worksheet of answer pairs, and the agreement of each judge with the human who filled it."""
 
 import hashlib
 import random
@@ -409,7 +403,9 @@ def _picked(sheet: Path) -> dict:
         if line.startswith("## Пара "):
             n = int(line.split()[-1])
         if "подкреплён контекстом" in line and n is not None:
-            said = line.rsplit("**", 2)[-2].strip().upper().strip("_")
+            # filled by hand: a line without the bold markers used to raise instead of reading empty
+            parts = line.rsplit("**", 2)
+            said = parts[-2].strip().upper().strip("_") if len(parts) > 2 else ""
             said = "".join(_LOOKS_LIKE.get(one, one) for one in said)
             out[n] = said if said in ("A", "B", "=") else None
     return out

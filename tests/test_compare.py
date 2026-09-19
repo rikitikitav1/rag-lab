@@ -496,8 +496,12 @@ def test_two_generators_read_as_one_only_when_they_ran_one_penalty():
     old = [_row()]
     assert compare._answering_penalties(vllm) == {"generation": [1.05]}, "the embedder samples nothing and is not read"
     assert compare._answering_penalties_of({"a": vllm, "b": ollama})["one_answering_penalty"] is False
-    assert compare._answering_penalties_of({"a": aligned, "b": ollama})["one_answering_penalty"] is True, "what was sent wins"
-    assert compare._answering_penalties_of({"a": old, "b": ollama})["one_answering_penalty"] is None, "unstamped matches nothing"
+    assert compare._answering_penalties_of({"a": aligned, "b": ollama})["one_answering_penalty"] is True, (
+        "what was sent wins"
+    )
+    assert compare._answering_penalties_of({"a": old, "b": ollama})["one_answering_penalty"] is None, (
+        "unstamped matches nothing"
+    )
 
 
 def test_a_row_the_stand_refused_itself_names_no_generator_to_the_pair():

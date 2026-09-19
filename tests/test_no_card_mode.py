@@ -343,7 +343,10 @@ def test_the_window_is_one_number_in_every_place_that_states_it():
     compose = (ROOT / "docker-compose.yml").read_text()
     stated = {int(v) for v in re.findall(r"\$\{(?:OLLAMA_CONTEXT_LENGTH|VLLM_MAX_MODEL_LEN):-(\d+)\}", compose)}
     stated |= {int(v) for v in re.findall(r'"--max-model-len", "(\d+)"', compose)}
-    stated |= {int(v) for v in re.findall(r"^(?:OLLAMA_CONTEXT_LENGTH|VLLM_MAX_MODEL_LEN)=(\d+)$", (ROOT / ".env.example").read_text(), re.M)}
+    stated |= {int(v) for v in re.findall(
+        r"^(?:OLLAMA_CONTEXT_LENGTH|VLLM_MAX_MODEL_LEN)=(\d+)$",
+        (ROOT / ".env.example").read_text(), re.M,
+    )}
     stated.add(yaml.safe_load((ROOT / "config.yaml").read_text())["llm"]["context_length"])
     assert len(stated) == 1, f"the window is stated as {sorted(stated)}"
 

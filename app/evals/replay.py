@@ -1,9 +1,4 @@
-"""One recorded row driven through a graph again, with the model and the tools replaced by it.
-
-What this compares is the machine, not the model: `chat` returns the turns the row recorded and
-`dispatch` returns the pieces it recorded, so any difference is the graph's own doing. A threshold
-would compare two samplings of a model instead, which is why the checklist refuses one here.
-"""
+"""One recorded row driven through a graph again, with the model and the tools replaced by it."""
 
 from dataclasses import dataclass
 
@@ -213,6 +208,21 @@ def rerun(row) -> tuple:
             raise _Script("out of turns")
         return turns.pop(0)
 
+    # the row's own verdicts; admission runs before the graph, so a replay never asks for its calls
+    asked = [a for a in (metrics.get("asks") or []) if a.get("stage") != "tool_match"]
+
+    def ask(stage, key, system, user):
+        if not asked:
+            problems.append(f"the graph asked for a {stage} verdict the row never recorded")
+            raise _Script("out of verdicts")
+        recorded = asked.pop(0)
+        if (recorded.get("stage"), recorded.get("key")) != (stage, key):
+            problems.append(
+                f"the row recorded {recorded.get('stage')} on {recorded.get('key')}"
+                f" where the graph asked {stage} on {key}"
+            )
+        return recorded.get("text") or ""
+
     def dispatch(name, arguments, **kwargs):
         if not calls:
             problems.append(f"the graph called {name} beyond the calls the row recorded")
@@ -238,7 +248,7 @@ def rerun(row) -> tuple:
             k=snapshot.get("k"), use_rerank=snapshot.get("rerank"),
             role="generation", model=None, max_hops=snapshot.get("max_hops"),
             variant=snapshot.get("variant"),
-            chat=chat, dispatch=dispatch, template=template,
+            chat=chat, dispatch=dispatch, template=template, ask=ask,
         ),
         result,
     )
@@ -246,6 +256,8 @@ def rerun(row) -> tuple:
         problems.append(f"{len(turns)} recorded turns the graph never asked for")
     if calls:
         problems.append(f"{len(calls)} recorded tool calls the graph never made")
+    if asked:
+        problems.append(f"{len(asked)} recorded verdicts the graph never asked for")
     # rows written before the toolbox was recorded carry None and are not compared on it
     was_offered = metrics.get("tools_offered")
     if was_offered and [sorted(x) for x in was_offered] != offered[: len(was_offered)]:
@@ -329,7 +341,8 @@ def report(run_name: str, rows) -> dict:
     for row in rows:
         result, problems = rerun(row)
         if result is None:
-            refused[problems[0]] = refused.get(problems[0], 0) + 1
+            said = problems[0] if problems else "the row's prompt version could not be resolved"
+            refused[said] = refused.get(said, 0) + 1
             continue
         counted += 1
         branches[str((row.metrics or {}).get("fallback_reason"))] += 1

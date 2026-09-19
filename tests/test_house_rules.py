@@ -97,6 +97,32 @@ def test_no_comment_block_runs_past_one_line():
     )
 
 
+def _long_docstrings() -> list[str]:
+    import ast
+
+    root = Path(__file__).resolve().parent.parent
+    found = []
+    for pattern in ("app/**/*.py", "scripts/**/*.py", "tests/**/*.py"):
+        for source in sorted(root.glob(pattern)):
+            tree = ast.parse(source.read_text())
+            holders = [tree] + [
+                n for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+            ]
+            for node in holders:
+                text = ast.get_docstring(node, clean=False)
+                if text and len(text.strip().splitlines()) > 1:
+                    where = getattr(node, "lineno", 1)
+                    found.append(f"{source.relative_to(root)}:{where}")
+    return found
+
+
+def test_no_docstring_runs_past_one_line():
+    # the ratchet read `#` only, so twenty-four modules opened with a paragraph it never saw
+    found = _long_docstrings()
+    assert not found, f"{len(found)} docstrings over one line: {found[-5:]}"
+
+
 def test_a_comment_says_what_the_code_does_and_not_how_it_came_to_be():
     # when a line appeared and who asked for it is git's to say, and a comment outlives both
     import re

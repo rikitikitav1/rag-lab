@@ -1,13 +1,7 @@
-"""Ranks under several settings at once, compared pairwise on the same questions.
-
-The generation experiment spends the card and a judge; this one reads where the right
-chunk landed, which costs minutes and neither. The measuring lives here rather than in
-the script so the job and the script cannot grow two different notions of a rank.
-"""
+"""Ranks under several settings at once, compared pairwise on the same questions."""
 
 import contextlib
 import itertools
-import random
 import re
 from dataclasses import dataclass, field
 
@@ -17,7 +11,7 @@ import limits
 import llm
 import logging_setup
 from evals.retrieval_metrics import is_gold, rank_of_gold
-from evals.stats import deltas_over, tally
+from evals.stats import bootstrap_ci, deltas_over, tally
 
 import db
 
@@ -27,7 +21,6 @@ SCHEMA = 3
 CANDIDATES = 100
 DEPTH = 20
 CUTOFFS = (1, 3, 5, 10)
-BOOTSTRAP = 2000
 NO_THRESHOLD = 2.0
 
 log = logging_setup.get_logger(__name__)
@@ -241,16 +234,6 @@ def measure(db, conn, set_name, variant, limit, exact, ef=None, limit_keyword=CA
 
 def rr(rank) -> float:
     return 1.0 / rank if rank else 0.0
-
-
-def bootstrap_ci(deltas, seed: int = 0) -> tuple[float, float]:
-    rng = random.Random(seed)
-    means = []
-    for _ in range(BOOTSTRAP):
-        sample = [deltas[rng.randrange(len(deltas))] for _ in deltas]
-        means.append(sum(sample) / len(sample))
-    means.sort()
-    return means[int(0.025 * BOOTSTRAP)], means[int(0.975 * BOOTSTRAP)]
 
 
 # the half is a pure function of the id: A chooses the winner, B reports on it
