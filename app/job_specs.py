@@ -124,6 +124,8 @@ class GradeCandidates(Spec):
     seed: int = 0
     # the floor is taken twice in one residency, and the second pass must not repeat the first order
     shuffle: int | None = Field(default=None, ge=0, le=10_000)
+    # an arm names the prompt it measures, so nothing has to be activated to be read
+    prompt_version: int | None = Field(default=None, ge=1, le=1000)
     name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
 
 

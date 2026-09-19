@@ -159,6 +159,7 @@ def grade_candidates(options: dict) -> None:
         sample=options.get("sample"),
         seed=options.get("seed") or 0,
         shuffle=options.get("shuffle"),
+        prompt_version=options.get("prompt_version"),
         name=options.get("name"),
         job_id=options.get("_job_id"),
     )

@@ -133,7 +133,7 @@ Every type the queue knows, what it does and what it takes:
 | `judge_guest_axes` | scores the standard's axes over a subsample | `run_name`, `sample`, `seed` | ragas, ragas_embedding | guest verdicts on the rows |
 | `judge_language` | restates a row in two languages and scores both | `run_name`, `panel` | judging, generation | a measurement file |
 | `compare_retrieval` | measures a grid of retrieval arms of one experiment | `experiment_id` | reranking | the experiment's `results` |
-| `grade_candidates` | grades frozen candidates chunk by chunk, no generator and no judge | `candidates` (the frozen file), `form`, `top`, `limit`, `name` | grading | a measurement file with a verdict and its probability per chunk |
+| `grade_candidates` | grades frozen candidates chunk by chunk, no generator and no judge | `candidates` (the frozen file), `form`, `top`, `limit`, `sample`, `seed`, `shuffle`, `prompt_version`, `name` | grading | a measurement file with a verdict and its probability per chunk, and the curve of both arms over the cuts |
 | `check_mcp_health` | asks a remote integration whether it answers | `integration_id` | none (io lane) | the integration's health |
 | `hand_card` | wakes an engine, probes it and seats a role | `engine_id`, `model`, `seat` | the seat it hands | the card and the role row |
 

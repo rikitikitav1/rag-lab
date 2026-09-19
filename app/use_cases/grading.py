@@ -20,8 +20,10 @@ VERDICT_SCHEMA = {
 
 
 # read once before a run, not per chunk: a missing prompt used to kill every row it reached
-def system_prompt() -> str:
+def system_prompt(version: int | None = None) -> str:
     try:
+        if version is not None:
+            return prompt_repo.template_of(Purpose.grade_chunk, version)
         return prompt_repo.active_template(Purpose.grade_chunk)
     except RuntimeError as e:
         raise StandFault(
@@ -51,7 +53,7 @@ def address_of(chunk, nth: int) -> tuple[str, bool]:
 # the probability of the word the grader chose: with it the filter has a dial, without it a switch
 def confidence(completion, verdict: str | None) -> float | None:
     for token in getattr(completion, "logprobs", None) or ():
-        said = token["token"].strip().strip('"').lower()
+        said = _word(token["token"])
         if said in ("yes", "no"):
             return token["top"].get(token["token"]) or token["top"].get(said)
     return None
@@ -73,7 +75,27 @@ def ask_door(asks: list):
 # recorded beside the verdict, never instead of it: a missing probability is a fact, not a zero
 def _probability(completion, text: str) -> dict:
     said = confidence(completion, read_verdict(text))
-    return {"p": said} if said is not None else {}
+    out = {"p": said} if said is not None else {}
+    both = both_words(completion)
+    return out | ({"top": both} if both else {})
+
+
+# a grammar masks everything but the two words, so `1 - p` of a `no` is not the mass of `yes`
+def both_words(completion) -> dict | None:
+    for token in getattr(completion, "logprobs", None) or ():
+        if _word(token["token"]) not in ("yes", "no"):
+            continue
+        got: dict = {}
+        for alternative, mass in (token.get("top") or {}).items():
+            word = _word(alternative)
+            if word in ("yes", "no"):
+                got[word] = max(got.get(word, 0.0), mass)
+        return got or None
+    return None
+
+
+def _word(token: str) -> str:
+    return token.strip().strip('"').lower()
 
 
 # the same digest the freeze wrote, so a moved chunk is caught before a verdict is spent on it

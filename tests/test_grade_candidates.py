@@ -43,3 +43,40 @@ def test_an_unknown_call_form_is_refused_before_the_card_is_taken(tmp_path):
     path.write_text(json.dumps({"stamp": {"variant": "v"}, "rows": []}))
     with pytest.raises(StandFault, match="call form"):
         grade_candidates.run(str(path), form="by_vibes")
+
+
+def test_the_pass_carries_the_curve_of_both_arms_so_the_number_has_a_job_behind_it():
+    frozen = {"rows": [{"id": 1, "candidates": [
+        {"address": "gold#0", "rank": 1, "rerank_score": 0.9},
+        {"address": "far#0", "rank": 2, "rerank_score": 0.1},
+    ]}]}
+    payload = {"form": "per_chunk", "top": 2, "rows": [{
+        "question_id": 1,
+        "classes": ["gold_section", "stranger"],
+        "addresses": ["gold#0", "far#0"],
+        "verdicts": [{"key": "gold#0", "text": '{"relevant": "yes"}', "p": 0.99},
+                     {"key": "far#0", "text": '{"relevant": "no"}', "p": 0.99}],
+    }]}
+    got = grade_candidates.curves(payload, frozen)
+    assert set(got) == {"A", "B"}
+    assert got["A"]["grader"][0]["gold_any"]["point"] == 1.0
+    assert got["A"]["grader"][0]["strangers_dropped"]["point"] == 1.0
+
+
+def test_a_named_prompt_version_is_read_instead_of_whatever_is_active(monkeypatch):
+    # activating a prompt to measure it makes the serving node use an unjudged one
+    from use_cases import grading
+
+    monkeypatch.setattr("prompt_repo.template_of", lambda purpose, version: f"v{version}")
+    monkeypatch.setattr("prompt_repo.active_template", lambda purpose: "active")
+    assert grading.system_prompt(3) == "v3"
+    assert grading.system_prompt() == "active"
+
+
+def test_a_verdict_row_carries_every_field_the_ask_recorded():
+    # `top` was added to the ask and never reached the file, because the row copied three names
+    ask = {"stage": "grade", "key": "a#0", "text": '{"relevant": "no"}', "p": 0.6,
+           "top": {"yes": 0.4, "no": 0.6}}
+    assert grade_candidates.verdict_row(ask) == {
+        "key": "a#0", "text": '{"relevant": "no"}', "p": 0.6, "top": {"yes": 0.4, "no": 0.6},
+    }
