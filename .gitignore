@@ -43,4 +43,7 @@ categories_1
 categories_1_sdp
 categories_raw_sdp
 datasets/measurements/grid/
-datasets/measurements/*_rows.json.gz
+# a measurement and the pool it read are artifacts of a run: the number and its table live in
+# the journal entry, the files live beside the stand and, when they are worth sharing, on the hub
+datasets/candidates/
+datasets/measurements/

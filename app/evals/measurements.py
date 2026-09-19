@@ -9,6 +9,8 @@ from datetime import date
 from pathlib import Path
 
 FOLDER = Path(__file__).resolve().parents[2] / "datasets" / "measurements"
+# inputs of an instrument, not artifacts of a run: they are read by the code and live in git
+PANELS = FOLDER.parent / "panels"
 
 
 def _slug(text: str) -> str:

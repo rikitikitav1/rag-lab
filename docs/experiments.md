@@ -9,6 +9,7 @@ A lab journal of RAG-quality experiments: question → setup → result → deci
 - **Isolation**: change one variable at a time; hold the rest constant.
 - **Reproducibility**: the generator's sampler is recorded with the run; the default is `temperature: 0.1`, and a run pins another with `generation_sampler`. Even at temperature 0 two runs of one generator differ, so a change is read against the generator's own floor (README, "Why the numbers hold"), not against zero.
 - Each run is one `eval_run` job (answers, bulk) → one `judge_answers` job (verdicts, bulk).
+- **Where a number's file lives**: a pass writes it under `datasets/measurements/` beside the stand and not into git, so an entry carries the table itself and names the file and the job id as its address.
 
 ## How an entry is written
 

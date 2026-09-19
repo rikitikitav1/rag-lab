@@ -94,7 +94,7 @@ Each kind of setting has one home:
 - `config.yaml` (mounted into the container): the pipeline, that is the roles and their models, retrieval, reranking, the agent, ingestion, text search, corpus variants and sources. A value chosen by measurement carries its reason and its measurement file beside it, and every run records the values it used in its snapshot.
 - `.env`: what depends on the machine or must stay out of the repo (timeouts, card shares, keys); [`.env.example`](.env.example) lists every variable with its default.
 - the database: which model serves a role, prompt versions and engine rows, switched at runtime through the API.
-- `datasets/`: question banks and measurement files.
+- `datasets/`: the question banks and the corpus sources. A pass writes its measurement and its frozen candidate pool here too, and those stay out of git: a number reaches a reader as the table in its journal entry, with the file name and the job id as its address.
 - the code: the category trees of the sources and the protocol limits.
 
 ## Quickstart
