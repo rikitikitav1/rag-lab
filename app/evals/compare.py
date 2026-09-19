@@ -378,7 +378,7 @@ def _one_retrieval(runs: dict[str, list]) -> bool | None:
     return True if compared else None
 
 
-# a single-shot row with no context answered NO_RESULTS itself, and rows written before that was stamped named a generator
+# a single-shot row with no context answered NO_RESULTS itself, and older rows named a generator anyway
 def _asked_the_generator(ql) -> bool:
     if "generation" in (getattr(ql, "models", None) or {}) and ql.models["generation"] is None:
         return False

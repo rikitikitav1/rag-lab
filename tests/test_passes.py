@@ -38,7 +38,9 @@ def test_a_seat_nobody_could_read_is_not_a_move(monkeypatch):
 def test_a_cancelled_pass_reads_no_seat_and_says_stop(monkeypatch):
     monkeypatch.setattr(passes, "_resolve", lambda seat: engines.Resolved("m", OLLAMA))
     monkeypatch.setattr(passes.job_queue, "is_cancelled", lambda job_id: True)
-    monkeypatch.setattr(passes, "_read_spills", lambda checked, allow_spill: pytest.fail("a cancelled pass read the card"))
+    monkeypatch.setattr(
+        passes, "_read_spills", lambda checked, allow_spill: pytest.fail("a cancelled pass read the card")
+    )
     walk = passes.Pass(7, (passes.Seat(Role.judging),))
     assert walk.cancelled() and not walk.before_row()
 
@@ -47,7 +49,9 @@ def test_a_model_the_first_call_loads_is_read_for_a_spill_from_the_second_row(mo
     # ollama loads on the first call, so before it the lazy model is not there to read
     read = []
     monkeypatch.setattr(passes, "_resolve", lambda seat: engines.Resolved("m", OLLAMA))
-    monkeypatch.setattr(passes, "_read_spills", lambda checked, allow_spill: read.append([s.role for s, _ in checked]) or {})
+    monkeypatch.setattr(
+        passes, "_read_spills", lambda checked, allow_spill: read.append([s.role for s, _ in checked]) or {}
+    )
     walk = passes.Pass(None, (passes.Seat(Role.generation), passes.Seat(Role.embedding, spill_from=1),
                               passes.Seat(Role.paraphrasing, spill_from=None)))
     walk.before_row()
@@ -80,7 +84,10 @@ def test_a_pass_that_owed_rows_and_did_none_stops_for_good(monkeypatch):
 def test_the_residency_is_read_once_and_only_when_first_asked(monkeypatch):
     monkeypatch.setattr(passes, "_resolve", lambda seat: None)
     reads = []
-    walk = passes.Pass(None, (passes.Seat(Role.judging),), residency=lambda: reads.append(1) or SimpleNamespace(on_card=True))
+    walk = passes.Pass(
+        None, (passes.Seat(Role.judging),),
+        residency=lambda: reads.append(1) or SimpleNamespace(on_card=True),
+    )
     assert reads == []
     walk.get()
     walk.get()
@@ -92,7 +99,10 @@ def test_a_judging_pass_stops_when_the_judge_is_reseated_mid_pass(monkeypatch):
     from job_handlers import judging
 
     vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
-    seats = iter([engines.Resolved("qwen", vllm), engines.Resolved("qwen", vllm), engines.Resolved("qwen2.5:7b", OLLAMA)])
+    seats = iter([
+        engines.Resolved("qwen", vllm), engines.Resolved("qwen", vllm),
+        engines.Resolved("qwen2.5:7b", OLLAMA),
+    ])
     judged = []
     monkeypatch.setattr(passes, "_resolve", lambda seat: next(seats))
     monkeypatch.setattr(passes, "_read_spills", lambda checked, allow_spill: {})

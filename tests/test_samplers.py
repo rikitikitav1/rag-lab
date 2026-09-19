@@ -47,7 +47,9 @@ def test_the_penalty_goes_to_vllm_in_the_body_and_is_refused_by_the_doors_that_d
         assert engines.translate(spec, wanted).dropped == {"repetition_penalty": 1.05}
     monkeypatch.setattr(llm, "sampler", lambda role, picked: engines.Sampler(dict(wanted), {}))
     params = llm._params("judging", None, engines.Resolved("Qwen/Q", vllm))
-    assert params == {"temperature": 0, "extra_body": {"repetition_penalty": 1.05}}, "the OpenAI client knows no such field"
+    assert params == {"temperature": 0, "extra_body": {"repetition_penalty": 1.05}}, (
+        "the OpenAI client knows no such field"
+    )
 
 
 def test_the_stand_shows_each_ollama_role_s_penalty_against_the_declared_one(monkeypatch):

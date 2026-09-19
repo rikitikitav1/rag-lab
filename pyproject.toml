@@ -47,10 +47,11 @@
 
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "B"]
+# E5 is the width: declared and never selected, so nothing read it and the code drifted past it
+select = ["E4", "E5", "E7", "E9", "F", "I", "B"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [

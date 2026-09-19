@@ -14,7 +14,9 @@ def test_a_name_the_registry_does_not_have_fails_the_pull_once(monkeypatch):
     monkeypatch.setattr(model_ops, "_pair", lambda name, engine_id: found)
     monkeypatch.setattr(model_ops, "_size_seen_before", lambda f: None)
     monkeypatch.setattr(model_ops.engines, "refuse_if_tight", lambda *a: None)
-    monkeypatch.setattr(model_ops.engines, "driver", lambda kind: SimpleNamespace(weights_store=lambda: None, pull=pull))
+    monkeypatch.setattr(
+        model_ops.engines, "driver", lambda kind: SimpleNamespace(weights_store=lambda: None, pull=pull)
+    )
     with pytest.raises(base.Final, match="not in the registry"):
         model_ops.pull_llm_model({"name": found.name})
 

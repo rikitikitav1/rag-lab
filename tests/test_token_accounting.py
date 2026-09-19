@@ -68,7 +68,9 @@ def test_the_worker_writes_what_a_failed_job_spent(monkeypatch):
         raise worker.Final("broker said no")
 
     monkeypatch.setitem(worker.HANDLERS, "spender", handler)
-    monkeypatch.setattr(worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=5, type="spender", options={}))
+    monkeypatch.setattr(
+        worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=5, type="spender", options={})
+    )
     monkeypatch.setattr(worker.job_specs, "check", lambda *a, **kw: None)
     monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, elapsed=None: failed.append(id))
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: written.append((id, record)))
@@ -139,7 +141,9 @@ def test_a_finished_job_has_its_count_before_it_reads_done(monkeypatch):
         llm._count("judging", LOCAL, "m", 5, 1)
 
     monkeypatch.setitem(worker.HANDLERS, "counted", handler)
-    monkeypatch.setattr(worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=7, type="counted", options={}))
+    monkeypatch.setattr(
+        worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=7, type="counted", options={})
+    )
     monkeypatch.setattr(worker.job_specs, "check", lambda *a, **kw: None)
     monkeypatch.setattr(worker.job_queue, "complete", lambda id, elapsed=None: events.append("done"))
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: events.append("tokens"))

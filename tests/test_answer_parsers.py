@@ -58,7 +58,9 @@ def test_ask_hands_on_the_cut_text_and_what_was_cut(monkeypatch):
         choices=[SimpleNamespace(message=SimpleNamespace(content=_content("minimax_plain")), finish_reason="stop")],
         usage=SimpleNamespace(prompt_tokens=47, completion_tokens=157),
     )
-    monkeypatch.setattr(llm, "resolve_for", lambda role, model=None: engines.Resolved("MiniMaxAI/MiniMax-M2.7", CLOUD, "think_tags"))
+    monkeypatch.setattr(
+        llm, "resolve_for", lambda role, model=None: engines.Resolved("MiniMaxAI/MiniMax-M2.7", CLOUD, "think_tags")
+    )
     monkeypatch.setattr(llm, "_params", lambda *a, **kw: {})
     monkeypatch.setattr(llm, "_complete", lambda *a, **kw: reply)
     got = llm.ask("s", "u", role="judging")
@@ -130,7 +132,8 @@ def test_a_row_keeps_the_cut_only_when_something_was_cut():
 def test_an_open_thinking_block_is_cut_by_length_only_when_the_limit_ended_it():
     # MiniMax leaves it open before every call; only `length` means the answer itself was lost
     assert answer_parsers.parse("think_tags", "<think>still thinking", finish_reason="length").reasoning_cut_by_length
-    assert not answer_parsers.parse("think_tags", "<think>about to call", finish_reason="tool_calls").reasoning_cut_by_length
+    open_think = answer_parsers.parse("think_tags", "<think>about to call", finish_reason="tool_calls")
+    assert not open_think.reasoning_cut_by_length
 
 
 def test_an_agent_row_keeps_the_cut_of_every_hop():
@@ -222,7 +225,9 @@ def test_a_budget_that_fills_the_model_s_window_is_refused_at_the_door(monkeypat
 
     local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
     monkeypatch.setattr(llm_model.engines, "spec_of_id", lambda engine_id: local)
-    monkeypatch.setattr(llm_model.engines, "driver", lambda kind: type("D", (), {"window": lambda self, spec, name: 8192})())
+    monkeypatch.setattr(
+        llm_model.engines, "driver", lambda kind: type("D", (), {"window": lambda self, spec, name: 8192})()
+    )
     with pytest.raises(ValueError, match="fills the 8192-token window"):
         llm_model.refuse_a_budget_over_the_window(1, "qwen2.5:7b", {"max_tokens": 8192})
     llm_model.refuse_a_budget_over_the_window(1, "qwen2.5:7b", {"max_tokens": 4096})
@@ -234,7 +239,9 @@ def test_a_verdict_the_limit_cut_says_so_on_its_row():
 
     from job_handlers import judging
 
-    cut = SimpleNamespace(reason="r", elapsed=1.0, model="m", prompt_tokens=1, completion_tokens=1024, cut_by_length=True)
+    cut = SimpleNamespace(
+        reason="r", elapsed=1.0, model="m", prompt_tokens=1, completion_tokens=1024, cut_by_length=True
+    )
     whole = SimpleNamespace(reason="r", elapsed=1.0, model="m", prompt_tokens=1, completion_tokens=10)
     assert judging._axis_metric(cut)["judge_cut_by_length"] is True
     assert "judge_cut_by_length" not in judging._axis_metric(whole)

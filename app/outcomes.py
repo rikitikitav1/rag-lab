@@ -20,7 +20,8 @@ SOURCE_MARKERS = (
 )
 # "does not contain" is prose about anything: it refuses only when the sources lack the answer itself
 SOURCES_LACK = re.compile(
-    r"(контекст\w*|источник\w*|материал\w*|документ\w*|фрагмент\w*) не содерж\w* (информаци|сведени|ответ|данны|упоминани)"
+    r"(контекст\w*|источник\w*|материал\w*|документ\w*|фрагмент\w*) не содерж\w*"
+    r" (информаци|сведени|ответ|данны|упоминани)"
     r"|(context|sources?|documents?|materials?|passages?) (does not|doesn't|do not|don't) contain"
     r" (any |enough |the |specific |relevant )?(information|details|answer|data|mention)"
 )

@@ -276,7 +276,9 @@ def hybrid_search(
                            ROW_NUMBER() OVER (
                                ORDER BY embedding <=> CAST(:embedding AS vector) ASC, id
                            ) AS rank
-                    FROM data_chunks WHERE embedding <=> CAST(:embedding AS vector) <= :distance_threshold {cat_filter} {src_filter}
+                    FROM data_chunks
+                    WHERE embedding <=> CAST(:embedding AS vector) <= :distance_threshold
+                      {cat_filter} {src_filter}
                     ORDER BY distance, id
                     LIMIT :limit_vector
                 ),

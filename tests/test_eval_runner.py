@@ -669,7 +669,9 @@ def test_a_run_s_generation_sampler_reaches_the_generator_and_no_other_role(monk
     generation, judging = seen[0]
     assert generation["repetition_penalty"] == 1.1
     assert judging["repetition_penalty"] == 1.05, "the judge keeps the penalty its role names"
-    assert runner.llm.sampler("generation", picked).sent.get("repetition_penalty") is None, "the run's layer ends with it"
+    assert runner.llm.sampler("generation", picked).sent.get("repetition_penalty") is None, (
+        "the run's layer ends with it"
+    )
 
 
 def test_a_run_s_sampler_is_held_to_the_same_rule_as_a_role_s():

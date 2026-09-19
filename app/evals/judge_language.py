@@ -101,7 +101,10 @@ def judge_panel(stop=None) -> list[dict]:
         try:
             english = llm.ask(RESTATE, ql.answer, role="generation").text or ""
         except RuntimeError as e:
-            rows += [{"row": ql.id, "part": part, "score": None, "reason": f"failed: {e}"} for part in ("own", "restated")]
+            rows += [
+                {"row": ql.id, "part": part, "score": None, "reason": f"failed: {e}"}
+                for part in ("own", "restated")
+            ]
             continue
         for part, answer in (("own", ql.answer), ("restated", english)):
             try:

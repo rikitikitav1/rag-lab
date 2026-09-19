@@ -52,7 +52,11 @@ def find_model_on(name: str, engine_id) -> Resolved | None:
 
 # one rule for a bare name: look across every engine unless the caller named one
 def find_model(name: str, engine_id: int | None = None) -> Resolved | None:
-    stmt = select(Model.answer_parser, Model.options, *COLUMNS).join(Model, Model.engine_id == Engine.id).where(Model.name == name)
+    stmt = (
+        select(Model.answer_parser, Model.options, *COLUMNS)
+        .join(Model, Model.engine_id == Engine.id)
+        .where(Model.name == name)
+    )
     if engine_id is not None:
         stmt = stmt.where(Engine.id == engine_id)
     with Session() as session:

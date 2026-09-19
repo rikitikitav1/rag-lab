@@ -180,7 +180,7 @@ class Tally:
 # a context, not a global: the worker runs two lanes as two threads of one process
 _tallies: contextvars.ContextVar[tuple] = contextvars.ContextVar("llm_tallies", default=())
 
-# a broker answers a repeated body from its cache, so a cloud call carries its job in `user`: a second pass is another job
+# a broker answers a repeated body from its cache, so a cloud call carries its job in `user`
 _cache_key: contextvars.ContextVar[str | None] = contextvars.ContextVar("llm_cache_key", default=None)
 CACHE_KEY = "user=job"
 
@@ -397,7 +397,10 @@ def _paced(spec, name: str, role, what: str, call):
 # ask and chat both read the server's own cut after the count, so the tokens it spent are kept
 def _refuse_a_cut_input(input_cut: bool, picked, usage, window) -> None:
     if input_cut:
-        raise InputOverWindow(f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window")
+        raise InputOverWindow(
+            f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens"
+            f" of the {window}-token window"
+        )
 
 
 def ask(system, user, role="generation", schema=None, model=None) -> Completion:

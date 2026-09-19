@@ -352,7 +352,10 @@ def test_a_resumed_run_changes_nothing_and_runs_on_the_stopped_jobs_options(clie
         "run_name": "r", "set_name": "s", "model": "MiniMaxAI/MiniMax-M2.7", "pipeline": "single_shot", "resume": True,
     }
     # the job door resumed on whatever options it was handed, so another generator finished the run
-    other_door = client.post("/v1/job", json={"type": "eval_run", "options": {"run_name": "r", "resume": True, "set_name": "s", "model": "other"}})
+    other_door = client.post("/v1/job", json={
+        "type": "eval_run",
+        "options": {"run_name": "r", "resume": True, "set_name": "s", "model": "other"},
+    })
     assert other_door.status_code == 422 and "model" in other_door.json()["detail"]
 
 

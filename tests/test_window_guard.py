@@ -31,7 +31,8 @@ def test_an_input_past_the_window_never_reaches_ollama(monkeypatch):
     monkeypatch.setattr(llm.engines, "window_or_configured", lambda spec, name: 100)
     with pytest.raises(llm.InputOverWindow, match="window"):
         llm._refuse_an_input_over_the_window(OLLAMA, "qwen2.5:7b", [{"role": "user", "content": "слово " * 400}])
-    assert llm._refuse_an_input_over_the_window(OLLAMA, "qwen2.5:7b", [{"role": "user", "content": "short"}]) == (100, 0)
+    short = [{"role": "user", "content": "short"}]
+    assert llm._refuse_an_input_over_the_window(OLLAMA, "qwen2.5:7b", short) == (100, 0)
 
 
 # a live answer and a live context chunk from the stand, counted by qwen2.5's own tokenizer
@@ -105,13 +106,17 @@ def test_the_penalty_is_written_into_a_model_only_where_it_is_missing(monkeypatc
     monkeypatch.setattr(config.settings.llm, "repetition_penalty", 1.1)
     monkeypatch.setattr(ollama, "post", lambda path, payload, spec=None, timeout=None: asked.append((path, payload)))
     monkeypatch.setattr(ollama, "unload", lambda model, spec=None: asked.append(("unloaded", model)))
-    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": ["completion"], "parameters": 'stop "<x>"'})
+    monkeypatch.setattr(
+        ollama, "shown", lambda model, spec=None: {"capabilities": ["completion"], "parameters": 'stop "<x>"'}
+    )
     assert ollama.hold_repetition_penalty("llama3.1:8b")
     assert asked == [("/api/create", {"model": "llama3.1:8b", "from": "llama3.1:8b",
                                       "parameters": {"repeat_penalty": 1.1}, "stream": False}),
                      ("unloaded", "llama3.1:8b")], "a loaded runner keeps its old parameters until it loads again"
     asked.clear()
-    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": ["completion"], "parameters": "repeat_penalty 1.1"})
+    monkeypatch.setattr(
+        ollama, "shown", lambda model, spec=None: {"capabilities": ["completion"], "parameters": "repeat_penalty 1.1"}
+    )
     assert not ollama.hold_repetition_penalty("llama3.1:8b") and asked == [], "held already: no second runner"
     monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"capabilities": ["embedding"]})
     assert not ollama.hold_repetition_penalty("bge-m3") and asked == []

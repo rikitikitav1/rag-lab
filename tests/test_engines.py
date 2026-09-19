@@ -388,7 +388,9 @@ def test_the_penalty_ollama_applies_is_the_model_s_else_the_measured_default_of_
     # 0.32.0 applied 1.1 where the Modelfile named none, byte for byte; a version never measured is unknown
     from engines import ollama
 
-    monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"parameters": 'num_ctx 16384\nrepeat_penalty 1.2\nstop "<x>"'})
+    monkeypatch.setattr(
+        ollama, "shown", lambda model, spec=None: {"parameters": 'num_ctx 16384\nrepeat_penalty 1.2\nstop "<x>"'}
+    )
     assert ollama.repetition_penalty_served("m") == 1.2
     monkeypatch.setattr(ollama, "shown", lambda model, spec=None: {"parameters": 'stop "<x>"'})
     monkeypatch.setattr(ollama, "server_version", lambda spec=None: "0.32.0")

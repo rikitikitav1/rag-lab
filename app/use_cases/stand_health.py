@@ -235,7 +235,9 @@ def repetition_penalty() -> dict:
     for role, picked in _roles():
         if picked is None or picked.engine.kind is not EngineKind.ollama or Role(role) not in SAMPLING_ROLES:
             continue
-        served[engines.label(picked.name, picked.engine.name)] = ollama.repetition_penalty_served(picked.name, picked.engine)
+        served[engines.label(picked.name, picked.engine.name)] = ollama.repetition_penalty_served(
+            picked.name, picked.engine
+        )
     declared = config.settings.llm.repetition_penalty
     return {"declared": declared, "served": served, "drift": sorted(n for n, v in served.items() if v != declared)}
 
