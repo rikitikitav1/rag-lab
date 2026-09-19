@@ -13,8 +13,8 @@ READS = (
 
 def report(rows: list) -> dict:
     hops, nodes, steps, verdicts, outcomes_by_hop = Counter(), Counter(), Counter(), Counter(), {}
-    failed_hops, opened, dropped, announced, no_trace = 0, 0, 0, 0, []
-    graded, graded_in_name_only, chunks_graded, chunks_kept, cut_verdicts = 0, [], 0, 0, 0
+    failed_hops, opened, dropped, announced, no_trace, unreadable = 0, 0, 0, 0, [], 0
+    graded, graded_in_name_only, asked, chunks_kept, cut_verdicts = 0, [], 0, 0, 0
     for row in rows:
         metrics = getattr(row, "metrics", None) or {}
         trace = metrics.get("trace")
@@ -37,13 +37,18 @@ def report(rows: list) -> dict:
                 opened += bool(step.get("opened"))
                 dropped += bool(step.get("dropped"))
                 announced += bool(step.get("announced"))
-            if step.get("node") == "grade" and step.get("graded"):
-                graded += 1
-                chunks_graded += step["graded"]
-                chunks_kept += step.get("kept") or 0
-                # every verdict unreadable: the arm is stamped as graded and nothing was graded
-                if step.get("unreadable") == step["graded"]:
-                    graded_in_name_only.append(row.id)
+        # a step is a hop, and a row is a row: a chunk seen again is a memo hit, not a new verdict
+        steps_of_grade = [s for s in trace if s.get("node") == "grade"]
+        row_asked = sum(s.get("asked") or 0 for s in steps_of_grade)
+        row_unreadable = sum(s.get("unreadable") or 0 for s in steps_of_grade)
+        if row_asked:
+            graded += 1
+            asked += row_asked
+            chunks_kept += sum(s.get("kept") or 0 for s in steps_of_grade)
+            # every verdict it asked for came back unreadable: the arm graded in name only
+            if row_unreadable == row_asked:
+                graded_in_name_only.append(row.id)
+            unreadable += row_unreadable
         cut_verdicts += sum(
             1 for ask in (metrics.get("asks") or [])
             if ask.get("stage") == "grade" and ask.get("cut")
@@ -58,8 +63,11 @@ def report(rows: list) -> dict:
         "verdicts": dict(verdicts.most_common()),
         "fallback": {"opened": opened, "dropped_context": dropped, "announced": announced},
         "grader": {
-            "rows": graded, "chunks": chunks_graded, "kept": chunks_kept,
-            "dropped": chunks_graded - chunks_kept, "cut_verdicts": cut_verdicts,
+            "rows": graded, "verdicts": asked, "kept": chunks_kept,
+            "unreadable": unreadable, "cut_verdicts": cut_verdicts,
+            # the share the stop rule reads: over the verdicts asked, never over the pieces seen
+            "unreadable_share": round(unreadable / asked, 4) if asked else None,
+            "cut_share": round(cut_verdicts / asked, 4) if asked else None,
             "rows_graded_in_name_only": graded_in_name_only[:20],
         },
         "failed_hops": failed_hops,

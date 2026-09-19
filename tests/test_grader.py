@@ -365,3 +365,43 @@ def test_two_chunks_of_one_file_do_not_leave_a_dropped_file_on_the_row(monkeypat
     assert [s.source for s in result.sources] == ["src/mvcc.md"], "the dropped file stayed on the row"
     step = next(s for s in result.trace if s["node"] == "grade")
     assert step.get("sources_unaligned") is None
+
+
+def test_the_report_counts_rows_and_verdicts_not_hops_and_memo_hits():
+    # a step is a hop: four hops of one row read as four graded rows and five chunks as twenty
+    from types import SimpleNamespace as NS
+
+    from evals import trace
+
+    row = NS(id=3, metrics={
+        "outcome": "answered",
+        "asks": [{"stage": "grade", "key": "a#0", "text": "no", "cut": True}],
+        "trace": [
+            {"node": "grade", "hop": 1, "graded": 5, "kept": 4, "dropped": 1,
+             "unreadable": 1, "asked": 5},
+            # the second hop saw the same five chunks: four memo hits and one fresh verdict
+            {"node": "grade", "hop": 2, "graded": 5, "kept": 4, "dropped": 1,
+             "unreadable": 0, "asked": 1},
+        ],
+    })
+    got = trace.report([row])["grader"]
+
+    assert got["rows"] == 1, "one row, however many hops it spent"
+    assert got["verdicts"] == 6, "ten pieces were seen and six verdicts were asked for"
+    assert got["unreadable_share"] == round(1 / 6, 4), "the share is read over the verdicts asked"
+    assert got["cut_share"] == round(1 / 6, 4)
+    assert got["rows_graded_in_name_only"] == []
+
+
+def test_a_row_whose_every_asked_verdict_was_unreadable_is_named(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from evals import trace
+
+    row = NS(id=8, metrics={"outcome": "answered", "trace": [
+        {"node": "grade", "hop": 1, "graded": 5, "kept": 5, "dropped": 0, "unreadable": 2,
+         "asked": 2},
+    ]})
+    got = trace.report([row])["grader"]
+
+    assert got["rows_graded_in_name_only"] == [8], "three memo hits must not hide two dead verdicts"
