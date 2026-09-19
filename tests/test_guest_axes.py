@@ -686,3 +686,15 @@ def test_a_guest_pass_is_refused_before_the_queue_at_both_doors(monkeypatch):
     assert judging.guest_pass_refusal("r")[0] == 400
     assert judging.guest_pass_refusal("r", sample=50) is None
     assert "guest_pass_refusal" in inspect.getsource(experiment._queue_arm)
+
+
+def test_a_probe_with_one_arm_says_so_instead_of_reading_no_difference(monkeypatch):
+    from evals import guest_probes
+
+    monkeypatch.setattr(guest_probes, "stamp", lambda: {})
+
+    done = [{"arm": "plain", "row": 1, "score": 0.5, "overlap": 0.1, "error": None},
+            {"arm": "plain", "row": 2, "score": 0.7, "overlap": 0.2, "error": None}]
+    got = guest_probes.report("negated", done)
+    assert got["paired"]["mean"] is None and got["paired"]["ci95"] is None
+    assert "only one arm" in got["paired"]["unreadable"]

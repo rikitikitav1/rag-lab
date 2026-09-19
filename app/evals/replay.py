@@ -346,7 +346,8 @@ def report(run_name: str, rows) -> dict:
     for row in rows:
         result, problems = rerun(row)
         if result is None:
-            refused[problems[0]] = refused.get(problems[0], 0) + 1
+            said = problems[0] if problems else "the row's prompt version could not be resolved"
+            refused[said] = refused.get(said, 0) + 1
             continue
         counted += 1
         branches[str((row.metrics or {}).get("fallback_reason"))] += 1

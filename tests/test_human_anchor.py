@@ -252,3 +252,11 @@ def test_a_new_judge_is_read_off_the_copies_of_the_rows_the_sheet_names():
     deltas = human_anchor._deltas_from(pairs, asked, copied)
     assert deltas[1] == 0.5
     assert deltas[2] is None, "a side the copies did not judge is not read as a tie"
+
+
+def test_a_sheet_line_without_the_bold_markers_reads_empty(tmp_path):
+    from evals import human_anchor
+
+    sheet = tmp_path / "sheet.md"
+    sheet.write_text("## Пара 1\nОтвет A подкреплён контекстом: A\n", encoding="utf-8")
+    assert human_anchor._picked(sheet) == {1: None}

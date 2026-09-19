@@ -409,7 +409,9 @@ def _picked(sheet: Path) -> dict:
         if line.startswith("## Пара "):
             n = int(line.split()[-1])
         if "подкреплён контекстом" in line and n is not None:
-            said = line.rsplit("**", 2)[-2].strip().upper().strip("_")
+            # filled by hand: a line without the bold markers used to raise instead of reading empty
+            parts = line.rsplit("**", 2)
+            said = parts[-2].strip().upper().strip("_") if len(parts) > 2 else ""
             said = "".join(_LOOKS_LIKE.get(one, one) for one in said)
             out[n] = said if said in ("A", "B", "=") else None
     return out

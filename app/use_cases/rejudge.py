@@ -45,6 +45,8 @@ def copy_run(source: str, target: str, question_ids=None) -> int:
 
     refuse_oversized_fanout(source, 1, question_ids=question_ids)
     with Session() as session:
+        # the fan-out refuses these, and one copy kept whichever row the database returned last
+        _refuse_repeated_questions(session, source, question_ids)
         _refuse_bad_pair(session, source, target)
 
         # RETURNING, not rowcount: an INSERT ... SELECT reports -1 through this driver
