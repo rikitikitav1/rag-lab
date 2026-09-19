@@ -172,7 +172,8 @@ def run(path: str, form: str = "per_chunk", top: int = 5, limit: int | None = No
         round(payload["seconds"] / payload["asked"], 3) if payload["asked"] else None
     )
     payload["curves"] = curves(payload, frozen) if out else {}
+    # the verdicts go beside the file, not into it: five thousand rows are read by a program, not a person
     payload["where"] = measurements.record(
-        "grade_candidates", name or f"{Path(path).stem}_{form}", payload
+        "grade_candidates", name or f"{Path(path).stem}_{form}", payload, bulk=("rows",)
     )
     return payload

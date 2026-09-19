@@ -182,6 +182,7 @@ def curve(measurement: dict, frozen: dict, arm: str = "A", seed: int = 42) -> di
 def run(measurement_path: str, candidates_path: str, arm: str = "A",
         name: str | None = None, record: bool = False) -> dict:
     measurement = json.loads(Path(measurement_path).read_text())
+    measurement["rows"] = measurements.rows_of(measurement_path)
     frozen = json.loads(Path(candidates_path).read_text())
     payload = curve(measurement, frozen, arm)
     payload["measurement_file"] = Path(measurement_path).name

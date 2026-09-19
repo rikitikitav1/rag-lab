@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from evals import grade_candidates
@@ -99,3 +100,20 @@ def test_a_grading_pass_that_faults_is_not_retried_from_the_top(monkeypatch):
     monkeypatch.setattr(bench, "run", lambda *a, **kw: moved())
     with pytest.raises(base.Final, match="corpus moved"):
         evaluation.grade_candidates({"candidates": "/app/frozen.json"})
+
+
+def test_a_recorded_pass_says_where_its_rows_went(tmp_path, monkeypatch):
+    # five thousand verdicts are read by a program; git carries the number and the reading
+    import gzip
+
+    from evals import measurements
+
+    monkeypatch.setattr(measurements, "FOLDER", tmp_path)
+    where = measurements.record("probe", "run", {"questions": 2, "rows": [{"a": 1}, {"a": 2}]},
+                                bulk=("rows",))
+    said = json.loads(Path(where).read_text())
+    assert "rows" not in said
+    assert said["rows_file"]["count"] == 2
+    beside = Path(where).with_name(said["rows_file"]["name"])
+    assert json.loads(gzip.decompress(beside.read_bytes())) == [{"a": 1}, {"a": 2}]
+    assert measurements.rows_of(where) == [{"a": 1}, {"a": 2}]

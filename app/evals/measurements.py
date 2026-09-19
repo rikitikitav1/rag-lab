@@ -1,5 +1,7 @@
 """Where a job leaves a number so it can be cited later."""
 
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -36,8 +38,41 @@ def say_where(kind: str, run_name: str, payload: dict, asked: bool) -> str:
     return f"recorded: {record(kind, run_name, payload)}"
 
 
+# the rows a number was computed from: needed to recompute it, useless to a reader, heavy in git
+def _put_bulk(path: Path, payload: dict, bulk) -> dict:
+    out = dict(payload)
+    for key in bulk:
+        rows = out.pop(key, None)
+        if rows is None:
+            continue
+        blob = json.dumps(rows, ensure_ascii=False).encode("utf-8")
+        beside = path.with_name(f"{path.stem}_{key}.json.gz")
+        beside.write_bytes(gzip.compress(blob))
+        hand_back(beside)
+        out[f"{key}_file"] = {"name": beside.name, "count": len(rows),
+                              "sha256": hashlib.sha256(blob).hexdigest()[:16]}
+    return out
+
+
+# a reader asks the measurement for its rows and does not care which of the two files holds them
+def rows_of(path: str | Path, key: str = "rows") -> list:
+    path = Path(path)
+    payload = json.loads(path.read_text())
+    if key in payload:
+        return payload[key]
+    said = payload.get(f"{key}_file")
+    if not said:
+        raise FileNotFoundError(f"{path.name} carries neither {key} nor {key}_file")
+    beside = path.with_name(said["name"])
+    if not beside.exists():
+        raise FileNotFoundError(
+            f"{said['name']} is not here: the rows of {path.name} live beside it and are not in git"
+        )
+    return json.loads(gzip.decompress(beside.read_bytes()))
+
+
 # the path is derived here and never taken from options: a job writing where its caller says
-def record(kind: str, run_name: str, payload: dict, on: date | None = None) -> str:
+def record(kind: str, run_name: str, payload: dict, on: date | None = None, bulk=()) -> str:
     FOLDER.mkdir(parents=True, exist_ok=True)
     stamp = (on or date.today()).strftime("%Y%m%d")
     path = FOLDER / f"{_slug(kind)}_{_slug(run_name)}_{stamp}.json"
@@ -46,5 +81,5 @@ def record(kind: str, run_name: str, payload: dict, on: date | None = None) -> s
         if not path.exists():
             break
         path = FOLDER / f"{_slug(kind)}_{_slug(run_name)}_{stamp}_{nth}.json"
-    store_json(path, payload)
+    store_json(path, _put_bulk(path, payload, bulk))
     return str(path)
