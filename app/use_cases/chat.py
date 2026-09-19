@@ -265,6 +265,7 @@ def answer(
     model: str | None = None,
     variant: str | None = None,
     ef_search: int | None = None,
+    grade_chunks: bool = False,
 ) -> Answer:
     start = time.perf_counter()
     use_rerank = resolve_rerank(use_rerank)
@@ -286,6 +287,7 @@ def answer(
         started_at=start,
         variant=variant,
         ef_search=depth,
+        grade_chunks=grade_chunks,
     )
 
 
@@ -303,6 +305,7 @@ def answer_from_rows(
     phased: bool = False,
     rerank_device: str | None = None,
     ef_search: int | None = None,
+    grade_chunks: bool = False,
     *,
     variant: str,
     placed_during: dict | None = None,
@@ -313,6 +316,16 @@ def answer_from_rows(
     k = k or config.settings.retrieval.results_limit
 
     texts, chunks = kept_chunks(rows, variant) if rows else ([], [])
+    # the same grader the graph node runs, on the one retrieval this path makes
+    graded, asks = (
+        _graded(question, texts, chunks, rows) if grade_chunks and texts else (None, [])
+    )
+    if graded:
+        kept = set(graded["kept"])
+        texts = [t for n, t in enumerate(texts) if n in kept]
+        chunks = [c for n, c in enumerate(chunks) if n in kept]
+        rows = [r for n, r in enumerate(rows) if n in kept] if len(rows) == len(graded["order"]) \
+            else rows
     context = "\n\n".join(texts) or None
     if not context:
         ans = Answer(text=NO_RESULTS)
@@ -353,6 +366,7 @@ def answer_from_rows(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
             _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
             contexts=texts or None, chunks=chunks or None, placed_during=placed_during,
+            graded=graded, asks=asks,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -379,6 +393,19 @@ def told_to_answer_in(text: str, language: str) -> str:
     return f"{text}\n\n{said}" if said else text
 
 
+# the direct path has no probe door of its own, so it opens one for the verdicts it records
+def _graded(question: str, texts: list, chunks: list, rows) -> tuple[dict, list]:
+    from use_cases import grading
+
+    asks: list = []
+    graded = grading.grade_pieces(
+        question, texts, chunks, grading.system_prompt(), grading.ask_door(asks)
+    )
+    log.info("chat.graded", asked=graded["asked"], kept=len(graded["kept"]),
+             dropped=len(graded["dropped"]), seconds=graded["seconds"])
+    return graded, asks
+
+
 def _retrieval_snapshot(rows, sources) -> dict:
     distances = [hit.distance for hit in rows if hit.distance is not None]
     rerank_scores = [s.rerank_score for s in sources if s.rerank_score is not None]
@@ -392,7 +419,7 @@ def _retrieval_snapshot(rows, sources) -> dict:
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
                      ef_search: int | None = None, model: str | None = None,
                      language: str | None = None, placed_during: dict | None = None,
-                     generated: bool = True) -> dict:
+                     generated: bool = True, grade_chunks: bool = False) -> dict:
     return run_snapshot.of_run(
         generated=generated,
         language=language,
@@ -406,6 +433,7 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
         placed_during=placed_during,
         # the agent has no phase and single_shot has no hops: each records None for the other
         phased=phased,
+        grade_chunks=grade_chunks or None,
     )
 
 
@@ -413,7 +441,7 @@ def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
-    placed_during: dict | None = None,
+    placed_during: dict | None = None, graded: dict | None = None, asks: list | None = None,
 ) -> None:
     # no call, no generator on the row: an answer refused over the window has a context and no call
     generated = ans.success
@@ -438,13 +466,16 @@ def _log_answer(
             sources=[asdict(s) for s in ans.sources],
             models=models,
             prompts={
-                "generate_answer": prompt_repo.active_version(Purpose.generate_answer)
+                "generate_answer": prompt_repo.active_version(Purpose.generate_answer),
+                **({"grade_chunk": prompt_repo.active_version(Purpose.grade_chunk)}
+                   if graded else {}),
             },
             metrics={
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
                     rerank_device, variant, ef_search, ans.metrics.model, lang,
                     placed_during=placed_during, generated=generated,
+                    grade_chunks=bool(graded),
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand
@@ -455,6 +486,8 @@ def _log_answer(
                 "refusal": outcomes.reads_as_refusal(ans.text),
                 # what the parser cut from the answer, only when it cut something
                 **({"answer_parse": ans.metrics.answer_parse} if ans.metrics.answer_parse else {}),
+                # the verdicts and what they cost: the price of filtering is read from the row
+                **({"graded": graded, "asks": asks} if graded else {}),
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

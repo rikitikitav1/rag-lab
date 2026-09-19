@@ -5,19 +5,21 @@ title: |md
   # What each node puts on the row
   The tool step is three nodes.\
   The coverage verdict rides an edge.\
-  The grader and the rewrite are not built.
+  The rewrite is not built.
 |
 
-today: Today: five nodes {
+today: Today: six nodes {
   style.fill: "#eef1f8"
   model: "model\ncall the LLM with the tools this hop is allowed" {shape: hexagon}
   retrieve: "retrieve\nour dispatch; raw results to the state,\nno message for the model" {shape: hexagon}
+  grade: "grade\nread each chunk, drop the foreign ones;\noff by default, then a pass-through" {shape: hexagon}
   fallback: "fallback\nthe verdict fired: drop weak,\nannounce, open external" {shape: hexagon}
   emit: "emit\ntool messages, after the verdict" {shape: hexagon}
   final: "final\nlast turn without tools" {shape: hexagon}
   model -> retrieve
-  retrieve -> fallback: "verdict"
-  retrieve -> emit: "covered"
+  retrieve -> grade
+  grade -> fallback: "verdict"
+  grade -> emit: "covered"
   fallback -> emit
   emit -> model
   emit -> final
@@ -28,12 +30,10 @@ planned: Not built {
   style.fill: "#eceff4"
   style.stroke-dash: 3
   search: "search\ncorpus retrieval becomes a node,\nnot a tool the model calls" {shape: hexagon}
-  grade: "grade_documents\nkeep or drop each chunk" {shape: hexagon}
   enough: "enough kept?" {shape: diamond}
   rewrite: "rewrite_question\nask the corpus again in other words" {shape: hexagon}
   answer: "answer" {shape: hexagon}
-  search -> grade
-  grade -> enough
+  search -> enough
   enough -> answer: yes
   enough -> rewrite: no
   rewrite -> search
@@ -41,8 +41,8 @@ planned: Not built {
 
 row: What the row carries {
   style.fill: "#fff3cd"
-  here: "today: chunks[], spans[], transcript[],\nmetrics.announced_text, metrics.refusal,\na prompt version per purpose"
-  later: "only with the nodes above:\nmetrics.grader, metrics.rewrite" {
+  here: "today: chunks[], spans[], transcript[],\nmetrics.announced_text, metrics.refusal,\nmetrics.asks with a verdict per chunk,\na prompt version per purpose"
+  later: "only with the nodes above:\nmetrics.rewrite" {
     style.stroke-dash: 3
   }
 }

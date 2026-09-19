@@ -8,14 +8,15 @@ import llm
 import logging_setup
 import outcomes
 import prompt_repo
+import token_fields
 from errors import StandFault
 from models.eval import QuestionLog
-from models.registry import Pipeline, Purpose
+from models.registry import Pipeline, Purpose, Role
 from orchestrators import graph as orch_graph
 from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
-from use_cases import card_wait, chat, run_snapshot
+from use_cases import card_wait, chat, grading, run_snapshot
 from use_cases.agent_policy import (
     GONE,
     FallbackPolicy,
@@ -81,8 +82,10 @@ class AgentResult:
     def step(self, node: str, hop: int, **facts) -> None:
         self.trace.append({"node": node, "hop": hop, **{k: v for k, v in facts.items() if v is not None}})
 
-    def note_ask(self, stage: str, key: str | None, text: str) -> None:
-        self.asks.append({"stage": stage, "key": key, "text": text})
+    def note_ask(self, stage: str, key: str | None, text: str, cut: bool = False,
+                 p: float | None = None) -> None:
+        self.asks.append({"stage": stage, "key": key, "text": text,
+                          **({"cut": True} if cut else {}), **({"p": p} if p is not None else {})})
 
     # only ollama's own api reports these, the openai-compat client has nothing to add
     def note_server_timings(self, meta: dict) -> None:
@@ -123,6 +126,7 @@ def run(
     topic_threshold: float | None = None,
     orchestrator: str | None = None,
     variant: str | None = None,
+    grade_chunks: bool = False,
 ) -> AgentResult:
     start = time.perf_counter()
     variant = variant or config.settings.corpus.variant
@@ -205,6 +209,10 @@ def run(
                 remote=remote, gate=gate, external=external, k=k, use_rerank=use_rerank,
                 role=role, model=model, max_hops=max_hops, variant=variant, ask=ask,
                 restate_tools=restate_tools,
+                # its own seat: a verdict wants temperature 0 and a few tokens, an answer does not
+                grade_ask=ask_door(result, str(Role.grading), logprobs=True) if grade_chunks
+                else None,
+                grade_system=grading.system_prompt() if grade_chunks else None,
             ),
             result,
         )
@@ -239,6 +247,7 @@ def run(
                 **orch_graph.versions(),
             },
             restate_tools=restate_tools,
+            grade_chunks=grade_chunks,
             variant=variant,
         )
     except SQLAlchemyError as e:
@@ -265,13 +274,19 @@ def finish(result, tool_names: tuple, max_hops: int) -> None:
 
 
 # the one door every probe of the run asks through, so a replay can hand back what the row recorded
-def ask_door(result: AgentResult, role: str = "generation", model=None):
-    def ask(stage: str, key: str | None, system: str, user: str) -> str:
+def ask_door(result: AgentResult, role: str = "generation", model=None, logprobs: bool = False):
+    def ask(stage: str, key: str | None, system: str, user: str, schema=None) -> str:
         started = time.perf_counter()
-        completion = llm.ask(system=system, user=user, role=role, model=model)
+        completion = llm.ask(
+            system=system, user=user, role=role, model=model, schema=schema, logprobs=logprobs
+        )
         result.took(stage, started)
         text = (completion.text or "").strip()
-        result.note_ask(stage, key, text)
+        result.note_ask(
+            stage, key, text,
+            cut=token_fields.cut(getattr(completion, "finish_reason", None)),
+            p=grading.confidence(completion, grading.read_verdict(text)) if logprobs else None,
+        )
         return text
 
     return ask
@@ -399,6 +414,7 @@ def _log_answer(
     admission_ran: bool = False,
     orchestrator: dict | None = None,
     restate_tools: bool = False,
+    grade_chunks: bool = False,
     *, variant: str,
 ) -> None:
     use_rerank = chat.resolve_rerank(use_rerank)
@@ -408,6 +424,8 @@ def _log_answer(
         use_rerank, agent=gate is not None, fallback_policy=fallback_policy,
         gate_signal=gate.signal if gate else None,
     )
+    # the arm is what the run asked for; the model and the prompt are named only where it graded
+    graded = any(a.get("stage") == "grade" for a in result.asks)
     with Session() as session:
         question = chat._find_or_create_question(session, question_text, lang)
         log_row = QuestionLog(
@@ -427,6 +445,7 @@ def _log_answer(
                 "generation": model or llm.resolve_name("generation"),
                 "embedding": llm.resolve_name("embedding"),
                 **({"reranking": _seated("reranking")} if reranked else {}),
+                **({"grading": _seated(str(Role.grading))} if graded else {}),
             },
             prompts=prompt_repo.active_versions(
                 [
@@ -434,6 +453,7 @@ def _log_answer(
                     *([Purpose.agent_fallback] if result.fallback_announced else []),
                     *([Purpose.agent_no_evidence] if result.no_evidence_prompted else []),
                     *([Purpose.agent_tool_match] if admission_ran else []),
+                    *([Purpose.grade_chunk] if graded else []),
                 ]
             ),
             metrics={
@@ -492,6 +512,7 @@ def _log_answer(
                     max_hops=max_hops or config.settings.agent.max_hops,
                     drop_weak_context=bool(gate and gate.drop_weak_context),
                     restate_tools=restate_tools or None,
+                    grade_chunks=grade_chunks or None,
                     topic=(
                         run_snapshot.of_topic(
                             topic.threshold, topic.score, config.settings.agent.topic_threshold

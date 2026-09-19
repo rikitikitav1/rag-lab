@@ -50,6 +50,8 @@ class Completion:
     parsed: answer_parsers.Parsed | None = None
     parser: str = answer_parsers.NO_PARSER
     finish_reason: str | None = None
+    # per token of the answer, when the caller asked: a hard label alone cannot draw a curve
+    logprobs: list | None = None
 
 
 @dataclass
@@ -403,13 +405,15 @@ def _refuse_a_cut_input(input_cut: bool, picked, usage, window) -> None:
         )
 
 
-def ask(system, user, role="generation", schema=None, model=None) -> Completion:
+def ask(system, user, role="generation", schema=None, model=None, logprobs=False) -> Completion:
     picked = resolve_for(role, model)
     name = picked.name
     # no system at all is not an empty one: a template drops its default only for a system it was given
     messages = ([] if system is None else [{"role": "system", "content": system}]) + [{"role": "user", "content": user}]
     window, least = _refuse_an_input_over_the_window(picked.engine, name, messages)
     params = _params(role, schema, picked)
+    if logprobs:
+        params |= {"logprobs": True, "top_logprobs": 4}
     resp = _complete(picked.engine, name, messages, params, role)
 
     usage = _usage(resp, picked.engine)
@@ -438,7 +442,20 @@ def ask(system, user, role="generation", schema=None, model=None) -> Completion:
         parsed=parsed,
         parser=answer_parsers.label(picked.parser),
         finish_reason=getattr(resp.choices[0], "finish_reason", None),
+        logprobs=_token_logprobs(resp.choices[0]) if logprobs else None,
     )
+
+
+# an engine that answers without them is not an error: the caller reads None and says so
+def _token_logprobs(choice) -> list | None:
+    content = getattr(getattr(choice, "logprobs", None), "content", None)
+    if not content:
+        return None
+    return [
+        {"token": t.token,
+         "top": {alt.token: round(math.exp(alt.logprob), 4) for alt in (t.top_logprobs or [])}}
+        for t in content
+    ]
 
 
 def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:

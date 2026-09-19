@@ -42,6 +42,8 @@ class EvalRunFields(Spec):
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
     # llama3.1 renders tool schemas only in the last user message, and a tool answer buries them
     restate_tools: bool = False
+    # the grader filters chunks before the generator sees them; off, every run is what it was
+    grade_chunks: bool = False
     # answer only what a stopped run left unanswered, on the options it ran with
     resume: bool = False
     # the generator's sampler in this run alone: the judge shares a vLLM model with it and keeps its own

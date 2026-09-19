@@ -20,6 +20,7 @@ from evals.pools import (
 )
 from evals.stats import delta_stats, deltas_over, mean_of, tally
 from use_cases import rejudge
+from use_cases.agent_policy import FallbackReason
 
 OUTCOMES = ALL_OUTCOMES
 AXES = rejudge.AXES
@@ -63,6 +64,8 @@ def summarize(logs) -> dict:
         "answered_from_corpus_opened_no_evidence": len(opened),
         "answered_from_corpus_rate": round(len(home) / len(logs), 3) if logs else None,
         "gate_fired": sum(1 for r in reasons if r in GATE_REASONS),
+        # its own count: a grader that emptied the context is not the gate firing
+        "graded_out": sum(1 for r in reasons if r == FallbackReason.graded_out),
         "latency_avg": mean_of(latency, digits=1),
         "latency_p50": round(statistics.median(latency), 1) if latency else None,
         "outcomes": {o: marks.count(o) for o in OUTCOMES},
@@ -152,7 +155,7 @@ def verdicts(left: list, right: list) -> dict:
 
 
 # the report's shape, raised with every field it gains
-SCHEMA = 14
+SCHEMA = 15
 
 
 class TwoJudges(Ambiguous):

@@ -67,6 +67,7 @@ class RunSpec:
     fallback_policy: str | None = None
     gate_signal: str | None = None
     restate_tools: bool = False
+    grade_chunks: bool = False
     weak_distance: float | None = None
     topic_threshold: float | None = None
     orchestrator: str | None = None
@@ -86,6 +87,7 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
             fallback_policy=spec.fallback_policy,
             gate_signal=spec.gate_signal,
             restate_tools=spec.restate_tools,
+            grade_chunks=spec.grade_chunks,
             weak_distance=spec.weak_distance,
             topic_threshold=spec.topic_threshold,
             orchestrator=spec.orchestrator,
@@ -102,6 +104,7 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
             k=spec.k,
             model=spec.model,
             variant=spec.variant,
+            grade_chunks=spec.grade_chunks,
         )
         return True
     raise ValueError(f"unknown pipeline: {spec.pipeline}")
@@ -407,6 +410,7 @@ def run(
     fallback_policy: str | None = None,
     gate_signal: str | None = None,
     restate_tools: bool = False,
+    grade_chunks: bool = False,
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
     orchestrator: str | None = None,
@@ -453,6 +457,7 @@ def run(
         fallback_policy=fallback_policy,
         gate_signal=gate_signal,
         restate_tools=restate_tools,
+        grade_chunks=grade_chunks,
         weak_distance=weak_distance,
         topic_threshold=topic_threshold,
         orchestrator=orchestrator,

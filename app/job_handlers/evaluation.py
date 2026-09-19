@@ -57,6 +57,7 @@ def eval_run(options: dict) -> None:
             fallback_policy=options.get("fallback_policy"),
             gate_signal=options.get("gate_signal"),
             restate_tools=bool(options.get("restate_tools")),
+            grade_chunks=bool(options.get("grade_chunks")),
             weak_distance=options.get("weak_distance"),
             orchestrator=options.get("orchestrator"),
             allow_cpu=bool(options.get("allow_cpu")),

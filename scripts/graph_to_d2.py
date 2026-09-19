@@ -7,6 +7,7 @@ OUT = ROOT / "docs" / "diagrams" / "agent_graph.d2"
 LABELS = {
     "model": "model\\ncall the LLM with the tools this hop is allowed",
     "retrieve": "retrieve\\nour dispatch, raw results into the state,\\nno message for the model",
+    "grade": "grade\\nthe grader reads each chunk and drops\\nwhat it calls foreign; off, a pass-through",
     "fallback": "fallback\\nthe coverage verdict fired: drop weak,\\nannounce, open external",
     "emit": "emit\\ntool messages for the model, after the verdict",
     "final": "final\\nlast turn without tools,\\nagent.no_evidence when nothing answered",

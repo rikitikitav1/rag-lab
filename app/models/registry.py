@@ -14,6 +14,8 @@ class Role(StrEnum):
     judging = "judging"
     paraphrasing = "paraphrasing"
     reranking = "reranking"
+    # the grader of retrieved chunks: its own seat, so a run records who graded and with what sampler
+    grading = "grading"
     # the standard's judge: its own prompts, so its own seat rather than the judge's
     ragas = "ragas"
     # the one guest that measures with vectors, off the card so the guest's model has it whole
@@ -21,7 +23,9 @@ class Role(StrEnum):
 
 
 # the roles whose model writes tokens: an embedder or a cross-encoder scores and samples nothing
-SAMPLING_ROLES = frozenset({Role.generation, Role.judging, Role.paraphrasing, Role.ragas})
+SAMPLING_ROLES = frozenset(
+    {Role.generation, Role.judging, Role.paraphrasing, Role.ragas, Role.grading}
+)
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
@@ -63,6 +67,7 @@ class Purpose(StrEnum):
     agent_fallback = "agent.fallback"
     agent_tool_match = "agent.tool_match"
     agent_no_evidence = "agent.no_evidence"
+    grade_chunk = "grade.chunk"
 
 
 class Status(StrEnum):
