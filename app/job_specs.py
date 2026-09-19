@@ -113,6 +113,20 @@ class CompareRetrieval(Spec):
     experiment_id: int
 
 
+class GradeCandidates(Spec):
+    # the frozen pool this grades: a run that names no file would grade whatever is on disk today
+    candidates: str = Field(min_length=1, max_length=200)
+    form: Literal["per_chunk", "whole_text"] = "per_chunk"
+    top: int = Field(default=5, ge=1, le=20)
+    # a slice for a probe; a declared arm draws `sample` by `seed`, as the guest axes do
+    limit: int | None = Field(default=None, ge=1, le=2000)
+    sample: int | None = Field(default=None, ge=1, le=2000)
+    seed: int = 0
+    # the floor is taken twice in one residency, and the second pass must not repeat the first order
+    shuffle: int | None = Field(default=None, ge=0, le=10_000)
+    name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
+
+
 class AnalyzeSource(Spec):
     source: str = Field(min_length=1)
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
@@ -199,6 +213,7 @@ SPECS: dict[str, type[Spec]] = {
     "judge_guest_axes": JudgeGuestAxes,
     "judge_language": JudgeLanguage,
     "compare_retrieval": CompareRetrieval,
+    "grade_candidates": GradeCandidates,
     "analyze_source": AnalyzeSource,
     "check_mcp_health": CheckMcpHealth,
     "pull_llm_model": ModelByName,
@@ -225,6 +240,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "analyze_source": (),
     "eval_run": (Role.generation, Role.embedding, Role.reranking),
     "compare_retrieval": (Role.reranking,),
+    "grade_candidates": (Role.grading,),
     "judge_answers": (Role.judging,),
     "judge_guest_axes": (Role.ragas, Role.ragas_embedding),
     "judge_language": (Role.judging, Role.generation),

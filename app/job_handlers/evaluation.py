@@ -143,3 +143,27 @@ def compare_retrieval(options: dict) -> None:
             status=str(exp.status),
             grid_kept=kept,
         )
+
+
+@register("grade_candidates")
+def grade_candidates(options: dict) -> None:
+    from evals import grade_candidates as bench
+
+    require_role_ready(Role.grading, take_card=False)
+    require_card("grading")
+    said = bench.run(
+        options["candidates"],
+        form=options.get("form") or "per_chunk",
+        top=options.get("top") or 5,
+        limit=options.get("limit"),
+        sample=options.get("sample"),
+        seed=options.get("seed") or 0,
+        shuffle=options.get("shuffle"),
+        name=options.get("name"),
+        job_id=options.get("_job_id"),
+    )
+    log.info(
+        "grade_candidates.done", questions=said["questions"], asked=said["asked"],
+        unreadable=said["unreadable_share"], seconds=said["seconds"], where=said["where"],
+        cancelled=said["cancelled"],
+    )

@@ -152,7 +152,7 @@ Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagram
 | `bootstrap` | prepares models, roles and indexing jobs, runs to completion before the rest; waits for `vllm` and puts it to sleep before ollama loads a role |
 | `rag-lab` | FastAPI server (uvicorn) |
 | `repos-owner` | hands the `repos_data` volume to the host's user before the worker starts, runs once |
-| `worker` | processes the job queue as the host's user, fifteen types: pull/delete a model, index the corpus, build a vector index, analyze a source, embed questions, paraphrase questions, build the veto set, eval run, judge answers, judge the guest axes, the language probe, compare retrieval, mcp health, hand the card to an engine |
+| `worker` | processes the job queue as the host's user, sixteen types listed with what each one takes in [docs/api.md](docs/api.md#the-queue) |
 | `ollama` | local inference on GPU: the generator, the embedder, the paraphraser and the RAGAS guest's model |
 | `ollama-cpu` | a second ollama on the processor, for a role that should not take the card (the RAGAS guest's embedder by default); always up, since ollama loads a model on the first call and gives the memory back after its keep-alive |
 | `vllm` | the judge (`Qwen/Qwen2.5-7B-Instruct-AWQ`); takes the card first at start and is put to sleep whenever another engine needs it; its port is not published on the host |

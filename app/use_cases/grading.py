@@ -76,6 +76,13 @@ def _probability(completion, text: str) -> dict:
     return {"p": said} if said is not None else {}
 
 
+# the same digest the freeze wrote, so a moved chunk is caught before a verdict is spent on it
+def digest(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
 def piece_verdict(question: str, piece: str, system: str, ask, key: str) -> str | None:
     user = f"Question: {question}\n\nPassage:\n{piece}"
     try:

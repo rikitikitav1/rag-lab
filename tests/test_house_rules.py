@@ -198,3 +198,13 @@ def test_one_value_is_capped_the_same_at_every_door_that_names_it():
     ]
     for model, field in ids:
         assert cap(model, field) == limits.MAX_QUESTION_IDS, f"{model.__name__}.{field}"
+
+
+def test_every_job_type_the_queue_knows_is_described_in_the_docs():
+    # the README counted the types in words in two languages, and nothing checked the count
+    import job_specs
+
+    root = Path(__file__).resolve().parent.parent
+    text = (root / "docs" / "api.md").read_text()
+    undescribed = [name for name in job_specs.SPECS if f"| `{name}` |" not in text]
+    assert not undescribed, f"the queue takes {undescribed} and the docs do not say what they do"

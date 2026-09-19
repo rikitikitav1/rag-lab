@@ -107,12 +107,35 @@ first-against-the-rest once it does not, the A/B halves, and an `answers_digest`
 per arm beside the source's, so "the arms judged the same answers" is a fact of the record
 rather than a claim in its description.
 
+## The queue
+
 Any job type can be queued through one door: `POST /v1/job` with `{"type": ..., "options": {...}}`. It and every door that queues a job of its own (`/v1/eval/*`, `/v1/source/{id}/analyze`) answer with the whole job row: `job_id`, `type`, `queue`, `status`, `options`, `apply_since`, `created_at`.
 What each type accepts is a model per type in `app/job_specs.py`, checked when the job is queued,
 whichever door or script queues it, and again when the worker takes it, so a row written straight
 into the table meets the same refusal. A door of its own is for work done before the enqueue rather
 than for checking: `/eval/rejudge` copies a run, `/eval/guest-axes` answers on a property of the
 runtime. The lane belongs to the type, not to the caller.
+
+Every type the queue knows, what it does and what it takes:
+
+| type | what it does | the options it reads | roles it takes the card for | where the result lands |
+|---|---|---|---|---|
+| `pull_llm_model` | pulls weights into an engine | `name`, `engine_id` | none (io lane) | the model row goes `ready` |
+| `delete_llm_model` | removes weights from an engine | `name`, `engine_id` | none (io lane) | the model row |
+| `index_data` | cuts a corpus variant and embeds it | `variant`, `source` | embedding | `data_chunks` of that variant |
+| `build_vector_index` | builds the hnsw index of a variant | `variant` | none | the index |
+| `analyze_source` | reads one source and reports its ingest quality | `source`, `variant`, `mode` | none | `data_sources.ingest_quality` |
+| `embed_questions` | embeds a question set | `set_name` | embedding | `questions.embedding` |
+| `paraphrase_questions` | writes paraphrases of a set | `set_name`, `limit` | paraphrasing | new questions of the paraphrased set |
+| `build_veto_set` | builds the veto set from a source set | `set_name`, `limit` | paraphrasing | the veto question set |
+| `eval_run` | answers a set through a pipeline and records a row per question | the run's whole snapshot (`run_name`, `set_name`, `pipeline`, `k`, `grade_chunks`, …) | generation, embedding, reranking | `question_logs` of that run |
+| `judge_answers` | scores our three axes over a run's rows | `run_name`, `axes`, `width` | judging | verdicts on the rows |
+| `judge_guest_axes` | scores the standard's axes over a subsample | `run_name`, `sample`, `seed` | ragas, ragas_embedding | guest verdicts on the rows |
+| `judge_language` | restates a row in two languages and scores both | `run_name`, `panel` | judging, generation | a measurement file |
+| `compare_retrieval` | measures a grid of retrieval arms of one experiment | `experiment_id` | reranking | the experiment's `results` |
+| `grade_candidates` | grades frozen candidates chunk by chunk, no generator and no judge | `candidates` (the frozen file), `form`, `top`, `limit`, `name` | grading | a measurement file with a verdict and its probability per chunk |
+| `check_mcp_health` | asks a remote integration whether it answers | `integration_id` | none (io lane) | the integration's health |
+| `hand_card` | wakes an engine, probes it and seats a role | `engine_id`, `model`, `seat` | the seat it hands | the card and the role row |
 
 To judge a run in place: `POST /v1/eval/judge` with `{"run_name": "<run>"}` queues our three axes
 over the rows that still owe them, and refuses with 404 when the run holds no answered row or owes
