@@ -1,9 +1,20 @@
 # 2026-09-19 - An LLM grader between search and the answer, and the bar it does not clear
 
-A corrective RAG pipeline puts a grader between retrieval and generation: the model reads each
-retrieved chunk and says whether it helps answer the question, and the chunks it calls foreign never
-reach the generator. This entry records what that node does on our corpus, measured without a judge,
-and why it stays off by default.
+Before the generator sees the retrieved chunks, a second model call reads each chunk against the
+question and drops the ones it calls irrelevant. This is the document-grading step that Corrective RAG
+(Yan et al., 2024) and Self-RAG (Asai et al., 2023) both contain, in the form LangGraph's archived
+tutorials for the two papers share: a prompted yes or no for every retrieved document. LangGraph files
+both papers under self-reflective RAG. This entry records what that step does on our corpus, measured
+without a judge, and why it stays off by default.
+
+**This is not a reproduction of either paper.** CRAG scores documents with a fine-tuned T5-large
+evaluator, turns the scores into one of three actions, searches the web when retrieval looks wrong, and
+filters inside documents, strip by strip. Self-RAG trains the generator itself to emit a relevance token
+while it decodes. We trained nothing, the stand has no web search, and we drop whole chunks. The result
+below says what a prompted 8B filter buys on this corpus, and nothing about CRAG or Self-RAG as
+published. One more difference of degree: LangGraph's grader is lenient by design ("keyword(s) or
+semantic meaning related to the question" is enough), ours is told to answer no when a passage only
+shares words with the question.
 
 ## Setup
 
@@ -61,9 +72,10 @@ lifting it: at matched retention the difference in strangers dropped is -0.02 wi
 zero, and its whole curve tops out at retention 0.912. One rewording is not a proof about the model,
 but it is a measured price for a rewrite that reads much stricter to a person.
 
-**Nothing from the canon form.** One verdict over the whole retrieved context, as the LangGraph
-tutorials write it, drops 0.9% of strangers at "as said" and 14% at the 0.95 cut with retention
-0.906. On this corpus it is not a filter, and the per-chunk form is the one measured above.
+**Nothing from one verdict over everything.** LangGraph's agentic-rag page grades the whole retrieved
+context in one call, on an edge of the graph; their CRAG and Self-RAG tutorials grade document by
+document, which is the form measured above. The single verdict drops 0.9% of strangers at "as said" and
+14% at the 0.95 cut with retention 0.906: on this corpus it is not a filter.
 
 ## What it costs, and the language it was tuned in
 
@@ -80,16 +92,70 @@ tuned and judged on the English set does less work on Russian questions (0.38 ag
 strangers) at slightly higher retention, so these numbers do not transfer across the language of the
 question.
 
+## What "unrelated" turned out to mean
+
+The floor counts chunks that came from a file the question was not marked against. That label is
+mechanical, and this corpus is a set of interview-question READMEs whose topics overlap, so it was
+worth asking what the label holds. A hundred of those chunks were drawn by seed and shown to a much
+stronger model (Opus) with the question beside them and nothing else: no verdict of ours, no class, not
+even the fact that all hundred came from one class. It called 48 of them helpful on a loose test
+(could a competent writer answer from this passage). The same hundred was labelled a second time
+against a stricter instruction, copied from the grader's own prompt and adding that a passage about
+another technology is not an answer: **39**. The two instructions agree on 91 of the hundred, so the
+share of "unrelated" chunks that are on the subject is **between 0.39 and 0.48**, and neither end is
+anchored to a person.
+
+Two instruments that are not language models sort the same hundred the same way. The cross-encoder
+scores the "helpful" ones at 0.363 against 0.076 for the rest, intervals apart. The heading of the
+chunk shares a word with the heading the question came from for 58% of the helpful against 23% of the
+rest, with no model in the loop at all. The direction is a property of this corpus: one family of
+interview-question repositories whose subjects overlap, so a chunk from an unmarked file is often on
+the subject anyway.
+
+Part of the looseness is ours rather than the labeller's. The questions are paraphrases, and the
+paraphrase often drops the technology: 28 of those 48 questions contain no word of their own
+repository's name. "A variable holding no value against one not assigned yet" no longer says
+JavaScript, so a passage about Go honestly helps a blind reader and would ground an answer in the
+wrong language. The grader and the generator read the same stripped question.
+
+Crossed with our grader on the same hundred: it kept 36 of the 48 and dropped 38 of the 52, agreeing
+with the blind reader on 74 of 100. Agreement between two language models is agreement, not accuracy,
+and it is worth exactly that much. Against the stricter labels the same grader keeps 31 of 39 and
+drops 42 of 61, agreeing on 73 of 100, so the reading does not depend on which instruction was used.
+What it supports: the share of "unrelated" chunks that can be dropped without losing something useful
+is between 0.52 and 0.61, so the 0.44 the grader drops is a large part of what was available, and the
+floor of 0.50 was demanding rather than mistaken.
+
 ## Reading
 
 The node works, it is better than the cheaper instrument at the retention the bar allows, and it does
 not clear the bar this bench set for it. That is a statement about the bar as much as about the
-filter: the gold is marked by file, the neighbour class is invisible to both numbers, and 0.95 and
-0.50 are round numbers chosen before any measurement. The honest form of the result is the narrow one:
+filter, and the calibration above says how much: the gold is marked by file, the neighbour class is
+invisible to both numbers, 0.95 and 0.50 are round numbers chosen before any measurement, and a
+substantial share of what the floor counts as noise is on the subject of the question. The honest form of the result is the narrow one:
 **at this bar, on this corpus, with this model, filtering does not buy enough to be on by default**.
 
 It stays off by default in both paths that can run it, and the switch is a run's own option
-(`grade_chunks`). What would change the answer is the measurement this entry does not contain:
-whether a filtered context makes the answer better grounded, generation against generation, with the
-generator's own floor beside it. Until that runs, "it drops noise" is not a reason to pay four seconds
-a question and 2.4% of the answers.
+(`grade_chunks`).
+
+## And the answers themselves
+
+The obvious follow-up was run the same day: a hundred questions drawn by seed from the 620 nobody had
+chosen anything on, answered four times through the direct path, twice with the filter and twice
+without, all four arms judged by one judge in one residency. Paired by question, the filter moved
+groundedness by **+0.01** (interval -0.35 to +0.36) in one pair and **+0.16** (-0.27 to +0.61) in the
+other. Both intervals cross zero, and both deltas are smaller than what the same arm scores against
+itself when it is simply run twice: **0.18** on groundedness between the two control runs. At a
+hundred pairs the interval is about a third of a judge point wide, so this is "no effect of this size
+is visible here", not "no effect".
+
+Relevance and completeness came out lower with the filter in both pairs, which looked like a cost of
+the shorter context until the rows were split by how many chunks the filter had actually removed. The
+rows it left untouched lost as much as the rows it cut (-0.29 against -0.37, both intervals crossing
+zero, and the rows that lost the most chunks lost the least score). With an identical context and the
+generator at temperature 0.1, that difference is the generator and the judge, not the filter.
+
+The filter costs 4.4 seconds of grading a question. The shorter context does make generation itself
+about 0.4 seconds faster, and one row in a hundred ends with no context at all and refuses. So the
+answer to the question in the title, on this corpus and with this model: it drops noise, it does not
+buy grounding, and it is paid for in seconds and in one refusal per hundred.
