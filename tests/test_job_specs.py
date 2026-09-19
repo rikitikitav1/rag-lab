@@ -169,3 +169,13 @@ def test_a_run_may_say_it_wants_no_judge():
     # a canary match or a retrieval delta is read by a rule, and the judge costs a residency and its noise
     job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "judge": False})
     job_specs.check("eval_run", {"run_name": "r", "set_name": "s"})
+
+
+def test_a_graded_pass_names_a_frozen_pool_and_not_any_path():
+    # the option is a path the worker opens, and a job may not point it at whatever it likes
+    import pytest
+    job_specs.check("grade_candidates", {"candidates": "/app/datasets/candidates/pool.json"})
+    job_specs.check("grade_candidates", {"candidates": "datasets/candidates/pool.json"})
+    for bad in ("/etc/passwd", "/app/datasets/candidates/../../.env", "pool.json"):
+        with pytest.raises(job_specs.Refused):
+            job_specs.check("grade_candidates", {"candidates": bad})

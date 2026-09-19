@@ -51,7 +51,7 @@ def address_of(chunk, nth: int) -> tuple[str, bool]:
 
 
 # the probability of the word the grader chose: with it the filter has a dial, without it a switch
-def confidence(completion, verdict: str | None) -> float | None:
+def confidence(completion) -> float | None:
     for token in getattr(completion, "logprobs", None) or ():
         said = _word(token["token"])
         if said in ("yes", "no"):
@@ -74,7 +74,7 @@ def ask_door(asks: list):
 
 # recorded beside the verdict, never instead of it: a missing probability is a fact, not a zero
 def _probability(completion, text: str) -> dict:
-    said = confidence(completion, read_verdict(text))
+    said = confidence(completion)
     out = {"p": said} if said is not None else {}
     both = both_words(completion)
     return out | ({"top": both} if both else {})

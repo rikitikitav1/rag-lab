@@ -80,3 +80,22 @@ def test_a_verdict_row_carries_every_field_the_ask_recorded():
     assert grade_candidates.verdict_row(ask) == {
         "key": "a#0", "text": '{"relevant": "no"}', "p": 0.6, "top": {"yes": 0.4, "no": 0.6},
     }
+
+
+def test_a_grading_pass_that_faults_is_not_retried_from_the_top(monkeypatch):
+    # the pass writes only at the end, so a retry would grade the whole file again
+    import pytest
+    from errors import StandFault
+    from job_handlers import base, evaluation
+
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda role, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda role, model=None, allow_spill=False: None)
+
+    def moved(**kw):
+        raise StandFault("the corpus moved under the frozen file")
+
+    from evals import grade_candidates as bench
+
+    monkeypatch.setattr(bench, "run", lambda *a, **kw: moved())
+    with pytest.raises(base.Final, match="corpus moved"):
+        evaluation.grade_candidates({"candidates": "/app/frozen.json"})

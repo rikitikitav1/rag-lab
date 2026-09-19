@@ -330,7 +330,7 @@ def test_the_verdict_carries_the_probability_the_model_gave_it(monkeypatch):
     graded = [a for a in result.asks if a["stage"] == "grade"]
     assert asked == [True, True], "the grader must ask for the probabilities"
     assert [a["p"] for a in graded] == [0.77, 0.77]
-    assert grading.confidence(SimpleNamespace(logprobs=None), "no") is None, "absent is not zero"
+    assert grading.confidence(SimpleNamespace(logprobs=None)) is None, "absent is not zero"
 
 
 def test_two_chunks_of_one_file_do_not_leave_a_dropped_file_on_the_row(monkeypatch):

@@ -152,18 +152,22 @@ def grade_candidates(options: dict) -> None:
 
     require_role_ready(Role.grading, take_card=False)
     require_card("grading")
-    said = bench.run(
-        options["candidates"],
-        form=options.get("form") or "per_chunk",
-        top=options.get("top") or 5,
-        limit=options.get("limit"),
-        sample=options.get("sample"),
-        seed=options.get("seed") or 0,
-        shuffle=options.get("shuffle"),
-        prompt_version=options.get("prompt_version"),
-        name=options.get("name"),
-        job_id=options.get("_job_id"),
-    )
+    # the worker's retry would grade the whole file again, and the pass writes only at the end
+    try:
+        said = bench.run(
+            options["candidates"],
+            form=options.get("form") or "per_chunk",
+            top=options.get("top") or 5,
+            limit=options.get("limit"),
+            sample=options.get("sample"),
+            seed=options.get("seed") or 0,
+            shuffle=options.get("shuffle"),
+            prompt_version=options.get("prompt_version"),
+            name=options.get("name"),
+            job_id=options.get("_job_id"),
+        )
+    except StandFault as e:
+        raise Final(str(e)) from e
     log.info(
         "grade_candidates.done", questions=said["questions"], asked=said["asked"],
         unreadable=said["unreadable_share"], seconds=said["seconds"], where=said["where"],

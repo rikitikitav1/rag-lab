@@ -391,3 +391,42 @@ def test_a_run_carries_its_own_answer_to_whether_the_judge_follows(monkeypatch):
 
     evaluation.eval_run({"run_name": "r", "set_name": "s", "judge": False})
     assert seen["judge"] is False
+
+
+def test_every_route_out_of_a_run_carries_the_flags_that_change_what_it_measures():
+    # phased is the default for single_shot and it forwarded no `grade_chunks`: the arm graded nothing
+    import ast
+    from pathlib import Path
+
+    import evals.runner as runner
+
+    tree = ast.parse(Path(runner.__file__).read_text())
+    answering = {("chat", "answer"), ("chat", "answer_from_rows"), ("agent", "run")}
+    seen = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        holder = getattr(node.func.value, "id", None)
+        if (holder, node.func.attr) not in answering:
+            continue
+        seen += 1
+        passed = {k.arg for k in node.keywords}
+        missing = {"grade_chunks", "judge_wanted"} - passed
+        assert not missing, f"{holder}.{node.func.attr} at line {node.lineno} drops {sorted(missing)}"
+    assert seen == 3, f"three routes answer a run, found {seen}"
+
+
+def test_a_graded_answer_keeps_rows_scores_and_sources_on_the_same_seats(monkeypatch):
+    # rows were cut by the grader's position while a chunk hidden by the cut policy shifted every index
+    _stub_generation(monkeypatch)
+    rows = [_row("a.md"), _row("hidden.md"), _row("c.md")]
+    monkeypatch.setattr(chat, "_hidden_by_cut", lambda source, variant: source == "hidden.md")
+    kept_the_second = ({"kept": [1], "order": ["a.md#0", "c.md#0"], "dropped": ["a.md#0"],
+                        "asked": 2, "unreadable": 0}, [])
+    monkeypatch.setattr(chat, "_graded", lambda *a, **kw: kept_the_second)
+
+    ans = chat.answer_from_rows("q", rows, rerank_scores=[0.9, 0.5, 0.1], k=5,
+                                variant="baseline", grade_chunks=True)
+
+    assert ans.success is True
+    assert [s.source for s in ans.sources] == ["c.md"], "the surviving chunk is row 2, not row 1"

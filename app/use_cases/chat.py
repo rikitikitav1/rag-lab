@@ -183,14 +183,20 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
 
 # one filter, one order, one pass: the text and its address cannot come out different lengths
 def kept_chunks(rows, variant: str | None = None) -> tuple[list[str], list[dict]]:
-    variant = variant or config.settings.corpus.variant
-    kept = [hit for hit in rows if not _hidden_by_cut(hit.source, variant)]
-    texts = [f"[{hit.source}]\n{hit.content}" for hit in kept]
-    chunks = [
-        {"source": hit.source, "section": hit.section, "chunk_index": hit.chunk_index}
-        for hit in kept
-    ]
+    texts, chunks, _ = kept_chunks_with_seats(rows, variant)
     return texts, chunks
+
+
+# the seat of each kept chunk among the rows: without it a filter downstream cuts by the wrong index
+def kept_chunks_with_seats(rows, variant: str | None = None) -> tuple[list[str], list[dict], list[int]]:
+    variant = variant or config.settings.corpus.variant
+    seats = [n for n, hit in enumerate(rows) if not _hidden_by_cut(hit.source, variant)]
+    texts = [f"[{rows[n].source}]\n{rows[n].content}" for n in seats]
+    chunks = [
+        {"source": rows[n].source, "section": rows[n].section, "chunk_index": rows[n].chunk_index}
+        for n in seats
+    ]
+    return texts, chunks, seats
 
 
 # the join is built from these same elements, so the two cannot drift
@@ -266,6 +272,7 @@ def answer(
     variant: str | None = None,
     ef_search: int | None = None,
     grade_chunks: bool = False,
+    judge_wanted: bool = True,
 ) -> Answer:
     start = time.perf_counter()
     use_rerank = resolve_rerank(use_rerank)
@@ -288,6 +295,7 @@ def answer(
         variant=variant,
         ef_search=depth,
         grade_chunks=grade_chunks,
+        judge_wanted=judge_wanted,
     )
 
 
@@ -316,7 +324,7 @@ def answer_from_rows(
     use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
 
-    texts, chunks = kept_chunks(rows, variant) if rows else ([], [])
+    texts, chunks, seats = kept_chunks_with_seats(rows, variant) if rows else ([], [], [])
     # the same grader the graph node runs, on the one retrieval this path makes
     graded, asks = (
         _graded(question, texts, chunks, rows) if grade_chunks and texts else (None, [])
@@ -325,8 +333,12 @@ def answer_from_rows(
         kept = set(graded["kept"])
         texts = [t for n, t in enumerate(texts) if n in kept]
         chunks = [c for n, c in enumerate(chunks) if n in kept]
-        rows = [r for n, r in enumerate(rows) if n in kept] if len(rows) == len(graded["order"]) \
-            else rows
+        # by seat, not by position: a chunk hidden by the cut policy shifts every index after it
+        alive = {seats[n] for n in kept}
+        rerank_scores = (
+            [s for n, s in enumerate(rerank_scores) if n in alive] if rerank_scores else rerank_scores
+        )
+        rows = [r for n, r in enumerate(rows) if n in alive]
     context = "\n\n".join(texts) or None
     if not context:
         ans = Answer(text=NO_RESULTS)

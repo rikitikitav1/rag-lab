@@ -108,6 +108,7 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
             model=spec.model,
             variant=spec.variant,
             grade_chunks=spec.grade_chunks,
+            judge_wanted=spec.judge_wanted,
         )
         return True
     raise ValueError(f"unknown pipeline: {spec.pipeline}")
@@ -240,6 +241,7 @@ def _phase_generate(
                 variant=spec.variant,
                 ef_search=ef_search,
                 placed_during=placed_during,
+                grade_chunks=spec.grade_chunks,
                 judge_wanted=spec.judge_wanted,
             )
             answered += 1

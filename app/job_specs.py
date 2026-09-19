@@ -1,5 +1,6 @@
 """What each job type accepts, checked at both ends of the queue."""
 
+import re
 from enum import StrEnum
 from typing import Literal
 
@@ -11,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.index import VARIANT_RE
+
+# the only folder a graded pass reads: a path of its own would let a job open any file
+FROZEN_POOL_RE = re.compile(r"(/app/)?datasets/candidates/[\w.-]+\.json")
 
 # a retired arm dies on every question, so the queue refuses it as the REST door already did
 Runnable = StrEnum("Runnable", {o.name: o.value for o in Orchestrator if o not in GONE})
@@ -118,6 +122,15 @@ class CompareRetrieval(Spec):
 class GradeCandidates(Spec):
     # the frozen pool this grades: a run that names no file would grade whatever is on disk today
     candidates: str = Field(min_length=1, max_length=200)
+
+    @field_validator("candidates")
+    @classmethod
+    def _under_the_frozen_pools(cls, value: str) -> str:
+        # a job reads a file the worker can reach, so the name is a pool of ours, not any path
+        if not FROZEN_POOL_RE.fullmatch(value):
+            raise ValueError("candidates names a frozen pool, like"
+                             " /app/datasets/candidates/<name>.json")
+        return value
     form: Literal["per_chunk", "whole_text"] = "per_chunk"
     top: int = Field(default=5, ge=1, le=20)
     # a slice for a probe; a declared arm draws `sample` by `seed`, as the guest axes do

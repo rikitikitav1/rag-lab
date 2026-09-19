@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -44,11 +45,13 @@ def tree_stamp() -> str:
     digest = hashlib.sha256()
     # the config decides roles, models and samplers, so an edit to it counts as much as a module
     for path in sorted(APP.rglob("*.py")) + [APP.parent / "config.yaml"]:
+        # the path, not the basename: two `base.py` in two packages are two files
+        name = path.relative_to(APP.parent).as_posix()
         try:
             # content, not mtime: a checkout that restores the same bytes is not a different stand
-            digest.update(f"{path.name}:".encode() + hashlib.sha256(path.read_bytes()).digest())
+            digest.update(f"{name}:".encode() + hashlib.sha256(path.read_bytes()).digest())
         except OSError:
-            digest.update(f"{path.name}:gone".encode())
+            digest.update(f"{name}:gone".encode())
     return digest.hexdigest()[:12]
 
 
@@ -56,10 +59,22 @@ LOADED_TREE = tree_stamp()
 STARTED = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+_ASKED_AT = 0.0
+_ANSWERED: str | None = None
+# every three seconds an idle worker would read the whole tree to learn nothing
+SAY_AGAIN_AFTER = 10.0
+
+
 # a hash has no order, so this says "not the same", never "older": a revert differs as much as an edit
-def differs_from_disk() -> str | None:
-    now = tree_stamp()
-    return None if now == LOADED_TREE else f"loaded {LOADED_TREE}, on disk {now}"
+def differs_from_disk(every: float = SAY_AGAIN_AFTER) -> str | None:
+    global _ASKED_AT, _ANSWERED
+    now = time.monotonic()
+    if now - _ASKED_AT < every:
+        return _ANSWERED
+    _ASKED_AT = now
+    stamp = tree_stamp()
+    _ANSWERED = None if stamp == LOADED_TREE else f"loaded {LOADED_TREE}, on disk {stamp}"
+    return _ANSWERED
 
 
 # set by the container that runs the worker: with no default, nothing on the host can speak for it

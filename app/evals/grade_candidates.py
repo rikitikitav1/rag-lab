@@ -61,10 +61,13 @@ def _one_question(row: dict, chunks: list[dict], texts: dict, system: str, ask, 
     addresses = [c["address"] for c in chunks]
     if form == "whole_text":
         # the canon of LangGraph: one verdict over everything the search returned
+        started = time.perf_counter()
         said = grading.piece_verdict(row["text"], "\n\n".join(pieces), system, ask, "whole")
         kept = list(range(len(chunks))) if said != "no" else []
+        # the same keys `grade_pieces` returns, `seconds` included: the two forms are compared on price
         return {"kept": kept, "asked": 1, "unreadable": int(said is None), "order": addresses,
-                "dropped": [] if kept else addresses}
+                "dropped": [] if kept else addresses,
+                "seconds": round(time.perf_counter() - started, 3)}
     return grading.grade_pieces(
         row["text"], pieces, [{"source": c["source"], "chunk_index": c["chunk_index"]}
                               for c in chunks], system, ask
@@ -134,6 +137,12 @@ def run(path: str, form: str = "per_chunk", top: int = 5, limit: int | None = No
             "verdicts": [verdict_row(a) for a in asks],
         })
         asks_all += asks
+        # the dial is the probability: without it every cut keeps everything and the curve is a line
+        if nth == 1 and asks and not any("p" in a for a in asks):
+            raise StandFault(
+                "the engine returned no logprobs for the first question, so no cut can be read;"
+                " a curve over such a pass is a straight line"
+            )
         if nth % 50 == 0:
             log.info("grade_candidates.progress", done=nth, of=len(rows),
                      seconds=round(time.perf_counter() - started))
@@ -155,6 +164,7 @@ def run(path: str, form: str = "per_chunk", top: int = 5, limit: int | None = No
         "rows": out,
         "reads": READS,
     }
+    payload["without_probability"] = sum(1 for a in asks_all if "p" not in a)
     payload["unreadable_share"] = (
         round(payload["unreadable"] / payload["asked"], 4) if payload["asked"] else None
     )

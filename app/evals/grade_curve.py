@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from evals import gold_classes, measurements, stats
+from use_cases import grading
 
 SCHEMA = 1
 CUTS = (None, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95)
@@ -21,11 +22,9 @@ READS = (
 )
 
 
+# the stand's own reader, never a second one: a copy of it kept a `no` the serving node drops
 def _said(verdict: dict) -> tuple[str | None, float | None]:
-    try:
-        return json.loads(verdict["text"]).get("relevant"), verdict.get("p")
-    except (ValueError, KeyError, TypeError):
-        return None, None
+    return grading.read_verdict(verdict.get("text")), verdict.get("p")
 
 
 # the dial the cut is read on: one number that orders a confident no below a hesitant yes

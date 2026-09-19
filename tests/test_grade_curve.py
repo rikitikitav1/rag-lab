@@ -78,3 +78,13 @@ def test_the_score_is_renormalised_when_the_record_carries_both_words():
     # the grammar masks everything else, so the remainder of a `no` is not the mass of `yes`
     verdict = {**_verdict("a#0", "no", 0.6), "top": {"yes": 0.3, "no": 0.6}}
     assert grade_curve.score_of(verdict) == pytest.approx(0.3 / 0.9)
+
+
+def test_the_curve_reads_a_verdict_with_the_stands_own_reader():
+    # a copy of the reader crashed on a scalar and kept a bare `no` the serving node drops
+    bare = {"key": "a#0", "text": "No", "p": 0.8}
+    assert grade_curve.kept_by_grader({"addresses": ["a#0"], "verdicts": [bare]}, None,
+                                      "per_chunk") == set()
+    scalar = {"key": "a#0", "text": '"yes"', "p": 0.8}
+    assert grade_curve.kept_by_grader({"addresses": ["a#0"], "verdicts": [scalar]}, None,
+                                      "per_chunk") == {0}

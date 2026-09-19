@@ -193,6 +193,9 @@ def run(
         raise ValueError(f"orchestrator '{orchestrator}' was removed, runs cannot ask for it")
     gate.announce = not external and bool(remote)
     if orchestrator == Orchestrator.langgraph_idiomatic:
+        # it has no grade node, and a row claiming a grader that never ran describes another arm
+        if grade_chunks:
+            raise ValueError(f"orchestrator '{orchestrator}' has no grader, so it cannot grade chunks")
         orch_react.invoke(
             question,
             system,
@@ -287,7 +290,7 @@ def ask_door(result: AgentResult, role: str = "generation", model=None, logprobs
         result.note_ask(
             stage, key, text,
             cut=token_fields.cut(getattr(completion, "finish_reason", None)),
-            p=grading.confidence(completion, grading.read_verdict(text)) if logprobs else None,
+            p=grading.confidence(completion) if logprobs else None,
         )
         return text
 

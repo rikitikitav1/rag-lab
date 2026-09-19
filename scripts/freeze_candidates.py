@@ -1,7 +1,6 @@
 """The candidates of a question set, frozen once so every arm grades the same pool."""
 
 import argparse
-import hashlib
 import json
 import time
 from datetime import date
@@ -14,7 +13,7 @@ import version
 from models.eval import Question
 from orm.sync_db import Session, engine
 from sqlalchemy import select
-from use_cases import chat, search_depth
+from use_cases import chat, grading, search_depth
 
 import db
 
@@ -27,6 +26,8 @@ def _questions(set_name: str, limit: int | None) -> list[dict]:
         rows = session.scalars(
             select(Question).where(Question.set_name == set_name).order_by(Question.id)
         ).all()
+        # the population of every other door: a question with no marked source has no gold to keep
+        rows = [q for q in rows if q.marked_sources]
         rows = rows[:limit] if limit else rows
         sources = {q.source_question_id for q in rows if q.source_question_id}
         headings = dict(
@@ -40,8 +41,8 @@ def _questions(set_name: str, limit: int | None) -> list[dict]:
                 "text": q.original_text,
                 "language": q.language,
                 "marked_sources": list(q.marked_sources or []),
-                # the gold heading is the source question's own text, as the metrics read it
-                "gold_heading": headings.get(q.source_question_id),
+                # the source question's own text, and its own when it is not a paraphrase
+                "gold_heading": headings.get(q.source_question_id) or q.original_text,
             }
             for q in rows
         ]
@@ -52,8 +53,8 @@ def _number(value):
     return None if value is None else round(float(value), 6)
 
 
-def _digest(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+# the stand's own, so the freeze and the grader cannot disagree about what a chunk is
+_digest = grading.digest
 
 
 def freeze(set_name: str, variant: str, pool: int, limit: int | None) -> dict:
