@@ -842,12 +842,16 @@ def test_server_timings_are_taken_only_when_reported():
 def test_the_row_says_which_edge_ended_the_graph():
     # `final` meant three things, and `pools.outcome` re-derived one of them from `hops >= ceiling`
     from orchestrators import graph
+    from use_cases.agent import AgentResult
     from use_cases.agent_policy import FinishedBy
 
-    ctx = {"max_hops": 4, "result": None, "role": "generation", "model": None}
+    result = AgentResult()
+    ctx = {"max_hops": 4, "result": result, "role": "generation", "model": None}
     answered = graph.final_node({"text": "an answer", "hops": 2, "sources": ["a"]},
                                 {"configurable": {"run": ctx}})
     assert answered == {"finished_by": FinishedBy.answer}
+    # the same edge, written where a report can read it without asking the graph again
+    assert result.trace == [{"node": "final", "hop": 2, "finished_by": str(FinishedBy.answer)}]
 
 
 def test_a_reader_trusts_the_recorded_edge_over_the_ceiling_it_would_guess():

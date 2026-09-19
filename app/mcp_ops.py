@@ -13,6 +13,7 @@ from evals import (
     run_debts,
     run_tokens,
     stats,
+    trace,
 )
 from evals.loaders import load_logs
 from fastmcp import FastMCP
@@ -126,6 +127,26 @@ def _logged(run_names: list[str]) -> list[str]:
     if empty:
         raise ToolError(f"no logs for runs: {empty}")
     return names
+
+
+@mcp_ops.tool(
+    name="agent_trace",
+    description=(
+        "What the agent's own record says about one run's hops and nodes, read from the rows "
+        "instead of a query per question: rows by the hop they finished on, how many rows reached "
+        "each node and how many steps each took, what the gate said per retrieval, how often the "
+        "fallback opened, dropped context or announced the tools, failed hops, and the outcome "
+        "paired with the hops the row spent. Rows with no trace are named, not counted as zero: "
+        "single-shot rows and rows answered before the trace was recorded carry none."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def agent_trace(
+    run_name: Annotated[str, Field(description="The run_name to read.")],
+) -> dict:
+    name = run_name.strip()
+    _logged([name] if name else [])
+    return trace.of_run(name)
 
 
 @mcp_ops.tool(
