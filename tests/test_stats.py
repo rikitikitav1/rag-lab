@@ -31,3 +31,22 @@ def test_the_interval_does_not_move_with_the_order_the_deltas_arrived_in():
     shuffled = deltas[:]
     random.Random(7).shuffle(shuffled)
     assert stats.delta_stats(deltas)["ci95"] == stats.delta_stats(shuffled)["ci95"]
+
+
+def test_every_interval_of_the_stand_is_drawn_the_same_number_of_times():
+    # two resamplings lived here, one drawing 2000 times and one 10000, and both were read as one
+    import re
+    from pathlib import Path
+
+    from evals import guest_probes, judge_correlation, judge_language, stats
+    from use_cases import rejudge, retrieval_compare
+
+    assert stats.BOOTSTRAP_N == 10_000
+    for module in (guest_probes, judge_language, rejudge, retrieval_compare):
+        assert module.bootstrap_ci is stats.bootstrap_ci, module.__name__
+    assert judge_correlation.BOOTSTRAP_N == stats.BOOTSTRAP_N
+
+    root = Path(__file__).resolve().parents[1] / "app"
+    drawn = {p for p in root.rglob("*.py")
+             if re.search(r"^BOOTSTRAP\w* = ", p.read_text(), re.M)}
+    assert drawn == {root / "evals" / "stats.py"}, "a second draw count would read as the first"

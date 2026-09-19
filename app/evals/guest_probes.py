@@ -11,6 +11,7 @@ import statistics
 import llm
 from errors import StandFault
 from evals.guest_llm import stamp
+from evals.stats import bootstrap_ci
 from redaction import redact
 from use_cases.ingest_quality import FENCE
 
@@ -74,10 +75,7 @@ def score(metric, ql, answer) -> tuple[float | None, int, str | None]:
         return None, 0, f"{type(e).__name__}: {redact(str(e))}"[:120]
 
 
-# the stand already has one bootstrap, and it holds its own generator instead of seeding everyone's
 def interval(sample: list[float]) -> list[float] | None:
-    from use_cases.retrieval_compare import bootstrap_ci
-
     if len(sample) < 2:
         return None
     return [round(v, 4) for v in bootstrap_ci(list(sample))]

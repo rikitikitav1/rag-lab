@@ -11,18 +11,22 @@ def wilcoxon_p(deltas) -> float:
     return 1.0 if all(d == 0 for d in deltas) else float(wilcoxon(deltas).pvalue)
 
 
-def delta_stats(deltas: list, rng=None) -> dict:
-    rng = rng if rng is not None else np.random.default_rng(42)
+# the one resampling of the stand: two of them drew a different number of times and read as one
+def bootstrap_ci(deltas, seed: int = 42, rng=None) -> tuple[float, float]:
     # sorted: the draw is over the values, and the caller's order must not move the interval
+    arr = np.sort(np.array(list(deltas), dtype=float))
+    rng = rng if rng is not None else np.random.default_rng(seed)
+    means = rng.choice(arr, size=(BOOTSTRAP_N, arr.size), replace=True).mean(axis=1)
+    return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
+
+
+def delta_stats(deltas: list, rng=None) -> dict:
     arr = np.sort(np.array(deltas, dtype=float))
-    boot_means = rng.choice(arr, size=(BOOTSTRAP_N, arr.size), replace=True).mean(axis=1)
+    low, high = bootstrap_ci(arr, rng=rng)
     p = wilcoxon_p(arr)
     return {
         "mean_delta": round(float(arr.mean()), 3),
-        "ci95": [
-            round(float(np.percentile(boot_means, 2.5)), 3),
-            round(float(np.percentile(boot_means, 97.5)), 3),
-        ],
+        "ci95": [round(low, 3), round(high, 3)],
         # raw: `annotate_holm` decides on this, and rounding only ever lets a test past the bar
         "p": p,
         "n": int(arr.size),

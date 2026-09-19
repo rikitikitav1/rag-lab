@@ -12,6 +12,7 @@ import statistics
 import llm
 from evals.guest_probes import RESTATE, sentence_of
 from evals.measurements import FOLDER
+from evals.stats import bootstrap_ci
 from use_cases.judge import faithful_verdict
 
 # the report's shape, raised with every key it gains
@@ -180,8 +181,6 @@ def report(rows: list[dict]) -> dict:
         paired.setdefault(r["row"], {})[r["lang"]] = r["score"]
     deltas = [p["en"] - p["ru"] for p in paired.values()
               if p.get("en") is not None and p.get("ru") is not None]
-    from use_cases.retrieval_compare import bootstrap_ci
-
     return {
         "schema": SCHEMA,
         "n_rows": len(paired),

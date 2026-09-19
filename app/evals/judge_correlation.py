@@ -16,7 +16,7 @@ from evals.pools import (
     joins_both_judges,
 )
 from evals.pools import outcome as _outcome
-from evals.stats import score_of, to_unit
+from evals.stats import BOOTSTRAP_N, score_of, to_unit
 from outcomes import Outcome
 from scipy.stats import spearmanr
 from use_cases.ingest_quality import code_fraction
@@ -131,12 +131,10 @@ def strata(rows) -> dict:
 def rho_ci(rows, a: str, b: str, seed: int = 0) -> list | None:
     import random
 
-    from use_cases.retrieval_compare import BOOTSTRAP
-
     if len(rows) < 3:
         return None
     rng, drawn = random.Random(seed), []
-    for _ in range(BOOTSTRAP):
+    for _ in range(BOOTSTRAP_N):
         sample = [rows[rng.randrange(len(rows))] for _ in rows]
         value = rho(sample, a, b)
         if value is not None:
