@@ -306,6 +306,7 @@ def answer_from_rows(
     rerank_device: str | None = None,
     ef_search: int | None = None,
     grade_chunks: bool = False,
+    judge_wanted: bool = True,
     *,
     variant: str,
     placed_during: dict | None = None,
@@ -366,7 +367,7 @@ def answer_from_rows(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
             _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
             contexts=texts or None, chunks=chunks or None, placed_during=placed_during,
-            graded=graded, asks=asks,
+            graded=graded, asks=asks, judge_wanted=judge_wanted,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -442,6 +443,7 @@ def _log_answer(
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
     placed_during: dict | None = None, graded: dict | None = None, asks: list | None = None,
+    judge_wanted: bool = True,
 ) -> None:
     # no call, no generator on the row: an answer refused over the window has a context and no call
     generated = ans.success
@@ -455,6 +457,7 @@ def _log_answer(
         question = _find_or_create_question(session, original_text, lang)
         log_row = QuestionLog(
             run_name=run_name,
+            judge_wanted=judge_wanted,
             question_id=question.id,
             question_text=question.original_text,
             reference_answer=question.reference_answer,

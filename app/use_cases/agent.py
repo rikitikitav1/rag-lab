@@ -127,6 +127,7 @@ def run(
     orchestrator: str | None = None,
     variant: str | None = None,
     grade_chunks: bool = False,
+    judge_wanted: bool = True,
 ) -> AgentResult:
     start = time.perf_counter()
     variant = variant or config.settings.corpus.variant
@@ -248,6 +249,7 @@ def run(
             },
             restate_tools=restate_tools,
             grade_chunks=grade_chunks,
+            judge_wanted=judge_wanted,
             variant=variant,
         )
     except SQLAlchemyError as e:
@@ -415,6 +417,7 @@ def _log_answer(
     orchestrator: dict | None = None,
     restate_tools: bool = False,
     grade_chunks: bool = False,
+    judge_wanted: bool = True,
     *, variant: str,
 ) -> None:
     use_rerank = chat.resolve_rerank(use_rerank)
@@ -430,6 +433,7 @@ def _log_answer(
         question = chat._find_or_create_question(session, question_text, lang)
         log_row = QuestionLog(
             run_name=run_name,
+            judge_wanted=judge_wanted,
             question_id=question.id,
             question_text=question.original_text,
             reference_answer=question.reference_answer,

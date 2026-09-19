@@ -928,3 +928,4 @@ def test_a_remote_judge_is_stamped_with_no_residency_rather_than_one_of_its_own(
     cloud = engines.EngineSpec(8, "gonka", EngineKind.openai_compatible, "GONKA", Placement.remote)
     monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: engines.Resolved("m", cloud))
     assert j._residency(42) == j.Residency(None, False, card.NO_RESIDENCY)
+

@@ -374,3 +374,20 @@ def test_a_row_the_stand_never_generated_names_no_generator(monkeypatch):
     row = seen["row"]
     assert row.models["generation"] is None and row.answered is False
     assert row.metrics["config"]["generated"] is False
+
+
+def test_a_run_carries_its_own_answer_to_whether_the_judge_follows(monkeypatch):
+    # the chain was unconditional, so a run read by a rule still paid for the judge's residency
+    from job_handlers import evaluation
+
+    seen = {}
+    monkeypatch.setattr(evaluation, "require_role_ready", lambda role, **kw: None)
+    monkeypatch.setattr(evaluation, "require_card", lambda role, model=None, allow_spill=False: None)
+    monkeypatch.setattr(evaluation.runner, "run", lambda **kw: seen.update(kw) or 0)
+    monkeypatch.setattr(evaluation, "_claims_on", lambda run_name, job_id: (0, []))
+
+    evaluation.eval_run({"run_name": "r", "set_name": "s"})
+    assert seen["judge"] is True, "a run says nothing and is judged, as every run was"
+
+    evaluation.eval_run({"run_name": "r", "set_name": "s", "judge": False})
+    assert seen["judge"] is False

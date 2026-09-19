@@ -71,6 +71,8 @@ class RunSpec:
     weak_distance: float | None = None
     topic_threshold: float | None = None
     orchestrator: str | None = None
+    # carried onto every row: whether the sweep may ever judge what this run wrote
+    judge_wanted: bool = True
 
 
 # answered is a row that answered: the agent writes a row for a hop that failed and returns normally
@@ -92,6 +94,7 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
             topic_threshold=spec.topic_threshold,
             orchestrator=spec.orchestrator,
             variant=spec.variant,
+            judge_wanted=spec.judge_wanted,
         )
         return not result.failed and result.outcome != Outcome.error
     if spec.pipeline == Pipeline.single_shot:
@@ -237,6 +240,7 @@ def _phase_generate(
                 variant=spec.variant,
                 ef_search=ef_search,
                 placed_during=placed_during,
+                judge_wanted=spec.judge_wanted,
             )
             answered += 1
         except StandFault:
@@ -420,6 +424,7 @@ def run(
     variant: str | None = None,
     resume: bool = False,
     generation_sampler: dict | None = None,
+    judge: bool = True,
 ) -> int:
     pipeline = Pipeline(pipeline)
     variant = variant or config.settings.corpus.variant
@@ -461,6 +466,7 @@ def run(
         weak_distance=weak_distance,
         topic_threshold=topic_threshold,
         orchestrator=orchestrator,
+        judge_wanted=judge,
     )
 
     try:
@@ -486,7 +492,8 @@ def run(
         raise
     if resume:
         _mark_resumed(run_name, texts, replaced=replaced, since=since)
-    if not cancelled:
+    # a run whose number is not a judged score pays for the judge's residency and its noise for nothing
+    if not cancelled and judge:
         job_queue.enqueue("judge_answers", {"run_name": run_name})
     log.info(
         "eval_run.answered",
@@ -494,6 +501,7 @@ def run(
         answered=answered,
         total=len(texts),
         cancelled=cancelled,
+        judge=judge,
     )
     return answered
 

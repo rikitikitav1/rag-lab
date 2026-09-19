@@ -163,3 +163,9 @@ def test_every_door_that_queues_a_job_answers_with_the_whole_row():
     # the rejudge, the load and the seat answered two or three fields of their own
     for door in (RejudgeResponse, LoadQueuedResponse, SeatQueuedResponse):
         assert issubclass(door, JobResponse), door.__name__
+
+
+def test_a_run_may_say_it_wants_no_judge():
+    # a canary match or a retrieval delta is read by a rule, and the judge costs a residency and its noise
+    job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "judge": False})
+    job_specs.check("eval_run", {"run_name": "r", "set_name": "s"})

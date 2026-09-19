@@ -425,6 +425,7 @@ async def enqueue_eval_run(
             "allow_cpu": request.allow_cpu,
             "restate_tools": request.restate_tools,
             "grade_chunks": request.grade_chunks,
+            "judge": request.judge,
             "variant": request.variant,
             "resume": False,
             "generation_sampler": request.generation_sampler,

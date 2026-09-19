@@ -48,6 +48,8 @@ class EvalRunFields(Spec):
     resume: bool = False
     # the generator's sampler in this run alone: the judge shares a vLLM model with it and keeps its own
     generation_sampler: dict | None = None
+    # off for a run read by a rule and not by a score: retrieval deltas, a string match, a canary
+    judge: bool = True
 
     @field_validator("generation_sampler")
     @classmethod

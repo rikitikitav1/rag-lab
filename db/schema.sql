@@ -425,7 +425,8 @@ CREATE TABLE public.question_logs (
     reference_answer text,
     contexts jsonb,
     chunks jsonb,
-    transcript jsonb
+    transcript jsonb,
+    judge_wanted boolean DEFAULT true NOT NULL
 );
 
 
@@ -953,4 +954,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260912000004'),
     ('20260912000005'),
     ('20260912000006'),
-    ('20260919000001');
+    ('20260919000001'),
+    ('20260919000002');

@@ -133,6 +133,9 @@ def _target_log_ids(session, options) -> list[int]:
     stmt = stmt.join(Question, QuestionLog.question_id == Question.id).where(still_to_judge())
     if options.get("run_name"):
         stmt = stmt.where(QuestionLog.run_name == options["run_name"])
+    else:
+        # named, a run is judged whatever it said; unnamed, the sweep skips what asked for no judge
+        stmt = stmt.where(QuestionLog.judge_wanted.is_(True))
     return list(session.scalars(stmt))
 
 
