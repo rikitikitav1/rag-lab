@@ -155,11 +155,22 @@ def verdicts(left: list, right: list) -> dict:
 
 
 # the report's shape, raised with every field it gains
-SCHEMA = 15
+SCHEMA = 16
 
 
 class TwoJudges(Ambiguous):
     pass
+
+
+# the stamp exists so a reader can ask "did these arms share one code"; without this nobody ever asked
+def code_by_run(runs: dict[str, list]) -> dict:
+    said = {}
+    for name, logs in runs.items():
+        seen = {(ql.metrics or {}).get("config", {}).get("code_version") for ql in logs}
+        said[name] = sorted(v for v in seen if v)
+    every = {v for versions in said.values() for v in versions}
+    return {"by_run": said, "one_code": len(every) <= 1,
+            "reads": "the code each run's rows were written by; two arms on two stamps compare two trees"}
 
 
 def compare(runs: dict[str, list]) -> dict:
@@ -209,6 +220,7 @@ def compare(runs: dict[str, list]) -> dict:
         "residency": residency,
         # the treatment, not a fault: two generators on two engines is what a pair of arms compares
         "answering_engines_by_run": {name: _answering_engines(logs) for name, logs in runs.items()},
+        "code": code_by_run(runs),
         # two servers apply their own penalty unasked (1.05 against 1.1): aligned first, then compared
         **_answering_penalties_of(runs),
         # the correlation's own predicate, called not restated: one label stood over two selections

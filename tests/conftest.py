@@ -6,6 +6,14 @@ import pytest
 sys.dont_write_bytecode = True
 
 
+# a test that reaches the worker's entry point must not speak for the live worker's stamp
+@pytest.fixture(autouse=True)
+def stamp_in_a_temp_dir(monkeypatch, tmp_path):
+    import version
+
+    monkeypatch.setattr(version, "SAID", tmp_path / "worker.stamp")
+
+
 # every stamp reads each ollama model's parameters and the server's version; a test that means them patches its own
 @pytest.fixture(autouse=True)
 def no_ollama_reads(monkeypatch):

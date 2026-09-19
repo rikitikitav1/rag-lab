@@ -213,6 +213,8 @@ class CompareResponse(BaseModel):
     schema_version: int = Field(alias="schema")
     residency: dict
     answering_engines_by_run: dict
+    # which code each arm's rows were written by: two stamps mean two trees, and a reader must see it
+    code: dict | None = None
     answering_penalties_by_run: dict | None = None
     one_answering_penalty: bool | None = None
     outcome_rule: int | None = None

@@ -46,6 +46,8 @@ services:
       HF_HUB_OFFLINE: "1"
       HF_TOKEN: ${HF_TOKEN:-}
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      # read here, written by the worker: the stand says whose code is older than the tree
+      WORKER_STAMP: /app/temp_files/worker.stamp
       # the chat answers in this process, and it read no timeout but its own default
       LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       # the tree is mounted: bytecode written here outlived a restart as a mutant the tests had made
@@ -160,6 +162,7 @@ services:
       HOME: /tmp
       LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       WORKER_QUEUES: ${WORKER_QUEUES:-default,io}
+      WORKER_STAMP: /app/temp_files/worker.stamp
       # read by the judge and capped by the slots ollama was started with
       JUDGE_WIDTH: ${JUDGE_WIDTH:-1}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}

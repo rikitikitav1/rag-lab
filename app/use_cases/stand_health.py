@@ -4,6 +4,7 @@ import gpu
 import job_queue
 import llm
 import logging_setup
+import version
 from engines import card as card_holder
 from engines import ollama, vllm
 from models.jobs import Job
@@ -255,6 +256,22 @@ def samplers() -> dict:
     return out
 
 
+# a worker that claims nothing looks from the queue exactly like a worker with nothing to do
+def code() -> dict:
+    said = version.what_the_worker_loaded()
+    on_disk = version.tree_stamp()
+    out = {"on_disk": on_disk, "api_loaded": version.LOADED_TREE,
+           "code_version": version.CODE_VERSION}
+    if said is None:
+        return out | {"worker": "has not said which code it loaded"}
+    return out | {
+        "worker_loaded": said.get("stamp"),
+        "worker_said_at": said.get("at"),
+        # not "stale": a reverted tree differs from a running process as much as an edited one
+        "worker_code_differs": said.get("stamp") != on_disk,
+    }
+
+
 def stand() -> dict:
     # the card of the generator's engine: with a second ollama a bare ask reads as no residency
     def residency() -> list:
@@ -275,6 +292,7 @@ def stand() -> dict:
         "samplers": _or_error("samplers", samplers),
         "corpus": _or_error("corpus", corpus),
         "ef_search": _or_error("ef_search", depth),
+        "code": _or_error("code", code),
     }
 
 

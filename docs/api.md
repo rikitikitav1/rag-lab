@@ -8,7 +8,7 @@ List endpoints (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) share 
 
 Health:
 - `GET /liveness`, `GET /readiness` (names each role whose engine does not answer)
-- `GET /v1/health/stand` (what the stand is right now: the card, which models are resident and how much VRAM each holds, the window the server actually serves against the declared one, the live queue, role drift between config and database, the corpus variant and the search depth per variant. Readable while a run competes with it, so a run that answers slowly can be diagnosed without stopping it)
+- `GET /v1/health/stand` (what the stand is right now: the code each process loaded against the code on disk, the card, which models are resident and how much VRAM each holds, the window the server actually serves against the declared one, the live queue, role drift between config and database, the corpus variant and the search depth per variant. Readable while a run competes with it, so a run that answers slowly can be diagnosed without stopping it)
 
 Chat and search:
 - `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
@@ -37,7 +37,7 @@ Eval platform:
 - `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops`, `fallback_policy`, `gate_signal`, `weak_distance`, `topic_threshold`, `orchestrator`, `variant` (which cut of the corpus the run reads) and `model` (generator) overrides, plus `allow_cpu` for a run that means to measure the processor; config only sets the defaults)
 - `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops`, `model`, `variant`, `orchestrator`, `fallback_policy`, `gate_signal`, `weak_distance` or `topic_threshold`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
-- `GET /v1/eval/compare?runs=A&runs=B` (arms side by side split by pool: in-corpus, out-of-corpus, off-domain, rejected; per arm the judged axes, how often the answer came from a remote tool against the corpus, how often the coverage gate fired, latency avg/p50 and the outcome histogram; per pair of arms a paired Wilcoxon plus a bootstrap interval over the same questions, so a difference is reported with its size and its uncertainty instead of two averages)
+- `GET /v1/eval/compare?runs=A&runs=B` (arms side by side split by pool: in-corpus, out-of-corpus, off-domain, rejected; per arm the judged axes, how often the answer came from a remote tool against the corpus, how often the coverage gate fired, latency avg/p50 and the outcome histogram; per pair of arms a paired Wilcoxon plus a bootstrap interval over the same questions, so a difference is reported with its size and its uncertainty instead of two averages; and the code each arm's rows were written by, with a flag when the arms did not share one)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 - `GET /v1/questions?set_name=&language=&pool=&limit=&offset=` (the questions themselves, one row each: id, pool, text, reference and marked sources; where a run's `question_ids` come from)
 
@@ -109,12 +109,18 @@ rather than a claim in its description.
 
 ## The queue
 
-Any job type can be queued through one door: `POST /v1/job` with `{"type": ..., "options": {...}}`. It and every door that queues a job of its own (`/v1/eval/*`, `/v1/source/{id}/analyze`) answer with the whole job row: `job_id`, `type`, `queue`, `status`, `options`, `apply_since`, `created_at`.
+Any job type can be queued through one door: `POST /v1/job` with `{"type": ..., "options": {...}}`. It and every door that queues a job of its own (`/v1/eval/*`, `/v1/source/{id}/analyze`) answer with the whole job row: `job_id`, `type`, `queue`, `status`, `options`, `apply_since`, `created_at`. A claimed job also carries `code`, the stamp of the process that took it, so whether a series of runs shared one code is a query rather than a comparison of container start times with file dates by hand.
 What each type accepts is a model per type in `app/job_specs.py`, checked when the job is queued,
 whichever door or script queues it, and again when the worker takes it, so a row written straight
 into the table meets the same refusal. A door of its own is for work done before the enqueue rather
 than for checking: `/eval/rejudge` copies a run, `/eval/guest-axes` answers on a property of the
 runtime. The lane belongs to the type, not to the caller.
+A worker whose code is not the code on disk still claims its jobs and writes that fact onto each row
+(`code.differs`), saying it once in the log: refusing to claim turns an edit made during a batch into a
+queue that looks like it has nothing to do. The stamp is over the bytes, so a checkout that restores the
+same content changes nothing, and it says "differs" rather than "older", because a reverted tree is as
+much of a mismatch as an edited one. A reader of a series then knows which passes shared one code, and
+drops what it must, instead of the stand deciding that for it.
 
 Every type the queue knows, what it does and what it takes:
 

@@ -8,6 +8,7 @@ import job_queue
 import job_specs
 import llm
 import logging_setup
+import version
 from engines import balances
 from redaction import redact
 
@@ -22,6 +23,7 @@ Deferred = job_handlers.Deferred
 Final = job_handlers.Final
 HANDLERS = job_handlers.HANDLERS
 QUEUES = [q.strip() for q in os.getenv("WORKER_QUEUES", "default,io").split(",") if q.strip()]
+_SAID_STALE = False
 
 
 def reclaim(queues: list[str]) -> None:
@@ -31,12 +33,24 @@ def reclaim(queues: list[str]) -> None:
         log.warning("worker.requeued_stale", ids=stale)
 
 
+# said once and written onto every row: a worker that refused to claim turned an edit into a stalled queue
+def _say_the_code_differs(id: int) -> None:
+    global _SAID_STALE
+    said = version.differs_from_disk()
+    if said and not _SAID_STALE:
+        log.warning("worker.code_differs", id=id, stamps=said,
+                    says="the code on disk is not the code this process loaded, in one direction or"
+                         " the other; every job claimed from here says so on its row")
+        _SAID_STALE = True
+
+
 def run_once(queues: list[str]) -> bool:
     claimed = job_queue.claim_next(queues)
     if claimed is None:
         return False
 
     log.info("worker.claimed", id=claimed.id, type=claimed.type)
+    _say_the_code_differs(claimed.id)
     handler = HANDLERS.get(claimed.type)
     if handler is None:
         # it called nothing, and an empty count says so instead of reading as a job from before the count
@@ -183,7 +197,9 @@ def main() -> None:
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
     if not QUEUES:
         raise SystemExit("WORKER_QUEUES is empty")
-    log.info("worker.start", queues=QUEUES, handlers=list(HANDLERS))
+    version.say_loaded()
+    log.info("worker.start", queues=QUEUES, handlers=list(HANDLERS),
+             stamp=version.LOADED_TREE, code_version=version.CODE_VERSION)
     llm.take_the_card_before_calls(job_handlers.card.take_for_call)
     reclaim(QUEUES)
     for lane in QUEUES[1:]:
