@@ -168,6 +168,21 @@ async def create_integration(
     return await commit_and_refresh(session, integration)
 
 
+def _host_of(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    return urlsplit(url).netloc.lower()
+
+
+# a row that carries a secret keeps its host: repointing it sends the key to whoever asked
+def refuse_a_moved_secret(auth, was: str, now: str) -> None:
+    if auth and _host_of(was) != _host_of(now):
+        raise HTTPException(
+            status_code=409,
+            detail="an integration that carries auth keeps its host; register another one instead",
+        )
+
+
 class McpIntegrationUpdateRequest(BaseModel):
     url: str = Field(max_length=512, pattern=_URL_PATTERN)
     status: Literal[McpStatus.disabled, McpStatus.active]
@@ -192,6 +207,8 @@ async def update_integration(
             status_code=409,
             detail=f"cannot switch status {integration.status} -> {request.status}",
         )
+
+    refuse_a_moved_secret(integration.auth or request.auth, integration.url, request.url)
 
     for field, value in request.model_dump().items():
         setattr(integration, field, value)
