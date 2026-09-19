@@ -80,7 +80,7 @@ def quick_ask(question: QuestionRequest) -> RetrievalResponse:
     category = question.filter.category if question.filter else None
     res = chat.retrieve(
         question.text, category, variant=config.settings.corpus.variant,
-        ef_search=question.ef_search,
+        ef_search=question.ef_search, use_rerank=question.rerank,
     )
     return RetrievalResponse(
         sources=[AnswerSource.of(s) for s in res.sources],

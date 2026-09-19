@@ -328,3 +328,49 @@ def test_the_agent_judges_its_live_answers_by_the_chat_s_rule():
 
     source = inspect.getsource(agent)
     assert "chat.judge_later(" in source and 'enqueue("judge_answers"' not in source
+
+
+def test_fast_retrieval_reranks_when_the_request_asked_for_it(monkeypatch):
+    # the door waited for the reranker's card and the search then ran without it
+    asked = []
+
+    def rows(question, category, k, rerank_enabled, variant, ef_search):
+        asked.append(rerank_enabled)
+        return [], None, 100
+
+    monkeypatch.setattr(chat, "_retrieve_rows", rows)
+    chat.retrieve("q", variant="baseline", use_rerank=True)
+    chat.retrieve("q", variant="baseline", use_rerank=False)
+    assert asked == [True, False]
+
+
+def test_a_row_the_stand_never_generated_names_no_generator(monkeypatch):
+    # an input over the window has a context and no call, and the row stamped the role's model
+    seen = {}
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def add(self, row):
+            seen["row"] = row
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(chat, "Session", _Session)
+    monkeypatch.setattr(chat, "_find_or_create_question",
+                        lambda session, text, lang: SimpleNamespace(id=1, original_text=text, reference_answer=None))
+    monkeypatch.setattr(chat, "judge_later", lambda *a, **kw: None)
+    monkeypatch.setattr(chat.prompt_repo, "active_version", lambda purpose: 1)
+    monkeypatch.setattr(chat.llm, "resolve_name", lambda role: f"{role}-model")
+    monkeypatch.setattr(chat, "_config_snapshot", lambda *a, **kw: {"generated": kw.get("generated")})
+
+    refused = chat.Answer(text="not answered: over the window", context="a context")
+    chat._log_answer("q", refused, "en", context="a context", variant="baseline")
+    row = seen["row"]
+    assert row.models["generation"] is None and row.answered is False
+    assert row.metrics["config"]["generated"] is False

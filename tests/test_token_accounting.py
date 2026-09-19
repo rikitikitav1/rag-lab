@@ -157,3 +157,19 @@ def test_a_count_keeps_the_longest_input_and_the_calls_the_output_limit_cut():
     second = {"ragas": [{**_entry(6403, 1024, 1), "max_prompt": 6403, "cut_by_length": 1}]}
     merged = job_queue.merged_tokens(first, second)["ragas"][0]
     assert (merged["max_prompt"], merged["cut_by_length"], merged["calls"]) == (6403, 1, 2)
+
+
+def test_a_turn_without_token_counts_does_not_fail_the_row(monkeypatch):
+    # `0 + None` in the reducer read as a broken graph, while the server had simply sent no usage
+    from orchestrators import graph
+    from use_cases.agent import AgentResult
+
+    turn = SimpleNamespace(text="an answer", tool_calls=[], message=None, prompt_tokens=None,
+              completion_tokens=None, parsed=None, finish_reason="stop")
+    result = AgentResult()
+    ctx = {"chat": lambda *a, **kw: turn, "result": result, "role": "generation", "model": None,
+           "remote": {}, "gate": None}
+    update = graph.model_node({"hops": 0, "external": False, "nudges": 1, "messages": []},
+                              {"configurable": {"run": ctx}})
+    assert update["prompt_tokens"] == 0 and update["max_prompt_tokens"] == 0
+    assert update["completion_tokens"] == 0 and update["text"] == "an answer"

@@ -104,9 +104,10 @@ def model_node(state: State, config) -> dict:
     update = {
         "hops": hop,
         "tools_offered": [_offered(ctx, state["external"])],
-        "prompt_tokens": turn.prompt_tokens,
-        "completion_tokens": turn.completion_tokens,
-        "max_prompt_tokens": turn.prompt_tokens,
+        # a server that answers without counts reduced into `0 + None` and failed the whole row
+        "prompt_tokens": turn.prompt_tokens or 0,
+        "completion_tokens": turn.completion_tokens or 0,
+        "max_prompt_tokens": turn.prompt_tokens or 0,
         "answer_parse": [turn.parsed],
         "turn": turn,
     }
@@ -326,9 +327,9 @@ def final_node(state: State, config) -> dict:
     update["answer_parse"] = [*update.get("answer_parse", []), final.parsed]
     update.update(
         hops=state["hops"] + 1,
-        prompt_tokens=final.prompt_tokens,
-        completion_tokens=final.completion_tokens,
-        max_prompt_tokens=final.prompt_tokens,
+        prompt_tokens=final.prompt_tokens or 0,
+        completion_tokens=final.completion_tokens or 0,
+        max_prompt_tokens=final.prompt_tokens or 0,
         text=final.text or "",
     )
     if token_fields.cut(final.finish_reason):

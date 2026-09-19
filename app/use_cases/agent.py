@@ -291,7 +291,8 @@ def _admissible(question: str, tools: dict, result: AgentResult, ask) -> dict:
         )
         try:
             verdict = ask("tool_match", name, system, user).lower()
-        except RuntimeError as e:
+        # an input over the window refuses as a ValueError, and the door answered 500 before the row
+        except (RuntimeError, llm.InputOverWindow) as e:
             log.error("agent.tool_match_failed", tool=name, error=str(e))
             result.tool_errors[name] = "tool_match"
             continue

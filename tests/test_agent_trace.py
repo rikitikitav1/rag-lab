@@ -86,3 +86,20 @@ def test_a_failed_hop_is_counted_and_named():
 
     got = trace.report([_row(4, [{"node": "model", "hop": 1, "failed": True}], outcome="error")])
     assert got["failed_hops"] == 1 and got["outcomes_by_hops"] == {1: {"error": 1}}
+
+
+def test_a_probe_refused_over_the_window_fails_its_tool_not_the_whole_answer(monkeypatch):
+    # the refusal is a ValueError, so the door answered 500 and the question got no row at all
+    import llm
+    import prompt_repo
+    from use_cases import agent
+
+    monkeypatch.setattr(prompt_repo, "active_template", lambda purpose: "system")
+    result = agent.AgentResult()
+
+    def refused(stage, key, system, user):
+        raise llm.InputOverWindow("the input is at least 9000 tokens against the 8192-token window")
+
+    tools = {"needs_value": NS(parameters={"required": ["repo"], "properties": {"repo": {}}})}
+    assert agent._admissible("q", tools, result, refused) == {}
+    assert result.tool_errors == {"needs_value": "tool_match"}
