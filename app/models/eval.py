@@ -3,7 +3,7 @@ from datetime import datetime
 
 from orm import Base
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, ForeignKey, String, func
+from sqlalchemy import ARRAY, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -64,6 +64,8 @@ class QuestionLog(Base):
     relevance: Mapped[str | None]
     completeness: Mapped[str | None]
     metrics: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # false when the run said no judge follows it: the sweep must not judge what nobody asked about
+    judge_wanted: Mapped[bool] = mapped_column(server_default=text("true"), default=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     question: Mapped["Question | None"] = relationship()

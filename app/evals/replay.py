@@ -72,6 +72,9 @@ def results_of(recorded: Recorded) -> list:
             named = span["dropped"]["sources"]
             pieces = [_ELIDED] * span["dropped"]["pieces"]
             chunks = [None] * len(pieces)
+        elif span.get("graded"):
+            pieces, chunks = _before_grading(span["graded"], pieces, chunks)
+            named = span["graded"].get("sources") or named
         out.append(
             agent_tools.ToolResult(
                 # a call that found nothing answered NO_RESULTS, and "" would read as context
@@ -85,6 +88,29 @@ def results_of(recorded: Recorded) -> list:
 
 # the text of a dropped piece is not kept; the gate reads the scores, and the model never saw it
 _ELIDED = "[dropped by the gate, text not recorded]"
+_ELIDED_GRADE = "[dropped by the grader, text not recorded]"
+
+
+# an address is the file and the chunk's place in it, which is what the grader keys its verdict by
+def _chunk_of(address: str) -> dict:
+    source, _, place = address.rpartition("#")
+    return {"source": source or address, "section": None,
+            "chunk_index": int(place) if place.isdigit() else None}
+
+
+# the row kept the chunks that survived; the graph is handed the whole order back, dropped elided
+def _before_grading(plan: dict, kept_pieces: list, kept_chunks: list) -> tuple[list, list]:
+    dropped = set(plan.get("dropped") or ())
+    pieces, chunks = [], []
+    texts, addressed = list(kept_pieces), list(kept_chunks)
+    for address in plan.get("order") or ():
+        if address in dropped:
+            pieces.append(_ELIDED_GRADE)
+            chunks.append(_chunk_of(address))
+            continue
+        pieces.append(texts.pop(0) if texts else _ELIDED)
+        chunks.append(addressed.pop(0) if addressed else _chunk_of(address))
+    return pieces, chunks
 
 
 @dataclass
@@ -211,7 +237,7 @@ def rerun(row) -> tuple:
     # the row's own verdicts; admission runs before the graph, so a replay never asks for its calls
     asked = [a for a in (metrics.get("asks") or []) if a.get("stage") != "tool_match"]
 
-    def ask(stage, key, system, user):
+    def ask(stage, key, system, user, schema=None):
         if not asked:
             problems.append(f"the graph asked for a {stage} verdict the row never recorded")
             raise _Script("out of verdicts")
@@ -249,6 +275,9 @@ def rerun(row) -> tuple:
             role="generation", model=None, max_hops=snapshot.get("max_hops"),
             variant=snapshot.get("variant"),
             chat=chat, dispatch=dispatch, template=template, ask=ask,
+            # the row that graded chunks replays through the same door, or it replays another arm
+            grade_ask=ask if snapshot.get("grade_chunks") else None,
+            grade_system=template(Purpose.grade_chunk) if snapshot.get("grade_chunks") else None,
         ),
         result,
     )

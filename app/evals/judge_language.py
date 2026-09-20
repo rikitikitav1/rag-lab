@@ -5,7 +5,7 @@ import statistics
 
 import llm
 from evals.guest_probes import RESTATE, sentence_of
-from evals.measurements import FOLDER
+from evals.measurements import PANELS
 from evals.stats import bootstrap_ci
 from use_cases.judge import faithful_verdict
 
@@ -16,10 +16,10 @@ SCHEMA = 8
 CONTROL_FLOOR = 0.90
 
 # fixed English rows: the regime is a property of the instrument, so it is not read on the run it measures
-PANEL = FOLDER / "judge_language_panel_ids.txt"
+PANEL = PANELS / "judge_language_panel_ids.txt"
 
 # the panel's first reading under today's ruler, rewritten by hand when the ruler changes, never by the probe
-REFERENCE = FOLDER / "judge_language_panel_reference.json"
+REFERENCE = PANELS / "judge_language_panel_reference.json"
 
 # a regime holds while at most this share of the panel crosses 7 against the reference, on either part
 MOVES_ALLOWED = 0.10

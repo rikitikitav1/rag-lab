@@ -587,8 +587,10 @@ def test_search_and_the_verdict_on_it_are_two_nodes_with_the_verdict_on_the_edge
     assert {"retrieve", "fallback", "emit"} <= {
         n for n in compiled.nodes if not n.startswith("__")
     }
-    out_of_retrieve = {e.target for e in compiled.edges if e.source == "retrieve"}
-    assert out_of_retrieve == {"fallback", "emit"}, "the coverage verdict is not an edge"
+    # grading stands between the search and the verdict: it filters what the verdict then reads
+    assert {e.target for e in compiled.edges if e.source == "retrieve"} == {"grade"}
+    out_of_grade = {e.target for e in compiled.edges if e.source == "grade"}
+    assert out_of_grade == {"fallback", "emit"}, "the coverage verdict is not an edge"
     assert {e.target for e in compiled.edges if e.source == "fallback"} == {"emit"}
 
 

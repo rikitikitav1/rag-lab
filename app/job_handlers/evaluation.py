@@ -57,6 +57,7 @@ def eval_run(options: dict) -> None:
             fallback_policy=options.get("fallback_policy"),
             gate_signal=options.get("gate_signal"),
             restate_tools=bool(options.get("restate_tools")),
+            grade_chunks=bool(options.get("grade_chunks")),
             weak_distance=options.get("weak_distance"),
             orchestrator=options.get("orchestrator"),
             allow_cpu=bool(options.get("allow_cpu")),
@@ -65,6 +66,7 @@ def eval_run(options: dict) -> None:
             variant=options.get("variant"),
             resume=resume,
             generation_sampler=options.get("generation_sampler"),
+            judge=options.get("judge", True),
         )
     # the worker's retry would answer every question again beside the rows already written
     except StandFault as e:
@@ -142,3 +144,32 @@ def compare_retrieval(options: dict) -> None:
             status=str(exp.status),
             grid_kept=kept,
         )
+
+
+@register("grade_candidates")
+def grade_candidates(options: dict) -> None:
+    from evals import grade_candidates as bench
+
+    require_role_ready(Role.grading, take_card=False)
+    require_card("grading")
+    # the worker's retry would grade the whole file again, and the pass writes only at the end
+    try:
+        said = bench.run(
+            options["candidates"],
+            form=options.get("form") or "per_chunk",
+            top=options.get("top") or 5,
+            limit=options.get("limit"),
+            sample=options.get("sample"),
+            seed=options.get("seed") or 0,
+            shuffle=options.get("shuffle"),
+            prompt_version=options.get("prompt_version"),
+            name=options.get("name"),
+            job_id=options.get("_job_id"),
+        )
+    except StandFault as e:
+        raise Final(str(e)) from e
+    log.info(
+        "grade_candidates.done", questions=said["questions"], asked=said["asked"],
+        unreadable=said["unreadable_share"], seconds=said["seconds"], where=said["where"],
+        cancelled=said["cancelled"],
+    )

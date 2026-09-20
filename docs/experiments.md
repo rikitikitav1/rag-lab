@@ -9,6 +9,7 @@ A lab journal of RAG-quality experiments: question → setup → result → deci
 - **Isolation**: change one variable at a time; hold the rest constant.
 - **Reproducibility**: the generator's sampler is recorded with the run; the default is `temperature: 0.1`, and a run pins another with `generation_sampler`. Even at temperature 0 two runs of one generator differ, so a change is read against the generator's own floor (README, "Why the numbers hold"), not against zero.
 - Each run is one `eval_run` job (answers, bulk) → one `judge_answers` job (verdicts, bulk).
+- **Where a number's file lives**: a pass writes it under `datasets/measurements/` beside the stand and not into git, so an entry carries the table itself and names the file and the job id as its address.
 
 ## How an entry is written
 
@@ -106,3 +107,4 @@ Rules that decide whether an entry is worth keeping:
 - [2026-09-13 - A bigger model at the same retrieval, and where it refuses](experiments/2026-09-13_a-bigger-model-at-the-same-retrieval.md)
 - [2026-09-14 - A cloud judge on the same answers, two and a half points kinder on grounding](experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md)
 - [2026-09-14 - A panel for the language probe, and a regime read against a reference](experiments/2026-09-14_a-panel-for-the-language-probe.md)
+- [2026-09-19 - An LLM grader between search and the answer, and the bar it does not clear](experiments/2026-09-19_a-grader-that-does-not-buy-it.md)

@@ -492,7 +492,7 @@ def test_every_kind_of_report_declares_its_schema():
     # the reports that moved here: the guard is why the anchor left `scripts`
     from evals import compare, human_anchor, language_cost
 
-    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (14, 1, 1)
+    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (16, 1, 1)
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():

@@ -139,11 +139,12 @@ def test_only_ollama_spills_and_an_asleep_vllm_is_not_off_the_card(monkeypatch):
              "judging": _engine("vllm", "vllm", "gpu"),
              "paraphrasing": _engine("ollama", "ollama", "gpu"),
              "reranking": _engine("vllm-rerank", "vllm", "gpu"),
+             "grading": _engine("ollama", "ollama", "gpu"),
              "ragas": _engine("vllm", "vllm", "gpu"), "ragas_embedding": _engine("ollama", "ollama", "gpu")}
     monkeypatch.setattr(stand_health.llm, "resolve",
                         lambda role: engines.Resolved(role, specs[role]))
     on = {"generation": False, "embedding": False, "judging": False, "paraphrasing": None,
-          "reranking": False, "ragas": False, "ragas_embedding": None}
+          "reranking": False, "grading": None, "ragas": False, "ragas_embedding": None}
     monkeypatch.setattr(stand_health.card_holder, "model_on_card", lambda spec, name: on[name])
     seen = stand_health.roles_on_card()
     assert [r for r, v in seen.items() if v["spilled"]] == ["generation"], seen
@@ -156,6 +157,7 @@ def test_a_role_whose_engine_does_not_answer_is_named(monkeypatch):
     specs = {"generation": _engine("ollama", "ollama", "gpu"), "embedding": _engine("ollama", "ollama", "gpu"),
              "judging": _engine("vllm", "vllm", "gpu"), "paraphrasing": _engine("ollama", "ollama", "gpu"),
              "reranking": _engine("vllm-rerank", "vllm", "gpu"), "ragas": _engine("ollama", "ollama", "gpu"),
+             "grading": _engine("ollama", "ollama", "gpu"),
              "ragas_embedding": _engine("ollama", "ollama", "gpu")}
     monkeypatch.setattr(stand_health.llm, "resolve", lambda role: engines.Resolved(role, specs[role]))
     alive = {"ollama": True, "vllm": False, "vllm-rerank": None}

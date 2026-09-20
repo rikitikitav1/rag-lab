@@ -43,6 +43,8 @@ KEYS = (
     "language",
     # an arm that says the tools again after a tool answer must say so, or it is silently a new arm
     "restate_tools",
+    # an arm whose generator read filtered chunks is not the arm that read all five
+    "grade_chunks",
     # per role, and read by the role keys: a bare {} means no role was read, not "one engine"
     "engines",
     # what a role asked of its engine and the engine would not carry: never read as applied

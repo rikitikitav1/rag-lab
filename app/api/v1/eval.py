@@ -213,6 +213,8 @@ class CompareResponse(BaseModel):
     schema_version: int = Field(alias="schema")
     residency: dict
     answering_engines_by_run: dict
+    # which code each arm's rows were written by: two stamps mean two trees, and a reader must see it
+    code: dict | None = None
     answering_penalties_by_run: dict | None = None
     one_answering_penalty: bool | None = None
     outcome_rule: int | None = None
@@ -422,6 +424,8 @@ async def enqueue_eval_run(
             "topic_threshold": request.topic_threshold,
             "allow_cpu": request.allow_cpu,
             "restate_tools": request.restate_tools,
+            "grade_chunks": request.grade_chunks,
+            "judge": request.judge,
             "variant": request.variant,
             "resume": False,
             "generation_sampler": request.generation_sampler,

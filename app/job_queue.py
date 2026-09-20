@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import job_specs
 import logging_setup
 import token_fields
+import version
 from models import Job, JobStatus
 from orm.sync_db import Session
 from sqlalchemy import case, func, select, text
@@ -115,6 +116,7 @@ def claim_next(queues: list[str]) -> ClaimedJob | None:
         if job is None:
             return None
         job.status = JobStatus.running
+        job.code = version.mine()
         claimed = ClaimedJob(id=job.id, type=job.type, options=dict(job.options))
         session.commit()
         return claimed

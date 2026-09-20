@@ -39,6 +39,8 @@ class FallbackReason(StrEnum):
     empty = "empty"
     weak = "weak"
     off_topic = "off_topic"
+    # the grader threw out every chunk: the search found something, so this is not `empty`
+    graded_out = "graded_out"
 
 
 # which edge ended the graph: `final` meant three things, and the reader re-derived one of them

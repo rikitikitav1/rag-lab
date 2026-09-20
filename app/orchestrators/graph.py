@@ -13,7 +13,7 @@ from errors import StandFault
 from langgraph.graph import END, StateGraph
 from models.registry import Purpose
 from use_cases import agent_policy as policy
-from use_cases import chat
+from use_cases import chat, grading
 
 log = logging_setup.get_logger(__name__)
 
@@ -59,6 +59,8 @@ class State(TypedDict, total=False):
     pending: object
     coverage: str
     dropped_before_emit: dict
+    # per call: the order the grader read the chunks in and which of them it threw out
+    graded_before_emit: dict
     tool_errors: Annotated[dict, _merge]
 
 
@@ -223,12 +225,14 @@ def fallback_node(state: State, config) -> dict:
         update["dropped_sources"], update["dropped_hits"] = dropped, hits
         update["dropped_before_emit"] = before
     # the loop recomputes announce per hop and it dies once external is open
-    if gate.announce and not state["external"] and corpus:
+    graded_out = verdict == policy.FallbackReason.graded_out
+    if gate.announce and not state["external"] and corpus and not graded_out:
         update["announced_text"] = _announce(corpus, gate, ctx["template"])
         update["fallback_announced"] = True
     if state.get("fallback_reason") == policy.FallbackReason.none:
         update["fallback_reason"] = verdict
-    if not state["external"] and ctx["remote"]:
+    # a grader that emptied the corpus does not open the way outside, the row refuses instead
+    if not state["external"] and ctx["remote"] and not graded_out:
         update["external"] = True
         update["fallback_opened"] = True
         log.info("graph.external_opened", hop=state["hops"], reason=verdict)
@@ -254,10 +258,80 @@ def _restated(ctx, state) -> list:
     return [{"role": "user", "content": f"The tools you may still call:\n{lines}"}]
 
 
+# sources are per file and deduplicated, pieces are per chunk: two chunks of one file align badly
+def _surviving_sources(sources: list, chunks: list, kept: list) -> tuple[list, bool]:
+    if len(chunks) == len(sources) and not any(c and c.get("source") for c in chunks):
+        return [sources[i] for i in kept], True
+    files = {chunks[i].get("source") for i in kept if i < len(chunks) and chunks[i]}
+    if not files and kept:
+        # nothing addressable to filter by, and dropping by position would name the wrong file
+        return sources, False
+    return [s for s in sources if s.source in files], True
+
+
+def _keep_only(call, pieces: list, chunks: list, kept: list) -> bool:
+    keep = [pieces[i] for i in kept]
+    call[1].meta["contexts"] = keep
+    if len(chunks) == len(pieces):
+        call[1].meta["chunks"] = [chunks[i] for i in kept]
+    call[3], filtered = _surviving_sources(call[3], chunks, kept)
+    call[2] = "\n\n".join(keep) or chat.NO_RESULTS
+    return filtered
+
+
+# the verdict is computed in `retrieve_node` before this runs, so grading a doomed context is waste
+def _already_doomed(state: State, ctx: dict) -> bool:
+    verdict = state.get("coverage")
+    return bool(verdict) and ctx["gate"].drop_weak_context and verdict in (
+        policy.FallbackReason.weak, policy.FallbackReason.off_topic
+    )
+
+
+# a filter, not a signal: it drops chunks the grader read as foreign and leaves the rest standing
+def grade_node(state: State, config) -> dict:
+    ctx = _ctx(config)
+    ask = ctx.get("grade_ask")
+    corpus = _corpus_calls(state["pending"]) if state.get("pending") else []
+    if not ask or not corpus or _already_doomed(state, ctx):
+        return {}
+    started = time.perf_counter()
+    # one verdict per chunk for the whole row: a hop that searched again returned the same chunks
+    memo, plan = ctx.setdefault("graded", {}), {}
+    question, graded_all, kept_all, unreadable, asked, unaligned = ctx["question"], 0, 0, 0, 0, 0
+    for call in corpus:
+        pieces = agent_tools.context_pieces(call[1].meta, call[2])
+        if not pieces:
+            continue
+        chunks = agent_tools.chunk_pieces(call[1].meta, call[2])
+        graded = grading.grade_pieces(question, pieces, chunks, ctx["grade_system"], ask, memo)
+        graded_all += len(pieces)
+        kept_all += len(graded["kept"])
+        unreadable += graded["unreadable"]
+        asked += graded["asked"]
+        plan[call[0].id] = {
+            "order": graded["order"], "dropped": graded["dropped"],
+            # the verdict of the gate was computed over these, and a replay must see the same list
+            "sources": [_as_row(s) for s in call[3]],
+        }
+        unaligned += not _keep_only(call, pieces, chunks, graded["kept"])
+    ctx["result"].took("grade", started)
+    ctx["result"].step(
+        "grade", state["hops"], graded=graded_all, kept=kept_all,
+        dropped=graded_all - kept_all, unreadable=unreadable, asked=asked,
+        # a call whose chunks carry no file: its sources are left whole rather than named wrongly
+        sources_unaligned=unaligned or None,
+    )
+    # nothing survived: its own reason, so no report counts it as the gate firing
+    if graded_all and not kept_all and not state.get("coverage"):
+        return {"graded_before_emit": plan, "coverage": policy.FallbackReason.graded_out}
+    return {"graded_before_emit": plan}
+
+
 # the only node that speaks to the model, and it speaks after the verdict, never before
 def emit_node(state: State, config) -> dict:
     ctx = _ctx(config)
     calls, before = state["pending"], state.get("dropped_before_emit") or {}
+    graded = state.get("graded_before_emit") or {}
     return {
         "messages": [
             {"role": "tool", "tool_call_id": tc.id, "content": content}
@@ -283,11 +357,13 @@ def emit_node(state: State, config) -> dict:
                 # named, not counted: `_unique_sources` collapses a file seen on two hops
                 "sources": [s.source for s in sources],
                 **({"dropped": before[tc.id]} if tc.id in before else {}),
+                **({"graded": graded[tc.id]} if tc.id in graded else {}),
             }
             for tc, res, content, sources in calls
         ],
         # consumed here: it has no reducer, and a later hop reusing a call id took this one's block
         "dropped_before_emit": {},
+        "graded_before_emit": {},
     }
 
 
@@ -347,7 +423,7 @@ def _after_model(state: State, config) -> str:
 
 
 # the coverage verdict rides an edge, so a reader of the graph sees the branch the row took
-def _after_retrieve(state: State, config) -> str:
+def _after_grade(state: State, config) -> str:
     return "fallback" if state.get("coverage") else "emit"
 
 
@@ -355,8 +431,8 @@ def _after_tools(state: State, config) -> str:
     return "model" if state["hops"] < _ctx(config)["max_hops"] else "final"
 
 
-# a hop is up to four super-steps plus the final turn; the slack guards a loop, not a long run
-STEPS_PER_HOP = 5
+# a hop is up to five super-steps plus the final turn; the slack guards a loop, not a long run
+STEPS_PER_HOP = 6
 GUARD_SLACK = 6
 
 
@@ -368,6 +444,7 @@ def build():
     graph = StateGraph(State)
     graph.add_node("model", model_node)
     graph.add_node("retrieve", retrieve_node)
+    graph.add_node("grade", grade_node)
     graph.add_node("fallback", fallback_node)
     graph.add_node("emit", emit_node)
     graph.add_node("final", final_node)
@@ -375,8 +452,9 @@ def build():
     graph.add_conditional_edges(
         "model", _after_model, {"retrieve": "retrieve", "final": "final", "model": "model"}
     )
+    graph.add_edge("retrieve", "grade")
     graph.add_conditional_edges(
-        "retrieve", _after_retrieve, {"fallback": "fallback", "emit": "emit"}
+        "grade", _after_grade, {"fallback": "fallback", "emit": "emit"}
     )
     graph.add_edge("fallback", "emit")
     graph.add_conditional_edges("emit", _after_tools, {"model": "model", "final": "final"})
@@ -414,6 +492,7 @@ def _initial_state(question: str, system: str, external: bool) -> State:
         "pending": [],
         "coverage": "",
         "dropped_before_emit": {},
+        "graded_before_emit": {},
         "tool_errors": {},
     }
 
@@ -421,6 +500,8 @@ def _initial_state(question: str, system: str, external: bool) -> State:
 # every implementation fills the same AgentResult, so nothing downstream can tell them apart
 def invoke(question, system, ctx, result) -> None:
     ctx["result"] = result
+    # the grader grades against the question, and the state holds it only as the first user message
+    ctx["question"] = question
     graph = build()
     try:
         state = graph.invoke(

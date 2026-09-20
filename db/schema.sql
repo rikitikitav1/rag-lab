@@ -249,7 +249,8 @@ CREATE TABLE public.jobs (
     elapsed double precision,
     queue text DEFAULT 'default'::text NOT NULL,
     tokens jsonb,
-    balances jsonb
+    balances jsonb,
+    code jsonb
 );
 
 
@@ -424,7 +425,8 @@ CREATE TABLE public.question_logs (
     reference_answer text,
     contexts jsonb,
     chunks jsonb,
-    transcript jsonb
+    transcript jsonb,
+    judge_wanted boolean DEFAULT true NOT NULL
 );
 
 
@@ -796,17 +798,17 @@ CREATE INDEX data_chunks_source_id_idx ON public.data_chunks USING btree (source
 
 
 --
--- Name: data_chunks_variant_source_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (variant, source_id);
-
-
---
 -- Name: data_chunks_variant_embedded_by_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX data_chunks_variant_embedded_by_idx ON public.data_chunks USING btree (variant, embedded_by);
+
+
+--
+-- Name: data_chunks_variant_source_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (variant, source_id);
 
 
 --
@@ -951,4 +953,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260912000003'),
     ('20260912000004'),
     ('20260912000005'),
-    ('20260912000006');
+    ('20260912000006'),
+    ('20260919000001'),
+    ('20260919000002');

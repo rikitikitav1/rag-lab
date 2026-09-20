@@ -1,5 +1,6 @@
 """What each job type accepts, checked at both ends of the queue."""
 
+import re
 from enum import StrEnum
 from typing import Literal
 
@@ -11,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.index import VARIANT_RE
+
+# the only folder a graded pass reads: a path of its own would let a job open any file
+FROZEN_POOL_RE = re.compile(r"(/app/)?datasets/candidates/[\w.-]+\.json")
 
 # a retired arm dies on every question, so the queue refuses it as the REST door already did
 Runnable = StrEnum("Runnable", {o.name: o.value for o in Orchestrator if o not in GONE})
@@ -42,10 +46,14 @@ class EvalRunFields(Spec):
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
     # llama3.1 renders tool schemas only in the last user message, and a tool answer buries them
     restate_tools: bool = False
+    # the grader filters chunks before the generator sees them; off, every run is what it was
+    grade_chunks: bool = False
     # answer only what a stopped run left unanswered, on the options it ran with
     resume: bool = False
     # the generator's sampler in this run alone: the judge shares a vLLM model with it and keeps its own
     generation_sampler: dict | None = None
+    # off for a run read by a rule and not by a score: retrieval deltas, a string match, a canary
+    judge: bool = True
 
     @field_validator("generation_sampler")
     @classmethod
@@ -109,6 +117,31 @@ class JudgeLanguage(Spec):
 
 class CompareRetrieval(Spec):
     experiment_id: int
+
+
+class GradeCandidates(Spec):
+    # the frozen pool this grades: a run that names no file would grade whatever is on disk today
+    candidates: str = Field(min_length=1, max_length=200)
+
+    @field_validator("candidates")
+    @classmethod
+    def _under_the_frozen_pools(cls, value: str) -> str:
+        # a job reads a file the worker can reach, so the name is a pool of ours, not any path
+        if not FROZEN_POOL_RE.fullmatch(value):
+            raise ValueError("candidates names a frozen pool, like"
+                             " /app/datasets/candidates/<name>.json")
+        return value
+    form: Literal["per_chunk", "whole_text"] = "per_chunk"
+    top: int = Field(default=5, ge=1, le=20)
+    # a slice for a probe; a declared arm draws `sample` by `seed`, as the guest axes do
+    limit: int | None = Field(default=None, ge=1, le=2000)
+    sample: int | None = Field(default=None, ge=1, le=2000)
+    seed: int = 0
+    # the floor is taken twice in one residency, and the second pass must not repeat the first order
+    shuffle: int | None = Field(default=None, ge=0, le=10_000)
+    # an arm names the prompt it measures, so nothing has to be activated to be read
+    prompt_version: int | None = Field(default=None, ge=1, le=1000)
+    name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
 
 
 class AnalyzeSource(Spec):
@@ -197,6 +230,7 @@ SPECS: dict[str, type[Spec]] = {
     "judge_guest_axes": JudgeGuestAxes,
     "judge_language": JudgeLanguage,
     "compare_retrieval": CompareRetrieval,
+    "grade_candidates": GradeCandidates,
     "analyze_source": AnalyzeSource,
     "check_mcp_health": CheckMcpHealth,
     "pull_llm_model": ModelByName,
@@ -223,6 +257,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "analyze_source": (),
     "eval_run": (Role.generation, Role.embedding, Role.reranking),
     "compare_retrieval": (Role.reranking,),
+    "grade_candidates": (Role.grading,),
     "judge_answers": (Role.judging,),
     "judge_guest_axes": (Role.ragas, Role.ragas_embedding),
     "judge_language": (Role.judging, Role.generation),

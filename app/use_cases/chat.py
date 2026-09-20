@@ -183,14 +183,20 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
 
 # one filter, one order, one pass: the text and its address cannot come out different lengths
 def kept_chunks(rows, variant: str | None = None) -> tuple[list[str], list[dict]]:
-    variant = variant or config.settings.corpus.variant
-    kept = [hit for hit in rows if not _hidden_by_cut(hit.source, variant)]
-    texts = [f"[{hit.source}]\n{hit.content}" for hit in kept]
-    chunks = [
-        {"source": hit.source, "section": hit.section, "chunk_index": hit.chunk_index}
-        for hit in kept
-    ]
+    texts, chunks, _ = kept_chunks_with_seats(rows, variant)
     return texts, chunks
+
+
+# the seat of each kept chunk among the rows: without it a filter downstream cuts by the wrong index
+def kept_chunks_with_seats(rows, variant: str | None = None) -> tuple[list[str], list[dict], list[int]]:
+    variant = variant or config.settings.corpus.variant
+    seats = [n for n, hit in enumerate(rows) if not _hidden_by_cut(hit.source, variant)]
+    texts = [f"[{rows[n].source}]\n{rows[n].content}" for n in seats]
+    chunks = [
+        {"source": rows[n].source, "section": rows[n].section, "chunk_index": rows[n].chunk_index}
+        for n in seats
+    ]
+    return texts, chunks, seats
 
 
 # the join is built from these same elements, so the two cannot drift
@@ -265,6 +271,8 @@ def answer(
     model: str | None = None,
     variant: str | None = None,
     ef_search: int | None = None,
+    grade_chunks: bool = False,
+    judge_wanted: bool = True,
 ) -> Answer:
     start = time.perf_counter()
     use_rerank = resolve_rerank(use_rerank)
@@ -286,6 +294,8 @@ def answer(
         started_at=start,
         variant=variant,
         ef_search=depth,
+        grade_chunks=grade_chunks,
+        judge_wanted=judge_wanted,
     )
 
 
@@ -303,6 +313,8 @@ def answer_from_rows(
     phased: bool = False,
     rerank_device: str | None = None,
     ef_search: int | None = None,
+    grade_chunks: bool = False,
+    judge_wanted: bool = True,
     *,
     variant: str,
     placed_during: dict | None = None,
@@ -312,7 +324,21 @@ def answer_from_rows(
     use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
 
-    texts, chunks = kept_chunks(rows, variant) if rows else ([], [])
+    texts, chunks, seats = kept_chunks_with_seats(rows, variant) if rows else ([], [], [])
+    # the same grader the graph node runs, on the one retrieval this path makes
+    graded, asks = (
+        _graded(question, texts, chunks, rows) if grade_chunks and texts else (None, [])
+    )
+    if graded:
+        kept = set(graded["kept"])
+        texts = [t for n, t in enumerate(texts) if n in kept]
+        chunks = [c for n, c in enumerate(chunks) if n in kept]
+        # by seat, not by position: a chunk hidden by the cut policy shifts every index after it
+        alive = {seats[n] for n in kept}
+        rerank_scores = (
+            [s for n, s in enumerate(rerank_scores) if n in alive] if rerank_scores else rerank_scores
+        )
+        rows = [r for n, r in enumerate(rows) if n in alive]
     context = "\n\n".join(texts) or None
     if not context:
         ans = Answer(text=NO_RESULTS)
@@ -353,6 +379,7 @@ def answer_from_rows(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
             _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
             contexts=texts or None, chunks=chunks or None, placed_during=placed_during,
+            graded=graded, asks=asks, judge_wanted=judge_wanted,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -379,6 +406,19 @@ def told_to_answer_in(text: str, language: str) -> str:
     return f"{text}\n\n{said}" if said else text
 
 
+# the direct path has no probe door of its own, so it opens one for the verdicts it records
+def _graded(question: str, texts: list, chunks: list, rows) -> tuple[dict, list]:
+    from use_cases import grading
+
+    asks: list = []
+    graded = grading.grade_pieces(
+        question, texts, chunks, grading.system_prompt(), grading.ask_door(asks)
+    )
+    log.info("chat.graded", asked=graded["asked"], kept=len(graded["kept"]),
+             dropped=len(graded["dropped"]), seconds=graded["seconds"])
+    return graded, asks
+
+
 def _retrieval_snapshot(rows, sources) -> dict:
     distances = [hit.distance for hit in rows if hit.distance is not None]
     rerank_scores = [s.rerank_score for s in sources if s.rerank_score is not None]
@@ -392,7 +432,7 @@ def _retrieval_snapshot(rows, sources) -> dict:
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
                      ef_search: int | None = None, model: str | None = None,
                      language: str | None = None, placed_during: dict | None = None,
-                     generated: bool = True) -> dict:
+                     generated: bool = True, grade_chunks: bool = False) -> dict:
     return run_snapshot.of_run(
         generated=generated,
         language=language,
@@ -406,6 +446,7 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
         placed_during=placed_during,
         # the agent has no phase and single_shot has no hops: each records None for the other
         phased=phased,
+        grade_chunks=grade_chunks or None,
     )
 
 
@@ -413,7 +454,8 @@ def _log_answer(
     original_text: str, ans: Answer, lang: str, context=None, run_name=None,
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
-    placed_during: dict | None = None,
+    placed_during: dict | None = None, graded: dict | None = None, asks: list | None = None,
+    judge_wanted: bool = True,
 ) -> None:
     # no call, no generator on the row: an answer refused over the window has a context and no call
     generated = ans.success
@@ -427,6 +469,7 @@ def _log_answer(
         question = _find_or_create_question(session, original_text, lang)
         log_row = QuestionLog(
             run_name=run_name,
+            judge_wanted=judge_wanted,
             question_id=question.id,
             question_text=question.original_text,
             reference_answer=question.reference_answer,
@@ -438,13 +481,16 @@ def _log_answer(
             sources=[asdict(s) for s in ans.sources],
             models=models,
             prompts={
-                "generate_answer": prompt_repo.active_version(Purpose.generate_answer)
+                "generate_answer": prompt_repo.active_version(Purpose.generate_answer),
+                **({"grade_chunk": prompt_repo.active_version(Purpose.grade_chunk)}
+                   if graded else {}),
             },
             metrics={
                 "config": _config_snapshot(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
                     rerank_device, variant, ef_search, ans.metrics.model, lang,
                     placed_during=placed_during, generated=generated,
+                    grade_chunks=bool(graded),
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand
@@ -455,6 +501,8 @@ def _log_answer(
                 "refusal": outcomes.reads_as_refusal(ans.text),
                 # what the parser cut from the answer, only when it cut something
                 **({"answer_parse": ans.metrics.answer_parse} if ans.metrics.answer_parse else {}),
+                # the verdicts and what they cost: the price of filtering is read from the row
+                **({"graded": graded, "asks": asks} if graded else {}),
             },
             prompt_tokens=ans.metrics.prompt_tokens,
             completion_tokens=ans.metrics.completion_tokens,

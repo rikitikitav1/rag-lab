@@ -67,9 +67,12 @@ class RunSpec:
     fallback_policy: str | None = None
     gate_signal: str | None = None
     restate_tools: bool = False
+    grade_chunks: bool = False
     weak_distance: float | None = None
     topic_threshold: float | None = None
     orchestrator: str | None = None
+    # carried onto every row: whether the sweep may ever judge what this run wrote
+    judge_wanted: bool = True
 
 
 # answered is a row that answered: the agent writes a row for a hop that failed and returns normally
@@ -86,10 +89,12 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
             fallback_policy=spec.fallback_policy,
             gate_signal=spec.gate_signal,
             restate_tools=spec.restate_tools,
+            grade_chunks=spec.grade_chunks,
             weak_distance=spec.weak_distance,
             topic_threshold=spec.topic_threshold,
             orchestrator=spec.orchestrator,
             variant=spec.variant,
+            judge_wanted=spec.judge_wanted,
         )
         return not result.failed and result.outcome != Outcome.error
     if spec.pipeline == Pipeline.single_shot:
@@ -102,6 +107,8 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
             k=spec.k,
             model=spec.model,
             variant=spec.variant,
+            grade_chunks=spec.grade_chunks,
+            judge_wanted=spec.judge_wanted,
         )
         return True
     raise ValueError(f"unknown pipeline: {spec.pipeline}")
@@ -234,6 +241,8 @@ def _phase_generate(
                 variant=spec.variant,
                 ef_search=ef_search,
                 placed_during=placed_during,
+                grade_chunks=spec.grade_chunks,
+                judge_wanted=spec.judge_wanted,
             )
             answered += 1
         except StandFault:
@@ -407,6 +416,7 @@ def run(
     fallback_policy: str | None = None,
     gate_signal: str | None = None,
     restate_tools: bool = False,
+    grade_chunks: bool = False,
     weak_distance: float | None = None,
     topic_threshold: float | None = None,
     orchestrator: str | None = None,
@@ -416,6 +426,7 @@ def run(
     variant: str | None = None,
     resume: bool = False,
     generation_sampler: dict | None = None,
+    judge: bool = True,
 ) -> int:
     pipeline = Pipeline(pipeline)
     variant = variant or config.settings.corpus.variant
@@ -453,9 +464,11 @@ def run(
         fallback_policy=fallback_policy,
         gate_signal=gate_signal,
         restate_tools=restate_tools,
+        grade_chunks=grade_chunks,
         weak_distance=weak_distance,
         topic_threshold=topic_threshold,
         orchestrator=orchestrator,
+        judge_wanted=judge,
     )
 
     try:
@@ -481,7 +494,8 @@ def run(
         raise
     if resume:
         _mark_resumed(run_name, texts, replaced=replaced, since=since)
-    if not cancelled:
+    # a run whose number is not a judged score pays for the judge's residency and its noise for nothing
+    if not cancelled and judge:
         job_queue.enqueue("judge_answers", {"run_name": run_name})
     log.info(
         "eval_run.answered",
@@ -489,6 +503,7 @@ def run(
         answered=answered,
         total=len(texts),
         cancelled=cancelled,
+        judge=judge,
     )
     return answered
 

@@ -8,7 +8,7 @@ the fix: a fixed panel, and a regime read against a reference reading of it.
 
 ## Setup
 
-**Panel** `datasets/measurements/judge_language_panel_ids.txt`: first 30, then all 60 English
+**Panel** `datasets/panels/judge_language_panel_ids.txt`: first 30, then all 60 English
 corpus rows of `paraphrased_single_shot_1788245198_variant_clean_1024` (set `paraphrased`, corpus
 `clean_1024`) answered with sources, chosen by no score · **judge** `Qwen/Qwen2.5-7B-Instruct-AWQ` on
 vLLM, JSON without free whitespace · **runs** `judge_language` on 5 rows of `arc3_agent_baseline`,
