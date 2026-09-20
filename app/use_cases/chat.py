@@ -193,7 +193,9 @@ def kept_chunks_with_seats(rows, variant: str | None = None) -> tuple[list[str],
     seats = [n for n, hit in enumerate(rows) if not _hidden_by_cut(hit.source, variant)]
     texts = [f"[{rows[n].source}]\n{rows[n].content}" for n in seats]
     chunks = [
-        {"source": rows[n].source, "section": rows[n].section, "chunk_index": rows[n].chunk_index}
+        {"source": rows[n].source, "section": rows[n].section, "chunk_index": rows[n].chunk_index,
+         # per chunk, not per file: a gate that dedupes by file reads another distribution
+         "distance": getattr(rows[n], "distance", None)}
         for n in seats
     ]
     return texts, chunks, seats

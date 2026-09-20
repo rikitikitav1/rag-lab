@@ -12,7 +12,7 @@ import db
 log = logging_setup.get_logger(__name__)
 
 # the snapshot's shape, raised with every key it gains
-SCHEMA = 13
+SCHEMA = 17
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -29,6 +29,8 @@ KEYS = (
     "corpus",
     "corpus_fingerprint",
     "code_version",
+    "tree_stamp",
+    "tree_differs",
     "context_length",
     "orchestrator",
     "fallback_policy",
@@ -176,6 +178,10 @@ def of_run(
         "corpus_fingerprint": db.fingerprint_or_none(variant=variant),
         # the commit both pipelines ran, so two arms can be shown to have run the same code
         "code_version": version.CODE_VERSION,
+        # the hash sees no edit between the commit and the container's start; the fingerprint does
+        "tree_stamp": version.LOADED_TREE,
+        # and the tree can move after the start: a row written then is not a row of the same stand
+        "tree_differs": version.differs_from_disk(),
         "context_length": _window(picked) if generated else None,
         "engines": named,
         "engine_refused": {role: seen.dropped for role, seen in samplers.items()},

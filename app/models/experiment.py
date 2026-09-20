@@ -16,7 +16,7 @@ class ExperimentKind(StrEnum):
 
 
 # every key a report answers a reader with, written by all three kinds whether they hold it
-READING_KEYS = ("source_run", "pairing", "multiplicity", "ranking", "arms", "deltas")
+READING_KEYS = ("source_run", "pairing", "multiplicity", "ranking", "arms", "deltas", "code")
 
 
 class ExperimentStatus(StrEnum):

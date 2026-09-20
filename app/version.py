@@ -40,11 +40,19 @@ def _read() -> str | None:
 CODE_VERSION = _read()
 
 
+# the config this process loaded, overlay included: a cpu arm and a gpu arm are two stands
+def _config_files() -> list:
+    import config
+
+    names = [config.CONFIG_PATH, config.CONFIG_OVERLAY]
+    return [Path(name) if Path(name).is_absolute() else APP.parent / name for name in names if name]
+
+
 # the bytes of every module, because an uncommitted edit changes no commit hash and still changes the run
 def tree_stamp() -> str:
     digest = hashlib.sha256()
     # the config decides roles, models and samplers, so an edit to it counts as much as a module
-    for path in sorted(APP.rglob("*.py")) + [APP.parent / "config.yaml"]:
+    for path in sorted(APP.rglob("*.py")) + _config_files():
         # the path, not the basename: two `base.py` in two packages are two files
         name = path.relative_to(APP.parent).as_posix()
         try:

@@ -61,3 +61,23 @@ def test_the_engines_compose_addresses_are_the_engines_the_config_seeds():
     seeded = {engine.env_prefix for engine in config._load(str(ROOT / "config.yaml")).engines}
     # the seeded ollama is addressed by `llm.base_url`, every other engine by compose
     assert addressed == seeded - {"OLLAMA"}
+
+
+def test_the_topic_gate_reads_a_three_letter_code_as_the_language_it_names():
+    # the corpus and the questions spell it `eng`, the detector returns `en`, and the gate is keyed by two
+    import config
+
+    agent = config.settings.agent
+    assert agent.topic_threshold_for("eng") == agent.topic_threshold_for("en")
+    assert agent.topic_threshold_for("rus") == agent.topic_threshold_for("ru")
+    # a language nobody measured still gets the most permissive threshold, not an error
+    assert agent.topic_threshold_for("tl") == max(agent.topic_threshold.values())
+
+
+def test_the_gate_says_whether_the_language_it_answered_for_was_ever_measured():
+    import config
+
+    agent = config.settings.agent
+    assert agent.topic_threshold_is_measured("eng") and agent.topic_threshold_is_measured("ru")
+    assert not agent.topic_threshold_is_measured("tl")
+    assert not agent.topic_threshold_is_measured(None)

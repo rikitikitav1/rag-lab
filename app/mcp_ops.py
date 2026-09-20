@@ -212,7 +212,8 @@ def holm_over(
         "run_name and an RRF composite (k=60) ranking over five axes: the three "
         "judged ones, the off-domain refusal rate and the supported rate "
         "(retrieval hit_at_k/mrr are reported but excluded from the fusion "
-        "since hit_at_k is monotonic in k). winner is the top-ranked run."
+        "since hit_at_k is monotonic in k). winner is the top-ranked run. code says which "
+        "code each run's rows were written by, and flags when the arms did not share one."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -331,6 +332,7 @@ def experiment_results(
         # the rule the stored numbers were read with, not today's: an older report names none
         if exp.kind != ExperimentKind.retrieval:
             out["outcome_rule"] = (exp.results or {}).get("outcome_rule")
+            out["code"] = (exp.results or {}).get("code") or {}
         guests = session.execute(
             select(Job.status).where(
                 Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])

@@ -480,9 +480,9 @@ def test_every_kind_of_report_declares_its_schema():
     from evals import generation_metrics, judge_correlation, retrieval_metrics
     from use_cases import experiment, rejudge, retrieval_compare, run_snapshot
 
-    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (5, 5, 3)
+    assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (6, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 13)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 17)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
@@ -492,7 +492,7 @@ def test_every_kind_of_report_declares_its_schema():
     # the reports that moved here: the guard is why the anchor left `scripts`
     from evals import compare, human_anchor, language_cost
 
-    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (16, 1, 1)
+    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (18, 1, 1)
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():
@@ -811,8 +811,12 @@ def test_the_generation_report_declares_a_new_schema_when_its_shape_moves(monkey
         for p in _shape_of(report)
     })
 
-    # every key the record carries under schema 5: schema 4 and the refusal rule the numbers were read with
-    assert (exp.SCHEMA, shape) == (5, sorted([*SCHEMA_4_SHAPE, ".outcome_rule", ".per_value.<arm>.outcome_rule"]))
+    # every key under schema 6: schema 4, the refusal rule, and the code each arm's rows were written by
+    assert (exp.SCHEMA, shape) == (6, sorted([
+        *SCHEMA_4_SHAPE, ".outcome_rule", ".per_value.<arm>.outcome_rule",
+        ".code.by_run.a", ".code.by_run.b", ".code.one_code", ".code.read_from",
+        ".code.reads", ".code.said_nothing[]", ".code.tree_moved",
+    ]))
 
 
 def test_the_holm_door_returns_the_tests_it_promises_not_their_count():

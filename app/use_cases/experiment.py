@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import logging_setup
 import numpy as np
-from evals import generation_metrics, retrieval_metrics
+from evals import compare, generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
 from evals.pools import by_question, in_corpus_and_answered
 from evals.stats import annotate_holm, deltas_over, score_of
@@ -116,7 +116,7 @@ def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
 
 
 # the record's shape, raised with every field it gains
-SCHEMA = 5
+SCHEMA = 6
 
 
 def compute_results(param: str, param_values: list, run_names: list[str]) -> dict:
@@ -170,6 +170,8 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
         "param": param,
         # outcomes are read at aggregation, so the stored numbers carry the rule they were read with
         "outcome_rule": next((b.get("outcome_rule") for b in per_value.values()), None),
+        # the door that names a winner is the one read alone: it must say when the arms ran on two trees
+        "code": compare.code_by_run({rn: load_logs(rn) for rn in run_names}),
         "per_value": per_value,
         "composite": {
             "method": "rrf",
@@ -201,6 +203,8 @@ def for_reading(results: dict) -> dict:
             for value, body in (results.get("per_value") or {}).items()
         },
         "deltas": pairwise.get("comparisons") or {},
+        # the arms' code, because two arms on two trees compare two stands and nothing else says so
+        "code": results.get("code") or {},
     }
 
 

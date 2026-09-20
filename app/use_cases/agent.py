@@ -150,6 +150,8 @@ def run(
         if topic_threshold is not None
         else config.settings.agent.topic_threshold_for(lang)
     )
+    if topic_threshold is None and not config.settings.agent.topic_threshold_is_measured(lang):
+        log.warning("agent.topic_threshold_unmeasured", language=lang, threshold=threshold)
     # zero is how a run switches the axis off now that the config carries a default
     topic = Topic(threshold=threshold if threshold else None)
     if topic.threshold is not None:

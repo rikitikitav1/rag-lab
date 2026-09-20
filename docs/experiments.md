@@ -108,3 +108,4 @@ Rules that decide whether an entry is worth keeping:
 - [2026-09-14 - A cloud judge on the same answers, two and a half points kinder on grounding](experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md)
 - [2026-09-14 - A panel for the language probe, and a regime read against a reference](experiments/2026-09-14_a-panel-for-the-language-probe.md)
 - [2026-09-19 - An LLM grader between search and the answer, and the bar it does not clear](experiments/2026-09-19_a-grader-that-does-not-buy-it.md)
+- [2026-09-20 - Rewriting the question when the search looks weak](experiments/2026-09-20_a-rewrite-that-does-not-clear-the-bar.md)
