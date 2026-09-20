@@ -574,4 +574,6 @@ def for_reading(results: dict) -> dict:
         "ranking": None,
         "arms": results.get("arms") or {},
         "deltas": results.get("deltas") or {},
+        # the arms' code: every reader answers with the same keys, filled or empty
+        "code": results.get("code") or {},
     }

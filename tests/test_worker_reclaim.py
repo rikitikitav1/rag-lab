@@ -188,3 +188,40 @@ def test_comparing_arms_says_whether_they_ran_on_one_code():
     assert same["one_code"] is True and same["by_run"]["b"] == ["aaa"]
     apart = compare.code_by_run({"a": rows("aaa"), "b": rows("bbb")})
     assert apart["one_code"] is False
+
+
+def test_the_door_prefers_the_fingerprint_to_the_commit_hash():
+    # a commit hash does not see an edit made between the commit and the container's start
+    from types import SimpleNamespace as Row
+
+    from evals import compare
+
+    def rows(**config):
+        return [Row(metrics={"config": config}) for _ in range(2)]
+
+    one_commit = {"a": rows(code_version="aaa", tree_stamp="one"),
+                  "b": rows(code_version="aaa", tree_stamp="two")}
+    read = compare.code_by_run(one_commit)
+    assert read["one_code"] is False, "same commit, two trees: the hash alone calls this one code"
+    assert read["read_from"] == "tree_stamp" and read["by_run"]["a"] == ["one"]
+
+    older = compare.code_by_run({"a": rows(code_version="aaa"), "b": rows(code_version="aaa")})
+    assert older["one_code"] is True and older["read_from"] == "code_version"
+
+    # rows too old to carry either field: nothing is known, and that is not "one code"
+    blind = compare.code_by_run({"a": rows(), "b": rows()})
+    assert blind["one_code"] is None and blind["read_from"] == "nothing"
+
+    # one arm silent and one arm speaking is not agreement either
+    half = compare.code_by_run({"a": rows(tree_stamp="one"), "b": rows()})
+    assert half["one_code"] is None and half["said_nothing"] == ["b"]
+
+    # and a tree that moved under a run makes its own stamp a half truth
+    walked = compare.code_by_run({"a": rows(tree_stamp="one"),
+                                  "b": rows(tree_stamp="one", tree_differs="loaded one, on disk two")})
+    assert walked["one_code"] is None and walked["tree_moved"] == {"b": "loaded one, on disk two"}
+
+    # one arm older than the fingerprint: the two values come from different namespaces
+    mixed = compare.code_by_run({"a": rows(code_version="aaa"),
+                                 "b": rows(code_version="aaa", tree_stamp="one")})
+    assert mixed["one_code"] is None and mixed["read_from"] == "code_version+tree_stamp"

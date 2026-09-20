@@ -603,4 +603,6 @@ def for_reading(results: dict) -> dict:
             for name, arm in (results.get("per_arm") or {}).items()
         },
         "deltas": results.get("deltas") or {},
+        # the arms' code: every reader answers with the same keys, filled or empty
+        "code": results.get("code") or {},
     }

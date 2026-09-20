@@ -10,42 +10,14 @@ import config
 import engines
 import llm
 import version
-from models.eval import Question
-from orm.sync_db import Session, engine
-from sqlalchemy import select
+from evals import loaders
+from orm.sync_db import engine
 from use_cases import chat, grading, search_depth
 
 import db
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "datasets" / "candidates"
-
-
-def _questions(set_name: str, limit: int | None) -> list[dict]:
-    with Session() as session:
-        rows = session.scalars(
-            select(Question).where(Question.set_name == set_name).order_by(Question.id)
-        ).all()
-        # the population of every other door: a question with no marked source has no gold to keep
-        rows = [q for q in rows if q.marked_sources]
-        rows = rows[:limit] if limit else rows
-        sources = {q.source_question_id for q in rows if q.source_question_id}
-        headings = dict(
-            session.execute(
-                select(Question.id, Question.original_text).where(Question.id.in_(sources))
-            ).all()
-        ) if sources else {}
-        return [
-            {
-                "id": q.id,
-                "text": q.original_text,
-                "language": q.language,
-                "marked_sources": list(q.marked_sources or []),
-                # the source question's own text, and its own when it is not a paraphrase
-                "gold_heading": headings.get(q.source_question_id) or q.original_text,
-            }
-            for q in rows
-        ]
 
 
 # postgres hands back Decimal for a weighted score, and json refuses it
@@ -58,7 +30,7 @@ _digest = grading.digest
 
 
 def freeze(set_name: str, variant: str, pool: int, limit: int | None) -> dict:
-    questions = _questions(set_name, limit)
+    questions = loaders.gold_questions(set_name, limit)
     label, _ = llm.embed_with_label(questions[0]["text"])
     depth = search_depth.resolve(variant)
     started, out = time.perf_counter(), []

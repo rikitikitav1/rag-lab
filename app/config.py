@@ -86,6 +86,12 @@ class AgentCfg(_Strict):
     # an off-domain english question sits closer to an english corpus than a russian one
     topic_threshold: float | dict[str, float] | None
 
+    # whether the last lookup fell back: the caller says so on the row, a silent `max` misled us once
+    def topic_threshold_is_measured(self, language: str | None) -> bool:
+        if not isinstance(self.topic_threshold, dict) or not self.topic_threshold:
+            return True
+        return language in self.topic_threshold or (language or "")[:2] in self.topic_threshold
+
     def topic_threshold_for(self, language: str | None) -> float | None:
         if not isinstance(self.topic_threshold, dict):
             return self.topic_threshold
@@ -94,6 +100,9 @@ class AgentCfg(_Strict):
         # membership, not truthiness: zero switches the axis off, and `or` made it permissive
         if language in self.topic_threshold:
             return self.topic_threshold[language]
+        # a three-letter code is the corpus spelling; the gate is keyed by what the detector returns
+        if len(language or "") > 2 and (language or "")[:2] in self.topic_threshold:
+            return self.topic_threshold[language[:2]]
         # a language nobody measured gets the most permissive of the measured thresholds
         return max(self.topic_threshold.values())
 

@@ -155,7 +155,7 @@ def verdicts(left: list, right: list) -> dict:
 
 
 # the report's shape, raised with every field it gains
-SCHEMA = 16
+SCHEMA = 18
 
 
 class TwoJudges(Ambiguous):
@@ -164,13 +164,30 @@ class TwoJudges(Ambiguous):
 
 # the stamp exists so a reader can ask "did these arms share one code"; without this nobody ever asked
 def code_by_run(runs: dict[str, list]) -> dict:
-    said = {}
+    said, fields, moved = {}, set(), {}
     for name, logs in runs.items():
-        seen = {(ql.metrics or {}).get("config", {}).get("code_version") for ql in logs}
-        said[name] = sorted(v for v in seen if v)
+        seen = set()
+        for ql in logs:
+            config = (ql.metrics or {}).get("config") or {}
+            # the fingerprint first: a hash cannot see an edit made between the commit and the start
+            field = "tree_stamp" if config.get("tree_stamp") else "code_version"
+            if config.get(field):
+                seen.add(config[field])
+                fields.add(field)
+            if config.get("tree_differs"):
+                moved[name] = config["tree_differs"]
+        said[name] = sorted(seen)
     every = {v for versions in said.values() for v in versions}
-    return {"by_run": said, "one_code": len(every) <= 1,
-            "reads": "the code each run's rows were written by; two arms on two stamps compare two trees"}
+    read = "+".join(sorted(fields)) if fields else "nothing"
+    # an arm that said nothing cannot agree with one that did, and a fingerprint is not a commit hash
+    silent = [name for name, versions in said.items() if not versions]
+    # a tree that moved under a run makes its own stamp a half truth, whatever the other arm says
+    one = None if (len(fields) > 1 or silent or moved) else len(every) <= 1
+    return {"by_run": said, "one_code": one, "read_from": read, "said_nothing": silent,
+            "tree_moved": moved,
+            "reads": f"the code each run's rows were written by, taken from `{read}`;"
+                     " two arms on two stamps compare two trees, and a row older than the"
+                     " fingerprint falls back to the commit hash"}
 
 
 def compare(runs: dict[str, list]) -> dict:
