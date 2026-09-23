@@ -4,15 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
+from evals import trace
 from evals.loaders import load_logs
 
 
 def calls_of(transcript) -> list:
-    return [
-        (c.get("name"), c.get("arguments"))
-        for entry in (transcript or [])
-        for c in (entry.get("tool_calls") or [])
-    ]
+    return [call for entry in (transcript or []) for call in trace.calls(entry)]
 
 
 def by_question(run: str) -> dict:

@@ -23,10 +23,20 @@ class ClaimedJob:
 def enqueue(type: str, options: dict | None = None, queue: str | None = None) -> int:
     job_specs.check(type, options)
     with Session() as session:
-        job = Job(type=type, options=options or {}, queue=_lane(type, queue))
+        job = Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
         session.add(job)
         session.commit()
         return job.id
+
+
+# the spec checks that a closing run names a promise; only the base can say the promise exists
+def _promise(options: dict | None) -> str | None:
+    from use_cases import prereg
+
+    name = (options or {}).get("prereg")
+    if name and not prereg.exists(name):
+        raise job_specs.Refused(f"prereg: no preregistration named {name!r}")
+    return name or None
 
 
 # one lane for the card: a caller naming another lane would let two card jobs run at once
@@ -85,7 +95,7 @@ def add_job(
 ) -> Job:
     # stage a job in the caller's transaction (caller commits); async-safe: .add() is sync
     job_specs.check(type, options)
-    job = Job(type=type, options=options or {}, queue=_lane(type, queue))
+    job = Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
     session.add(job)
     return job
 

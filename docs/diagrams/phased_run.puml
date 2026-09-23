@@ -1,0 +1,43 @@
+@startuml phased_run
+title Phases, not a loop: swaps per run, not per question
+
+skinparam wrapWidth 240
+
+start
+
+partition "Phase 1, retrieve (8 GB card)" {
+  :one embeddings batch for the whole set (bge-m3);
+  :hybrid search per question,
+  a wide pool when reranking;
+}
+
+:the card checked here, before the generator is paid for;
+note right
+  The embedder is unloaded, and the generator with it.
+end note
+
+partition "Phase 2, rerank" {
+  :flatten to pairs:
+  100 questions x 20 candidates = 2000;
+  :one scoring call for all of them,
+  vllm-rerank takes the card;
+  :slice the scores back per question, keep top k;
+}
+
+:the card handed back, vllm-rerank put to sleep;
+
+partition "Phase 3, generate" {
+  :answer from the context that is already prepared
+  (llama3.1:8b);
+  :question_log and the config snapshot:
+  rerank, device, k, phased;
+}
+
+:on EVERY exit, not only the last line:
+embedder and generator unloaded; <<#fff3cd>>
+note right
+  So a refusal does not leave its own
+  generator on the card for the retry.
+end note
+stop
+@enduml

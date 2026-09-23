@@ -115,9 +115,13 @@ whichever door or script queues it, and again when the worker takes it, so a row
 into the table meets the same refusal. A door of its own is for work done before the enqueue rather
 than for checking: `/eval/rejudge` copies a run, `/eval/guest-axes` answers on a property of the
 runtime. The lane belongs to the type, not to the caller.
-A worker whose code is not the code on disk still claims its jobs and writes that fact onto each row
-(`code.differs`), saying it once in the log: refusing to claim turns an edit made during a batch into a
-queue that looks like it has nothing to do. The stamp is over the bytes, so a checkout that restores the
+An `eval_run` with `purpose: closing` names the preregistration it was made under (`prereg`), and the
+queue refuses a name the database does not hold; `smoke`, the default, and `probe` owe nothing.
+A worker whose code is not the code on disk still claims its jobs and writes that fact onto each row,
+saying it once in the log: refusing to claim turns an edit made during a batch into a queue that looks
+like it has nothing to do. The row carries two readings. `code.differs` says the tree moved beside the
+worker, which is hygiene; `code.loaded_differs` names the files the worker imported that changed since
+it started, `null` when none did, and that one decides whether passes shared one code. The stamp is over the bytes, so a checkout that restores the
 same content changes nothing, and it says "differs" rather than "older", because a reverted tree is as
 much of a mismatch as an edited one. A reader of a series then knows which passes shared one code, and
 drops what it must, instead of the stand deciding that for it.

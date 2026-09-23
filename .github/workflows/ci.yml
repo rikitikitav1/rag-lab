@@ -39,6 +39,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: install d2
         run: curl -fsSL https://d2lang.com/install.sh | sh -s -- --version v0.7.1
+      - name: pull plantuml
+        run: docker pull plantuml/plantuml:1.2026.8
       - name: check the agent graph drawing against the code
         run: |
           uv sync --frozen

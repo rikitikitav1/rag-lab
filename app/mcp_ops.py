@@ -24,7 +24,7 @@ from orm.sync_db import Session
 from pydantic import Field
 from sqlalchemy import select
 from use_cases import experiment as experiment_uc
-from use_cases import rejudge, retrieval_compare
+from use_cases import prereg, rejudge, retrieval_compare
 
 log = logging_setup.get_logger(__name__)
 
@@ -445,3 +445,73 @@ def cancel_job(
         if session.get(Job, id) is None:
             raise ToolError(f"job {id} not found")
     return {"cancelled": job_queue.cancel_with_its_judge(id)}
+
+
+@mcp_ops.tool(
+    name="preregister",
+    description=(
+        "Write what a run promises before it produces a row: the population it measures on, the "
+        "control and the arm, the closing columns, the guards and everything declared in words "
+        "(floor, veto, stop rules, price, the unflattering expectation). Every column name is "
+        "checked against the registry, so a predicate named here has one reading and can be "
+        "recomputed later; a name the registry does not know is refused with the known ones listed. "
+        "A preregistration is written once and never edited afterwards. A run started with "
+        "`purpose: closing` must name one."
+    ),
+)
+def preregister(
+    name: Annotated[str, Field(description="A name for this promise, unique, e.g. `mr4_sgr`.")],
+    population: Annotated[dict, Field(description="{'sets': [question set names], ...}.")],
+    arms: Annotated[dict, Field(description="{'control': ..., 'arm': ...}.")],
+    closing: Annotated[dict, Field(description=(
+        "{'columns': [names], 'arm_should': 'lower' | 'raise', 'paired': ..., 'draws': ...}."
+    ))],
+    guards: Annotated[list | None, Field(description=(
+        "[{'column': name, 'must_not': 'rise' | 'fall', 'margin': share >= 0, 'sets': [names]?}];"
+        " without `sets` a guard reads the closing population."
+    ))] = None,
+    declared: Annotated[dict | None, Field(description="Floor, veto, stop rules, price, expectations.")] = None,
+) -> dict:
+    try:
+        return prereg.write(name, population, arms, closing, guards or [], declared or {})
+    except prereg.Refused as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="preregistration",
+    description=(
+        "Read back a promise by name: population, arms, closing columns, guards and the declared "
+        "words. This is the door a session reads after a compaction, because the promise lives in "
+        "the base and not in anyone's context."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def preregistration(
+    name: Annotated[str, Field(description="The preregistration's name.")],
+) -> dict:
+    try:
+        return prereg.read(name)
+    except prereg.Refused as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="close_preregistration",
+    description=(
+        "Compute what the promise declared over the named runs and nothing else: shares per arm on "
+        "the paired questions, the paired effect in the declared direction with its interval, the "
+        "floor band when a second control pass is named as `floor`, and each guard as holds, broken, "
+        "undecided or unreadable, read against its margin or, with a `floor` run, the floor's upper edge if higher. "
+        "`cleared` is true, false or null, always with `cleared_because`. "
+        "A decided close is recorded as `closed_with`, and the promise then closes with those runs only."
+    ),
+)
+def close_preregistration(
+    name: Annotated[str, Field(description="The preregistration's name.")],
+    runs: Annotated[dict, Field(description="{'control': run_name, 'arm': run_name, 'floor': run_name?}.")],
+) -> dict:
+    try:
+        return prereg.close(name, runs)
+    except prereg.Refused as e:
+        raise ToolError(str(e)) from e

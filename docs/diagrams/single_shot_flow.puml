@@ -1,0 +1,43 @@
+@startuml single_shot_flow
+title Single shot: retrieve once, generate once, no tools
+
+skinparam wrapWidth 220
+
+start
+:POST /v1/chat/question;
+:Embed the query (bge-m3, 1024d);
+
+partition "Hybrid retrieval, one SQL query" {
+  fork
+    :vector CTE, top-N by cosine,
+    hnsw at the resolved depth;
+  fork again
+    :keyword CTE, FTS per language,
+    query_lang by function words;
+  end fork
+  :RRF merge, 1/(60 + rank), ties broken by id;
+}
+
+:Distance threshold, the absolute quality gate;
+
+if (any rows left?) then (no)
+  :"No relevant documents found."
+  An honest refusal, no LLM call; <<#fff3cd>>
+else (yes)
+  if (rerank enabled?) then (yes, per-run override)
+    :Cross-encoder rerank, bge-reranker-v2-m3,
+    20 candidates down to top k;
+  else (no, the default)
+  endif
+  :Build the context: chunks and source markers;
+  :Generate (llama3.1:8b, temp 0.1);
+  :Answer and sources; <<#d4edda>>
+endif
+
+:question_log: answer, context, sources, config;
+stop
+
+note right
+  The baseline the agent is measured against.
+end note
+@enduml

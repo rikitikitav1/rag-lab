@@ -40,6 +40,8 @@ class Job(Base):
     balances: Mapped[dict | None] = mapped_column(JSONB)
     # the stamp of the process that claimed it: whether a series of runs shares one code is a query
     code: Mapped[dict | None] = mapped_column(JSONB)
+    # the promise a closing run was made under, a column so the runs of one promise are a query
+    prereg: Mapped[str | None]
     apply_since: Mapped[datetime] = mapped_column(server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

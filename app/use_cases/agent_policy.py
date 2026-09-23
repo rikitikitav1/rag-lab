@@ -28,10 +28,14 @@ class Orchestrator(StrEnum):
     langgraph_middleware = "langgraph_middleware"
     langgraph_ported = "langgraph_ported"
     langgraph_idiomatic = "langgraph_idiomatic"
+    # measured and refused: it filled a reasoning schema instead of calling a tool
+    schema_guided = "schema_guided"
 
 
 # retired implementations, declared here so a fourth retirement is one line, not three
-GONE = frozenset({Orchestrator.handrolled, Orchestrator.langgraph_middleware})
+GONE = frozenset(
+    {Orchestrator.handrolled, Orchestrator.langgraph_middleware, Orchestrator.schema_guided}
+)
 
 
 class FallbackReason(StrEnum):

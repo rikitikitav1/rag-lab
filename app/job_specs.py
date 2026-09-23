@@ -25,6 +25,13 @@ class Spec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# a smoke asks nothing of the record; a closing run is the one whose number is quoted
+class Purpose(StrEnum):
+    smoke = "smoke"
+    probe = "probe"
+    closing = "closing"
+
+
 class EvalRunFields(Spec):
     run_name: str = Field(min_length=1, max_length=limits.MAX_RUN_NAME)
     set_name: str | None = None
@@ -54,11 +61,25 @@ class EvalRunFields(Spec):
     generation_sampler: dict | None = None
     # off for a run read by a rule and not by a score: retrieval deltas, a string match, a canary
     judge: bool = True
+    # what this run is for; the default is the cheap case, and only the closing one owes a promise
+    purpose: Purpose = Purpose.smoke
+    # the preregistration this run was made under, by name
+    prereg: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
 
     @field_validator("generation_sampler")
     @classmethod
     def _sampler_keys(cls, value):
         return samplers.check(value) if value else value
+
+    # the gate lives here and not on a route, so the REST door and the queue get it from one place
+    @model_validator(mode="after")
+    def _a_closing_run_names_its_promise(self):
+        if self.purpose is Purpose.closing and not self.prereg:
+            raise ValueError(
+                "a closing run names the preregistration it was made under:"
+                " pass `prereg`, or run it as `purpose: smoke`"
+            )
+        return self
 
 
 # what the queue accepts is what a door may offer plus what the stand attaches to its own jobs

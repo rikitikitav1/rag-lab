@@ -103,3 +103,78 @@ def test_a_probe_refused_over_the_window_fails_its_tool_not_the_whole_answer(mon
     tools = {"needs_value": NS(parameters={"required": ["repo"], "properties": {"repo": {}}})}
     assert agent._admissible("q", tools, result, refused) == {}
     assert result.tool_errors == {"needs_value": "tool_match"}
+
+
+def test_the_trace_counts_a_hop_that_asked_the_same_thing_again():
+    from types import SimpleNamespace as Row
+
+    from evals import trace
+
+    def turn(*calls):
+        return {"role": "assistant",
+                "tool_calls": [{"name": n, "arguments": a} for n, a in calls]}
+
+    asked_twice = Row(id=1, metrics={}, transcript=[
+        {"role": "system", "content": "s"},
+        turn(("search_corpus", '{"query": "dbscan"}')),
+        {"role": "tool", "content": "..."},
+        turn(("search_corpus", '{"query": "dbscan"}')),
+        turn(("search_corpus", '{"query": "outliers"}')),
+    ])
+    asked_once = Row(id=2, metrics={}, transcript=[turn(("search_corpus", '{"query": "k means"}'))])
+
+    said = trace.report([asked_twice, asked_once])["repeats"]
+    assert said["calling_hops"] == 4 and said["repeat_hops"] == 1
+    assert said["rows"] == 1 and said["rows_repeating"] == [1]
+    assert said["share"] == 0.25
+
+    # a row that never called a tool is not a row that repeated nothing: it is out of the denominator
+    quiet = Row(id=3, metrics={}, transcript=[{"role": "assistant", "content": "an answer"}])
+    assert trace.report([quiet])["repeats"] == {
+        "calling_hops": 0, "repeat_hops": 0, "share": None, "rows": 0, "rows_repeating": [],
+        "blind_calls": 0,
+    }
+
+
+def test_two_serialisations_of_one_query_are_one_query():
+    from types import SimpleNamespace as Row
+
+    from evals import trace
+
+    def turn(args):
+        return {"role": "assistant", "tool_calls": [{"name": "search_corpus", "arguments": args}]}
+
+    # one arm is serialised by ollama and the other by our own code: spacing and key order are theirs
+    spaced = Row(id=1, metrics={}, transcript=[
+        turn('{"query":"dbscan","category":null}'),
+        turn('{"category": null, "query": "dbscan"}'),
+    ])
+    said = trace.report([spaced])["repeats"]
+    assert said["repeat_hops"] == 1, "the same question asked twice is one repeat, whatever the spacing"
+
+    # a dict where a string was expected must not raise, and a call asked with nothing is counted
+    blind = Row(id=2, metrics={}, transcript=[turn({"query": "  "}), turn('{"query": ""}')])
+    counted = trace.report([blind])["repeats"]
+    assert counted["blind_calls"] == 2 and counted["calling_hops"] == 2
+
+
+def test_a_call_with_null_or_no_arguments_is_blind():
+    from evals import trace
+
+    empty = {"role": "assistant", "tool_calls": [{"name": "search_corpus", "arguments": None},
+                                                 {"name": "search_corpus"}]}
+    counted = trace.report([NS(id=3, metrics={}, transcript=[empty])])["repeats"]
+    assert counted["blind_calls"] == 2
+
+
+def test_the_divergence_script_reads_calls_through_the_trace():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "scripts" / "second_call_divergence.py"
+    spec = importlib.util.spec_from_file_location("second_call_divergence", path)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    left = [{"role": "assistant", "tool_calls": [{"name": "s", "arguments": '{"a":1,"b":2}'}]}]
+    right = [{"role": "assistant", "tool_calls": [{"name": "s", "arguments": '{"b": 2, "a": 1}'}]}]
+    assert script.calls_of(left) == script.calls_of(right)

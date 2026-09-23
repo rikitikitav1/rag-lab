@@ -12,7 +12,7 @@ import db
 log = logging_setup.get_logger(__name__)
 
 # the snapshot's shape, raised with every key it gains
-SCHEMA = 17
+SCHEMA = 18
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -31,6 +31,8 @@ KEYS = (
     "code_version",
     "tree_stamp",
     "tree_differs",
+    "loaded_differs",
+    "process_started",
     "context_length",
     "orchestrator",
     "fallback_policy",
@@ -180,8 +182,12 @@ def of_run(
         "code_version": version.CODE_VERSION,
         # the hash sees no edit between the commit and the container's start; the fingerprint does
         "tree_stamp": version.LOADED_TREE,
-        # and the tree can move after the start: a row written then is not a row of the same stand
+        # and the tree can move after the start: hygiene, not a verdict on this row's code
         "tree_differs": version.differs_from_disk(),
+        # the sharp one: a file this process imported no longer matches what the stamp names
+        "loaded_differs": version.loaded_differs(),
+        # a restart between rows shows here and nowhere else, because the stamp would not move
+        "process_started": version.STARTED,
         "context_length": _window(picked) if generated else None,
         "engines": named,
         "engine_refused": {role: seen.dropped for role, seen in samplers.items()},

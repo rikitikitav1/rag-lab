@@ -155,7 +155,7 @@ def verdicts(left: list, right: list) -> dict:
 
 
 # the report's shape, raised with every field it gains
-SCHEMA = 18
+SCHEMA = 19
 
 
 class TwoJudges(Ambiguous):
@@ -164,9 +164,9 @@ class TwoJudges(Ambiguous):
 
 # the stamp exists so a reader can ask "did these arms share one code"; without this nobody ever asked
 def code_by_run(runs: dict[str, list]) -> dict:
-    said, fields, moved = {}, set(), {}
+    said, fields, moved, mixed, starts, knew = {}, set(), {}, {}, {}, set()
     for name, logs in runs.items():
-        seen = set()
+        seen, began = set(), set()
         for ql in logs:
             config = (ql.metrics or {}).get("config") or {}
             # the fingerprint first: a hash cannot see an edit made between the commit and the start
@@ -176,18 +176,37 @@ def code_by_run(runs: dict[str, list]) -> dict:
                 fields.add(field)
             if config.get("tree_differs"):
                 moved[name] = config["tree_differs"]
+            # the one that decides: a file this run's process imported stopped matching its stamp
+            if config.get("loaded_differs"):
+                mixed[name] = config["loaded_differs"]
+            # a snapshot that carries the key says `null` when clean, so absence is an older row
+            if "loaded_differs" in config:
+                knew.add(name)
+            if config.get("process_started"):
+                began.add(config["process_started"])
         said[name] = sorted(seen)
+        if began:
+            starts[name] = sorted(began)
     every = {v for versions in said.values() for v in versions}
     read = "+".join(sorted(fields)) if fields else "nothing"
     # an arm that said nothing cannot agree with one that did, and a fingerprint is not a commit hash
     silent = [name for name, versions in said.items() if not versions]
-    # a tree that moved under a run makes its own stamp a half truth, whatever the other arm says
-    one = None if (len(fields) > 1 or silent or moved) else len(every) <= 1
+    # a tree moved under a run whose rows predate the flag: nothing here can tell code from tree
+    too_old = sorted(name for name in moved if name not in knew)
+    # a tree that moved beside a run is hygiene; a loaded file that moved under it is mixed code
+    one = None if (len(fields) > 1 or silent or mixed or too_old) else len(every) <= 1
     return {"by_run": said, "one_code": one, "read_from": read, "said_nothing": silent,
-            "tree_moved": moved,
+            "tree_moved": moved, "loaded_moved": mixed, "process_started": starts,
+            "too_old_to_tell": too_old,
             "reads": f"the code each run's rows were written by, taken from `{read}`;"
                      " two arms on two stamps compare two trees, and a row older than the"
-                     " fingerprint falls back to the commit hash"}
+                     " fingerprint falls back to the commit hash. `one_code` is decided by"
+                     " `loaded_moved`, the files a run's own process imported and then stopped"
+                     " matching; `tree_moved` sits beside it and never vetoes, because a tree can"
+                     " move under a stand without touching the code it is running, but a run in"
+                     " `too_old_to_tell` had its tree move and its rows predate the flag, so its"
+                     " silence is not a clean bill and `one_code` stays unknown. Two values in"
+                     " `process_started` for one run mean it was written by two processes"}
 
 
 def compare(runs: dict[str, list]) -> dict:
