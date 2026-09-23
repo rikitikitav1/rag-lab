@@ -451,29 +451,38 @@ def cancel_job(
     name="preregister",
     description=(
         "Write what a run promises before it produces a row: the population it measures on, the "
-        "control and the arm, the closing columns, the guards and everything declared in words "
-        "(floor, veto, stop rules, price, the unflattering expectation). Every column name is "
-        "checked against the registry, so a predicate named here has one reading and can be "
-        "recomputed later; a name the registry does not know is refused with the known ones listed. "
-        "A preregistration is written once and never edited afterwards. A run started with "
+        "control and the arm, the closing columns, the guards, the vetoes and everything declared in "
+        "words (stop rules, price, the unflattering expectation). Every column name is checked against "
+        "the registry, so a predicate named here has one reading and can be recomputed later; a name the "
+        "registry does not know is refused with the known ones listed. A column is read from a run's "
+        "question logs or from a recorded grader measurement, and the registry says which. A "
+        "preregistration is written once and never edited afterwards. A run started with "
         "`purpose: closing` must name one."
     ),
 )
 def preregister(
     name: Annotated[str, Field(description="A name for this promise, unique, e.g. `mr4_sgr`.")],
-    population: Annotated[dict, Field(description="{'sets': [question set names], ...}.")],
+    population: Annotated[dict, Field(description=(
+        "{'sets': [question set names], 'question_ids': [ids]?}; named ids narrow the sets to a declared draw."
+    ))],
     arms: Annotated[dict, Field(description="{'control': ..., 'arm': ...}.")],
     closing: Annotated[dict, Field(description=(
-        "{'columns': [names], 'arm_should': 'lower' | 'raise', 'paired': ..., 'draws': ...}."
+        "{'columns': [names], 'arm_should': 'lower' | 'raise', 'floor_value': x?}; shares join into a"
+        " union, a judge score closes alone; the bar is the floor run's upper edge or `floor_value`."
     ))],
     guards: Annotated[list | None, Field(description=(
         "[{'column': name, 'must_not': 'rise' | 'fall', 'margin': share >= 0, 'sets': [names]?}];"
         " without `sets` a guard reads the closing population."
     ))] = None,
-    declared: Annotated[dict | None, Field(description="Floor, veto, stop rules, price, expectations.")] = None,
+    declared: Annotated[dict | None, Field(description="Stop rules, price, expectations, in words.")] = None,
+    vetoes: Annotated[list | None, Field(description=(
+        "[{'column': name, 'above': name, 'margin': x >= 0, 'min_rows': n, 'on': 'arm' | 'control'}]: fires"
+        " when the mean of `column` exceeds the mean of `above` by more than the margin, on one arm, by"
+        " point, and only on at least `min_rows` rows; on fewer it is undecided."
+    ))] = None,
 ) -> dict:
     try:
-        return prereg.write(name, population, arms, closing, guards or [], declared or {})
+        return prereg.write(name, population, arms, closing, guards or [], declared or {}, vetoes or [])
     except prereg.Refused as e:
         raise ToolError(str(e)) from e
 
@@ -502,16 +511,23 @@ def preregistration(
         "Compute what the promise declared over the named runs and nothing else: shares per arm on "
         "the paired questions, the paired effect in the declared direction with its interval, the "
         "floor band when a second control pass is named as `floor`, and each guard as holds, broken, "
-        "undecided or unreadable, read against its margin or, with a `floor` run, the floor's upper edge if higher. "
+        "undecided or unreadable, read against its margin or, with a `floor` run, the floor's upper edge if higher, "
+        "and each veto as fired, quiet or unreadable. Columns read from a measurement take their files "
+        "from `measurements`; a veto can be read before the runs exist. "
         "`cleared` is true, false or null, always with `cleared_because`. "
         "A decided close is recorded as `closed_with`, and the promise then closes with those runs only."
     ),
 )
 def close_preregistration(
     name: Annotated[str, Field(description="The preregistration's name.")],
-    runs: Annotated[dict, Field(description="{'control': run_name, 'arm': run_name, 'floor': run_name?}.")],
+    runs: Annotated[dict | None, Field(description=(
+        "{'control': run_name, 'arm': run_name, 'floor': run_name?}."
+    ))] = None,
+    measurements: Annotated[dict | None, Field(description=(
+        "{'control': file, 'arm': file, 'floor': file?}: measurement file names in datasets/measurements."
+    ))] = None,
 ) -> dict:
     try:
-        return prereg.close(name, runs)
+        return prereg.close(name, runs, measurements)
     except prereg.Refused as e:
         raise ToolError(str(e)) from e

@@ -117,3 +117,11 @@ def test_a_recorded_pass_says_where_its_rows_went(tmp_path, monkeypatch):
     beside = Path(where).with_name(said["rows_file"]["name"])
     assert json.loads(gzip.decompress(beside.read_bytes())) == [{"a": 1}, {"a": 2}]
     assert measurements.rows_of(where) == [{"a": 1}, {"a": 2}]
+
+
+def test_the_bench_grades_the_named_questions_and_nothing_else():
+    from evals import grade_candidates
+
+    rows = [{"id": n} for n in range(10)]
+    assert [r["id"] for r in grade_candidates.drawn(rows, None, 0, None, [7, 2])] == [2, 7]
+    assert len(grade_candidates.drawn(rows, 3, 0, None)) == 3

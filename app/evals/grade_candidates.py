@@ -15,7 +15,7 @@ from use_cases import grading
 
 log = logging_setup.get_logger(__name__)
 
-SCHEMA = 2
+SCHEMA = 3
 FORMS = ("per_chunk", "whole_text")
 
 READS = (
@@ -75,7 +75,11 @@ def _one_question(row: dict, chunks: list[dict], texts: dict, system: str, ask, 
 
 
 # the same rows every pass and every form: a sample drawn per run compares two draws, not two arms
-def drawn(rows: list, sample: int | None, seed: int, limit: int | None) -> list:
+def drawn(rows: list, sample: int | None, seed: int, limit: int | None, ids=None) -> list:
+    # named ids are the population a preregistration declared, and they are taken as named
+    if ids:
+        wanted = set(ids)
+        return [row for row in rows if row["id"] in wanted]
     if sample and sample < len(rows):
         picked = random.Random(seed).sample(range(len(rows)), sample)
         return [rows[i] for i in sorted(picked)]
@@ -95,12 +99,15 @@ def curves(payload: dict, frozen: dict) -> dict:
 def run(path: str, form: str = "per_chunk", top: int = 5, limit: int | None = None,
         sample: int | None = None, seed: int = 0, name: str | None = None,
         shuffle: int | None = None, prompt_version: int | None = None,
-        job_id: int | None = None) -> dict:
+        job_id: int | None = None, question_ids: list | None = None) -> dict:
     if form not in FORMS:
         raise StandFault(f"a call form is one of {FORMS}, got {form!r}")
     frozen = json.loads(Path(path).read_text())
     variant = frozen["stamp"]["variant"]
-    rows = drawn(frozen["rows"], sample, seed, limit)
+    rows = drawn(frozen["rows"], sample, seed, limit, question_ids)
+    missing = sorted(set(question_ids or ()) - {row["id"] for row in rows})
+    if missing:
+        raise StandFault(f"{len(missing)} named questions are not in {Path(path).name}: {missing[:5]}")
     if shuffle is not None:
         # the same rows in another order: a floor taken twice in one residency must move the prefix cache
         rows = list(rows)
@@ -153,6 +160,7 @@ def run(path: str, form: str = "per_chunk", top: int = 5, limit: int | None = No
         "candidates_file": Path(path).name,
         "sample": sample,
         "seed": seed,
+        "question_ids": question_ids,
         "shuffle": shuffle,
         "candidates_stamp": frozen["stamp"],
         "prompt": {"purpose": str(Purpose.grade_chunk), "version": version},

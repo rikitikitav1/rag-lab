@@ -76,7 +76,7 @@ def arm_of(frozen_row: dict, top: int, name: str) -> set:
     return {c["address"] for c in ordered[:top]}
 
 
-def _shares(classes: list, addresses: list, arm: set, kept: set) -> dict:
+def shares(classes: list, addresses: list, arm: set, kept: set) -> dict:
     seats = [n for n, a in enumerate(addresses) if a in arm]
     of = lambda name: [n for n in seats if classes[n] == name]  # noqa: E731
     gold, neighbours, strangers = (of(c) for c in
@@ -140,15 +140,15 @@ def curve(measurement: dict, frozen: dict, arm: str = "A", seed: int = 42) -> di
 
     grader = []
     for cut in CUTS:
-        shares = [_shares(r["classes"], r["addresses"], arms[r["question_id"]],
-                          kept_by_grader(r, cut, form)) for r in rows]
-        grader.append({"cut": cut, "rows": shares, **_point(shares, seed)})
+        read = [shares(r["classes"], r["addresses"], arms[r["question_id"]],
+                       kept_by_grader(r, cut, form)) for r in rows]
+        grader.append({"cut": cut, "rows": read, **_point(read, seed)})
 
     reranker = []
     for threshold in _thresholds(by_id, rows, top, arm):
-        shares = [_shares(r["classes"], r["addresses"], arms[r["question_id"]],
-                          _by_score(r, by_id[r["question_id"]], threshold)) for r in rows]
-        reranker.append({"threshold": threshold, "rows": shares, **_point(shares, seed)})
+        read = [shares(r["classes"], r["addresses"], arms[r["question_id"]],
+                       _by_score(r, by_id[r["question_id"]], threshold)) for r in rows]
+        reranker.append({"threshold": threshold, "rows": read, **_point(read, seed)})
 
     matched = []
     for step in grader:
