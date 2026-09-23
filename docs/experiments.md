@@ -110,3 +110,4 @@ Rules that decide whether an entry is worth keeping:
 - [2026-09-19 - An LLM grader between search and the answer, and the bar it does not clear](experiments/2026-09-19_a-grader-that-does-not-buy-it.md)
 - [2026-09-20 - Rewriting the question when the search looks weak](experiments/2026-09-20_a-rewrite-that-does-not-clear-the-bar.md)
 - [2026-09-23 - Schema-guided reasoning instead of the model's own tool calling](experiments/2026-09-23_a-schema-that-makes-the-loop-worse.md)
+- [2026-09-23 - Stripping the noise inside the chunks the grader kept](experiments/2026-09-23_a-strip-that-does-not-buy-the-answer.md)

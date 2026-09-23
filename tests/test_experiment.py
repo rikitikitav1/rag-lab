@@ -482,7 +482,7 @@ def test_every_kind_of_report_declares_its_schema():
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (6, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 18)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 19)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
