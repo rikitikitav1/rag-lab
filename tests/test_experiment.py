@@ -482,7 +482,7 @@ def test_every_kind_of_report_declares_its_schema():
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (6, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 17)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 18)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
@@ -492,7 +492,7 @@ def test_every_kind_of_report_declares_its_schema():
     # the reports that moved here: the guard is why the anchor left `scripts`
     from evals import compare, human_anchor, language_cost
 
-    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (18, 1, 1)
+    assert (compare.SCHEMA, human_anchor.SCHEMA, language_cost.SCHEMA) == (19, 1, 1)
 
 
 def test_pending_counts_the_rows_the_judge_would_pick_up():
@@ -816,6 +816,8 @@ def test_the_generation_report_declares_a_new_schema_when_its_shape_moves(monkey
         *SCHEMA_4_SHAPE, ".outcome_rule", ".per_value.<arm>.outcome_rule",
         ".code.by_run.a", ".code.by_run.b", ".code.one_code", ".code.read_from",
         ".code.reads", ".code.said_nothing[]", ".code.tree_moved",
+        # `loaded_moved` decides `one_code`; the rest sit beside it and say why it is unknown
+        ".code.loaded_moved", ".code.process_started", ".code.too_old_to_tell",
     ]))
 
 

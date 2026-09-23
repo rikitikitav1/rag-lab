@@ -134,11 +134,43 @@ def test_the_stand_says_which_code_the_worker_loaded(tmp_path, monkeypatch):
     said = tmp_path / "worker.stamp"
     monkeypatch.setattr(version, "SAID", said)
     version.say_loaded(said)
-    assert stand_health.code()["worker_code_differs"] is False
+    clean = stand_health.code()
+    assert clean["worker_tree_moved"] is False and clean["worker_loaded_moved"] is None
 
+    # the tree moving beside the worker is hygiene; what decides is a file the worker imported
     monkeypatch.setattr(version, "LOADED_TREE", "older")
+    moved = {"count": 1, "files": ["app/llm.py"]}
+    monkeypatch.setattr(version, "loaded_differs", lambda every=0: moved)
     version.say_loaded(said)
-    assert stand_health.code()["worker_code_differs"] is True
+    code = stand_health.code()
+    assert code["worker_tree_moved"] is True and code["worker_loaded_moved"] == moved
+
+
+def test_a_worker_stamp_older_than_the_loaded_reading_is_not_read_as_clean(tmp_path, monkeypatch):
+    import json
+
+    import version
+    from use_cases import stand_health
+
+    said = tmp_path / "worker.stamp"
+    said.write_text(json.dumps({"stamp": version.LOADED_TREE, "at": "then", "pid": 1}))
+    monkeypatch.setattr(version, "SAID", said)
+    code = stand_health.code()
+    assert code["worker_loaded_moved"] is None and "too_old_to_tell" in code
+
+
+def test_a_module_imported_through_a_symlink_is_still_looked_at(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    import version
+
+    link = tmp_path / "app_link"
+    link.symlink_to(version.APP)
+    fake = types.ModuleType("via_link")
+    fake.__file__ = str(link / "version.py")
+    monkeypatch.setitem(sys.modules, "via_link", fake)
+    assert str(version.APP / "version.py") in version._loaded_paths()
 
 
 def test_a_stand_whose_worker_never_said_says_so(tmp_path, monkeypatch):
@@ -154,7 +186,8 @@ def test_a_claimed_job_carries_the_stamp_of_the_process_that_took_it():
     import version
 
     mine = version.mine()
-    assert set(mine) == {"stamp", "code_version", "at"}
+    assert set(mine) == {"stamp", "code_version", "at", "loaded_differs"}
+    assert mine["loaded_differs"] is None
     assert mine["stamp"] == version.LOADED_TREE
 
 
@@ -216,12 +249,90 @@ def test_the_door_prefers_the_fingerprint_to_the_commit_hash():
     half = compare.code_by_run({"a": rows(tree_stamp="one"), "b": rows()})
     assert half["one_code"] is None and half["said_nothing"] == ["b"]
 
-    # and a tree that moved under a run makes its own stamp a half truth
-    walked = compare.code_by_run({"a": rows(tree_stamp="one"),
-                                  "b": rows(tree_stamp="one", tree_differs="loaded one, on disk two")})
-    assert walked["one_code"] is None and walked["tree_moved"] == {"b": "loaded one, on disk two"}
+    # a tree that moved beside a run is reported and does not decide: the process ran what it loaded
+    walked = compare.code_by_run({
+        "a": rows(tree_stamp="one", loaded_differs=None),
+        "b": rows(tree_stamp="one", tree_differs="loaded one, on disk two", loaded_differs=None),
+    })
+    assert walked["one_code"] is True
+    assert walked["tree_moved"] == {"b": "loaded one, on disk two"}
 
     # one arm older than the fingerprint: the two values come from different namespaces
     mixed = compare.code_by_run({"a": rows(code_version="aaa"),
                                  "b": rows(code_version="aaa", tree_stamp="one")})
     assert mixed["one_code"] is None and mixed["read_from"] == "code_version+tree_stamp"
+
+
+def test_the_fingerprint_can_be_taken_over_a_config_outside_the_tree():
+    # an absolute CONFIG_PATH has no name relative to the repository, and the stamp is taken at import
+    import config
+    import version
+
+    was = config.CONFIG_PATH
+    try:
+        config.CONFIG_PATH = "/etc/hostname"
+        stamp = version.tree_stamp()
+    finally:
+        config.CONFIG_PATH = was
+    assert len(stamp) == 12 and stamp != version.tree_stamp()
+
+
+def test_a_tree_that_moved_beside_a_run_does_not_veto_its_code():
+    # the tree was switched to another branch under a running stand, and the worker kept its code
+    from types import SimpleNamespace as Row
+
+    from evals import compare
+
+    def rows(**config):
+        return [Row(metrics={"config": {"tree_stamp": "one", **config}}) for _ in range(2)]
+
+    beside = compare.code_by_run({
+        "a": rows(loaded_differs=None),
+        "b": rows(tree_differs="loaded one, on disk two", loaded_differs=None),
+    })
+    assert beside["one_code"] is True, "the tree moved, the process kept running what it loaded"
+    assert beside["tree_moved"]["b"], "and the reader is still told the tree moved"
+
+    under = compare.code_by_run({
+        "a": rows(loaded_differs=None),
+        "b": rows(loaded_differs={"count": 1, "files": ["app/llm.py"]}),
+    })
+    assert under["one_code"] is None, "a file this run imported stopped matching its stamp"
+    assert under["loaded_moved"]["b"]["files"] == ["app/llm.py"]
+
+
+def test_two_processes_writing_one_run_are_named():
+    from types import SimpleNamespace as Row
+
+    from evals import compare
+
+    rows = [Row(metrics={"config": {"tree_stamp": "one", "process_started": at}})
+            for at in ("2026-09-23T05:00:00+00:00", "2026-09-23T07:00:00+00:00")]
+    read = compare.code_by_run({"a": rows})
+    assert read["process_started"]["a"] == [
+        "2026-09-23T05:00:00+00:00", "2026-09-23T07:00:00+00:00"
+    ]
+
+
+def test_a_run_older_than_the_flag_cannot_be_certified_by_its_silence():
+    # the snapshot writes the key with `null` when clean, so a missing key is a row that cannot say
+    from types import SimpleNamespace as Row
+
+    from evals import compare
+
+    def rows(**config):
+        return [Row(metrics={"config": {"tree_stamp": "one", **config}}) for _ in range(2)]
+
+    old = compare.code_by_run({
+        "a": rows(),
+        "b": rows(tree_differs="loaded one, on disk two"),
+    })
+    assert old["one_code"] is None, "its tree moved and its rows predate the flag"
+    assert old["too_old_to_tell"] == ["b"]
+
+    new = compare.code_by_run({
+        "a": rows(loaded_differs=None),
+        "b": rows(tree_differs="loaded one, on disk two", loaded_differs=None),
+    })
+    assert new["one_code"] is True, "the key is there and says nothing moved under the process"
+    assert new["too_old_to_tell"] == [] and new["tree_moved"]["b"]

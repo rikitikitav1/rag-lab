@@ -184,6 +184,7 @@ def _fail_the_experiment_waiting_on(claimed) -> None:
 
 def _loop(queues: list[str]) -> None:
     while True:
+        version.say_loaded()
         try:
             busy = run_once(queues)
         except Exception as e:

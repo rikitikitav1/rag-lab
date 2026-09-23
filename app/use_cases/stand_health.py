@@ -264,12 +264,17 @@ def code() -> dict:
            "code_version": version.CODE_VERSION}
     if said is None:
         return out | {"worker": "has not said which code it loaded"}
-    return out | {
+    out |= {
         "worker_loaded": said.get("stamp"),
         "worker_said_at": said.get("at"),
-        # not "stale": a reverted tree differs from a running process as much as an edited one
-        "worker_code_differs": said.get("stamp") != on_disk,
+        # hygiene, as in a run's snapshot: the tree moved beside the worker, which may not have imported it
+        "worker_tree_moved": said.get("stamp") != on_disk,
     }
+    # the reading that decides, the same one `compare.code_by_run` uses: a file the worker imported moved
+    if "loaded_differs" not in said:
+        return out | {"worker_loaded_moved": None,
+                      "too_old_to_tell": "the worker's stamp predates the loaded-files reading"}
+    return out | {"worker_loaded_moved": said["loaded_differs"]}
 
 
 def stand() -> dict:

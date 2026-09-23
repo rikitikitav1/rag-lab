@@ -128,7 +128,7 @@ def test_the_run_snapshot_says_a_cloud_role_was_keyed_by_the_run(monkeypatch):
     monkeypatch.setattr(run_snapshot.card, "model_on_card", lambda spec, name: None)
     *_, cache_keys, _ = run_snapshot._by_role(engines.Resolved("m", CLOUD))
     assert cache_keys == {Role.generation: "user=job"}
-    assert "cache_keys" in run_snapshot.KEYS and run_snapshot.SCHEMA == 17
+    assert "cache_keys" in run_snapshot.KEYS and run_snapshot.SCHEMA == 18
 
 
 def test_a_finished_job_has_its_count_before_it_reads_done(monkeypatch):
