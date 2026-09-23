@@ -165,6 +165,7 @@ def grade_candidates(options: dict) -> None:
             prompt_version=options.get("prompt_version"),
             name=options.get("name"),
             job_id=options.get("_job_id"),
+            question_ids=options.get("question_ids"),
         )
     except StandFault as e:
         raise Final(str(e)) from e

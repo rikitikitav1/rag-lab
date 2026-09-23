@@ -12,7 +12,7 @@ import db
 log = logging_setup.get_logger(__name__)
 
 # the snapshot's shape, raised with every key it gains
-SCHEMA = 18
+SCHEMA = 19
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -49,6 +49,8 @@ KEYS = (
     "restate_tools",
     # an arm whose generator read filtered chunks is not the arm that read all five
     "grade_chunks",
+    # kept after the strip was removed: the rows of its one night say which arm read strips
+    "strip_chunks",
     # per role, and read by the role keys: a bare {} means no role was read, not "one engine"
     "engines",
     # what a role asked of its engine and the engine would not carry: never read as applied

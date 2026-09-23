@@ -151,8 +151,152 @@ def test_a_guard_reads_its_bar_on_top_of_the_nights_floor():
     rows = {"control": run({0, 1}), "arm": run(set(range(7))), "floor": run({2, 3})}
     guard = {"column": "refused", "must_not": "rise", "margin": 0.0}
     ids = set(range(820))
-    alone = prereg._guard(guard, {k: rows[k] for k in ("control", "arm")}, ids)
+    alone = prereg._guard(guard, {"run": {k: rows[k] for k in ("control", "arm")}}, ids)
     assert alone["state"] == "broken"
     # five rows over the noise no longer veto, and they do not pass either: the arm's upper edge is above it
-    with_floor = prereg._guard(guard, rows, ids)
+    with_floor = prereg._guard(guard, {"run": rows}, ids)
     assert with_floor["state"] == "undecided" and with_floor["bar"] == with_floor["floor"]["ci95"][1] > 0
+
+
+def _measured(classes, kept, chars=None):
+    addresses = [f"a{n}" for n in range(len(classes))]
+    row = {"question_id": 1, "classes": classes, "addresses": addresses, "kept": kept,
+           "arm": set(addresses)}
+    return row | ({"chars": chars} if chars else {})
+
+
+def test_the_grader_columns_read_what_the_curve_reads():
+    row = _measured(["gold_section", "stranger", "stranger"], kept=[0, 1])
+    assert columns.read("gold_retained", row) == 1.0
+    assert columns.read("strangers_dropped", row) == 0.5
+    # a row with no stranger has no share of strangers dropped, not a zero
+    assert columns.read("strangers_dropped", _measured(["gold_section"], kept=[0])) is None
+    # a chunk outside the serving arm is not counted, whatever the grader said of it
+    outside = _measured(["gold_section", "stranger"], kept=[0]) | {"arm": {"a0"}}
+    assert columns.read("strangers_dropped", outside) is None
+
+
+def test_a_row_the_strip_never_touched_has_no_chars_removed_rather_than_none_removed():
+    assert columns.read("chars_removed_gold", _measured(["gold_section"], kept=[0])) is None
+    stripped = _measured(["gold_section", "stranger", "stranger"], kept=[0, 1],
+                         chars={"before": [1000, 800, 900], "after": [900, 200, 900]})
+    assert columns.read("chars_removed_gold", stripped) == 0.1
+    # the dropped stranger is counted by strangers_dropped, not twice as characters removed
+    assert columns.read("chars_removed_stranger", stripped) == 0.75
+    assert columns.read("chars_removed_neighbour", stripped) is None
+
+
+def test_a_judge_score_column_leaves_an_abstained_row_out():
+    assert columns.read("faithfulness", _row(faithfulness="7")) == 7.0
+    assert columns.read("faithfulness", _row(faithfulness=None)) is None
+    control = {1: _row(faithfulness="6"), 2: _row(faithfulness=None)}
+    arm = {1: _row(faithfulness="8"), 2: _row(faithfulness="9")}
+    assert prereg._paired(control, arm, {1, 2}, ["faithfulness"], 1) == [2.0]
+
+
+def test_a_closing_refuses_a_score_in_a_union_and_columns_from_two_sources():
+    with pytest.raises(prereg.Refused, match="closes alone"):
+        prereg._closing_or_refuse({"columns": ["faithfulness", "refused"], "arm_should": "raise"})
+    with pytest.raises(prereg.Refused, match="one source"):
+        prereg._closing_or_refuse({"columns": ["refused", "gold_retained"], "arm_should": "raise"})
+    with pytest.raises(prereg.Refused, match="floor_value"):
+        prereg._closing_or_refuse({"columns": ["faithfulness"], "arm_should": "raise", "floor_value": -1})
+
+
+def test_a_veto_is_read_inside_one_arm_by_point():
+    veto = prereg._veto_or_refuse({"column": "chars_removed_gold", "above": "chars_removed_stranger",
+                                   "margin": 0.05, "min_rows": 1})
+    assert veto["on"] == "arm"
+    cuts_gold = _measured(["gold_section", "stranger"], kept=[0, 1],
+                          chars={"before": [100, 100], "after": [50, 90]})
+    rows = {"run": {}, "measurement": {"arm": {1: cuts_gold}}}
+    assert prereg._veto(veto, rows, {1})["state"] == "fired"
+    gentle = cuts_gold | {"chars": {"before": [100, 100], "after": [96, 90]}}
+    assert prereg._veto(veto, {"run": {}, "measurement": {"arm": {1: gentle}}}, {1})["state"] == "quiet"
+    unstripped = _measured(["gold_section", "stranger"], kept=[0, 1])
+    got = prereg._veto(veto, {"run": {}, "measurement": {"arm": {1: unstripped}}}, {1})
+    assert got["state"] == "unreadable"
+    assert prereg._veto(veto, {"run": {}, "measurement": {}}, {1})["state"] == "not_run"
+    with pytest.raises(prereg.Refused, match="one source"):
+        prereg._veto_or_refuse({"column": "chars_removed_gold", "above": "refused", "min_rows": 1})
+
+
+def test_a_veto_read_on_fewer_rows_than_it_declared_does_not_fire():
+    # the smoke is ten rows, and a close on it must not decide a veto declared on two hundred
+    with pytest.raises(prereg.Refused, match="min_rows"):
+        prereg._veto_or_refuse({"column": "chars_removed_gold", "above": "chars_removed_stranger"})
+    veto = prereg._veto_or_refuse({"column": "chars_removed_gold", "above": "chars_removed_stranger",
+                                   "margin": 0.05, "min_rows": 200})
+    cuts_gold = _measured(["gold_section", "stranger"], kept=[0, 1],
+                          chars={"before": [100, 100], "after": [50, 90]})
+    got = prereg._veto(veto, {"run": {}, "measurement": {"arm": {1: cuts_gold}}}, {1})
+    assert got["state"] == "undecided"
+
+
+def test_a_chunk_stripped_to_nothing_leaves_kept_and_stays_in_the_characters():
+    row = _measured(["gold_section", "gold_section", "stranger"], kept=[0],
+                    chars={"before": [100, 100, 100], "after": [100, 0, 0]})
+    row["kept_before_strip"] = [0, 1, 2]
+    # the stranger was kept by the chunk pass and lost every strip: dropped, and cut whole
+    assert columns.read("strangers_dropped", row) == 1.0
+    assert columns.read("chars_removed_stranger", row) == 1.0
+    assert columns.read("chars_removed_gold", row) == 0.5
+    assert columns.read("gold_retained", row) == 1.0
+
+
+def test_a_union_where_no_member_has_a_value_has_none():
+    no_gold = _measured(["stranger"], kept=[0])
+    assert columns.value(["gold_retained", "strangers_dropped"], no_gold) == 0.0
+    assert columns.value(["gold_retained"], no_gold) is None
+    assert columns.value(["gold_retained", "chars_removed_gold"], no_gold) is None
+
+
+def test_a_fired_veto_stops_the_promise_before_its_arms_are_run():
+    fired = {"column": "chars_removed_gold", "above": "chars_removed_stranger", "state": "fired"}
+    cleared, why = prereg._verdict("not_run", [], [fired])
+    assert cleared is False and "veto fired" in why
+    quiet = fired | {"state": "quiet"}
+    assert prereg._verdict("not_run", [], [quiet]) == (None, prereg._OPEN["not_run"])
+
+
+def test_a_declared_floor_value_is_the_bar_when_no_floor_run_is_named(monkeypatch):
+    promise = {"closing": {"columns": ["faithfulness"], "arm_should": "raise", "floor_value": 0.18},
+               "population": {"sets": ["s"]}, "guards": [], "vetoes": []}
+    control = {q: _row(faithfulness="6") for q in range(50)}
+    arm = {q: _row(faithfulness="7" if q % 2 else "6") for q in range(50)}
+    monkeypatch.setattr(prereg, "read", lambda name: promise)
+    monkeypatch.setattr(prereg, "_question_ids", lambda sets: set(range(50)))
+    monkeypatch.setattr(prereg, "_rows", {"c": control, "a": arm}.get)
+    monkeypatch.setattr(prereg, "_closed_with", lambda name, runs, result: None)
+    out = prereg.close("p", runs={"control": "c", "arm": "a"})
+    assert out["bar"] == 0.18 and out["effect"]["ci95"][0] > 0.18 and out["cleared"] is True
+    assert out["means"] == {"control": 6.0, "arm": 6.5}
+
+
+def test_a_chunk_the_strip_never_asked_is_not_in_the_characters():
+    row = _measured(["gold_section", "gold_section"], kept=[0, 1],
+                    chars={"before": [100, 100], "after": [100, 50]})
+    row["strips"] = [1, 3]
+    # the one-strip gold chunk was decided by the chunk pass and would dilute the gold share toward quiet
+    assert columns.read("chars_removed_gold", row) == 0.5
+
+
+def test_a_declared_draw_narrows_the_population_to_its_questions(monkeypatch):
+    promise = {"closing": {"columns": ["faithfulness"], "arm_should": "raise"},
+               "population": {"sets": ["s"], "question_ids": [1, 2]}, "guards": [], "vetoes": []}
+    control = {q: _row(faithfulness="6") for q in range(5)}
+    arm = {q: _row(faithfulness="7") for q in range(5)}
+    monkeypatch.setattr(prereg, "read", lambda name: promise)
+    monkeypatch.setattr(prereg, "_question_ids", lambda sets: set(range(5)))
+    monkeypatch.setattr(prereg, "_rows", {"c": control, "a": arm}.get)
+    monkeypatch.setattr(prereg, "_closed_with", lambda name, runs, result: None)
+    assert prereg.close("p", runs={"control": "c", "arm": "a"})["n"] == 2
+
+
+def test_a_closing_recorded_under_the_nested_key_still_reads_as_what_it_named():
+    named = {"runs": {"control": "c", "arm": "a"}, "measurements": {"arm": "m.json"}}
+    # the first closing through the door wrote both maps under `runs`
+    assert prereg._named({"runs": named, "cleared": False}) == named
+    assert prereg._named(named | {"cleared": False}) == named
+    assert prereg._named({"runs": {"control": "c", "arm": "a"}}) == {"runs": {"control": "c", "arm": "a"},
+                                                                     "measurements": {}}

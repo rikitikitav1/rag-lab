@@ -18,6 +18,7 @@ class Preregistration(Base):
     # every column name here is checked against `evals.columns` before the row is written
     closing: Mapped[dict] = mapped_column(JSONB, default=dict)
     guards: Mapped[list] = mapped_column(JSONB, default=list)
+    vetoes: Mapped[list] = mapped_column(JSONB, default=list)
     # floor, veto, stop rules, price, expectations: kept verbatim, not parsed
     declared: Mapped[dict] = mapped_column(JSONB, default=dict)
     closed_with: Mapped[dict | None] = mapped_column(JSONB, default=None)
