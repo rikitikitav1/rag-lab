@@ -1,0 +1,64 @@
+@startuml architecture
+!include <C4/C4_Container>
+
+LAYOUT_TOP_DOWN()
+HIDE_STEREOTYPE()
+' narrow boxes over wide ones: the diagram is read on a laptop, not on a plotter
+skinparam wrapWidth 170
+skinparam nodesep 14
+skinparam ranksep 34
+
+title rag-lab, containers
+
+Person(client, "Client", "REST, or an MCP client such as Claude or Cursor")
+
+System_Boundary(lab, "rag-lab (docker compose, one host, one card)") {
+
+  Container(api, "API", "FastAPI", "REST /v1/*, MCP /mcp, MCP /mcp-ops")
+  Container(worker, "Worker", "python", "Lane `default` takes the card, lane `io` takes the network")
+  ContainerDb(postgres, "PostgreSQL + pgvector", "postgres", "Chunks and embeddings, questions, runs, job queue")
+
+  Container_Boundary(engines, "Engines, one card between them") {
+    Container(ollama, "Ollama", "GPU", "llama3.1:8b, bge-m3, gemma2:9b, qwen2.5:7b")
+    Container(vllm, "vLLM", "GPU, asleep off the card", "Qwen2.5-7B-Instruct-AWQ judges")
+    Container(rerank, "vllm-rerank", "GPU, profile `rerank`", "bge-reranker-v2-m3")
+    Container(ollama_cpu, "ollama-cpu", "processor", "bge-m3 for the RAGAS guest")
+  }
+
+  Container_Boundary(boot, "Startup, runs to completion first") {
+    Container(dbmate, "dbmate", "migrations", "Schema up")
+    Container(seed, "seed", "python", "Engines, models, roles, prompts")
+    Container(bootstrap, "bootstrap", "python", "Wakes vLLM, probes, sleeps it")
+  }
+}
+
+System_Ext(hub, "huggingface.co", "vLLM weights")
+System_Ext(mcp_ext, "External MCP servers", "DeepWiki, Hugging Face, Context7")
+
+Rel_D(client, api, "Asks, queues, reads", "HTTP / MCP")
+Rel_D(api, postgres, "Rows in, answers out, jobs queued")
+Rel_D(worker, postgres, "Claims one job", "SKIP LOCKED")
+Rel_D(api, ollama, "Chat and the agent's hops")
+Rel_D(worker, ollama, "Generates, embeds")
+Rel_D(worker, ollama_cpu, "Guest embeddings, off the card")
+Rel_D(worker, vllm, "Judges")
+Rel_D(worker, rerank, "Scores pairs")
+Rel_D(worker, vllm, "Hands the card over: one engine sleeps, the other wakes", "through the queue")
+Rel_R(dbmate, seed, "then")
+Rel_R(seed, bootstrap, "then")
+Rel_D(worker, hub, "Pulls weights", "io")
+Rel_D(api, mcp_ext, "Discovers and calls `integration__tool`")
+Rel_D(worker, mcp_ext, "Health probes", "io")
+
+Lay_D(api, worker)
+Lay_D(postgres, engines)
+Lay_D(engines, boot)
+
+note right of boot
+  The API and the worker serve
+  only after this finished
+  (compose condition).
+end note
+
+SHOW_LEGEND()
+@enduml

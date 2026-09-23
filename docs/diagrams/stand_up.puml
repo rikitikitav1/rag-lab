@@ -1,0 +1,52 @@
+@startuml stand_up
+title scripts/up.sh: bringing the stand up
+
+skinparam wrapWidth 220
+
+start
+if (Docker sees the card through CDI?) then (no)
+  :Say why, and offer scripts/up.sh --cpu; <<#fff3cd>>
+  stop
+else (yes)
+endif
+
+:Read the judge's model from config.yaml;
+:Unload ollama's models, so vLLM finds the card free;
+:docker compose up -d;
+
+fork
+  :postgresql;
+  :dbmate: migrations;
+  :seed: prompts and the question bank;
+fork again
+  :ollama;
+fork again
+  :ollama-cpu;
+fork again
+  :vllm takes the card first;
+  note right
+    The first start downloads the weights.
+  end note
+end fork
+
+partition "bootstrap, once every service above is healthy" {
+  :vllm put to sleep, unless a job holds the card;
+  :model rows from config, roles seated,
+  vLLM rows filled from what it serves;
+  :ollama reconciled: a missing model queues a pull,
+  the repetition penalty is written in;
+  :a corpus indexed only if the database holds none,
+  missing vector indexes built;
+  :questions without a vector queued;
+}
+
+fork
+  :rag-lab: the API;
+fork again
+  :repos-owner hands the volume to the host's user;
+  :worker: the job queue;
+fork again
+  :by --profile: vllm-embed, vllm-rerank;
+end fork
+stop
+@enduml

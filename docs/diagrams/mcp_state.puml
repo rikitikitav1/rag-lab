@@ -1,0 +1,23 @@
+@startuml mcp_state
+title MCP integration, states
+
+hide empty description
+
+[*] --> disabled : created
+
+state disabled #e2e3e5 : never probed
+state active #d4edda
+state unreachable #f8d7da
+
+disabled --> active : PUT /v1/mcp/{id}
+active --> disabled : PUT /v1/mcp/{id}
+unreachable --> disabled : PUT /v1/mcp/{id}
+
+active --> unreachable : probe failed
+unreachable --> active : probe ok
+
+note right of disabled
+  The probe skips this state,
+  so nothing leaves it but an operator.
+end note
+@enduml

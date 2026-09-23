@@ -142,7 +142,7 @@ Your first comparison: [scenario 2](docs/use_cases.md#scenario-2-mini-eval-from-
 
 How the card moves between engines, and where a failed handover leads: [docs/stand_modes.md](docs/stand_modes.md).
 
-Diagrams are D2 sources in `docs/diagrams/`, rendered by `scripts/render_diagrams.sh`; CI fails if a committed SVG drifts from its source.
+Diagrams are D2 and PlantUML sources in `docs/diagrams/`, rendered by `scripts/render_diagrams.sh`; CI fails if a committed SVG drifts from its source. Structural and behavioural views are UML and C4; the generated agent graph and the explanatory drawings stay in D2.
 
 ## Compose services
 
