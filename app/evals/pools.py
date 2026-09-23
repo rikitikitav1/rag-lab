@@ -49,6 +49,12 @@ def _override(metrics: dict) -> str | None:
     return got if got and got != metrics.get("outcome") else None
 
 
+# the hop ceiling read the way the outcome reads it, for a column that names the edge alone
+def hops_exhausted(ql) -> bool:
+    metrics = ql.metrics or {}
+    return _exhausted(metrics, metrics.get("config") or {})
+
+
 def settled(ql) -> bool:
     return _override(ql.metrics or {}) is not None
 

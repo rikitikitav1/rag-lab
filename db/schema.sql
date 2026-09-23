@@ -250,7 +250,8 @@ CREATE TABLE public.jobs (
     queue text DEFAULT 'default'::text NOT NULL,
     tokens jsonb,
     balances jsonb,
-    code jsonb
+    code jsonb,
+    prereg text
 );
 
 
@@ -362,6 +363,42 @@ CREATE SEQUENCE public.models_id_seq
 --
 
 ALTER SEQUENCE public.models_id_seq OWNED BY public.models.id;
+
+
+--
+-- Name: preregistrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.preregistrations (
+    id bigint NOT NULL,
+    name text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    population jsonb DEFAULT '{}'::jsonb NOT NULL,
+    arms jsonb DEFAULT '{}'::jsonb NOT NULL,
+    closing jsonb DEFAULT '{}'::jsonb NOT NULL,
+    guards jsonb DEFAULT '[]'::jsonb NOT NULL,
+    declared jsonb DEFAULT '{}'::jsonb NOT NULL,
+    closed_with jsonb
+);
+
+
+--
+-- Name: preregistrations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.preregistrations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: preregistrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.preregistrations_id_seq OWNED BY public.preregistrations.id;
 
 
 --
@@ -582,6 +619,13 @@ ALTER TABLE ONLY public.models ALTER COLUMN id SET DEFAULT nextval('public.model
 
 
 --
+-- Name: preregistrations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.preregistrations ALTER COLUMN id SET DEFAULT nextval('public.preregistrations_id_seq'::regclass);
+
+
+--
 -- Name: prompts id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -706,6 +750,22 @@ ALTER TABLE ONLY public.models
 
 
 --
+-- Name: preregistrations preregistrations_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.preregistrations
+    ADD CONSTRAINT preregistrations_name_key UNIQUE (name);
+
+
+--
+-- Name: preregistrations preregistrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.preregistrations
+    ADD CONSTRAINT preregistrations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: prompts prompts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -788,6 +848,18 @@ CREATE INDEX data_chunks_content_hash_idx ON public.data_chunks USING btree (con
 --
 
 CREATE INDEX data_chunks_content_tsv_idx ON public.data_chunks USING gin (content_tsv);
+
+
+--
+-- Name: data_chunks_embedding_baseline_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+
+
+--
+-- Name: data_chunks_embedding_clean_1024_idx; Type: INDEX; Schema: public; Owner: -
+--
+
 
 
 --
@@ -955,4 +1027,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260912000005'),
     ('20260912000006'),
     ('20260919000001'),
-    ('20260919000002');
+    ('20260919000002'),
+    ('20260923000001');

@@ -429,6 +429,8 @@ async def enqueue_eval_run(
             "variant": request.variant,
             "resume": False,
             "generation_sampler": request.generation_sampler,
+            "purpose": request.purpose.value,
+            "prereg": request.prereg,
         },
     )
 
