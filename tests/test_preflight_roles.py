@@ -56,3 +56,20 @@ def test_a_prompt_activated_past_the_file_is_drift(preflight):
 
 def test_the_source_files_check_is_among_the_checks(preflight):
     assert preflight.sources_match_their_files in preflight.CHECKS
+
+
+# after a guest pass the resident model was the ragas one, and its 16384 read as the generator's window
+def test_the_window_check_does_not_compare_another_model(preflight, monkeypatch):
+    seen = {
+        "engine": "ollama",
+        "generator": "llama3.1:8b",
+        "declared": 8192,
+        "asked": "qwen2.5:7b-w16384",
+        "served": 16384,
+        "refuses_past_it": False,
+    }
+    monkeypatch.setattr(preflight, "_in_worker", lambda code: __import__("json").dumps(seen))
+    ok, said = preflight.window_matches_config()
+    assert ok and "the generator is not resident, qwen2.5:7b-w16384 is" in said
+    seen.update(asked="llama3.1:8b", served=4096)
+    assert preflight.window_matches_config()[0] is False

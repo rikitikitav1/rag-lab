@@ -182,3 +182,13 @@ def test_a_sweep_that_judges_none_of_its_leftovers_ends_them_rather_than_failing
     else:
         judging.judge_answers(options)
         assert after == ["sweep", "aggregate"]
+
+
+# the smoke's rerank run stopped on bge-m3 at 18 of 25 layers: the vector is the same, only later
+def test_an_embedder_half_on_the_processor_does_not_stop_the_pass(monkeypatch):
+    monkeypatch.setattr(passes.llm, "resolve_for", lambda role, model=None: engines.Resolved("bge-m3", OLLAMA))
+    monkeypatch.setattr(passes.card, "model_on_card", lambda spec, name: False)
+    seat = passes.Seat(Role.embedding)
+    assert passes._read_spills([(seat, passes._resolve(seat))], False) == {Role.embedding: False}
+    with pytest.raises(card.CardNotHanded, match="generation="):
+        passes.refuse_spill([passes.Seat(Role.embedding), passes.Seat(Role.generation)], allow_spill=False)

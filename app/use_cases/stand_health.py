@@ -200,6 +200,7 @@ def window() -> dict:
     asked = reading.window_model(picked.engine, picked.name)
     return {
         "engine": picked.engine.name,
+        "generator": picked.name,
         "declared": config.settings.llm.context_length,
         "asked": asked,
         "served": reading.window(picked.engine, asked) if asked else None,

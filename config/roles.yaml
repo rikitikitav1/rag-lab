@@ -13,7 +13,7 @@ llm:
     ragas:        { model: qwen2.5:7b-w16384, options: { max_tokens: 4096, temperature: 0, seed: 0 } }
     # answer relevancy embeds a handful of texts a row: on the processor, so the card holds the guest's model alone
     ragas_embedding: { model: bge-m3, engine: ollama-cpu }
-    # building the question sets
-    paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 }, prompts: { paraphrase_question: 1, translate_question: 1, question_from_heading: 1 } }
+    # building the question sets; 2048: one question in, and at 8192 gemma2:9b with ollama's reserve outgrows the card
+    paraphrasing: { model: gemma2:9b-w2048, options: { max_tokens: 512, temperature: 0.3 }, prompts: { paraphrase_question: 1, translate_question: 1, question_from_heading: 1 } }
     # the cross-encoder, out of the API and the worker: `vllm-rerank`, `--profile rerank`
     reranking:    { model: BAAI/bge-reranker-v2-m3, engine: vllm-rerank }

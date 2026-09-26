@@ -100,6 +100,12 @@ def window_matches_config() -> tuple[bool, str]:
             f"context window: config {declared or 'unknown'}, no generator loaded"
             " (descriptive: nothing to compare, ask one a question first)"
         )
+    # the fallback reads any resident model: another model's window is no reading of the generator's
+    if seen.get("generator") and asked != seen["generator"]:
+        return True, (
+            f"context window: config {declared or 'unknown'}, the generator is not resident, {asked} is"
+            " (descriptive: nothing to compare, ask the generator a question first)"
+        )
     where = f"{asked} on {seen['engine']} says {served or 'unknown'}"
     if seen["refuses_past_it"]:
         # vLLM refuses a longer prompt with a 400 rather than cutting it, so room is enough
