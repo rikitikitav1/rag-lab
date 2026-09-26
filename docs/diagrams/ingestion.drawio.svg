@@ -1,0 +1,741 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="1644px" height="1885px" viewBox="0 0 1644 1885" id="ge-svg-MA4X7R3qvE1vfynlVm2z" content="&lt;mxfile&gt;&lt;diagram id=&quot;ingestion&quot; name=&quot;ingestion&quot;&gt;7V1Zd+I4Fv41nE49hOON7TEbXT1naqZmUjM9/cQRtgBVjEXLBkL9+tHVYkvGpBzHkIWuh24sLGHrfrrrJ6Xj3ywff2VotfhCIxx3PCd67Pi3Hc9zR27A/wctO9US9B3ZMmckUm1Fwz35gVWjvm1NIpxaN2aUxhlZ2Y0hTRIcZlYbYoxu7dtmNLZ/dYXmeK/hPkTxfuvvJMoWsnXYc4r2z5jMF/qXXUd9s0T6ZtWQLlBEt0aTf9fxbxilmfy0fLzBMcyenhfZb3zg2/zBGE6yOh1IkqEHvN9LDZRmO/3OjK6TCEM3p+Nfbxckw/crFMK3Cd1yQfPWRbaM1Q1pxugDvqExZaK/79z63rWXf6PnDVpmNMnMO6+csdeDdhLHRvudfzca3/J2LtYMkQRDu8uvN5hlhEvnKibzhLdldKVGVdDxAn4t32iD4rV6o6soIskcIAFvSteMv4x3wz9P8YwyDKBawH8Jf+9H1Zv/En40pkjN6q+YLnHGdvyWhSH4wOnLftsCJRwManLVON5gIK/VavAVNJAC6Twfu5Aj/6BEWS3WuygIf/ye/eNvn92HzS78Vzy9HV16wb6cTfm/LWHfjh0hbEOMbqCv1ZO6VWL9+s/7bx2A/XjDJ3qsBevwkT3ny81XmNoomqh2/6rjcSH5LrxHgpYKAjFK5mvQAvKKhDjR6KCJHI3MSWL0vVizOJV3gD7h4BSf5ySTH1I+h0o3pJ/EczsJ3sBtDuLjODjh4+FGMHOdYA9mvjO0UOb6Fsj6RwNZ7yxARpMpRSxHked8p1OBJQejcAEYILxzgY5swd92vsh1ipa2QzIOGod/KdFBwgcJorzniuAQp0JDcVBEoJ525gApzQcN+RMZPcMFB7Hoyj9EqYCueNaVQN1LABc4+4DrlQCnbYhCXG7y2odc/ywgt0TsgfsKiYRZQg0R5iL/ejvW7gsIJ1twXCkDx+WbCcW206qJLIWbA6N9AWv6H2Mg0Ey7bCHtI45Tdd8tDWPRVqg9YTxDxB0twCZbgy6DSQaI+VrhCSuacqfNeph8kCmlD0JQaJeqBzd/7Ea4cutEwh/BLWjKl8MUR5/aU5g92yz7fe9EGnNQG77cW1zBx3AXg1PCfDF3AtJ/n8YKOKkClfdKCB8PxsPxXROEM7QteWIJzbQDBqvWtNURylCKQXuOeT+liOGK3xNnuTHvz+HzRDfyHhnHlFSK6UJ/L7uVVe5YmXOuyuWVcwEmX68vyrgIPtnamuGQN3e/pzSRnVeMbnCCuOJVjUdSt33/ZOp2eBbqluEVN7h7anQuYkUTiDwa4fJMCQjX2aS5NQbY/CKs7jYpFK8YRADMBk64WCcP4oY5yoTChBu5CV9lopXO8oG3CxrrHxBPXuhRBAoSDIXyRMH5dCIqxpNrKYXgqDWd6QcWCAe94EQ6cyQHxtFeoH4AlMrb/6nfaqAXBtcQScDr58s7B7RrQxcn0RUkFvjlNKbhg2wakzjXys2x3R/0bwZlheqVMAzXMZri+BqFD3PxnKZOFv/EQ/Hp/x88dFcsF3H9h3pGcXH7mL8SXO301SPJZL9BT13+YXxV9IIL3UlOaYbYHGc1HDhj9VXjkeEYZWRji7wKXKrrV8oxUMCz59rw9N0SPiVKVK8SRPPHaI5aHdm3iNr+eaC2Gnzuk+AzoO4GFtadJ7Dud4PByPyX9/yKGeEIEFmn54B7cBpw93X2UTsAGux6CPmkxwO32zq4B+cB7gKng4Yqedirp5Orwc2/bYrt4VGwzcWGdsYNK8BsaoJ2D/1D10a/75XQf0C17w80GFoDBW7/tMvIa30ZBee2jLza2t5eRvVtS9310Xsr68Pt20UGd1TP9dkbyBv0SwMdzcxkjMznEPy8h+JU86yHyG5MIJ3RkWlko8oQUrZap+J+RlBi5swuppRm/HH5u8Hd8U78r6OrCctVBi0w7BSluFmebKiUkRny6byCdjv6g27PQkSvjQJWns55D7JvuzB5r4sKDM9JKsVywTCSSdUVyrihThpmPof7qaTh0NMi1LnPYb/r2VLtHy2WdyvySZb435asGyeUEiryOvkCzvP5Yr2zdVsr1C1V/oKSII8mx9F5yPEWb7htw2xD8Fas0RU1xeoOfDH3nvPvu6vbL3dSvLhZ5rdKvIFvidcdnqqy65yHfFcQCoGilSl/hiOSXkY0zFvCBUZZusCi+JDLfcb4wEuhm8E1JJkoGoDsv6+TB7HCYz1TL0eB55c0du9UKKgIRz4iClQZP6/vhzFKU0j833idK8esQ5E0pBsLMCILH6IMzynbTWZUf1fumuIwIzSZAN3LuI1PLk2zFaN8TtsDjBeUjHz/CJSQFY1JuKvjtelSJl9Y66W472Alkwd07w4+/9X+uqOnxOEKYilc+mRG5t0d4g9eUf4BhbFEjxPRMBEzIOvfmEAxfKLrihGjq8mUkhizFY8dTRLABX7kYYEs2HNUTUE41wIh4EFOVgzPCNgnfsFDzqYldO0fmrHBcGAhbFRKSQ7LQWcTiJEIL99HWNA8JPyNv+OKu4sSQEK3XJhlcRUNfipVxHGMs4JTBIVKMFYcR+ISCojfPv92b0aTKnBsKTQsVQOD4AjiD9fZ+5B+20HhN0nx0q//THH5vr8nr9HADuVdz7PkVdCWW/ci/H0Z5m/2tqTY2ALEeI6E3r+A/EsseFo30gz8wBC9F27AKiZyLXZ0iZ83YIZgGj970K3sOfC74GbBBJQ2ogEm+hXkZL2sdbavX07uHAsRFdzkj4aILyrg/yzs8Ddupe9B8jJgSBX1bUGE3wl4ESQQwUMHyy1ZS4WRnwEjWUUYGYkFtc5sg7SiYszp7iboaBiuGVP3G+w6A4SSwtoOsALXjlq93ug0uKqgI79zXEWIx57RIZBpCDgREEQl52eKYiSZv5cF4c2grIl4RXS8nAKxUAIIwQcnpvOO5BEdJ3Dt2eU2boSOBIQKkvA7B8Ke7CGOVDRJR2whyoOOykjzOjcvRhwiwwxbEUxptNNsRhU7MLzCSGoMRUer5KwrJq8gKysC8ncqOJRQ7EgAKjzqY62Ba2R7oL47LNkvjq+uY/zz/CPBrYLU+9Hgxn9yHWZrpiEHWDI1jPPZLzXk4Wzh+8QEyJO5uvkpcsqeUAlHN3IYiVsFNZJqx5lrwvDhxX5TVejjlHIrfgXwjoQ0pUCfJAwU0PsZW+BMyAIvJJQ9i2AgZ/SnZIFT8cScsk8f+KUSfl0uQK9fRnnvxKQztw6j8i/wHwL/m8F+6wTgl1Uy61AZ/0LVIVR5bwZWx6Ff7enBYOCVrf2oZO3rqlR/WFap/qA01LFVqvo5dXYCmmrQVpR/n1w9Jbz/HSBUQBtwgVQGNIREBatIjS5JFIk9Lgxzb009iggwJOOND9677vRuq7zTrUyRrRMV/Ua1fb1KNKguTtfxRnbq4vIJx64kZH0Lnc1S/FLpyeLPvlDeYjK8dink6eTGXtFLxB0QAkjVaMWlKGQ0lRv94pmdO+3km/qcOdUJs3USi3qr3DRFio1cilwXIsYITHiRQ5t1dLFFBdj804Vk7kUU3v0qtw9dXehMW6y36e0feQK/tAnQddvYBSj3NH4woO1h604W/EW9LJe2TMkisYsOhyQSwOL4sOpuueyLDMkkxuqauwmTaWsltnKCw+W2x5a4N2zBKwrROymyNRf3Con8gpmdiDOG5TEKkrnRSGhVRZXRoCS0Ua9k5F2/jdooXk5xrXWqyRcL/IjmHLncoBobQFRrvidESEhTMdzeK4n69u7OvbtuIuprlImlraan2C07x5dLSFFtCJgQPrtoRfh/jWl8pvBH+0XWfD3mwi8xtdxg1EIOkiQpZrUW7bs4Q6B5UvJ6HYP61vMhCPATTYIoqmc5A+LGNN6VCpz/Ip/OCRwX0NB06/zKE6dNuJ5rF0Lcvt9vARbR4wdT5E87iNM1iaPJhsuTsok6t6s4modPQkZEVX2RpFuzXiFKsBYmYCThss8UoVMdBVYss/azxqPSJjZ32MZWiizdnBUGxt+A4qQ3DwnBZ3TCZ0GgYq+AIGVfnPflXDDYcTPGybzZcq/wADzX6f5E1P1BC6L+c81D6qwW//LDiBslKN79wPZJXMYWKinfqtPeBG1Xyjw/7EPVS+VqV3UnFNOkVLZaiJO2VM0qpTO4TZ3bIQxKKM8PdC5zClUb2sKzTYY/OIa6+HONU7CG72TvVUsoEj7fxHh3CaNc4PobsAxIBIhSnbTHzy5L1y1piFa21cEepDpyFci3RKdzdTGeZRWZOklirAaAKRn/CcnuCcWgPMp8DJIPjmSkYpwQBV/MUCgDc23ITYcPyszwivIIMlX/jRQlTxyhx/ClcBgk+0H/nKEslvyXiTjCyWE8eFReAdJkhqk4DqprdDE+/i5zCIJmlXb0GWadnJrVsRJO/Ie4m/GL+fyIOywiRVpWTlOcbTFWXI2lHieFEyujXJ9V5L6MN+dTuDCegeEtA1Za0rFIIFvYcpwPRJIDbyplBk50LPAuJpaLEEYWh8qZjpZUoKU5xmn5HUWeDZv5mTzvJ884jDRMiqGEXB4wht2x+ozFrRYBDPfI4RLvus08+oqzkPIzjHUmv2zg+y3481hlEp6sTOnlbNSlrK3UZ1OIeo06lLUX6uT7/huUEXAd/kgFpA4c+fYREWW5Du0cF2EtSNObDUO8Mo55XSBFxyxTv/WZiDxeUSRPFbDucPbphWCrrY3qnMJWAR1zl9gHh87Bw31+pllymBkgKyBXF2bFdhGjiCYKGaY9hp2pp9FPe/XuQdDrBqUTRdzR0P6h9ireuBZh6C/INrGFGrHuixBrVrXN87Zn4APmJVqUPsgU/fOq95dO13GCJ9Lttev1xzHFtYhHFeg8tAH7Q8KzCc9oH2fFNtLTk86w3gzzXDlXMcg/soxtVeI9rUsKvWVprUKJ1fbhD+igNkzk/sFcrj7xLa/glxM97Z1KijU997nAM2fkg2NvHw4m/+U1lEWvmczMxz47meUMltcQWL+hdkfnod33pWUyLl5BXg2TasZTn53ErEL4K4iscdKqeOwPLrMmCYSqo4Bztyo/jripW5UTEay/owRZdEay5yQgCi624w0Po+m1g7mG2bEzwmiFXtGEJQMjf67xGhStOOlAHXwhk52nUTZew5zRGQny0FHkh6Pyy9pnkbdXm7HoMRUAcyyuyOskRN2BG3R7QTEtNlvUcwalHz32dqCG2M/TK2eD/NeoNlbl99sA7v4Wt145Sa//aulzd7gFo9IeFa83OC2iGybfzrGG/pxcfnv5txIF7Q2cnu/2bXZ2v+ZfDtofyRnZvJBBa9s7+WXxd6Pl7cWf3/bv/g8=&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <style type="text/css">
+        @supports (color: light-dark(#000, #fff)) { #ge-svg-MA4X7R3qvE1vfynlVm2z { --ge-adaptive-bg: light-dark(#ffffff, var(--ge-dark-color, #121212)); } }
+    </style>
+    <defs/>
+    <g>
+        <g data-cell-id="0">
+            <g data-cell-id="1">
+                <g data-cell-id="intake">
+                    <g>
+                        <rect x="246.75" y="0.75" width="1101" height="406" fill="#e3e9fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(227, 233, 253), rgb(32, 37, 54)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="797.25" y="30.75">
+                                Adding a source, before the index
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-24">
+                        <g>
+                            <rect x="259.75" y="60.75" width="308" height="104" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="413.75" y="101.75">
+                                    POST /v1/source or MCP add_source:
+                                </text>
+                                <text x="413.75" y="118.75">
+                                    name, language, licence, one origin
+                                </text>
+                                <text x="413.75" y="135.75">
+                                    (urls, folder, git, site pages); never an engine
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-25">
+                        <g>
+                            <rect x="367.75" y="220.75" width="358" height="140" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="546.75" y="271.25">
+                                    onboard_source job: each file
+                                </text>
+                                <text x="546.75" y="288.25">
+                                    through the engine its route picks,
+                                </text>
+                                <text x="546.75" y="305.25">
+                                    pieces sorted by engine so the card
+                                </text>
+                                <text x="546.75" y="322.25">
+                                    changes hands once per engine
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-26">
+                        <g>
+                            <rect x="608.75" y="60.75" width="351" height="104" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="784.25" y="84.75">
+                                    markdown: no engine
+                                </text>
+                                <text x="784.25" y="101.75">
+                                    PDF page without a text layer, image: MinerU
+                                </text>
+                                <text x="784.25" y="118.75">
+                                    everything else: Docling
+                                </text>
+                                <text x="784.25" y="135.75">
+                                    (a scanned run under 3 pages inside a text
+                                </text>
+                                <text x="784.25" y="152.75">
+                                    book stays with Docling, counted as absorbed)
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-27">
+                        <g>
+                            <path d="M 877.75 232.75 C 877.75 226.12 957.89 220.75 1056.75 220.75 C 1104.22 220.75 1149.75 222.01 1183.32 224.26 C 1216.89 226.52 1235.75 229.57 1235.75 232.75 L 1235.75 348.75 C 1235.75 355.38 1155.61 360.75 1056.75 360.75 C 957.89 360.75 877.75 355.38 877.75 348.75 Z" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 1235.75 232.75 C 1235.75 239.38 1155.61 244.75 1056.75 244.75 C 957.89 244.75 877.75 239.38 877.75 232.75" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="1056.75" y="281.25">
+                                    raw source, not indexed:
+                                </text>
+                                <text x="1056.75" y="298.25">
+                                    datasets/raw_sources/&lt;name&gt;_&lt;settings hash&gt;/
+                                </text>
+                                <text x="1056.75" y="315.25">
+                                    pieces/, files/ (in page order),
+                                </text>
+                                <text x="1056.75" y="332.25">
+                                    record.json, provenance.json
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-28">
+                        <g>
+                            <rect x="1000.75" y="60.75" width="334" height="104" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="1167.75" y="93.25">
+                                    report without a gold:
+                                </text>
+                                <text x="1167.75" y="110.25">
+                                    conversion vs the file's own layer a piece,
+                                </text>
+                                <text x="1167.75" y="127.25">
+                                    chunker gates a chapter of the whole file;
+                                </text>
+                                <text x="1167.75" y="144.25">
+                                    bad marks, it does not stop
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-29">
+                        <g>
+                            <path d="M 636.25 220.75 L 689 171.72" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 694.86 166.27 L 691.73 174.65 L 686.28 168.79 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-30">
+                        <g>
+                            <path d="M 872 164.75 L 922.54 216.88" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 928.1 222.62 L 919.66 219.66 L 925.41 214.1 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-31">
+                        <g>
+                            <path d="M 1183.84 224.23 L 1243.57 171.52" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 1249.57 166.23 L 1246.22 174.52 L 1240.93 168.52 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-32">
+                        <g>
+                            <path d="M 413.75 164.75 L 450.97 212.67" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 455.88 218.98 L 447.81 215.12 L 454.13 210.21 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="trigger">
+                    <g>
+                        <rect x="637.25" y="500.75" width="320" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="797.25" y="539.25">
+                                index_data job, one corpus variant
+                            </text>
+                            <text x="797.25" y="556.25">
+                                (bootstrap only on an empty database)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="sources">
+                    <g>
+                        <rect x="356" y="630.75" width="882.5" height="180" fill="#e3e9fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(227, 233, 253), rgb(32, 37, 54)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="797.25" y="660.75">
+                                Source registry (reader pattern)
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-18">
+                        <g>
+                            <rect x="401" y="690.75" width="108" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="455" y="729.25">
+                                    notes
+                                </text>
+                                <text x="455" y="746.25">
+                                    markdown, ru
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-19">
+                        <g>
+                            <rect x="539" y="690.75" width="143" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="610.5" y="729.25">
+                                    Devinterview repos
+                                </text>
+                                <text x="610.5" y="746.25">
+                                    173 x README, en
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-20">
+                        <g>
+                            <rect x="709" y="690.75" width="235" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="826.5" y="729.25">
+                                    primer / redis-doc / cheatsheets
+                                </text>
+                                <text x="826.5" y="746.25">
+                                    frontmatter titles, junk rules
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-21">
+                        <g>
+                            <rect x="969" y="690.75" width="224.5" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="1081.25" y="720.75">
+                                    each source class:
+                                </text>
+                                <text x="1081.25" y="737.75">
+                                    discover / read category_for /
+                                </text>
+                                <text x="1081.25" y="754.75">
+                                    section_root_for / postprocess
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="policy">
+                    <g>
+                        <path d="M 919.75 860.75 L 1306.75 860.75 L 1306.75 973.25 Q 1210 950.75 1113.25 973.25 Q 1016.5 995.75 919.75 973.25 L 919.75 873.25 Z" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1113.25" y="899.39">
+                                Variant policy from config.yaml
+                            </text>
+                            <text x="1113.25" y="916.39">
+                                chunker, max_chunk_size, ceiling_on, drop_boilerplate
+                            </text>
+                            <text x="1113.25" y="933.39">
+                                (extra: forbid; header_prefix derived)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="idem">
+                    <g>
+                        <rect x="409.75" y="860.75" width="334" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="576.75" y="899.25">
+                                Idempotent per (source, variant):
+                            </text>
+                            <text x="576.75" y="916.25">
+                                delete its old chunks of THIS variant only
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="cut">
+                    <g>
+                        <rect x="91.75" y="1070.75" width="970" height="333" fill="#e3e9fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(227, 233, 253), rgb(32, 37, 54)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="576.75" y="1100.75">
+                                The cut
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-3">
+                        <g>
+                            <rect x="118.25" y="1120.75" width="182" height="66" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="209.25" y="1142.75">
+                                    legacy (baseline, frozen)
+                                </text>
+                                <text x="209.25" y="1159.75">
+                                    split on the literal H2,
+                                </text>
+                                <text x="209.25" y="1176.75">
+                                    then by size
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-4">
+                        <g>
+                            <rect x="350.75" y="1120.75" width="413" height="66" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="557.25" y="1142.75">
+                                    MarkdownHeaderTextSplitter says which lines are headings
+                                </text>
+                                <text x="557.25" y="1159.75">
+                                    (fences, tilde fences, indented headings)
+                                </text>
+                                <text x="557.25" y="1176.75">
+                                    occurrences counted on the file
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-5">
+                        <g>
+                            <rect x="149.75" y="1282.75" width="235" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="267.25" y="1321.25">
+                                    fences do not balance -&gt;
+                                </text>
+                                <text x="267.25" y="1338.25">
+                                    read fence-blind, and log it
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-6">
+                        <g>
+                            <rect x="410.25" y="1282.75" width="294" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="557.25" y="1312.75">
+                                    rooted: root from section_root_for + H2,
+                                </text>
+                                <text x="557.25" y="1329.75">
+                                    ceiling on the body, prefix repeated whole,
+                                </text>
+                                <text x="557.25" y="1346.75">
+                                    pieces with no text join a neighbour
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-7">
+                        <g>
+                            <rect x="730.25" y="1282.75" width="305" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="882.75" y="1312.75">
+                                    structured: H2 -&gt; H3 -&gt; size,
+                                </text>
+                                <text x="882.75" y="1329.75">
+                                    slivers and pieces with no text join
+                                </text>
+                                <text x="882.75" y="1346.75">
+                                    a neighbour,and the join is cut back by size
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-8">
+                        <g>
+                            <path d="M 660.5 1186.75 L 873.35 1278.69" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 880.7 1281.86 L 871.77 1282.36 L 874.94 1275.02 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-10">
+                        <g>
+                            <path d="M 557.25 1186.75 L 557.25 1272.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 557.25 1280.51 L 553.25 1272.51 L 561.25 1272.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                    <g data-cell-id="Ed4czWtNJH1kvycQlbD9-11">
+                        <g>
+                            <path d="M 454 1186.75 L 276.35 1278.07" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 269.24 1281.73 L 274.52 1274.51 L 278.18 1281.63 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g data-cell-id="Ed4czWtNJH1kvycQlbD9-12">
+                            <g>
+                                <g>
+                                    <switch>
+                                        <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                                            <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 1236px; margin-left: 358px;">
+                                                <div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; ">
+                                                    <div style="display: inline-block; font-size: 11px; font-family: Helvetica; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: var(--ge-adaptive-bg, #ffffff); white-space: nowrap; ">
+                                                        when unbalanced
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </foreignObject>
+                                        <text x="358" y="1239" fill="#000000" font-family="Helvetica" font-size="11px" text-anchor="middle" style="fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));">
+                                            when unbalanced
+                                        </text>
+                                    </switch>
+                                </g>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="boiler">
+                    <g>
+                        <rect x="1200.75" y="1090.75" width="326" height="125" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1363.75" y="1142.25">
+                                drop_boilerplate: a block repeated across half
+                            </text>
+                            <text x="1363.75" y="1159.25">
+                                the files goes, unless it is the only carrier
+                            </text>
+                            <text x="1363.75" y="1176.25">
+                                of its section (one door: source.documents)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="record">
+                    <g>
+                        <rect x="1216.75" y="1251.75" width="294" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1363.75" y="1290.25">
+                                Each chunk carries what decided it:
+                            </text>
+                            <text x="1363.75" y="1307.25">
+                                section, prefix_len, cut_by
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="cat">
+                    <g>
+                        <rect x="1265.25" y="1360.75" width="197" height="66" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1363.75" y="1399.75">
+                                path -&gt; ltree category
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="embed">
+                    <g>
+                        <path d="M 1264.9 1463.75 L 1461.6 1463.75 L 1503.75 1510.25 L 1461.6 1556.75 L 1264.9 1556.75 L 1222.75 1510.25 Z" fill="#dee1eb" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(222, 225, 235), rgb(42, 44, 53)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1363.25" y="1507.75">
+                                Batch embed
+                            </text>
+                            <text x="1363.25" y="1524.75">
+                                bge-m3 via /api/embed
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="insert">
+                    <g>
+                        <path d="M 1187.75 1618.75 C 1187.75 1612.12 1266.32 1606.75 1363.25 1606.75 C 1409.8 1606.75 1454.43 1608.01 1487.35 1610.26 C 1520.26 1612.52 1538.75 1615.57 1538.75 1618.75 L 1538.75 1728.75 C 1538.75 1735.38 1460.18 1740.75 1363.25 1740.75 C 1266.32 1740.75 1187.75 1735.38 1187.75 1728.75 Z" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1538.75 1618.75 C 1538.75 1625.38 1460.18 1630.75 1363.25 1630.75 C 1266.32 1630.75 1187.75 1625.38 1187.75 1618.75" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1363.25" y="1681.25">
+                                Bulk insert data_chunks
+                            </text>
+                            <text x="1363.25" y="1698.25">
+                                (variant, section, prefix_len, content_hash)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="idx">
+                    <g>
+                        <rect x="879.75" y="1800.75" width="305" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1032.25" y="1839.25">
+                                build_vector_index job: partial hnsw
+                            </text>
+                            <text x="1032.25" y="1856.25">
+                                per variant, built after the insert
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="tsv">
+                    <g>
+                        <rect x="879.75" y="1640.75" width="210.5" height="66" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="985" y="1671.25">
+                                FTS trigger: to_tsvector
+                            </text>
+                            <text x="985" y="1688.25">
+                                per language (rus/eng)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="quality">
+                    <g>
+                        <rect x="1339.75" y="1800.75" width="302" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1490.75" y="1830.75">
+                                analyze_source job, one per source:
+                            </text>
+                            <text x="1490.75" y="1847.75">
+                                coverage report from the text alone,
+                            </text>
+                            <text x="1490.75" y="1864.75">
+                                hard and soft gates, score 0-100
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="questions">
+                    <g>
+                        <rect x="1079.75" y="500.75" width="202" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1180.75" y="539.25">
+                                embed_questions job
+                            </text>
+                            <text x="1180.75" y="556.25">
+                                question bank vectors
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="note">
+                    <g>
+                        <rect x="-0.25" y="1636.75" width="460" height="104" fill="none" stroke="none" pointer-events="all"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="start" font-size="13px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1.75" y="1655.75">
+                                The cut is a parameter, not a fact: variants
+                            </text>
+                            <text x="1.75" y="1671.75">
+                                live side by side, so re-indexing is a
+                            </text>
+                            <text x="1.75" y="1687.75">
+                                comparison rather than a border.
+                            </text>
+                            <text x="1.75" y="1719.75">
+                                What counts as a heading is the parser's
+                            </text>
+                            <text x="1.75" y="1735.75">
+                                answer; the text between them is sliced from
+                            </text>
+                            <text x="1.75" y="1751.75">
+                                the file, so nothing is rewritten on the way
+                            </text>
+                            <text x="1.75" y="1767.75">
+                                in.
+                            </text>
+                            <text x="1.75" y="1799.75">
+                                The preflight re-cuts every variant and
+                            </text>
+                            <text x="1.75" y="1815.75">
+                                compares the text of each chunk: a changed cut
+                            </text>
+                            <text x="1.75" y="1831.75">
+                                can keep its row count exactly.
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e7">
+                    <g>
+                        <path d="M 797.25 582.75 L 797.25 620.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 797.25 628.51 L 793.25 620.51 L 801.25 620.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e8">
+                    <g>
+                        <path d="M 797.25 406.75 L 797.25 490.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" stroke-dasharray="6 6" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 797.25 498.51 L 793.25 490.51 L 801.25 490.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="726" y="438" width="143" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="797.25" y="450.46">
+                                accepted by hand,
+                            </text>
+                            <text x="797.25" y="464.46">
+                                then indexed (not built yet)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e9">
+                    <g>
+                        <path d="M 919.75 923.25 L 825.01 1062.29" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 820.51 1068.9 L 821.71 1060.04 L 828.32 1064.54 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="821" y="990" width="99" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="869.88" y="1001.45">
+                                decides every rule
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e10">
+                    <g>
+                        <path d="M 1306.75 923.25 L 1360.45 1081.06" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1363.03 1088.63 L 1356.67 1082.35 L 1364.24 1079.77 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="1291" y="1001" width="89" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="1335.28" y="1012.1">
+                                off unless asked
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e11">
+                    <g>
+                        <path d="M 576.63 810.75 L 576.68 850.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 576.69 858.51 L 572.68 850.52 L 580.68 850.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e13">
+                    <g>
+                        <path d="M 1061.75 1154 L 1190.51 1153.31" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1198.51 1153.26 L 1190.54 1157.31 L 1190.49 1149.31 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e14">
+                    <g>
+                        <path d="M 1363.75 1215.75 L 1363.75 1241.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1363.75 1249.51 L 1359.75 1241.51 L 1367.75 1241.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e15">
+                    <g>
+                        <path d="M 1363.75 1333.75 L 1363.75 1350.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1363.75 1358.51 L 1359.75 1350.51 L 1367.75 1350.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e16">
+                    <g>
+                        <path d="M 1363.61 1426.75 L 1363.49 1453.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1363.46 1461.51 L 1359.49 1453.5 L 1367.49 1453.53 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e17">
+                    <g>
+                        <path d="M 1363.25 1556.75 L 1363.25 1596.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1363.25 1604.51 L 1359.25 1596.51 L 1367.25 1596.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e18">
+                    <g>
+                        <path d="M 1187.75 1673.75 L 1100.49 1673.75" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1092.49 1673.75 L 1100.49 1669.75 L 1100.49 1677.75 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="1118" y="1667" width="44" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="1139.18" y="1678.75">
+                                on write
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e19">
+                    <g>
+                        <path d="M 1231.24 1740.75 L 1122.16 1796.12" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1115.02 1799.74 L 1120.35 1792.55 L 1123.97 1799.68 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="1125" y="1764" width="97" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="1172.65" y="1775.49">
+                                queued, then built
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e20">
+                    <g>
+                        <path d="M 1487.85 1737.27 L 1490.28 1790.52" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1490.65 1798.52 L 1486.29 1790.71 L 1494.28 1790.34 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="1439" y="1762" width="102" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="1489.29" y="1773.67">
+                                queued per source
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="Ed4czWtNJH1kvycQlbD9-1">
+                    <g>
+                        <path d="M 576.75 942.75 L 576.75 1060.51" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 576.75 1068.51 L 572.75 1060.51 L 580.75 1060.51 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="Ed4czWtNJH1kvycQlbD9-13">
+                    <g>
+                        <path d="M 957.25 541.75 L 1069.51 541.75" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1077.51 541.75 L 1069.51 545.75 L 1069.51 537.75 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+    <switch>
+        <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/>
+        <a transform="translate(0,-5)" xlink:href="https://www.drawio.com/doc/faq/svg-export-text-problems" target="_blank">
+            <text text-anchor="middle" font-size="10px" x="50%" y="100%">
+                Text is not SVG - cannot display
+            </text>
+        </a>
+    </switch>
+</svg>

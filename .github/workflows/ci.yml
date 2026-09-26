@@ -18,7 +18,7 @@ jobs:
     # the real-database tests build a throwaway base from db/schema.sql, and without one they were all skipped
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:pg17@sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports: ["5432:5432"]
@@ -37,14 +37,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: install d2
-        run: curl -fsSL https://d2lang.com/install.sh | sh -s -- --version v0.7.1
       - name: pull plantuml
         run: docker pull plantuml/plantuml:1.2026.8
       - name: check the agent graph drawing against the code
         run: |
           uv sync --frozen
-          uv run python scripts/graph_to_d2.py --check
+          uv run python scripts/graph_to_puml.py --check
       - name: render and check freshness
         run: |
           ./scripts/render_diagrams.sh

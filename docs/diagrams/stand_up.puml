@@ -11,13 +11,17 @@ else (yes)
 endif
 
 :Read the judge's model from config.yaml;
-:Unload ollama's models, so vLLM finds the card free;
+if (compose will create or start vllm?) then (yes)
+  :Unload ollama's models, so vLLM finds the card free;
+else (no: a warm stand)
+endif
 :docker compose up -d;
 
 fork
   :postgresql;
   :dbmate: migrations;
-  :seed: prompts and the question bank;
+  :seed: engines, prompts, the question bank,
+MCP integrations, the code's sources;
 fork again
   :ollama;
 fork again
@@ -35,7 +39,8 @@ partition "bootstrap, once every service above is healthy" {
   vLLM rows filled from what it serves;
   :ollama reconciled: a missing model queues a pull,
   the repetition penalty is written in;
-  :a corpus indexed only if the database holds none,
+  :a corpus indexed only if the database holds none
+  (an empty variant beside others is only logged),
   missing vector indexes built;
   :questions without a vector queued;
 }
@@ -46,7 +51,13 @@ fork again
   :repos-owner hands the volume to the host's user;
   :worker: the job queue;
 fork again
-  :by --profile: vllm-embed, vllm-rerank;
+  :by profile: vllm-embed, vllm-rerank, vllm-cpu,
+converter-docling and converter-mineru (convert);
+note right
+  A converter answers /health from its supervisor
+  with the tool not running: the tool starts only
+  when a job takes the card, so healthy is not held.
+end note
 end fork
 stop
 @enduml

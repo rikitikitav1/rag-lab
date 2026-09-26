@@ -1,0 +1,372 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="1348px" height="999px" viewBox="0 0 1348 999" id="ge-svg-WVYWRz1JAQxHpKsO9cdb" content="&lt;mxfile&gt;&lt;diagram id=&quot;eval_pipeline&quot; name=&quot;eval_pipeline&quot;&gt;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&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <style type="text/css">
+        @supports (color: light-dark(#000, #fff)) { #ge-svg-WVYWRz1JAQxHpKsO9cdb { --ge-adaptive-bg: light-dark(#ffffff, var(--ge-dark-color, #121212)); } }
+    </style>
+    <defs/>
+    <g>
+        <g data-cell-id="0">
+            <g data-cell-id="1">
+                <g data-cell-id="exp">
+                    <g>
+                        <path d="M 704.15 0.7 L 843.45 0.7 L 873.3 35.2 L 843.45 69.7 L 704.15 69.7 L 674.3 35.2 Z" fill="#dee1eb" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(222, 225, 235), rgb(42, 44, 53)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="773.8" y="41.2">
+                                POST /v1/experiment
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="runs">
+                    <g>
+                        <rect x="473.8" y="139.7" width="599" height="141" fill="#e3e9fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(227, 233, 253), rgb(32, 37, 54)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="773.3" y="169.7">
+                                eval_run jobs, one per swept value
+                            </text>
+                            <text x="773.3" y="198.7">
+                                (k / max_hops / model / variant / agent policies)
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="runs_r1">
+                        <g>
+                            <rect x="594.3" y="220.7" width="106" height="33" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="647.3" y="243.2">
+                                    run k=01
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="runs_r2">
+                        <g>
+                            <rect x="720.3" y="220.7" width="106" height="33" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="773.3" y="243.2">
+                                    run k=05
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="runs_r3">
+                        <g>
+                            <rect x="846.3" y="220.7" width="106" height="33" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="899.3" y="243.2">
+                                    run k=10
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="logs">
+                    <g>
+                        <path d="M 657.8 342.7 C 657.8 336.07 709.73 330.7 773.8 330.7 C 804.57 330.7 834.07 331.96 855.82 334.21 C 877.58 336.47 889.8 339.52 889.8 342.7 L 889.8 452.7 C 889.8 455.88 877.58 458.93 855.82 461.19 C 834.07 463.44 804.57 464.7 773.8 464.7 C 743.03 464.7 713.53 463.44 691.78 461.19 C 670.02 458.93 657.8 455.88 657.8 452.7 Z" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 889.8 342.7 C 889.8 345.88 877.58 348.93 855.82 351.19 C 834.07 353.44 804.57 354.7 773.8 354.7 C 743.03 354.7 713.53 353.44 691.78 351.19 C 670.02 348.93 657.8 345.88 657.8 342.7" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="773.8" y="405.2">
+                                question_logs
+                            </text>
+                            <text x="773.8" y="422.2">
+                                (answer, context, sources)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="judge">
+                    <g>
+                        <rect x="0.8" y="274.2" width="340" height="247" fill="#e3e9fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(227, 233, 253), rgb(32, 37, 54)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="170.8" y="304.2">
+                                judge_answers job
+                            </text>
+                            <text x="170.8" y="333.2">
+                                LLM judge, 0-10 per axis
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="judge_axes">
+                        <g>
+                            <rect x="24.8" y="350.7" width="292" height="52" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="170.8" y="382.7">
+                                    faithfulness / relevance / completeness
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="judge_silent">
+                        <g>
+                            <rect x="24.8" y="419.7" width="292" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="170.8" y="449.7">
+                                    on a refusal the axes abstain:
+                                </text>
+                                <text x="170.8" y="466.7">
+                                    the row carries metrics.refusal and
+                                </text>
+                                <text x="170.8" y="483.7">
+                                    neither side scores it
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="guests">
+                    <g>
+                        <rect x="446.8" y="521.2" width="653" height="169.5" fill="#fff3cd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(255, 243, 205), rgb(39, 29, 0)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="773.3" y="551.2">
+                                judge_guest_axes job
+                            </text>
+                            <text x="773.3" y="580.2">
+                                ragas, by request only
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="guests_gaxes">
+                        <g>
+                            <rect x="496.8" y="590.7" width="219" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="606.3" y="620.7">
+                                    ragas_faithfulness
+                                </text>
+                                <text x="606.3" y="637.7">
+                                    ragas_context_precision
+                                </text>
+                                <text x="606.3" y="654.7">
+                                    ragas_context_recall
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="guests_sample">
+                        <g>
+                            <rect x="735.8" y="590.7" width="314" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="892.8" y="620.7">
+                                    a calibration on a drawn subsample,
+                                </text>
+                                <text x="892.8" y="637.7">
+                                    not an axis every run carries:
+                                </text>
+                                <text x="892.8" y="654.7">
+                                    51.4s of model time a row against 6.6s
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="agg">
+                    <g>
+                        <rect x="60.8" y="773.2" width="433" height="198" fill="#e3e9fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(227, 233, 253), rgb(32, 37, 54)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="277.3" y="803.2">
+                                Experiment aggregator
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="agg_pairwise">
+                        <g>
+                            <rect x="282.05" y="840.7" width="184" height="98" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="374.05" y="878.7">
+                                    pairwise stats
+                                </text>
+                                <text x="374.05" y="895.7">
+                                    bootstrap CI + Wilcoxon
+                                </text>
+                                <text x="374.05" y="912.7">
+                                    + Holm flags
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="agg_composite">
+                        <g>
+                            <rect x="88.55" y="840.7" width="170" height="82" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="173.55" y="879.2">
+                                    RRF composite
+                                </text>
+                                <text x="173.55" y="896.2">
+                                    (generation axes only)
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="results">
+                    <g>
+                        <path d="M 550.8 820.7 L 706.8 820.7 L 720.8 834.7 L 720.8 923.7 L 550.8 923.7 L 550.8 820.7 Z" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 706.8 820.7 L 706.8 834.7 L 720.8 834.7" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="635.8" y="869.7">
+                                results.composite
+                            </text>
+                            <text x="635.8" y="886.7">
+                                winner + significance
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="note">
+                    <g>
+                        <rect x="970.8" y="800.7" width="377" height="198" fill="#ffffff" stroke="#000000" stroke-width="0.1" stroke-dasharray="0 0" pointer-events="all" style="fill: var(--ge-adaptive-bg, #ffffff); stroke: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#000000" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));">
+                            <text x="1159.3" y="871.7">
+                                hit@k and MRR stay out of the composite:
+                            </text>
+                            <text x="1159.3" y="888.7">
+                                hit@k grows with k and would confound it.
+                            </text>
+                            <text x="1159.3" y="905.7">
+                                The guest axes stay out of it too, and out of the
+                            </text>
+                            <text x="1159.3" y="922.7">
+                                Holm family: a ruler used to check a ruler is not
+                            </text>
+                            <text x="1159.3" y="939.7">
+                                a fourth measure of quality (owner, 07.09)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e0">
+                    <g>
+                        <path d="M 773.7 69.7 L 773.53 129.46" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 773.51 137.46 L 769.53 129.45 L 777.53 129.48 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="711" y="90" width="127" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="773.6" y="101.99">
+                                enqueue (find-or-create
+                            </text>
+                            <text x="773.6" y="115.99">
+                                missing models)
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e1">
+                    <g>
+                        <path d="M 773.69 280.7 L 773.74 290.7 Q 773.8 300.7 773.8 310.58 L 773.8 320.46" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 773.8 328.46 L 769.8 320.46 L 777.8 320.46 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e2">
+                    <g>
+                        <path d="M 657.8 397.7 L 351.04 397.7" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 343.04 397.7 L 351.04 393.7 L 351.04 401.7 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e3">
+                    <g>
+                        <path d="M 691.44 461.22 L 618.29 515.13" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 611.85 519.87 L 615.92 511.91 L 620.66 518.35 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="576" y="485" width="149" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="650.04" y="496.73">
+                                by request, on a subsample
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e4">
+                    <g>
+                        <path d="M 936.55 521.2 L 864.36 467.34" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 857.95 462.56 L 866.76 464.14 L 861.97 470.55 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="806" y="476" width="179" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="895.33" y="488.45">
+                                the scores land on the same row,
+                            </text>
+                            <text x="895.33" y="502.45">
+                                so a correlation with ours is a join
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e5">
+                    <g>
+                        <path d="M 170.8 521.2 L 169.12 762.96" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 169.07 770.96 L 165.12 762.94 L 173.12 762.99 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="130" y="633" width="81" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="169.93" y="644.91">
+                                live trigger on
+                            </text>
+                            <text x="169.93" y="658.91">
+                                last run judged
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e6">
+                    <g>
+                        <path d="M 446.8 605.95 L 385.55 605.95 L 385.55 762.96" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" stroke-dasharray="6 6" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 385.55 770.96 L 381.55 762.96 L 389.55 762.96 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="313" y="645" width="147" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="385.55" y="656.99">
+                                never: out of the composite
+                            </text>
+                            <text x="385.55" y="670.99">
+                                and out of the Holm family
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e7">
+                    <g>
+                        <path d="M 493.8 872.2 L 540.56 872.2" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 548.56 872.2 L 540.56 876.2 L 540.56 868.2 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

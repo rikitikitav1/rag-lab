@@ -16,19 +16,25 @@ System_Boundary(lab, "rag-lab (docker compose, one host, one card)") {
 
   Container(api, "API", "FastAPI", "REST /v1/*, MCP /mcp, MCP /mcp-ops")
   Container(worker, "Worker", "python", "Lane `default` takes the card, lane `io` takes the network")
-  ContainerDb(postgres, "PostgreSQL + pgvector", "postgres", "Chunks and embeddings, questions, runs, job queue")
+  ContainerDb(postgres, "PostgreSQL + pgvector", "postgres", "Chunks and embeddings, sources with their stage, questions, runs, job queue")
+  ContainerDb(datasets, "datasets/", "the mounted tree", "Raw sources, measurements, question banks")
 
   Container_Boundary(engines, "Engines, one card between them") {
-    Container(ollama, "Ollama", "GPU", "llama3.1:8b, bge-m3, gemma2:9b, qwen2.5:7b")
+    Container(ollama, "Ollama", "GPU", "llama3.1:8b, bge-m3, gemma2:9b, qwen2.5:7b-w16384")
     Container(vllm, "vLLM", "GPU, asleep off the card", "Qwen2.5-7B-Instruct-AWQ judges")
     Container(rerank, "vllm-rerank", "GPU, profile `rerank`", "bge-reranker-v2-m3")
     Container(ollama_cpu, "ollama-cpu", "processor", "bge-m3 for the RAGAS guest")
+    Container(vllm_embed, "vllm-embed", "GPU, profile `embed`", "an embedder on vLLM")
+    Container(vllm_cpu, "vllm-cpu", "processor, profile `cpu`", "vLLM without a card")
+    Container(docling, "converter-docling", "GPU, profile `convert`", "Docling: text-layer PDF, HTML, the rest")
+    Container(mineru, "converter-mineru", "GPU, profile `convert`", "MinerU: scanned pages and images")
   }
 
   Container_Boundary(boot, "Startup, runs to completion first") {
     Container(dbmate, "dbmate", "migrations", "Schema up")
-    Container(seed, "seed", "python", "Engines, models, roles, prompts")
-    Container(bootstrap, "bootstrap", "python", "Wakes vLLM, probes, sleeps it")
+    Container(seed, "seed", "python", "Engines, prompts, questions, MCP integrations, sources")
+    Container(bootstrap, "bootstrap", "python", "Models and roles seated, ollama reconciled, vLLM probed and put to sleep, missing indexes and question vectors queued")
+    Container(repos_owner, "repos-owner", "once", "Hands the repos volume to the host's user; the worker waits for it")
   }
 }
 
@@ -43,7 +49,10 @@ Rel_D(worker, ollama, "Generates, embeds")
 Rel_D(worker, ollama_cpu, "Guest embeddings, off the card")
 Rel_D(worker, vllm, "Judges")
 Rel_D(worker, rerank, "Scores pairs")
-Rel_D(worker, vllm, "Hands the card over: one engine sleeps, the other wakes", "through the queue")
+Rel_D(worker, docling, "Converts a piece of an added source")
+Rel_D(worker, mineru, "Converts a piece of an added source")
+Rel_D(worker, vllm, "Hands the card over: the holder lets go (ollama unloads, vLLM sleeps, a converter stops its tool), the next takes it", "through the queue")
+Rel_D(worker, datasets, "Writes raw sources and measurements")
 Rel_R(dbmate, seed, "then")
 Rel_R(seed, bootstrap, "then")
 Rel_D(worker, hub, "Pulls weights", "io")

@@ -1,0 +1,465 @@
+<svg host="65bd71144e" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="1562px" height="739px" viewBox="0 0 1562 739" content="&lt;mxfile&gt;&lt;diagram id=&quot;card_handover&quot; name=&quot;card_handover&quot;&gt;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&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <defs/>
+    <g>
+        <g data-cell-id="0">
+            <g data-cell-id="1">
+                <g data-cell-id="hand">
+                    <g>
+                        <rect x="1" y="268" width="1560" height="470" fill="#e3e9fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(227, 233, 253), rgb(32, 37, 54)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="781" y="298">
+                                hand_to
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-26">
+                        <g>
+                            <rect x="697.5" y="615" width="300" height="100" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" stroke-dasharray="6 6" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="847.5" y="662.5">
+                                    CardNotHanded: mode 7, the card is stuck
+                                </text>
+                                <text x="847.5" y="679.5">
+                                    (signs and fixes in stand_modes.md)
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-27">
+                        <g>
+                            <rect x="56" y="500" width="170" height="60" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="141" y="519">
+                                    off the card
+                                </text>
+                                <text x="141" y="536">
+                                    (processor, cloud):
+                                </text>
+                                <text x="141" y="553">
+                                    load there, take nothing
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-28">
+                        <g>
+                            <path d="M 213.5 417.5 L 147.76 492.31" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 142.48 498.32 L 144.75 489.67 L 150.76 494.95 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="170" y="453" width="15" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="176.53" y="464.57">
+                                    no
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-29">
+                        <g>
+                            <path d="M 288.5 417.5 L 356.26 485.26" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 361.92 490.92 L 353.43 488.09 L 359.09 482.43 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="315" y="448" width="21" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="325.27" y="459.27">
+                                    yes
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-30">
+                        <g>
+                            <path d="M 251 305 L 326 380 L 251 455 L 176 380 Z" fill="#cfd2dd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(207, 210, 221), rgb(54, 56, 66)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="251" y="377.5">
+                                    the target
+                                </text>
+                                <text x="251" y="394.5">
+                                    on the card?
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-31">
+                        <g>
+                            <path d="M 438.5 492.5 L 484.72 433.08" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 489.63 426.76 L 487.87 435.54 L 481.56 430.62 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="459" y="451" width="15" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="465.51" y="462.77">
+                                    no
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-32">
+                        <g>
+                            <path d="M 656 375 L 727.26 375" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 735.26 375 L 727.26 379 L 727.26 371 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-33">
+                        <g>
+                            <path d="M 593.19 425 L 765.47 607.56" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" stroke-dasharray="6 6" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 770.97 613.38 L 762.57 610.3 L 768.38 604.81 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="659" y="507" width="51" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="683.79" y="519">
+                                    not let go
+                                </text>
+                                <text x="683.79" y="533">
+                                    in 60 s
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-34">
+                        <g>
+                            <rect x="737.5" y="325" width="220" height="100" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="847.5" y="355.5">
+                                    the target takes it:
+                                </text>
+                                <text x="847.5" y="372.5">
+                                    vLLM wakes, ollama loads,
+                                </text>
+                                <text x="847.5" y="389.5">
+                                    a converter's supervisor
+                                </text>
+                                <text x="847.5" y="406.5">
+                                    starts its tool until ready
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-35">
+                        <g>
+                            <path d="M 957.5 375 L 1015.76 375" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 1023.76 375 L 1015.76 379 L 1015.76 371 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-36">
+                        <g>
+                            <path d="M 847.5 425 L 847.5 604.77" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" stroke-dasharray="6 6" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 847.5 612.77 L 843.5 604.77 L 851.5 604.77 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="786" y="500" width="125" height="44" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="847.5" y="512">
+                                    not taken in 60 s;
+                                </text>
+                                <text x="847.5" y="526">
+                                    a converter that cannot
+                                </text>
+                                <text x="847.5" y="540">
+                                    start: at once
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-37">
+                        <g>
+                            <path d="M 401 455 L 476 530 L 401 605 L 326 530 Z" fill="#cfd2dd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(207, 210, 221), rgb(54, 56, 66)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="401" y="527.5">
+                                    the target down
+                                </text>
+                                <text x="401" y="544.5">
+                                    or silent?
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-38">
+                        <g>
+                            <path d="M 438.5 567.5 L 687.92 661.4" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" stroke-dasharray="6 6" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 695.41 664.22 L 686.51 665.14 L 689.33 657.65 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="527" y="603" width="87" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="569.52" y="614.83">
+                                    yes: the card
+                                </text>
+                                <text x="569.52" y="628.83">
+                                    stays where it is
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-39">
+                        <g>
+                            <path d="M 1087.13 420.85 L 929.12 607.2" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" stroke-dasharray="6 6" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 923.95 613.3 L 926.07 604.61 L 932.17 609.78 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="967" y="504" width="75" height="30" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="1004.35" y="516.47">
+                                    no: half on
+                                </text>
+                                <text x="1004.35" y="530.47">
+                                    the processor
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-40">
+                        <g>
+                            <path d="M 1395 300 L 1495 375 L 1395 450 L 1295 375 Z" fill="#cfd2dd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(207, 210, 221), rgb(54, 56, 66)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="1395" y="372.5">
+                                    anyone else
+                                </text>
+                                <text x="1395" y="389.5">
+                                    still holding?
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-41">
+                        <g>
+                            <path d="M 1344.31 411.98 L 1005.77 658.97" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" stroke-dasharray="6 6" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 999.31 663.69 L 1003.41 655.74 L 1008.13 662.2 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="1160" y="533" width="21" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="1169.81" y="544.29">
+                                    yes
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-42">
+                        <g>
+                            <path d="M 1226 375 L 1284.76 375" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 1292.76 375 L 1284.76 379 L 1284.76 371 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="1252" y="369" width="21" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="1262" y="380">
+                                    yes
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-43">
+                        <g>
+                            <path d="M 1126 300 L 1226 375 L 1126 450 L 1026 375 Z" fill="#cfd2dd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(207, 210, 221), rgb(54, 56, 66)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="1126" y="372.5">
+                                    ollama only: the model
+                                </text>
+                                <text x="1126" y="389.5">
+                                    whole on the card?
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-44">
+                        <g>
+                            <rect x="1386" y="500" width="120" height="50" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="1446" y="531">
+                                    card.handed
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-45">
+                        <g>
+                            <path d="M 1445 412.5 L 1445.88 489.77" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                            <path d="M 1445.97 497.77 L 1441.88 489.81 L 1449.88 489.72 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                                <rect fill="#FFFFFF" stroke="none" x="1439" y="450" width="15" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                                <text x="1445.5" y="461.5">
+                                    no
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="PGNS3L2VmDE83cHIW4AP-46">
+                        <g>
+                            <rect x="436" y="325" width="220" height="100" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="546" y="347">
+                                    each other holder
+                                </text>
+                                <text x="546" y="364">
+                                    lets go: ollama unloads,
+                                </text>
+                                <text x="546" y="381">
+                                    vLLM sleeps, a converter's
+                                </text>
+                                <text x="546" y="398">
+                                    supervisor stops its tool
+                                </text>
+                                <text x="546" y="415">
+                                    (20 s, then the kill)
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e0">
+                    <g>
+                        <path d="M 826 90.5 L 1070.76 90.98" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1078.76 91 L 1070.76 94.98 L 1070.77 86.98 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                </g>
+                <g data-cell-id="e14">
+                    <g>
+                        <path d="M 1193.5 136 L 790.75 264.88" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 783.13 267.32 L 789.53 261.07 L 791.97 268.69 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="966" y="195" width="45" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="987.78" y="206.83">
+                                take: no
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="entry_take">
+                    <g>
+                        <path d="M 1306 1 L 1531 91 L 1306 181 L 1081 91 Z" fill="#cfd2dd" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(207, 210, 221), rgb(54, 56, 66)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1306" y="88.5">
+                                take: the engine holds the card,
+                            </text>
+                            <text x="1306" y="105.5">
+                                the model loaded (and, on ollama, whole on it)?
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="entry_kept">
+                    <g>
+                        <rect x="1441" y="180" width="120" height="50" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="1501" y="211">
+                                nothing to do
+                            </text>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="entry_ask">
+                    <g>
+                        <rect x="71" y="20.5" width="755" height="140" fill="#edf0fd" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(237, 240, 253), rgb(28, 30, 41)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#0A0F25" font-family="Helvetica" text-anchor="middle" font-size="24px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                            <text x="448.5" y="50.5">
+                                Who asks for the card
+                            </text>
+                        </g>
+                    </g>
+                    <g data-cell-id="entry_ask_job">
+                        <g>
+                            <rect x="95" y="60.5" width="153" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="171.5" y="99">
+                                    a job,
+                                </text>
+                                <text x="171.5" y="116">
+                                    before its work
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="entry_ask_call">
+                        <g>
+                            <rect x="272" y="60.5" width="240" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="392" y="90.5">
+                                    a call of a role on another
+                                </text>
+                                <text x="392" y="107.5">
+                                    engine, mid-job: waits until
+                                </text>
+                                <text x="392" y="124.5">
+                                    the old engine's calls end
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                    <g data-cell-id="entry_ask_door">
+                        <g>
+                            <rect x="536" y="60.5" width="266" height="82" fill="#f7f8fe" stroke="#0d32b2" stroke-width="2" pointer-events="all" style="fill: light-dark(rgb(247, 248, 254), rgb(23, 24, 29)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        </g>
+                        <g>
+                            <g fill="#0A0F25" font-family="Helvetica" font-weight="bold" text-anchor="middle" font-size="14px" style="fill: light-dark(rgb(10, 15, 37), rgb(218, 223, 242));">
+                                <text x="669" y="82">
+                                    an API door: cannot wait,
+                                </text>
+                                <text x="669" y="99">
+                                    queues a hand_card job for
+                                </text>
+                                <text x="669" y="116">
+                                    the worker, answers 503 with
+                                </text>
+                                <text x="669" y="133">
+                                    Retry-After (/load answers 202)
+                                </text>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+                <g data-cell-id="e1">
+                    <g>
+                        <path d="M 1418.5 136 L 1491.97 175.18" fill="none" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                        <path d="M 1499.03 178.95 L 1490.09 178.71 L 1493.85 171.65 Z" fill="#0d32b2" stroke="#0d32b2" stroke-width="2" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(13, 50, 178), rgb(160, 192, 255)); stroke: light-dark(rgb(13, 50, 178), rgb(160, 192, 255));"/>
+                    </g>
+                    <g>
+                        <g fill="#676C7E" font-family="Helvetica" font-style="italic" text-anchor="middle" font-size="12px" style="fill: light-dark(rgb(103, 108, 126), rgb(139, 144, 159));">
+                            <rect fill="#FFFFFF" stroke="none" x="1451" y="152" width="21" height="15" stroke-width="0" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18));"/>
+                            <text x="1460.85" y="163.59">
+                                yes
+                            </text>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>
