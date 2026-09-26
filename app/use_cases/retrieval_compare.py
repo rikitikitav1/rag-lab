@@ -18,9 +18,12 @@ import db
 # 1 before the halves and the per-arm procedure; 2 those; 3 p unrounded, the way Holm reads it
 SCHEMA = 3
 
+# not measured: the pool a comparison ranks from, wide enough that no cutoff reaches its edge
 CANDIDATES = 100
+# the depth the report reads, not the search's own leg, though both are 20 today
 DEPTH = 20
 CUTOFFS = (1, 3, 5, 10)
+# cosine distance never exceeds 2, so this threshold lets every candidate through
 NO_THRESHOLD = 2.0
 
 log = logging_setup.get_logger(__name__)
@@ -62,8 +65,9 @@ def questions(conn, set_name, limit, ids=None):
     where = "q.set_name = :set_name" if not ids else "q.id = ANY(:ids)"
     # the limit samples a set; trimming a fixed list would record the prefix as the plan
     cap = "" if ids else "LIMIT :limit"
-    rows = conn.execute(
-        sql(f"""
+    rows = (
+        conn.execute(
+            sql(f"""
             SELECT q.id, q.original_text, q.marked_sources, q.embedding::text AS emb, q.embedded_by,
                    COALESCE(o.original_text, q.original_text) AS gold_heading
             FROM questions q
@@ -74,14 +78,26 @@ def questions(conn, set_name, limit, ids=None):
             ORDER BY q.id
             {cap}
         """),
-        {"set_name": set_name, "ids": ids, "limit": limit},
-    ).mappings().all()
+            {"set_name": set_name, "ids": ids, "limit": limit},
+        )
+        .mappings()
+        .all()
+    )
     return [dict(r) for r in rows]
 
 
-def ranked_lists(db, question, variant, depth=DEPTH, limit_keyword=CANDIDATES,
-                 limit_vector=CANDIDATES, distance_threshold=NO_THRESHOLD, rerank_top=0,
-                 ef_search=None, exact=False):
+def ranked_lists(
+    db,
+    question,
+    variant,
+    depth=DEPTH,
+    limit_keyword=CANDIDATES,
+    limit_vector=CANDIDATES,
+    distance_threshold=NO_THRESHOLD,
+    rerank_top=0,
+    ef_search=None,
+    exact=False,
+):
     # the depth travels with the call, or the record names one number and the run uses another
     rows = db.hybrid_search(
         question["original_text"],
@@ -167,15 +183,19 @@ def _sections_under(conn, variant, marked: tuple[str, ...]) -> set[str]:
     key = (variant, marked)
     if key in _SECTIONS_UNDER:
         return _SECTIONS_UNDER[key]
-    rows = conn.execute(
-        sql(
-            f"SELECT DISTINCT section FROM data_chunks"
-            f" WHERE {db.live_rows()} AND section IS NOT NULL AND ("
-            + " OR ".join(f"position(:m{i} in source) > 0" for i in range(len(marked)))
-            + ")"
-        ),
-        {"variant": variant, **{f"m{i}": m for i, m in enumerate(marked)}},
-    ).scalars().all()
+    rows = (
+        conn.execute(
+            sql(
+                f"SELECT DISTINCT section FROM data_chunks"
+                f" WHERE {db.live_rows()} AND section IS NOT NULL AND ("
+                + " OR ".join(f"position(:m{i} in source) > 0" for i in range(len(marked)))
+                + ")"
+            ),
+            {"variant": variant, **{f"m{i}": m for i, m in enumerate(marked)}},
+        )
+        .scalars()
+        .all()
+    )
     found = {heading_text(r) for r in rows}
     _SECTIONS_UNDER[key] = found
     return found
@@ -196,41 +216,59 @@ def rank_of_section(sections, marked, gold_heading):
     return None
 
 
-def measure(db, conn, set_name, variant, limit, exact, ef=None, limit_keyword=CANDIDATES,
-            limit_vector=CANDIDATES, distance_threshold=NO_THRESHOLD, rerank_top=0,
-            question_ids=None, source=None):
+def measure(
+    db,
+    conn,
+    set_name,
+    variant,
+    limit,
+    exact,
+    ef=None,
+    limit_keyword=CANDIDATES,
+    limit_vector=CANDIDATES,
+    distance_threshold=NO_THRESHOLD,
+    rerank_top=0,
+    question_ids=None,
+    source=None,
+):
     qs = questions(conn, set_name, limit, ids=question_ids)
     if source:
         qs = [q for q in qs if any(m.startswith(source) for m in q["marked_sources"])]
     out = []
     for q in qs:
         files, sections, rows = ranked_lists(
-            db, q, variant, limit_keyword=limit_keyword, limit_vector=limit_vector,
-            distance_threshold=distance_threshold, rerank_top=rerank_top,
+            db,
+            q,
+            variant,
+            limit_keyword=limit_keyword,
+            limit_vector=limit_vector,
+            distance_threshold=distance_threshold,
+            rerank_top=rerank_top,
             ef_search=None if exact else ef,
             exact=exact,
         )
         assert_pool(rows, q["id"], min(limit_vector, CANDIDATES))
         scorable = section_exists(conn, variant, q["marked_sources"], q["gold_heading"])
-        out.append({
-            "id": q["id"],
-            # which corpus repository the gold sits in: halves are drawn across repos, not inside
-            "repo": q["marked_sources"][0].split("/")[0] if q["marked_sources"] else None,
-            "file_rank": rank_of_gold(files, q["marked_sources"]),
-            "section_scorable": scorable,
-            "section_rank": (
-                rank_of_section(sections, q["marked_sources"], q["gold_heading"])
-                if scorable else None
-            ),
-            # `rows` is the fused list, so this is a floor on "the keyword leg reached the gold"
-            "gold_by_keyword_in_pool": any(
-                hit.keyword_rank is not None and is_gold(hit.source, q["marked_sources"])
-                for hit in rows
-            ),
-            "files": files,
-            "sections": [list(s) for s in sections],
-        })
+        out.append(
+            {
+                "id": q["id"],
+                # which corpus repository the gold sits in: halves are drawn across repos, not inside
+                "repo": q["marked_sources"][0].split("/")[0] if q["marked_sources"] else None,
+                "file_rank": rank_of_gold(files, q["marked_sources"]),
+                "section_scorable": scorable,
+                "section_rank": (
+                    rank_of_section(sections, q["marked_sources"], q["gold_heading"]) if scorable else None
+                ),
+                # `rows` is the fused list, so this is a floor on "the keyword leg reached the gold"
+                "gold_by_keyword_in_pool": any(
+                    hit.keyword_rank is not None and is_gold(hit.source, q["marked_sources"]) for hit in rows
+                ),
+                "files": files,
+                "sections": [list(s) for s in sections],
+            }
+        )
     return out
+
 
 def rr(rank) -> float:
     return 1.0 / rank if rank else 0.0
@@ -244,9 +282,7 @@ SPLIT_SEED = "hygiene_v1"
 def half_of(question_id) -> str:
     import hashlib
 
-    digest = hashlib.md5(
-        f"{question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False
-    ).hexdigest()
+    digest = hashlib.md5(f"{question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False).hexdigest()
     return "A" if int(digest, 16) % 2 == 0 else "B"
 
 
@@ -296,10 +332,7 @@ def summarise(rows: list[dict], level: str) -> dict:
         rows = [r for r in rows if r.get("section_scorable")]
     if not rows:
         return {}
-    stats = {
-        f"hit@{c}": round(sum(1 for r in rows if r[key] and r[key] <= c) / len(rows), 4)
-        for c in CUTOFFS
-    }
+    stats = {f"hit@{c}": round(sum(1 for r in rows if r[key] and r[key] <= c) / len(rows), 4) for c in CUTOFFS}
     stats[f"MRR@{DEPTH}"] = round(sum(rr(r[key]) for r in rows) / len(rows), 4)
     stats["n"] = len(rows)
     return stats
@@ -316,9 +349,7 @@ def arms(axes: dict) -> list[dict]:
         size *= len(axes[n])
     if size > GRID_CAP:
         raise ValueError(f"grid of {size} arms is over the cap of {GRID_CAP}: {axes}")
-    return [
-        dict(zip(names, values, strict=True)) for values in itertools.product(*(axes[n] for n in names))
-    ]
+    return [dict(zip(names, values, strict=True)) for values in itertools.product(*(axes[n] for n in names))]
 
 
 def arm_name(arm: dict) -> str:
@@ -329,9 +360,7 @@ def arm_name(arm: dict) -> str:
 def refuse_long_names(names: list[str]) -> None:
     too_long = [n for n in names if len(n) > limits.MAX_RUN_NAME]
     if too_long:
-        raise ValueError(
-            f"run names over {limits.MAX_RUN_NAME} characters: {[n[:60] for n in too_long[:3]]}"
-        )
+        raise ValueError(f"run names over {limits.MAX_RUN_NAME} characters: {[n[:60] for n in too_long[:3]]}")
 
 
 # a bool is an int in Python, and `rerank_top: [true]` would become rows[:1]
@@ -347,9 +376,7 @@ AXIS_RULES = {
     "limit_vector": lambda v: _whole(v) and v >= 1,
     "limit_keyword": lambda v: _whole(v) and v >= 1,
     "rerank_top": lambda v: _whole(v) and v >= 0,
-    "distance_threshold": lambda v: isinstance(v, int | float)
-    and not isinstance(v, bool)
-    and 0 <= v <= 2,
+    "distance_threshold": lambda v: isinstance(v, int | float) and not isinstance(v, bool) and 0 <= v <= 2,
     "source": lambda v: isinstance(v, str) and bool(v),
     "variant": lambda v: isinstance(v, str) and v in config.settings.corpus.variants,
 }
@@ -382,8 +409,15 @@ def _keep(row: dict) -> dict:
 
 # the procedure, not the corpus: two cuts differ in `variant` and `fingerprint` anyway
 COMPARABLE = (
-    "set", "search", "candidates", "limit_vector", "limit_keyword",
-    "distance_threshold", "keyword", "questions_hash", "rerank_top",
+    "set",
+    "search",
+    "candidates",
+    "limit_vector",
+    "limit_keyword",
+    "distance_threshold",
+    "keyword",
+    "questions_hash",
+    "rerank_top",
 )
 # absent is not a difference: it is the value the run had before anyone wrote it down
 ABSENT_MEANS = {"rerank_top": 0}
@@ -469,9 +503,7 @@ def run(experiment) -> dict:
         raise ValueError("source stratifies a comparison, it cannot be the axis of record")
     # without this the record lands with `deltas: {}` and no complaint
     if not param or param not in experiment.axes:
-        raise ValueError(
-            f"param must name one of the axes, got {param!r} against {sorted(experiment.axes)}"
-        )
+        raise ValueError(f"param must name one of the axes, got {param!r} against {sorted(experiment.axes)}")
 
     # before the connection: a cancelled job must not open one to find out it is cancelled
     job_id = getattr(experiment, "job_id", None)
@@ -520,22 +552,14 @@ def run(experiment) -> dict:
             "not_comparable": [
                 {"field": field, "was": was, "now": now}
                 for field, was, now in comparable(
-                    {**arm_procedure(against, measured[base], experiment.dataset),
-                     AXIS_FIELD.get(param, param): None},
-                    {**arm_procedure(arm, measured[name], experiment.dataset),
-                     AXIS_FIELD.get(param, param): None},
+                    {**arm_procedure(against, measured[base], experiment.dataset), AXIS_FIELD.get(param, param): None},
+                    {**arm_procedure(arm, measured[name], experiment.dataset), AXIS_FIELD.get(param, param): None},
                 )
             ],
-            **{
-                level: paired_delta(measured[base], measured[name], level)
-                for level in ("file", "section")
-            },
+            **{level: paired_delta(measured[base], measured[name], level) for level in ("file", "section")},
             # the winner is chosen on A and reported on B, so the whole alone cannot answer
             "halves": {
-                level: {
-                    which: paired_delta_half(measured[base], measured[name], level, which)
-                    for which in ("A", "B")
-                }
+                level: {which: paired_delta_half(measured[base], measured[name], level, which) for which in ("A", "B")}
                 for level in ("file", "section")
             },
         }
@@ -553,10 +577,7 @@ def run(experiment) -> dict:
             "axes": experiment.axes,
             "param": param,
             # per arm: arms differ in variant, depth and, along `source`, in the questions
-            "arms": {
-                arm_name(a): arm_procedure(a, measured[arm_name(a)], experiment.dataset)
-                for a in grid
-            },
+            "arms": {arm_name(a): arm_procedure(a, measured[arm_name(a)], experiment.dataset) for a in grid},
         },
     }
 

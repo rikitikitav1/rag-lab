@@ -24,6 +24,7 @@ NEGATE = (
 
 def sentence_of(contexts: list[str]) -> str | None:
     for line in "\n".join(contexts or []).splitlines():
+        # not measured: a line this long is a sentence, shorter ones are labels and headings
         if len(line) > 90 and not line.startswith(("#", "```", "//", "  ", "|")):
             return line.strip()
     return None
@@ -50,8 +51,7 @@ def arms_for(arm: str, ql) -> list[tuple[str, str]]:
 def score(metric, ql, answer) -> tuple[float | None, int, str | None]:
     import asyncio
 
-    row = {"user_input": ql.question_text or "", "response": answer,
-           "retrieved_contexts": list(ql.contexts or [])}
+    row = {"user_input": ql.question_text or "", "response": answer, "retrieved_contexts": list(ql.contexts or [])}
 
     async def run():
         statements = (await metric._create_statements(row, None)).statements
@@ -86,8 +86,9 @@ def report(arm: str, done: list[dict]) -> dict:
     names = sorted(by)
     # one arm cannot differ from itself: a half that never ran used to read as "no difference"
     left, right = (names[0], names[1]) if len(names) > 1 else (None, None)
-    deltas = [p[left] - p[right] for p in pairs.values()
-              if left and p.get(left) is not None and p.get(right) is not None]
+    deltas = [
+        p[left] - p[right] for p in pairs.values() if left and p.get(left) is not None and p.get(right) is not None
+    ]
     return {
         "schema": SCHEMA,
         "arm": arm,
@@ -96,12 +97,12 @@ def report(arm: str, done: list[dict]) -> dict:
         "failures": sum(1 for r in done if r["error"]),
         "means": {
             name: {
-                "score": round(statistics.fmean(
-                    [r["score"] for r in rows if r["score"] is not None]), 4),
+                "score": round(statistics.fmean([r["score"] for r in rows if r["score"] is not None]), 4),
                 "overlap": round(statistics.fmean(r["overlap"] for r in rows), 4),
                 "n": len(rows),
             }
-            for name, rows in by.items() if any(r["score"] is not None for r in rows)
+            for name, rows in by.items()
+            if any(r["score"] is not None for r in rows)
         },
         "paired": {
             "of": f"{left} minus {right}" if left else None,

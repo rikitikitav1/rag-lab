@@ -2,14 +2,16 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import config
 import logging_setup
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 log = logging_setup.get_logger(__name__)
 
+_MEASURE = config.settings.ingest_quality.measure
 # one owner for the cut that drops such blocks and the metric that counts them
-BOILERPLATE_FILE_SHARE = 0.5
-BOILERPLATE_MIN_FILES = 3
+BOILERPLATE_FILE_SHARE = _MEASURE.boilerplate_file_share
+BOILERPLATE_MIN_FILES = _MEASURE.boilerplate_min_files
 
 
 # the cut that drops these blocks and the metric that counts them built one spread twice
@@ -17,11 +19,8 @@ def wide_bodies(body_and_file, file_count: int) -> set[str]:
     spread: dict[str, set[str]] = {}
     for body, file in body_and_file:
         spread.setdefault(body, set()).add(file)
-    return {
-        body
-        for body, seen in spread.items()
-        if len(seen) / file_count >= BOILERPLATE_FILE_SHARE
-    }
+    return {body for body, seen in spread.items() if len(seen) / file_count >= BOILERPLATE_FILE_SHARE}
+
 
 # the standard parser tracks fenced code, tilde fences and indented headings; ours did not
 HEADERS = [("##", "h2"), ("###", "h3")]
@@ -33,10 +32,13 @@ def parser_version() -> str:
     from importlib.metadata import version
 
     return f"{PARSER}/{version('langchain-text-splitters')}"
+
+
 FENCE_LINE = re.compile(r"^\s{0,3}(```|~~~)")
-HEADING_LINE = re.compile(r"^(###|##) ")
+# the heading lines the parser splits on, spelled from its own list
+HEADING_LINE = re.compile(rf"^({'|'.join(sorted((re.escape(mark) for mark, _ in HEADERS), key=len, reverse=True))}) ")
 # the same share the coverage report calls "tiny": one number, declared once
-SLIVER_SHARE = 0.1
+SLIVER_SHARE = _MEASURE.tiny_share_of_ceiling
 # two ride on every chunk; over 1001 files 15652 headings, the longest 177, none over 200
 HEADING_CAP = 512
 # never collapsed, it is the axis variants compare on; live maximum 218 over both variants
@@ -146,21 +148,10 @@ def _heading_marks(content: str, file: str | None = None) -> list[tuple[int, str
         return _headings_of(lines)
 
     # the parser merges repeated headings, so occurrences are counted on the file
-    docs = MarkdownHeaderTextSplitter(
-        headers_to_split_on=HEADERS, strip_headers=True
-    ).split_text(content)
-    real = {
-        (level, _printable(doc.metadata[key]))
-        for doc in docs
-        for level, key in HEADERS
-        if doc.metadata.get(key)
-    }
+    docs = MarkdownHeaderTextSplitter(headers_to_split_on=HEADERS, strip_headers=True).split_text(content)
+    real = {(level, _printable(doc.metadata[key])) for doc in docs for level, key in HEADERS if doc.metadata.get(key)}
     # a fenced line matching a real heading passes the parser, so both must agree
-    return [
-        mark
-        for mark in _headings_of(lines)
-        if mark[0] not in inside and (mark[1], _printable(mark[2])) in real
-    ]
+    return [mark for mark in _headings_of(lines) if mark[0] not in inside and (mark[1], _printable(mark[2])) in real]
 
 
 def _headings_of(lines: list[str]) -> list[tuple[int, str, str]]:
@@ -227,10 +218,7 @@ def _bodied_sections(content, root, file):
 def _by_size(prefix, body, path, ceiling, ceiling_on) -> list[Cut]:
     budget = _budget(ceiling, prefix, ceiling_on)
     pieces = _absorb_textless(split_by_size(body.strip(), max_size=budget), budget)
-    return [
-        Cut(prefix, piece, path or None, "size" if len(pieces) > 1 else "section")
-        for piece in pieces
-    ]
+    return [Cut(prefix, piece, path or None, "size" if len(pieces) > 1 else "section") for piece in pieces]
 
 
 # the prefix repeats whole on every piece and is never cut itself
@@ -243,9 +231,7 @@ def cut_with_root(content, root, ceiling, ceiling_on=BODY, file=None) -> list[Cu
 
 # a block that is nothing but heading lines is the section that used to be dropped
 def _has_text(body: str) -> bool:
-    return any(
-        line.strip() and not line.lstrip().startswith("#") for line in body.split("\n")
-    )
+    return any(line.strip() and not line.lstrip().startswith("#") for line in body.split("\n"))
 
 
 # merged first and cut by size after: under the budget it would stand alone anyway
@@ -280,7 +266,10 @@ def cut_structured(content, root, ceiling, ceiling_on=BODY, file=None) -> list[C
             _by_subsection(
                 subs,
                 head if heading else _without_leading_h1(head),
-                prefix, path, ceiling, ceiling_on,
+                prefix,
+                path,
+                ceiling,
+                ceiling_on,
             )
         )
     return cuts
