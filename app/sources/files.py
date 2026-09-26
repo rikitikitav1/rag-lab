@@ -25,7 +25,23 @@ def source_files() -> dict[str, SourceFile]:
                 raise ValueError(f"{path}: the row {row} is already declared by {rows[row]}")
             rows[row] = source.name
         found[source.name] = source
+    _refuse_unmapped(found)
     return found
+
+
+# a technology no row of the map names would become a value of the field nobody can ask for
+def _refuse_unmapped(found: dict[str, SourceFile]) -> None:
+    mapped = set(config.settings.technologies)
+    for source in found.values():
+        named = {*source.technologies, *source.technology_by_path.values()}
+        if unknown := sorted(named - mapped):
+            raise ValueError(f"{source.name}: {unknown} are not rows of config/technologies.yaml")
+
+
+# the map's rows no source covers yet: the coverage map's empty cells
+def empty_rows(found: dict | None = None) -> list[str]:
+    covered = {t for s in (found or source_files()).values() for t in (*s.technologies, *s.technology_by_path.values())}
+    return sorted(set(config.settings.technologies) - covered)
 
 
 # the file a code source's reader parses; two files naming one reader would make the class ambiguous

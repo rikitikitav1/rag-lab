@@ -134,3 +134,16 @@ def test_the_report_names_moved_files_with_their_variants_and_orphans(found, pre
 
 def test_a_family_that_drifts_drifts_by_its_rows(found):
     assert files.drifting_rows() == ["notes"]
+
+
+def test_the_map_names_the_rows_a_source_may_cover(found):
+    assert config.settings.technologies["postgresql"].versions == ["18", "17"]
+    assert found["redis-doc"].technologies == ["redis"]
+    empty = files.empty_rows(found)
+    assert "redis" not in empty and "system-design" not in empty and "kafka" in empty
+
+
+def test_a_technology_outside_the_map_refuses(found):
+    bad = found["redis-doc"].model_copy(update={"technologies": ["cobol"]})
+    with pytest.raises(ValueError, match="not rows of config/technologies.yaml"):
+        files._refuse_unmapped({"redis-doc": bad})

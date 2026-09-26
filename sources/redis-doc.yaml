@@ -13,3 +13,5 @@ categories:
 veto_families:
 - name: redis-doc/docs
   prefix: redis-doc/docs/
+technologies:
+- redis

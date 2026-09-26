@@ -322,6 +322,17 @@ class EvalsCfg(_Strict):
     retrieval_compare: RetrievalCompareCfg
 
 
+# a row of the coverage map: the only values a source may name as its technology
+class TechnologyCfg(_Strict):
+    name: str
+    group: Literal[
+        "databases", "brokers", "languages", "frameworks", "orm", "tools", "infrastructure", "security", "search", "ml",
+        "general",
+    ]
+    # the majors kept side by side; empty is one rolling version
+    versions: list[str] = []
+
+
 class AppConfig(_Strict):
     retrieval: RetrievalCfg
     verdict: VerdictCfg
@@ -339,6 +350,7 @@ class AppConfig(_Strict):
     llm: LlmCfg
     postgres: PostgresCfg
     mcp_integrations: McpIntegrationsCfg
+    technologies: dict[str, TechnologyCfg]
 
 
 # the roles a stand cannot answer without: a layer dropping one fails at load; the rest are optional

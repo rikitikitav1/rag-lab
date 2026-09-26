@@ -84,6 +84,9 @@ class SourceFile(Declaration):
     veto_families: list[VetoFamily] = []
     # a folder that moves on its own, so its fingerprint drifting is not a fault
     drifts: bool = False
+    # rows of `config/technologies.yaml` the source covers; a path prefix narrows one where a source covers several
+    technologies: list[str] = []
+    technology_by_path: dict[str, str] = {}
 
     # the index reads a folder, a whole repository or a family; the rest is onboarded by hand first, so refused at load
     @model_validator(mode="after")

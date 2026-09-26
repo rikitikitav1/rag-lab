@@ -226,6 +226,9 @@ config:
     class: setting
   prompts_dir:
     class: setting
+  technologies:
+    class: setting
+    how: owner decision 26.09, the coverage map's rows
   engines.ollama.name:
     class: seed
     note: seeded into the engine rows

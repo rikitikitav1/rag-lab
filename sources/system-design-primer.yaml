@@ -10,3 +10,5 @@ reader: system-design-primer
 veto_families:
 - name: system-design-primer
   prefix: system-design-primer/
+technologies:
+- system-design
