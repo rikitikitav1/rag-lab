@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 
+import config
 import logging_setup
 import numpy as np
 from evals import compare, generation_metrics, retrieval_metrics
 from evals.loaders import load_logs
 from evals.pools import by_question, in_corpus_and_answered
-from evals.stats import annotate_holm, deltas_over, score_of
+from evals.stats import ALPHA, SEED, annotate_holm, deltas_over, score_of
 from evals.stats import delta_stats as _delta_stats
 from models.eval import Question, QuestionLog
 from models.experiment import Experiment, ExperimentKind, ExperimentStatus, can_advance
@@ -15,8 +16,7 @@ from use_cases import rejudge
 
 log = logging_setup.get_logger(__name__)
 
-# fuses the arms' ranks into the report's one ranking, not the search legs: those read `retrieval.rrf_k`
-_RRF_K = 60
+_RRF_K = config.settings.evals.retrieval_compare.rrf_k
 _AXES = rejudge.AXES
 _COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")
 
@@ -41,12 +41,7 @@ def _run_pending(session, run_name: str) -> int:
 
 
 def _run_count(session, run_name: str) -> int:
-    return (
-        session.scalar(
-            select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == run_name)
-        )
-        or 0
-    )
+    return session.scalar(select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == run_name)) or 0
 
 
 def _series_complete(session, run_names: list[str]) -> bool:
@@ -68,8 +63,7 @@ def _rrf(per_value: dict) -> dict[str, float]:
 
 def _paired_logs(set_a: list, set_b: list) -> list:
     by_id_b = by_question(set_b)
-    return [(a, by_id_b[a.question_id]) for a in by_question(set_a).values()
-            if a.question_id in by_id_b]
+    return [(a, by_id_b[a.question_id]) for a in by_question(set_a).values() if a.question_id in by_id_b]
 
 
 def _axis_deltas(pairs: list, axis: str) -> list:
@@ -80,7 +74,7 @@ def _axis_deltas(pairs: list, axis: str) -> list:
 
 def _compare_question_sets(set_a: list, set_b: list) -> dict:
     pairs = _paired_logs(set_a, set_b)
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(SEED)
     out = {}
     for axis in _AXES:
         deltas = _axis_deltas(pairs, axis)
@@ -98,17 +92,17 @@ BLENDED = (
 
 # it really pairs now: the deltas are over the intersection, so a per run count named "paired" lied
 def _pool_counts(runs: dict[str, list]) -> dict:
-    kept = {name: set(by_question(logs, in_corpus_and_answered))
-            for name, logs in runs.items()}
+    kept = {name: set(by_question(logs, in_corpus_and_answered)) for name, logs in runs.items()}
     shared = set.intersection(*kept.values()) if kept else set()
     return {
         "in_corpus_and_answered_in_every_arm": len(shared),
-        "by_run": {name: {"in_corpus_and_answered": len(kept[name]), "all_rows": len(logs)}
-                   for name, logs in runs.items()},
+        "by_run": {
+            name: {"in_corpus_and_answered": len(kept[name]), "all_rows": len(logs)} for name, logs in runs.items()
+        },
     }
 
 
-def _annotate_significance(comparisons: dict, alpha: float = 0.05) -> dict:
+def _annotate_significance(comparisons: dict, alpha: float = ALPHA) -> dict:
     tests = [s for axes in comparisons.values() for s in axes.values() if s is not None]
     # a reader who declared a narrower family before the run corrects over that one, and says so
     family = annotate_holm(tests, "every pair of the grid on every axis", alpha)
@@ -161,9 +155,7 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
         for value, run_name in run_by_value.items():
             if value == winner:
                 continue
-            comparisons[f"{winner}_vs_{value}"] = _compare_question_sets(
-                load_logs(run_name), winner_logs
-            )
+            comparisons[f"{winner}_vs_{value}"] = _compare_question_sets(load_logs(run_name), winner_logs)
 
     return {
         "schema": SCHEMA,
@@ -181,9 +173,7 @@ def compute_results(param: str, param_values: list, run_names: list[str]) -> dic
             "winner": winner,
             "pairwise": _annotate_significance(comparisons),
             # counted by the report, not by the reader: the gap to `all_rows` is the blend
-            "rows_by_population": _pool_counts(
-                {v: load_logs(rn) for v, rn in run_by_value.items()}
-            ),
+            "rows_by_population": _pool_counts({v: load_logs(rn) for v, rn in run_by_value.items()}),
         },
     }
 
@@ -195,11 +185,11 @@ def for_reading(results: dict) -> dict:
         # the arms answer the same questions, and every axis is compared over that pairing
         "pairing": "by question",
         "multiplicity": {k: v for k, v in pairwise.items() if k != "comparisons"},
-        "ranking": {k: v for k, v in (results.get("composite") or {}).items()
-                    if k in ("method", "winner", "ranking", "axes")},
+        "ranking": {
+            k: v for k, v in (results.get("composite") or {}).items() if k in ("method", "winner", "ranking", "axes")
+        },
         "arms": {
-            value: {k: v for k, v in body.items()
-                    if k in ("run_name", "n_scored", "mrr", "hit_at_k", *_COMPOSITE_AXES)}
+            value: {k: v for k, v in body.items() if k in ("run_name", "n_scored", "mrr", "hit_at_k", *_COMPOSITE_AXES)}
             for value, body in (results.get("per_value") or {}).items()
         },
         "deltas": pairwise.get("comparisons") or {},
@@ -212,9 +202,7 @@ def for_reading(results: dict) -> dict:
 def _report(exp: Experiment) -> dict:
     if exp.kind == ExperimentKind.rejudge:
         # arms of a rejudge share their answers, so an rrf over their retrieval ranks noise
-        return rejudge.compute_results(
-            exp.procedure.get("source_run"), exp.param, rejudge.paired_arms(exp)
-        )
+        return rejudge.compute_results(exp.procedure.get("source_run"), exp.param, rejudge.paired_arms(exp))
     return compute_results(exp.param, exp.param_values, exp.run_names)
 
 
@@ -262,11 +250,7 @@ def record_report(experiment_id: int, results: dict, started_at) -> bool:
                 results=results,
                 status=ExperimentStatus.aggregated,
                 finished_at=finished,
-                elapsed=(
-                    round((finished - started_at).total_seconds(), 1)
-                    if started_at
-                    else None
-                ),
+                elapsed=(round((finished - started_at).total_seconds(), 1) if started_at else None),
             )
         ).rowcount
         if not won:

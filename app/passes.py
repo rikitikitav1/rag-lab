@@ -62,6 +62,10 @@ def _on_card(picked) -> bool | None:
         return None
 
 
+# an embedder half on the processor returns the same vector a little later, so it never stops a pass
+SPILL_HARMLESS = frozenset({"embedding"})
+
+
 # one reading per seat, kept: the row stamps the same reading the pass stopped or went on by
 def _read_spills(checked, allow_spill: bool, known: dict | None = None) -> dict:
     seen, off = {}, []
@@ -72,6 +76,10 @@ def _read_spills(checked, allow_spill: bool, known: dict | None = None) -> dict:
         seen[seat.role] = on = _on_card(picked) if on is None else on
         if card.spilled_reading(picked.engine, on):
             off.append(f"{seat.role}={picked.name}")
+    harmless = [o for o in off if o.split("=", 1)[0] in SPILL_HARMLESS]
+    if harmless:
+        log.warning("pass.embedder_spilled", models=harmless)
+    off = [o for o in off if o not in harmless]
     if off and not allow_spill:
         raise card.CardNotHanded(
             f"not whole on the card: {', '.join(off)}; the pass stops rather than measure the cpu,"
@@ -146,7 +154,8 @@ class Pass:
         started = getattr(self._seen, "on_card", None)
         # the rows carry their own reading; this says the pass is not one residency any more
         if None not in (started, self.ended_on_card) and started != self.ended_on_card:
-            log.error("pass.residency_moved", job_id=self.job_id, started_on_card=started,
-                      ended_on_card=self.ended_on_card)
+            log.error(
+                "pass.residency_moved", job_id=self.job_id, started_on_card=started, ended_on_card=self.ended_on_card
+            )
         if owed and not done and not self.cancelled():
             raise nothing(f"0 of {owed} owed rows done; each row's error is in the worker log")

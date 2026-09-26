@@ -1,3 +1,4 @@
+import fnmatch
 import re
 from abc import ABC
 from dataclasses import dataclass
@@ -5,6 +6,7 @@ from pathlib import Path
 
 import ingest
 import logging_setup
+from sources.declaration import DEFAULT_INCLUDE
 
 log = logging_setup.get_logger(__name__)
 
@@ -91,36 +93,51 @@ class Parsed:
     tags: list[str]
 
 
+# the chunk rows and the text-search trigger still spell the language in three letters
+_CHUNK_LANGUAGE = {"en": "eng", "ru": "rus"}
+
+
 class Base(ABC):
     name: str
-    url: str | None
     root: Path
-    language: str = "unknown"
-    SKIP_FILE_NAMES: frozenset[str] = frozenset()
-    # skipped only by a variant asking for the hygienic cut; SKIP_FILE_NAMES always applies
-    HYGIENIC_SKIP_FILE_NAMES: frozenset[str] = frozenset()
-    _registry: dict[str, type["Base"]] = {}
+    # the key a source file names in `reader`; the class parses what its file cannot say
+    reader: str | None = None
+    _registry: dict[str | None, type["Base"]] = {}
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        if getattr(cls, "name", None):
-            Base._registry[cls.name] = cls
+        if getattr(cls, "reader", None):
+            Base._registry[cls.reader] = cls
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, settings=None, name: str | None = None):
+        from sources import files
+
         self.root = root
+        self.settings = settings or files.of_reader(self.reader)
+        self.name = name or self.settings.name
 
+    @property
+    def language(self) -> str:
+        return _CHUNK_LANGUAGE[self.settings.language]
+
+    def _include(self) -> list[str]:
+        origin = self.settings.git or self.settings.git_family
+        return origin.include if origin else DEFAULT_INCLUDE
+
+    # overlapping patterns must not cut one file twice, and a directory named like a document is not one
     def files(self):
-        return self.root.rglob("*.md")
+        seen = {}
+        for pattern in self._include():
+            seen.update((f, None) for f in self.root.glob(pattern) if f.is_file())
+        return iter(seen)
 
-    # baseline is intact because the code says so, not because nobody re-indexes it
-    def skips(self, policy=None) -> frozenset[str]:
-        if not hygienic(policy):
-            return self.SKIP_FILE_NAMES
-        return self.SKIP_FILE_NAMES | self.HYGIENIC_SKIP_FILE_NAMES
+    # baseline is intact because the file says which rules the hygienic cut adds
+    def _skipped(self, stem: str, policy=None) -> bool:
+        rules = [*self.settings.skip, *(self.settings.skip_when_hygienic if hygienic(policy) else [])]
+        return any(fnmatch.fnmatchcase(stem, rule) for rule in rules)
 
     def discover(self, policy=None):
-        skip = self.skips(policy)
-        return (f for f in self.files() if f.stem not in skip and self._inside_root(f))
+        return (f for f in self.files() if not self._skipped(f.stem, policy) and self._inside_root(f))
 
     # a .md symlink out of the corpus reads whatever the worker can, and it ends up quoted
     def _inside_root(self, file) -> bool:
@@ -133,7 +150,7 @@ class Base(ABC):
         return True
 
     def category_for(self, rel_path: Path):
-        return ingest.path_to_category(rel_path)
+        return (self.settings.categories.prefix or "") + ingest.path_to_category(rel_path)
 
     # a byte order mark hides the frontmatter fence and the first heading: one redis page had one
     def text_of(self, file) -> str:
@@ -203,4 +220,10 @@ class Base(ABC):
 
     # a share-of-symbols rule caught nothing: ascii art reads as prose to every ratio we tried
     def postprocess(self, docs: list[Doc], policy: dict | None = None) -> list[Doc]:
-        return docs
+        dropped = self.settings.drop_docs_containing
+        if not (hygienic(policy) and dropped):
+            return docs
+        kept = [d for d in docs if not any(text in d.content for text in dropped)]
+        for i, doc in enumerate(kept):
+            doc.chunk_index = i
+        return kept

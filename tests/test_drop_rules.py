@@ -8,6 +8,8 @@ from sources.cheatsheets import CheatsheetsSource
 from sources.interview import InterviewSource
 from sources.notes import NotesSource
 
+# a class built here reads its rules from its file in `sources/`: these tests pin the corpus's current lists
+
 
 # built through the model production loads, so an impossible fixture cannot pass here
 def _policy(**kw) -> dict:
@@ -22,8 +24,15 @@ KEEPING = _policy(chunker="legacy", max_chunk_size=1024)
 
 def doc(content, i=0, body=None):
     return Doc(
-        content=content, source="s/f.md", category="c", language="eng",
-        chunk_index=i, title="t", links=[], tags=[], body=body,
+        content=content,
+        source="s/f.md",
+        category="c",
+        language="eng",
+        chunk_index=i,
+        title="t",
+        links=[],
+        tags=[],
+        body=body,
     )
 
 
@@ -100,9 +109,7 @@ def test_a_missing_index_is_queued_rather_than_built_while_the_stack_waits(monke
     import bootstrap
 
     queued = []
-    monkeypatch.setattr(
-        "db.corpus_variants", lambda: [{"variant": "a"}, {"variant": "b"}]
-    )
+    monkeypatch.setattr("db.corpus_variants", lambda: [{"variant": "a"}, {"variant": "b"}])
     monkeypatch.setattr("use_cases.index.has_vector_index", lambda v: v == "b")
     monkeypatch.setattr(
         "use_cases.index.ensure_vector_index",

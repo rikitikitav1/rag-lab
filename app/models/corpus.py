@@ -48,6 +48,8 @@ class DataSource(Base):
     licence: Mapped[str | None]
     origin: Mapped[dict | None] = mapped_column(JSONB)
     raw: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    # per variant, the digest of the source file the chunks were cut by
+    indexed_with: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     chunks: Mapped[list["DataChunk"]] = relationship(back_populates="data_source", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

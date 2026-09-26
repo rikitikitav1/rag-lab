@@ -480,6 +480,78 @@
       "fragment_sha256": "06ce0df6544891388c21d7f2bde9215e42e35ebb0c033323414fcbdcea6c96e0",
       "sha256": "77feed32c34678641fd20fb6749c0992447cb4e4dce46940b19f342af81fe15c"
     },
+    "haskell_kholomiev_ru_prose_00": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_00.md",
+      "source_file": "pandoc/1.txt",
+      "fragment_sha256": "677a83a05e7664decd7f6b1a87ca11e24986346bd170d0bca0907d3cc9504e93",
+      "sha256": "20624b451643322a550651b9aa18b8217c1e9ca8526aa17bae782481844d840d"
+    },
+    "haskell_kholomiev_ru_prose_01": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_01.md",
+      "source_file": "pandoc/1.txt",
+      "fragment_sha256": "1632b518610e3b721da7ac1a031b76d3ef928b57b458aae88a93f9ff7d046a46",
+      "sha256": "1823b105b8e7fdbc2647364c581c9a46276d0ae356e27c36123d5f5a4a0fd46c"
+    },
+    "haskell_kholomiev_ru_prose_02": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_02.md",
+      "source_file": "pandoc/6.txt",
+      "fragment_sha256": "30b33bda1a70f237de28bcb283eba97a200345fbb2fba412fbe81b8aa1aac620",
+      "sha256": "976a288038b012d9ae133880ea357eddffb21663e0c0ecf5c2a68a3a043c7b09"
+    },
+    "haskell_kholomiev_ru_prose_03": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_03.md",
+      "source_file": "pandoc/3.txt",
+      "fragment_sha256": "ef0bda9e398e39b6eb0eb8d628fe27cca2fe7b8de28bfa6634ea98239ebea4f5",
+      "sha256": "340e3871172d7b85a8f0876aeb05685162d6318d91915f7641f23adbc05c2b71"
+    },
+    "haskell_kholomiev_ru_prose_04": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_04.md",
+      "source_file": "pandoc/12.txt",
+      "fragment_sha256": "8748e0a27519835b6ed9071638e3ae9f019690d64fe2eb087c9fbdfb529e2a39",
+      "sha256": "5e925909b1f37d2aa074823cd96b591bee630e5e9c37043abbf433b672ddc7f7"
+    },
+    "haskell_kholomiev_ru_code_00": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_00.md",
+      "source_file": "pandoc/17.txt",
+      "fragment_sha256": "c3e9ea4c6ff5c392fabdb1ddd9ce1ed661ff0da0aaadc11eae7d0a43f8a45cba",
+      "sha256": "9a9c91ad6cea80b3a9a240c65d13481ad5ebdd03ad499f0443f7fd276623ddea"
+    },
+    "haskell_kholomiev_ru_code_01": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_01.md",
+      "source_file": "pandoc/17.txt",
+      "fragment_sha256": "d86a0d4ef5a1171985ef73d20695b50836019f6977930a472bb2f11a05aa7901",
+      "sha256": "571e21a19946ced9a57bb6ee85467422c7a8eca465d7a15ee0c71700320e1872"
+    },
+    "haskell_kholomiev_ru_code_02": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_02.md",
+      "source_file": "pandoc/2.txt",
+      "fragment_sha256": "e904e8e96ed52fb7440af39d2325b5b7e5aa29fb92ddca8aa584d415ce1f22db",
+      "sha256": "5881750c6b440f6d321f56e541c44da78e65120501fa72041d38e0bc54057ab9"
+    },
+    "haskell_kholomiev_ru_code_03": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_03.md",
+      "source_file": "pandoc/7.txt",
+      "fragment_sha256": "94d01e07f36721dd0165096bb443ce35a058ab297a50650dfe195f1355f9ad4b",
+      "sha256": "bbaaa7e1424721032c301a637e50d840855d3629d2ad9fe438d5464fd5149005"
+    },
+    "haskell_kholomiev_ru_code_04": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_04.md",
+      "source_file": "pandoc/8.txt",
+      "fragment_sha256": "08656f8e3738cffee33cc24257850da698b0fd74205e30a1faccb4d4472eb85a",
+      "sha256": "4182b268df95cad2b7ee0cbfa58229ca372b21284ddb8bf8e0cc28acf805c7e9"
+    },
+    "haskell_kholomiev_ru_table_00": {
+      "gold": "gold_md/haskell_kholomiev_ru_table_00.md",
+      "source_file": "pandoc/13.txt",
+      "fragment_sha256": "bd4e22e1439b7c41b84faec85fd2959ecd86d115bfd99246fe0e75f4539e718d",
+      "sha256": "c50a1761703e938ca8a8bfcecc41a19e9e5f2f084c80859a7c234725b2a48992"
+    },
+    "haskell_kholomiev_ru_table_01": {
+      "gold": "gold_md/haskell_kholomiev_ru_table_01.md",
+      "source_file": "pandoc/13.txt",
+      "fragment_sha256": "3a0bd51915297202f4c3684bfa824f893ffc0b4e2cfd65405428281e215aa178",
+      "sha256": "f935f4b41f8080fe446177a842faf8c51f30f80a7fab77c804713ff852256fb9"
+    },
     "latex_baldin_ru_prose_00": {
       "gold": "gold_md/latex_baldin_ru_prose_00.md",
       "source_file": "catalog/catalog.tex",
@@ -570,77 +642,35 @@
       "fragment_sha256": "19f7bc39752449087c81857666e6b1340e731c0079c201be5c720b54874dd427",
       "sha256": "7bd31d472b0dd0889dc5cf6896e8129e8c3a437becd6ad59d56049d710eafa04"
     },
-    "haskell_kholomiev_ru_prose_00": {
-      "gold": "gold_md/haskell_kholomiev_ru_prose_00.md",
-      "source_file": "pandoc/1.txt",
-      "fragment_sha256": "677a83a05e7664decd7f6b1a87ca11e24986346bd170d0bca0907d3cc9504e93",
-      "sha256": "20624b451643322a550651b9aa18b8217c1e9ca8526aa17bae782481844d840d"
+    "ares_en_prose_00": {
+      "gold": "gold_md/ares_en_prose_00.md",
+      "source_page": "https://arxiv.org/html/2311.09476v2#S5",
+      "gold_from": "the paper's section in arXiv's HTML by pandoc",
+      "sha256": "ea6b3df71854a2958c127ab14b2463fbdc49735d2a731b8465cf7320356eb5f2"
     },
-    "haskell_kholomiev_ru_prose_01": {
-      "gold": "gold_md/haskell_kholomiev_ru_prose_01.md",
-      "source_file": "pandoc/1.txt",
-      "fragment_sha256": "1632b518610e3b721da7ac1a031b76d3ef928b57b458aae88a93f9ff7d046a46",
-      "sha256": "1823b105b8e7fdbc2647364c581c9a46276d0ae356e27c36123d5f5a4a0fd46c"
+    "ares_en_prose_01": {
+      "gold": "gold_md/ares_en_prose_01.md",
+      "source_page": "https://arxiv.org/html/2311.09476v2#A1.SS4",
+      "gold_from": "the paper's section in arXiv's HTML by pandoc",
+      "sha256": "2dcdfa303e4ecbbaa2b9eb92e6c014cd7dc34e59b48c601355aa30e53b06a475"
     },
-    "haskell_kholomiev_ru_prose_02": {
-      "gold": "gold_md/haskell_kholomiev_ru_prose_02.md",
-      "source_file": "pandoc/6.txt",
-      "fragment_sha256": "30b33bda1a70f237de28bcb283eba97a200345fbb2fba412fbe81b8aa1aac620",
-      "sha256": "976a288038b012d9ae133880ea357eddffb21663e0c0ecf5c2a68a3a043c7b09"
+    "ares_en_prose_02": {
+      "gold": "gold_md/ares_en_prose_02.md",
+      "source_page": "https://arxiv.org/html/2311.09476v2#A1.SS1",
+      "gold_from": "the paper's section in arXiv's HTML by pandoc",
+      "sha256": "008658a1f2d4de7dd7fcbf4d522a69f9e091bfef0d28247188e7532e24f8ee15"
     },
-    "haskell_kholomiev_ru_prose_03": {
-      "gold": "gold_md/haskell_kholomiev_ru_prose_03.md",
-      "source_file": "pandoc/3.txt",
-      "fragment_sha256": "ef0bda9e398e39b6eb0eb8d628fe27cca2fe7b8de28bfa6634ea98239ebea4f5",
-      "sha256": "340e3871172d7b85a8f0876aeb05685162d6318d91915f7641f23adbc05c2b71"
+    "ares_en_prose_03": {
+      "gold": "gold_md/ares_en_prose_03.md",
+      "source_page": "https://arxiv.org/html/2311.09476v2#S4",
+      "gold_from": "the paper's section in arXiv's HTML by pandoc",
+      "sha256": "8ac8b7a3bddd4191dabb4358a676939f39a8c4161457238bae14da1f14bf7267"
     },
-    "haskell_kholomiev_ru_prose_04": {
-      "gold": "gold_md/haskell_kholomiev_ru_prose_04.md",
-      "source_file": "pandoc/12.txt",
-      "fragment_sha256": "8748e0a27519835b6ed9071638e3ae9f019690d64fe2eb087c9fbdfb529e2a39",
-      "sha256": "5e925909b1f37d2aa074823cd96b591bee630e5e9c37043abbf433b672ddc7f7"
-    },
-    "haskell_kholomiev_ru_code_00": {
-      "gold": "gold_md/haskell_kholomiev_ru_code_00.md",
-      "source_file": "pandoc/17.txt",
-      "fragment_sha256": "c3e9ea4c6ff5c392fabdb1ddd9ce1ed661ff0da0aaadc11eae7d0a43f8a45cba",
-      "sha256": "9a9c91ad6cea80b3a9a240c65d13481ad5ebdd03ad499f0443f7fd276623ddea"
-    },
-    "haskell_kholomiev_ru_code_01": {
-      "gold": "gold_md/haskell_kholomiev_ru_code_01.md",
-      "source_file": "pandoc/17.txt",
-      "fragment_sha256": "d86a0d4ef5a1171985ef73d20695b50836019f6977930a472bb2f11a05aa7901",
-      "sha256": "571e21a19946ced9a57bb6ee85467422c7a8eca465d7a15ee0c71700320e1872"
-    },
-    "haskell_kholomiev_ru_code_02": {
-      "gold": "gold_md/haskell_kholomiev_ru_code_02.md",
-      "source_file": "pandoc/2.txt",
-      "fragment_sha256": "e904e8e96ed52fb7440af39d2325b5b7e5aa29fb92ddca8aa584d415ce1f22db",
-      "sha256": "5881750c6b440f6d321f56e541c44da78e65120501fa72041d38e0bc54057ab9"
-    },
-    "haskell_kholomiev_ru_code_03": {
-      "gold": "gold_md/haskell_kholomiev_ru_code_03.md",
-      "source_file": "pandoc/7.txt",
-      "fragment_sha256": "94d01e07f36721dd0165096bb443ce35a058ab297a50650dfe195f1355f9ad4b",
-      "sha256": "bbaaa7e1424721032c301a637e50d840855d3629d2ad9fe438d5464fd5149005"
-    },
-    "haskell_kholomiev_ru_code_04": {
-      "gold": "gold_md/haskell_kholomiev_ru_code_04.md",
-      "source_file": "pandoc/8.txt",
-      "fragment_sha256": "08656f8e3738cffee33cc24257850da698b0fd74205e30a1faccb4d4472eb85a",
-      "sha256": "4182b268df95cad2b7ee0cbfa58229ca372b21284ddb8bf8e0cc28acf805c7e9"
-    },
-    "haskell_kholomiev_ru_table_00": {
-      "gold": "gold_md/haskell_kholomiev_ru_table_00.md",
-      "source_file": "pandoc/13.txt",
-      "fragment_sha256": "bd4e22e1439b7c41b84faec85fd2959ecd86d115bfd99246fe0e75f4539e718d",
-      "sha256": "c50a1761703e938ca8a8bfcecc41a19e9e5f2f084c80859a7c234725b2a48992"
-    },
-    "haskell_kholomiev_ru_table_01": {
-      "gold": "gold_md/haskell_kholomiev_ru_table_01.md",
-      "source_file": "pandoc/13.txt",
-      "fragment_sha256": "3a0bd51915297202f4c3684bfa824f893ffc0b4e2cfd65405428281e215aa178",
-      "sha256": "f935f4b41f8080fe446177a842faf8c51f30f80a7fab77c804713ff852256fb9"
+    "ares_en_prose_04": {
+      "gold": "gold_md/ares_en_prose_04.md",
+      "source_page": "https://arxiv.org/html/2311.09476v2#S5.SS2",
+      "gold_from": "the paper's section in arXiv's HTML by pandoc",
+      "sha256": "48e2eb27053464b911b628dd7cb22240cfd2e898aa2124572f1a7ce0a1ca25ce"
     }
   }
 }

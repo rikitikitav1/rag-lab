@@ -4,13 +4,7 @@ from sources.base import Base
 
 
 class SystemDesignPrimerSource(Base):
-    name = "system-design-primer"
-    language = "eng"
-    kind = "git"
-    url = "https://github.com/donnemartin/system-design-primer"
-
-    def files(self):
-        return self.root.rglob("README.md")
+    reader = "system-design-primer"
 
     def category_for(self, rel_path):
         parts = Path(rel_path).parts

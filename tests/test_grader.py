@@ -193,7 +193,7 @@ def test_a_cut_verdict_is_recorded_as_cut_and_the_report_names_the_row(monkeypat
 
 
 def test_a_graded_row_replays_into_the_same_row_it_recorded(monkeypatch):
-    # the ruler of MR 1: the replay reads the recorded verdict and calls no model of its own
+    # the ruler the grader was accepted on: the replay reads the recorded verdict and calls no model of its own
     import test_agent as live
     from evals import replay
     from use_cases.agent import transcript_of

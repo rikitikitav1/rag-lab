@@ -7,8 +7,11 @@ import llm
 import logging_setup
 from models.corpus import DataChunk, DataSource
 from orm.sync_db import Session
-from sqlalchemy import delete, select
+from sources import files
+from sqlalchemy import cast as sa_cast
+from sqlalchemy import delete, select, update
 from sqlalchemy import text as sa_text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy_utils import Ltree
 from timing_wrappers import measure_elapsed
@@ -36,20 +39,11 @@ class IndexResult:
     model: str = field(default_factory=lambda: llm.resolve_name("embedding"))
 
     def __str__(self) -> str:
-        return (
-            f"Model: {self.model}, elapsed: {self.elapsed}s, "
-            f"sources: {self.sources}, chunks: {self.chunks}"
-        )
+        return f"Model: {self.model}, elapsed: {self.elapsed}s, sources: {self.sources}, chunks: {self.chunks}"
 
 
 def _provision_source(session, source, variant) -> DataSource:
-    url = getattr(source, "url", None)
-    values = {
-        "name": source.name,
-        "kind": "git" if url else "local",
-        "git_url": url,
-        "path": getattr(source, "path", None),
-    }
+    values = files.row_of(source.settings, source.name)
     stmt = (
         pg_insert(DataSource)
         .values(**values)
@@ -80,11 +74,7 @@ def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_s
         for chunk, vector in zip(batch, vectors, strict=True):
             chunk.embedding = vector
             chunk.embedded_by = label
-    session.execute(
-        delete(DataChunk).where(
-            DataChunk.source_id == source_id, DataChunk.variant == variant
-        )
-    )
+    session.execute(delete(DataChunk).where(DataChunk.source_id == source_id, DataChunk.variant == variant))
     session.add_all(chunks)
     session.commit()
     return len(chunks)
@@ -133,6 +123,17 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True) -> In
             # the whole source at once, and the cut digest reads the same method
             buffer = [_chunk(data_source.id, doc, variant) for doc in source.documents(policy)]
             total += _replace_chunks(session, data_source.id, variant, buffer, embed_size)
+            # the digest of the rules this cut read, merged in the base so two variants cut at once keep both
+            session.execute(
+                update(DataSource)
+                .where(DataSource.id == data_source.id)
+                .values(
+                    indexed_with=DataSource.indexed_with.op("||")(
+                        sa_cast({variant: files.digest(source.settings)}, JSONB)
+                    )
+                )
+            )
+            session.commit()
             log.info("index.committed", source=source.name, chunks=len(buffer), total=total)
 
     if build_index:
@@ -152,11 +153,7 @@ def vector_index_name(variant: str) -> str:
 def has_vector_index(variant: str) -> bool:
     with Session() as session:
         return bool(
-            session.scalar(
-                sa_text("SELECT to_regclass(:name) IS NOT NULL").bindparams(
-                    name=vector_index_name(variant)
-                )
-            )
+            session.scalar(sa_text("SELECT to_regclass(:name) IS NOT NULL").bindparams(name=vector_index_name(variant)))
         )
 
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import config
 import logging_setup
+from sources import files
 
 QUESTION_RE = re.compile(r"^## \d+\.\s+(.+)$", re.MULTILINE)
 
@@ -16,7 +17,7 @@ def _clean(text):
 
 def _readmes():
     repos_dir = Path(config.settings.repos_dir)
-    for repo in config.settings.sources.interview.repos:
+    for repo in files.of_reader("interview").git_family.repos:
         readme = repos_dir / repo / "README.md"
         if readme.exists():
             yield f"{repo}/README.md", readme.read_text(encoding="utf-8", errors="ignore")

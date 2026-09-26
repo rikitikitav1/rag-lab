@@ -18,11 +18,9 @@ import db
 # 1 before the halves and the per-arm procedure; 2 those; 3 p unrounded, the way Holm reads it
 SCHEMA = 3
 
-# not measured: the pool a comparison ranks from, wide enough that no cutoff reaches its edge
-CANDIDATES = 100
-# the depth the report reads, not the search's own leg, though both are 20 today
-DEPTH = 20
-CUTOFFS = (1, 3, 5, 10)
+CANDIDATES = config.settings.evals.retrieval_compare.candidates
+DEPTH = config.settings.evals.retrieval_compare.depth
+CUTOFFS = tuple(config.settings.evals.retrieval_compare.cutoffs)
 # cosine distance never exceeds 2, so this threshold lets every candidate through
 NO_THRESHOLD = 2.0
 

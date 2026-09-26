@@ -1,5 +1,6 @@
 from typing import Annotated, Literal
 
+import config
 import job_queue
 import limits
 import logging_setup
@@ -194,7 +195,7 @@ def holm_over(
         Field(description="Each test by name with its p-value.", max_length=limits.MAX_TESTS),
     ],
     family: Annotated[str, Field(min_length=1, description="What this family is, in the reader's words.")],
-    alpha: Annotated[float, Field(gt=0, lt=1)] = 0.05,
+    alpha: Annotated[float, Field(gt=0, lt=1)] = stats.ALPHA,
 ) -> dict:
     if not tests:
         raise ToolError("a family of no tests corrects nothing")
@@ -214,7 +215,8 @@ def holm_over(
     name="compare_runs",
     description=(
         "Compare several runs side by side. Returns per_value metrics keyed by "
-        "run_name and an RRF composite (k=60) ranking over five axes: the three "
+        "run_name and an RRF composite "
+        f"(k={config.settings.evals.retrieval_compare.rrf_k}) ranking over five axes: the three "
         "judged ones, the off-domain refusal rate and the supported rate "
         "(retrieval hit_at_k/mrr are reported but excluded from the fusion "
         "since hit_at_k is monotonic in k). winner is the top-ranked run. code says which "

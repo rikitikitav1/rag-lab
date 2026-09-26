@@ -113,8 +113,11 @@ PACE_TRIES = 5
 def _rate_headers(e: Exception) -> dict:
     if not isinstance(e, APIStatusError):
         return {}
-    return {k: v for k, v in e.response.headers.items()
-            if k.lower() in ("retry-after", "retry-after-ms") or k.lower().startswith("x-ratelimit")}
+    return {
+        k: v
+        for k, v in e.response.headers.items()
+        if k.lower() in ("retry-after", "retry-after-ms") or k.lower().startswith("x-ratelimit")
+    }
 
 
 # the pause a 429 names; a date form is read as no pause rather than parsed
@@ -149,8 +152,16 @@ class Tally:
         self._seen: dict[tuple[str, str, str], dict[str, int]] = {}
 
     # the longest input against the window, and the calls the output limit cut: a sum hides both
-    def add(self, role: str, engine: str, model: str, prompt: int | None, completion: int | None,
-            cut: bool = False, input_cut: bool = False) -> None:
+    def add(
+        self,
+        role: str,
+        engine: str,
+        model: str,
+        prompt: int | None,
+        completion: int | None,
+        cut: bool = False,
+        input_cut: bool = False,
+    ) -> None:
         with self._lock:
             got = self._seen.setdefault((role, engine, model), dict.fromkeys(token_fields.FIELDS, 0))
             got["prompt"] += prompt or 0
@@ -172,10 +183,13 @@ class Tally:
         with self._lock:
             out: dict[str, list[dict]] = {}
             for (role, engine, model), counts in sorted(self._seen.items()):
-                out.setdefault(role, []).append({
-                    "engine": engine, "model": model,
-                    **{k: v for k, v in counts.items() if v or k not in token_fields.OPTIONAL},
-                })
+                out.setdefault(role, []).append(
+                    {
+                        "engine": engine,
+                        "model": model,
+                        **{k: v for k, v in counts.items() if v or k not in token_fields.OPTIONAL},
+                    }
+                )
             return out or None
 
 
@@ -266,11 +280,25 @@ def _note_placement(role, spec, name: str) -> None:
         seen[key] = on
 
 
-def _count(role, engine, model: str, prompt: int | None, completion: int | None,
-           finish_reason: str | None = None, input_cut: bool = False) -> None:
+def _count(
+    role,
+    engine,
+    model: str,
+    prompt: int | None,
+    completion: int | None,
+    finish_reason: str | None = None,
+    input_cut: bool = False,
+) -> None:
     for tally in _tallies.get():
-        tally.add(str(getattr(role, "value", role)), engine.name, model, prompt, completion,
-                  cut=token_fields.cut(finish_reason), input_cut=input_cut)
+        tally.add(
+            str(getattr(role, "value", role)),
+            engine.name,
+            model,
+            prompt,
+            completion,
+            cut=token_fields.cut(finish_reason),
+            input_cut=input_cut,
+        )
 
 
 def _pace(role, engine, model: str, seconds: float) -> None:
@@ -282,9 +310,8 @@ class InputOverWindow(ValueError):
     pass
 
 
-# against qwen2.5's own tokenizer on live rows and docs, cl100k reads Latin as long and Cyrillic up to 1.6 times longer
-_LATIN_DIVISOR = 1.02
-_CYRILLIC_EXTRA = 0.65
+_LATIN_DIVISOR = config.settings.llm.token_estimate.latin_divisor
+_CYRILLIC_EXTRA = config.settings.llm.token_estimate.cyrillic_extra
 _LETTER = re.compile(r"[^\W\d_]")
 
 
@@ -329,20 +356,38 @@ def _cut_by_the_server(window: int | None, params: dict, prompt_tokens: int | No
 def complete_on(spec, name: str, messages, params, role):
     resp = _complete(spec, name, messages, params, role)
     usage = _usage(resp, spec)
-    _count(role, spec, name, usage.prompt_tokens, usage.completion_tokens,
-           getattr(resp.choices[0], "finish_reason", None) if resp.choices else None)
-    log.info("llm.chat", role=str(getattr(role, "value", role)), model=name, engine=spec.name,
-             prompt_tokens=usage.prompt_tokens, completion_tokens=usage.completion_tokens)
+    _count(
+        role,
+        spec,
+        name,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        getattr(resp.choices[0], "finish_reason", None) if resp.choices else None,
+    )
+    log.info(
+        "llm.chat",
+        role=str(getattr(role, "value", role)),
+        model=name,
+        engine=spec.name,
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+    )
     return resp
 
 
 # one cut for every answer, after the call and before the judge, the guest or the agent reads it
 def _parsed(picked, message, finish_reason=None) -> answer_parsers.Parsed:
-    parsed = answer_parsers.parse(picked.parser, message.content,
-                                  getattr(message, "reasoning_content", None), finish_reason)
+    parsed = answer_parsers.parse(
+        picked.parser, message.content, getattr(message, "reasoning_content", None), finish_reason
+    )
     if parsed.leftover_markers:
-        log.warning("llm.leftover_markers", model=picked.name, engine=picked.engine.name,
-                    parser=picked.parser, markers=list(parsed.leftover_markers))
+        log.warning(
+            "llm.leftover_markers",
+            model=picked.name,
+            engine=picked.engine.name,
+            parser=picked.parser,
+            markers=list(parsed.leftover_markers),
+        )
     return parsed
 
 
@@ -375,9 +420,15 @@ def _without_the_body(e: Exception) -> str:
 # one contract for a failed completion: the same log event and error text, written twice
 def _complete(spec, name: str, messages, params, role=None):
     with _card_for(spec, name):
-        return _paced(spec, name, role, "chat", lambda: engines.client_for(spec).chat.completions.create(
-            model=name, messages=messages, **params, **_keyed(spec)
-        ))
+        return _paced(
+            spec,
+            name,
+            role,
+            "chat",
+            lambda: engines.client_for(spec).chat.completions.create(
+                model=name, messages=messages, **params, **_keyed(spec)
+            ),
+        )
 
 
 # one loop for chat and embeddings: the embedding path met a 429 with no pace at all
@@ -390,8 +441,14 @@ def _paced(spec, name: str, role, what: str, call):
             wait = _retry_after(e)
             if wait is None or wait > PACE_CEILING_SECONDS or tried == PACE_TRIES:
                 raise _failed(e, spec, name, what) from e
-            log.warning("llm.broker_paced", model=name, engine=spec.name, seconds=wait, tried=tried + 1,
-                        headers=_rate_headers(e))
+            log.warning(
+                "llm.broker_paced",
+                model=name,
+                engine=spec.name,
+                seconds=wait,
+                tried=tried + 1,
+                headers=_rate_headers(e),
+            )
             _pace(role, spec, name, wait)
             time.sleep(wait)
 
@@ -400,8 +457,7 @@ def _paced(spec, name: str, role, what: str, call):
 def _refuse_a_cut_input(input_cut: bool, picked, usage, window) -> None:
     if input_cut:
         raise InputOverWindow(
-            f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens"
-            f" of the {window}-token window"
+            f"{picked.engine.name} cut the input to {usage.prompt_tokens} tokens of the {window}-token window"
         )
 
 
@@ -452,8 +508,7 @@ def _token_logprobs(choice) -> list | None:
     if not content:
         return None
     return [
-        {"token": t.token,
-         "top": {alt.token: round(math.exp(alt.logprob), 4) for alt in (t.top_logprobs or [])}}
+        {"token": t.token, "top": {alt.token: round(math.exp(alt.logprob), 4) for alt in (t.top_logprobs or [])}}
         for t in content
     ]
 
@@ -470,8 +525,15 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
     usage = _usage(resp, picked.engine)
     input_cut = _cut_by_the_server(window, params, usage.prompt_tokens)
     choice = resp.choices[0] if resp.choices else None
-    _count(role, picked.engine, name, usage.prompt_tokens, usage.completion_tokens,
-           choice.finish_reason if choice else None, input_cut=input_cut)
+    _count(
+        role,
+        picked.engine,
+        name,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        choice.finish_reason if choice else None,
+        input_cut=input_cut,
+    )
     if choice is None:
         raise RuntimeError(f"{picked.engine.name} returned no choices for {name}")
     message = choice.message
@@ -595,8 +657,13 @@ def embed_with_label(text, role="embedding") -> tuple[str, list]:
 def _embeddings(picked, texts, role="embedding") -> list:
     name = picked.name
     with _card_for(picked.engine, name):
-        resp = _paced(picked.engine, name, role, "embed",
-                      lambda: engines.client_for(picked.engine).embeddings.create(model=name, input=texts))
+        resp = _paced(
+            picked.engine,
+            name,
+            role,
+            "embed",
+            lambda: engines.client_for(picked.engine).embeddings.create(model=name, input=texts),
+        )
         _note_placement(role, picked.engine, name)
     # on a cloud the tokens are the quota, so a reply without them stops the run; locally it is a gap
     usage = _usage(resp, picked.engine) if engines.is_cloud(picked.engine.kind) else getattr(resp, "usage", None)

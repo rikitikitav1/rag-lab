@@ -103,15 +103,14 @@ def _keyword_query_sql(mode: str) -> str:
 # this variant, under a source still active: seven places wrote it and one had drifted
 def live_rows(alias: str = "") -> str:
     col = f"{alias}." if alias else ""
-    return (
-        f"{col}variant = :variant "
-        f"AND {col}source_id IN (SELECT id FROM data_sources WHERE active)"
-    )
+    return f"{col}variant = :variant AND {col}source_id IN (SELECT id FROM data_sources WHERE active)"
 
 
 def cleanup(*, variant):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM data_chunks WHERE variant = :variant"), {"variant": variant})
+        # a row kept by another variant must not say this one was cut by some file
+        conn.execute(text("UPDATE data_sources SET indexed_with = indexed_with - :variant"), {"variant": variant})
         conn.execute(
             text("""
                 DELETE FROM data_sources ds
@@ -185,13 +184,19 @@ class ForeignVectors(StandFault):
 # a vector meets only vectors of its own embedder: nothing else refused a search across two of them
 def refuse_foreign_vectors(conn, variant: str, embedded_by: str) -> None:
     # an unmarked vector is refused; marks come off the index, a filter on `embedding` cost 26 ms
-    seen = conn.execute(
-        text("SELECT DISTINCT embedded_by FROM data_chunks"
-             " WHERE variant = :variant AND embedded_by IS NOT NULL"
-             " UNION ALL SELECT NULL WHERE EXISTS (SELECT 1 FROM data_chunks WHERE variant = :variant"
-             " AND embedded_by IS NULL AND embedding IS NOT NULL)"),
-        {"variant": variant},
-    ).scalars().all()
+    seen = (
+        conn.execute(
+            text(
+                "SELECT DISTINCT embedded_by FROM data_chunks"
+                " WHERE variant = :variant AND embedded_by IS NOT NULL"
+                " UNION ALL SELECT NULL WHERE EXISTS (SELECT 1 FROM data_chunks WHERE variant = :variant"
+                " AND embedded_by IS NULL AND embedding IS NOT NULL)"
+            ),
+            {"variant": variant},
+        )
+        .scalars()
+        .all()
+    )
     foreign = sorted(label or "no recorded embedder" for label in set(seen) - {embedded_by})
     if foreign:
         raise ForeignVectors(
@@ -217,9 +222,7 @@ def nearest_distance(embedding, *, variant, embedded_by: str) -> float | None:
         # on the connection already held: `resolve` opens its own, and the pool is five plus five
         depth = search_depth.resolve(variant, conn=conn)
         conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
-        row = conn.execute(
-            text(query), {"embedding": str(list(embedding)), "variant": variant}
-        ).scalar()
+        row = conn.execute(text(query), {"embedding": str(list(embedding)), "variant": variant}).scalar()
     return float(row) if row is not None else None
 
 

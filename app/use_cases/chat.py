@@ -466,6 +466,7 @@ def _log_answer(
         "generation": ans.metrics.model if generated else None,
         "embedding": llm.resolve_name("embedding"),
         **({"reranking": llm.resolve_name("reranking")} if use_rerank else {}),
+        **({"grading": llm.resolve_name("grading")} if graded else {}),
     }
     with Session() as session:
         question = _find_or_create_question(session, original_text, lang)

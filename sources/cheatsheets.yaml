@@ -1,0 +1,86 @@
+# a git repository of sheets; no licence file in it, so the text stays out of public records
+name: cheatsheets
+language: en
+licence: none declared
+git:
+  repo: https://github.com/rstacruz/cheatsheets
+  include:
+  - '*.md'
+reader: cheatsheets
+categories:
+  by_front_matter:
+    JavaScript: languages.javascript
+    JavaScript libraries: languages.javascript.libraries
+    Node.js: languages.javascript.node
+    React: languages.javascript.react
+    Ruby: languages.ruby
+    Ruby libraries: languages.ruby.libraries
+    Rails: languages.ruby.rails
+    Python: languages.python
+    python: languages.python
+    Elixir: languages.elixir
+    Java & JVM: languages.java
+    C-like: languages.c
+    CSS: languages.css
+    HTML: markup.html
+    Markup: markup
+    Jekyll: tools.jekyll
+    Databases: databases
+    Ansible: devops.ansible
+    Devops: devops
+    CLI: tools.cli
+    Vim: tools.vim
+    Git: tools.git
+    Ledger: tools.ledger
+    Analytics: tools.analytics
+    Linux: platforms.linux
+    macOS: platforms.macos
+    apple: platforms.macos
+    API: protocols.api
+    AI: llm
+    Apps: misc
+    Bolt: misc
+    Development: misc
+    Others: misc
+    Misc: misc
+  by_file:
+    lua: languages.lua
+    less: languages.css
+    simple_form: languages.ruby.libraries
+    cordova: languages.javascript
+    command_line: tools.cli
+    google_analytics: tools.analytics
+    imagemagick: tools.imagemagick
+    plantuml: tools.plantuml
+    watchman: tools.watchman
+    figlet: tools.figlet
+    linux: platforms.linux
+    ubuntu: platforms.linux
+    firebase: databases
+    passenger: devops
+    saucelabs: devops
+skip:
+- AGENTS
+- CONTRIBUTING
+- README
+- cask-index
+- cheatsheet-styles
+- index
+- index@2016
+- licenses
+- make-assets
+- social-images
+skip_when_hygienic:
+  vainglory: items in a mobile MOBA
+  ph-food-delivery: delivery phone numbers in Metro Manila
+  macos-mouse-acceleration: mouse settings
+  sketch: graphics editor
+  nocode: a joke repository
+  flashlight: spotlight plugins
+  frequency-separation-retouching: photo retouching
+  inkscape: graphics editor
+  figlet: samples of every ascii font, one line of knowledge per screen of drawing
+  '*@*': a version in the file name means a dead stack, and the unversioned sheet is next to it
+veto_families:
+- name: cheatsheets
+  prefix: cheatsheets/

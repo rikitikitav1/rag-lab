@@ -280,9 +280,6 @@ def _phased(
     log.info("eval_run.phase", name="retrieve", n=len(retrieved),
              elapsed=round(time.perf_counter() - started, 1))
 
-    # here, so a run whose embedder spilled stops two minutes in, before the generator is paid for
-    _refuse_a_cpu_run((Role.embedding,), allow_cpu, spec.model)
-
     # read before the release: every row is written after it, and read then the embedder is gone
     placed_during = {"embedding": run_snapshot.placed("embedding")}
     # retrieval is over, and its model is 1.2 GiB the generator wants on a card that holds 8

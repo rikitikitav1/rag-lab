@@ -17,7 +17,7 @@ def test_a_layer_replaces_the_whole_role_table():
     # merged, a judge without `engine` would inherit `vllm` from the main file and quietly break
     import config
 
-    loaded = config._load(str(ROOT / "config.yaml"), str(ROOT / "config.cpu.yaml"))
+    loaded = config._load(str(ROOT / "config.yaml"), str(ROOT / "config" / "roles.cpu.yaml"))
     roles = loaded.llm.roles
     assert set(roles) == {"embedding", "generation", "judging", "paraphrasing", "ragas", "ragas_embedding"}
     assert {cfg.engine for cfg in roles.values()} == {"ollama-cpu"}
@@ -156,7 +156,7 @@ def test_a_down_card_engine_on_a_stand_already_without_a_card_points_to_the_seat
     monkeypatch.setattr(stand_health, "_roles", lambda: [("judging", engines.Resolved("Qwen/Q", vllm))])
     monkeypatch.setattr(stand_health, "engine_answers", lambda spec: False)
     monkeypatch.setattr(card_wait, "reranker_needed", lambda **kw: False)
-    monkeypatch.setattr(stand_health.config, "CONFIG_OVERLAY", "config.cpu.yaml")
+    monkeypatch.setattr(stand_health.config, "CONFIG_OVERLAY", "config/roles.cpu.yaml")
 
     (judging,) = stand_health.roles_down()
     assert "PUT /v1/role" in judging and "--cpu" not in judging

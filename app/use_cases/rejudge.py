@@ -5,7 +5,7 @@ import re
 import job_specs
 import prompt_repo
 from evals import guest_axes, sampling
-from evals.stats import annotate_holm, bootstrap_ci, deltas_over, mean_of, tally, wilcoxon_p
+from evals.stats import ALPHA, annotate_holm, bootstrap_ci, deltas_over, mean_of, tally, wilcoxon_p
 from models.eval import QuestionLog
 from models.registry import (
     MAX_MODEL_NAME,
@@ -70,9 +70,7 @@ def copy_runs(source: str, targets: list[str], question_ids=None) -> dict[str, i
         for target in targets:
             _refuse_bad_pair(session, source, target)
         made = {
-            target: len(
-                session.execute(copy_statement(source, target, question_ids)).scalars().all()
-            )
+            target: len(session.execute(copy_statement(source, target, question_ids)).scalars().all())
             for target in targets
         }
         session.commit()
@@ -84,7 +82,9 @@ def _refuse_repeated_questions(session, source: str, question_ids=None) -> None:
     stmt = (
         select(QuestionLog.question_id)
         .where(QuestionLog.run_name == source, QuestionLog.question_id.isnot(None))
-        .group_by(QuestionLog.question_id).having(func.count() > 1).limit(5)
+        .group_by(QuestionLog.question_id)
+        .having(func.count() > 1)
+        .limit(5)
     )
     if question_ids is not None:
         stmt = stmt.where(QuestionLog.question_id.in_(list(question_ids)))
@@ -98,18 +98,14 @@ def delete_runs(names: list[str]) -> int:
     if not names:
         return 0
     with Session() as session:
-        done = session.execute(
-            delete(QuestionLog).where(QuestionLog.run_name.in_(names))
-        ).rowcount
+        done = session.execute(delete(QuestionLog).where(QuestionLog.run_name.in_(names))).rowcount
         session.commit()
         return done
 
 
 # a count then an insert from a threadpool: two requests both find the name free
 def _claim(session, target: str) -> None:
-    session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:name))"), {"name": target}
-    )
+    session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:name))"), {"name": target})
 
 
 def _refuse_bad_pair(session, source: str, target: str) -> None:
@@ -121,9 +117,7 @@ def _refuse_bad_pair(session, source: str, target: str) -> None:
         .where(QuestionLog.run_name == source, QuestionLog.answered.is_(True))
     ):
         raise ValueError(f"run {source} has no answered rows to copy")
-    if session.scalar(
-        select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == target)
-    ):
+    if session.scalar(select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == target)):
         raise ValueError(f"run {target} already has rows; a copy never merges into a name")
 
 
@@ -141,9 +135,9 @@ def copy_statement(source: str, target: str, question_ids=None):
         "models": _stripped(QuestionLog.models, [JUDGE_MODEL_KEY]),
         **{axis: literal(None) for axis in AXES},
     }
-    picked = select(
-        *[overrides.get(name, getattr(QuestionLog, name)) for name in carried]
-    ).where(QuestionLog.run_name == source)
+    picked = select(*[overrides.get(name, getattr(QuestionLog, name)) for name in carried]).where(
+        QuestionLog.run_name == source
+    )
     if question_ids is not None:
         picked = picked.where(QuestionLog.question_id.in_(list(question_ids)))
     return insert(QuestionLog).from_select(carried, picked).returning(QuestionLog.id)
@@ -170,9 +164,7 @@ def _source_rows(source: str, question_ids=None) -> int:
 
 
 # `existing` is what the experiment holds: arms posted one at a time reached 26k rows
-def refuse_oversized_fanout(
-    source: str, arm_count: int, existing: int = 0, question_ids=None
-) -> None:
+def refuse_oversized_fanout(source: str, arm_count: int, existing: int = 0, question_ids=None) -> None:
     rows = _source_rows(source, question_ids)
     total = rows * (arm_count + existing)
     if total > MAX_ARM_ROWS:
@@ -190,11 +182,7 @@ def unseeded_prompt_versions(axes: dict) -> list[str]:
             if name in (REPEAT, *MODEL_AXES):
                 continue
             purpose = Purpose[name]
-            known = set(
-                session.scalars(
-                    select(Prompt.version).where(Prompt.purpose == purpose)
-                )
-            )
+            known = set(session.scalars(select(Prompt.version).where(Prompt.purpose == purpose)))
             missing += [f"{name}=v{v}" for v in versions if v not in known]
     return sorted(missing)
 
@@ -204,13 +192,7 @@ def judges_not_ready(axes: dict) -> list[str]:
     if not named:
         return []
     with Session() as session:
-        ready = set(
-            session.scalars(
-                select(Model.name).where(
-                    Model.name.in_(named), Model.status == Status.ready
-                )
-            )
-        )
+        ready = set(session.scalars(select(Model.name).where(Model.name.in_(named), Model.status == Status.ready)))
     return sorted(set(named) - ready)
 
 
@@ -218,15 +200,11 @@ def judges_not_ready(axes: dict) -> list[str]:
 def _effective_judge(arm: dict) -> dict:
     with Session() as session:
         served = session.scalar(
-            select(Model.name)
-            .join(ModelRole, ModelRole.model_id == Model.id)
-            .where(ModelRole.role == Role.judging)
+            select(Model.name).join(ModelRole, ModelRole.model_id == Model.id).where(ModelRole.role == Role.judging)
         )
     unnamed = [Purpose[f"judge_{axis}"] for axis in AXES if not arm.get(f"judge_{axis}")]
     active = prompt_repo.active_versions(unnamed) if unnamed else {}
-    versions = {
-        axis: arm.get(f"judge_{axis}") or active[f"judge_{axis}"] for axis in AXES
-    }
+    versions = {axis: arm.get(f"judge_{axis}") or active[f"judge_{axis}"] for axis in AXES}
     return {"model": arm.get("judge_model") or served, "prompts": versions}
 
 
@@ -276,9 +254,7 @@ def refuse_unpaired_rejudge(source_run: str, arms: list[dict], unpaired: bool = 
 def validate_axes(axes: dict) -> None:
     unknown = sorted(set(axes) - set(AXES_ALLOWED))
     if unknown:
-        raise ValueError(
-            f"a rejudge cannot move {unknown}; its axes are {list(AXES_ALLOWED)}"
-        )
+        raise ValueError(f"a rejudge cannot move {unknown}; its axes are {list(AXES_ALLOWED)}")
     if not axes:
         raise ValueError("a rejudge with no axes compares an arm against itself")
     for name, values in axes.items():
@@ -287,27 +263,19 @@ def validate_axes(axes: dict) -> None:
         if name in MODEL_AXES:
             # without it a 300-character value with a newline reached psycopg as a 500
             bad = [
-                v for v in values
-                if not isinstance(v, str) or len(v) > MAX_MODEL_NAME
-                or not MODEL_NAME_RE.fullmatch(v)
+                v for v in values if not isinstance(v, str) or len(v) > MAX_MODEL_NAME or not MODEL_NAME_RE.fullmatch(v)
             ]
             if bad:
                 raise ValueError(f"{name} takes model names, got {bad}")
             continue
         if name == REPEAT:
-            labels = [v if isinstance(v, str | int) and not isinstance(v, bool) else None
-                      for v in values]
+            labels = [v if isinstance(v, str | int) and not isinstance(v, bool) else None for v in values]
             if None in labels:
                 raise ValueError(f"repeat takes labels, got {values}")
             # the label rides into `run_name` on every copied row, so it is bounded
-            bad = [
-                v for v in labels
-                if not LABEL_RE.fullmatch(str(v))
-            ]
+            bad = [v for v in labels if not LABEL_RE.fullmatch(str(v))]
             if bad:
-                raise ValueError(
-                    f"repeat labels are short names, got {bad}: {LABEL_RE.pattern}"
-                )
+                raise ValueError(f"repeat labels are short names, got {bad}: {LABEL_RE.pattern}")
             if len(set(labels)) != len(labels):
                 raise ValueError(f"repeat labels must differ, got {values}")
             continue
@@ -371,9 +339,7 @@ def control_axes(arm: dict) -> list[str]:
     return [axis for axis in AXES if axis not in named]
 
 
-def arm_options(
-    arm: dict, run_name: str, control_sample: int | None = None, control_seed: int = 0
-) -> dict:
+def arm_options(arm: dict, run_name: str, control_sample: int | None = None, control_seed: int = 0) -> dict:
     out = {
         "run_name": run_name,
         "judge_model": arm.get("judge_model"),
@@ -424,20 +390,14 @@ def _scored(run_name: str) -> dict[int, dict]:
         ).all()
     return {
         r.question_id: {
-            axis: int(getattr(r, axis))
-            for axis in AXES
-            if getattr(r, axis) and str(getattr(r, axis)).isdigit()
+            axis: int(getattr(r, axis)) for axis in AXES if getattr(r, axis) and str(getattr(r, axis)).isdigit()
         }
         for r in rows
     }
 
 
 def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> dict | None:
-    ids = [
-        qid
-        for qid in sorted(set(before) & set(after))
-        if not which or half_of(qid) == which
-    ]
+    ids = [qid for qid in sorted(set(before) & set(after)) if not which or half_of(qid) == which]
     deltas = deltas_over(
         {qid: before[qid].get(axis) for qid in ids},
         {qid: after[qid].get(axis) for qid in ids},
@@ -453,8 +413,10 @@ def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> d
         "delta": round(sum(deltas) / len(deltas), 4),
         "ci95": [round(low, 4), round(high, 4)],
         "seed_shaky": (
-            any(lo <= 0 for lo, _ in bounds) and any(lo > 0 for lo, _ in bounds)
-            or any(hi >= 0 for _, hi in bounds) and any(hi < 0 for _, hi in bounds)
+            any(lo <= 0 for lo, _ in bounds)
+            and any(lo > 0 for lo, _ in bounds)
+            or any(hi >= 0 for _, hi in bounds)
+            and any(hi < 0 for _, hi in bounds)
         ),
         "better": tally(deltas)["better"],
         "worse": tally(deltas)["worse"],
@@ -464,13 +426,8 @@ def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> d
 
 
 # named rather than assumed: a round that declared a narrower family corrects over that
-def _annotate_family(deltas: dict, alpha: float = 0.05) -> dict:
-    tests = [
-        stats
-        for axes in deltas.values()
-        for axis, stats in axes.items()
-        if axis in AXES and stats is not None
-    ]
+def _annotate_family(deltas: dict, alpha: float = ALPHA) -> dict:
+    tests = [stats for axes in deltas.values() for axis, stats in axes.items() if axis in AXES and stats is not None]
     return annotate_holm(tests, "every pair of this report on every axis", alpha)
 
 
@@ -478,15 +435,10 @@ def _annotate_family(deltas: dict, alpha: float = 0.05) -> dict:
 def _judged_by(run_name: str) -> dict:
     with Session() as session:
         rows = session.execute(
-            select(QuestionLog.models, QuestionLog.prompts).where(
-                QuestionLog.run_name == run_name
-            )
+            select(QuestionLog.models, QuestionLog.prompts).where(QuestionLog.run_name == run_name)
         ).all()
     models = {(m or {}).get(JUDGE_MODEL_KEY) for m, _ in rows}
-    prompts = {
-        axis: sorted({(p or {}).get(f"judge_{axis}") for _, p in rows} - {None})
-        for axis in AXES
-    }
+    prompts = {axis: sorted({(p or {}).get(f"judge_{axis}") for _, p in rows} - {None}) for axis in AXES}
     return {
         "model": sorted(models - {None}) or None,
         "prompts": {axis: seen for axis, seen in prompts.items() if seen} or None,
@@ -542,9 +494,7 @@ def compute_results(source_run: str, param: str, pairs: list[tuple[dict, str]]) 
             "judge": _judged_by(name),
             **{axis: _mean(loaded[name], axis) for axis in AXES},
             # a mean over two hundred rows reads exactly like a mean over eight hundred without this
-            "n_by_axis": {
-                axis: sum(1 for row in loaded[name].values() if axis in row) for axis in AXES
-            },
+            "n_by_axis": {axis: sum(1 for row in loaded[name].values() if axis in row) for axis in AXES},
         }
         for arm, name in pairs
     }
@@ -560,14 +510,8 @@ def compute_results(source_run: str, param: str, pairs: list[tuple[dict, str]]) 
     couples, pairing = _couples(order)
     deltas = {}
     for before, after in couples:
-        deltas[f"{before}_vs_{after}"] = {
-            axis: _paired(loaded[before], loaded[after], axis)
-            for axis in AXES
-        } | {
-            "halves": {
-                axis: {w: _paired(loaded[before], loaded[after], axis, w) for w in ("A", "B")}
-                for axis in AXES
-            },
+        deltas[f"{before}_vs_{after}"] = {axis: _paired(loaded[before], loaded[after], axis) for axis in AXES} | {
+            "halves": {axis: {w: _paired(loaded[before], loaded[after], axis, w) for w in ("A", "B")} for axis in AXES},
             # over the rows the pair shares: an arm judged on fewer rows differs by size alone
             "same_answers": _same_answers(before, after, source_run, loaded),
         }
@@ -584,7 +528,9 @@ def compute_results(source_run: str, param: str, pairs: list[tuple[dict, str]]) 
             "n": len(source_scored),
             "judge": _judged_by(source_run),
             **{axis: _mean(source_scored, axis) for axis in AXES},
-        } if source_scored else None,
+        }
+        if source_scored
+        else None,
         "pairing": pairing,
         "per_arm": per_arm,
         "deltas": deltas,

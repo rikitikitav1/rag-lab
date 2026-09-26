@@ -28,7 +28,7 @@ pair_threshold: 0.9
 # raster pages are sections of the real text-layer PDFs, cropped by the text layer, then degraded
 # the rendered files are reproducible from this block and sections.json, so files/raster may be deleted
 raster:
-  documents: { en: [progit, postgres, python, django], ru: [progit, postgres, latex_baldin, haskell_kholomiev] }
+  documents: { en: [progit, postgres, python, django, ares], ru: [progit, postgres, latex_baldin, haskell_kholomiev] }
   inputs: [image_pdf, jpeg_pages]
   # jpeg pages test the tool's routing, not its tolerance, so they run at two points only
   jpeg_pages_points: [baseline, scanner]
@@ -147,6 +147,14 @@ documents:
     ru:
       source: { repo: https://github.com/anton-k/ru-haskell-book, path: pandoc, format: markdown, suffix: .txt }
       text_pdf: http://anton-k.github.io/ru-haskell-book/files/ru-haskell-book.pdf
+
+  - id: ares
+    title: "ARES: An Automated Evaluation Framework for Retrieval-Augmented Generation Systems"
+    # a paper with two columns in the body (NAACL 2024), the gold's case of a column layout
+    licence: CC BY 4.0
+    en:
+      source: { archive: https://arxiv.org/e-print/2311.09476v2, page: https://arxiv.org/html/2311.09476v2, format: latex }
+      text_pdf: https://arxiv.org/pdf/2311.09476v2.pdf
 
   - id: fastapi
     title: FastAPI documentation

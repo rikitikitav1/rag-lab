@@ -218,7 +218,7 @@ services:
   vllm:
     image: *vllm-image
     command:
-      # the judge is named in config.yaml and scripts/up.sh passes it; this default only mirrors it
+      # the judge is named in config/roles.yaml and scripts/up.sh passes it; this default only mirrors it
       ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}",
        "--max-model-len", "${VLLM_MAX_MODEL_LEN:-8192}",
        # 0.95 died of CUDA OOM beside a sleeping `vllm-rerank`: every sleeper keeps ~200 MiB

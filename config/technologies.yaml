@@ -1,0 +1,47 @@
+# the rows a source may name, no others; two majors where their docs differ by 5% of lines or more
+technologies:
+  postgresql: { name: PostgreSQL, group: databases, versions: ["18", "17"] }
+  mssql: { name: Microsoft SQL Server, group: databases }
+  clickhouse: { name: ClickHouse, group: databases }
+  mongodb: { name: MongoDB, group: databases, versions: ["8.0", "7.0"] }
+  arangodb: { name: ArangoDB, group: databases, versions: ["3.12", "3.11"] }
+  qdrant: { name: Qdrant, group: databases }
+  tarantool: { name: Tarantool, group: databases }
+  redis: { name: Redis, group: databases }
+  databases: { name: Databases in general, group: general }
+  rabbitmq: { name: RabbitMQ, group: brokers }
+  kafka: { name: Kafka, group: brokers }
+  go: { name: Go, group: languages }
+  ruby: { name: Ruby, group: languages }
+  lua: { name: Lua, group: languages }
+  python: { name: Python, group: languages, versions: ["3.14", "3.13"] }
+  delphi: { name: Delphi and Free Pascal, group: languages }
+  bash: { name: Bash, group: languages }
+  javascript: { name: JavaScript, group: languages }
+  gin: { name: gin, group: frameworks }
+  rails: { name: Ruby on Rails, group: frameworks }
+  django: { name: Django, group: frameworks }
+  fastapi: { name: FastAPI, group: frameworks }
+  nodejs: { name: Node.js, group: frameworks }
+  react: { name: React, group: frameworks }
+  openresty: { name: OpenResty, group: frameworks }
+  sqlalchemy: { name: SQLAlchemy, group: orm }
+  sequel: { name: Sequel, group: orm }
+  git: { name: Git, group: tools }
+  docker: { name: Docker, group: infrastructure }
+  kubernetes: { name: Kubernetes, group: infrastructure }
+  linux: { name: Linux, group: infrastructure }
+  http: { name: HTTP and web protocols, group: infrastructure }
+  nginx: { name: nginx, group: infrastructure }
+  prometheus: { name: Prometheus, group: infrastructure }
+  opentelemetry: { name: OpenTelemetry, group: infrastructure }
+  grpc: { name: gRPC, group: infrastructure }
+  protobuf: { name: Protocol Buffers, group: infrastructure }
+  system-design: { name: System design, group: general }
+  algorithms: { name: Algorithms and data structures, group: general }
+  engineering: { name: Software engineering, group: general }
+  security: { name: Security, group: security }
+  opensearch: { name: OpenSearch, group: search }
+  elasticsearch: { name: Elasticsearch, group: search }
+  langchain: { name: LangChain and LangGraph, group: ml }
+  huggingface: { name: Hugging Face, group: ml }

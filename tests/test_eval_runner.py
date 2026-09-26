@@ -276,19 +276,18 @@ def test_a_phased_run_records_the_depth_it_searched_at(monkeypatch):
     assert snap["ef_search"] == 200
 
 
-def test_the_card_is_asked_about_before_the_generator_is_paid_for(monkeypatch):
-    # the check fired only after the first answer, with the generator already on the cpu
-    import pytest
+def test_an_embedder_half_on_the_processor_does_not_stop_the_run(monkeypatch):
+    # bge-m3 at 18 of 25 layers stopped the smoke's rerank run; its vectors are the same, only later
+    import engines
+    from stand_specs import OLLAMA
 
     calls = _stub_phases(monkeypatch)
-    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
-    with pytest.raises(runner.card.CardNotHanded, match="not whole on the card"):
-        runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
-    assert [c[0] for c in calls] == ["search", "search", "unload", "unload"], (
-        "nothing after retrieval should have run, and the card goes back anyway"
-    )
-    # the refusal raised past the unload, so the run left its own generator on the card
-    assert [c[1] for c in calls[-2:]] == ["embedding", "generation"]
+    monkeypatch.setattr(runner.passes, "_resolve", lambda seat: engines.Resolved(
+        "bge-m3" if seat.role == runner.Role.embedding else "llama3.1:8b", OLLAMA))
+    # spilled, not unknown: the embedder reads False, the generator is whole
+    monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: name == "llama3.1:8b")
+    runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=True, k=2))
+    assert "rerank" in [c[0] for c in calls] and "generate" in [c[0] for c in calls]
 
 
 def test_a_phased_run_refuses_a_card_that_dropped_out(monkeypatch):
@@ -395,10 +394,12 @@ def test_the_run_gate_refuses_a_spill_and_passes_an_asleep_vllm(monkeypatch):
                         lambda role: engines.Resolved(f"{role}-model", specs[role]))
     monkeypatch.setattr(runner.card, "model_on_card", lambda spec, name: False)
     runner._refuse_a_cpu_run((Role.generation,), allow_cpu=False, model=None)
-    with pytest.raises(runner.card.CardNotHanded, match="embedding=embedding-model"):
+    # an embedder half on the processor passes: the vector is the same; a spilled generator still stops
+    runner._refuse_a_cpu_run(ANSWERING, allow_cpu=False, model=None)
+    specs["generation"] = gpu
+    with pytest.raises(runner.card.CardNotHanded, match="generation=generation-model"):
         runner._refuse_a_cpu_run(ANSWERING, allow_cpu=False, model=None)
     specs["embedding"] = cpu
-    runner._refuse_a_cpu_run(ANSWERING, allow_cpu=False, model=None)
 
 
 def test_the_run_gate_reads_the_arm_s_own_generator_not_the_role_s(monkeypatch):
@@ -619,8 +620,8 @@ def test_a_resume_after_a_dead_worker_keeps_one_row_per_question():
     assert todo == ["b"] and list(replaced) == ["b"]
 
 
-def test_the_sequential_path_stops_on_an_embedder_its_own_call_saw_on_the_cpu(monkeypatch):
-    # read at the next row's start, a vLLM generator held the card and the embedder read as unknown
+def test_the_sequential_path_reads_an_embedder_its_own_call_saw_on_the_cpu_and_goes_on(monkeypatch):
+    # the call's own reading is kept on the row; an embedder half on the processor gives the same vector
     import engines
     from stand_specs import OLLAMA, VLLM
 
@@ -639,9 +640,7 @@ def test_the_sequential_path_stops_on_an_embedder_its_own_call_saw_on_the_cpu(mo
     monkeypatch.setattr(runner, "_answer_one", answer)
     monkeypatch.setattr(runner, "_release", lambda role="embedding", model=None: None)
     spec = runner.RunSpec(variant="baseline", pipeline=runner.Pipeline.agent, model="Qwen/Q")
-    with pytest.raises(runner.card.CardNotHanded, match="embedding=bge-m3"):
-        runner._run_sequential(["q1", "q2"], "run", spec, job_id=None, allow_cpu=False)
-    assert runner._run_sequential(["q1", "q2"], "run", spec, job_id=None, allow_cpu=True) == (2, False)
+    assert runner._run_sequential(["q1", "q2"], "run", spec, job_id=None, allow_cpu=False) == (2, False)
 
 
 def test_a_run_s_generation_sampler_reaches_the_generator_and_no_other_role(monkeypatch):

@@ -1,21 +1,10 @@
 import frontmatter
-import ingest
 from sources import base
 from sources.base import Base, Parsed
 
 
 class RedisDocsSource(Base):
-    name = "redis-doc"
-    kind = "git"
-    url = "https://github.com/redis/redis-doc"
-    language = "eng"
-
-    def files(self):
-        yield from (self.root / "commands").glob("*.md")
-        yield from (self.root / "docs").rglob("*.md")
-
-    def category_for(self, rel_path):
-        return "databases.redis." + ingest.path_to_category(rel_path)
+    reader = "redis-doc"
 
     # the old cut has to keep seeing what it saw: the fence as the first line
     def read(self, file, rel, policy=None):

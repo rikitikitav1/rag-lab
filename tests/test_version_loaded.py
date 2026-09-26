@@ -78,3 +78,9 @@ def test_the_stamp_is_what_it_was_before_the_digests_were_kept_apart():
         except OSError:
             digest.update(f"{name}:gone".encode())
     assert version.tree_stamp() == digest.hexdigest()[:12]
+
+
+# a section moved out of `config.yaml` still decides behaviour, so its edit must move the stamp too
+def test_every_config_file_the_loader_reads_is_in_the_stamp():
+    named = {path.name for path in version._config_files()}
+    assert {"config.yaml", "intake.yaml", "ingest_quality.yaml", "evals.yaml", "roles.yaml"} <= named
