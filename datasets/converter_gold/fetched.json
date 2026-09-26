@@ -240,5 +240,32 @@
     ],
     "file": "smoke/progit_ru_p20-27.pdf",
     "sha256": "d1e14a11ea32bd4623bc95c9bedf1875b81b942d949f3992516e653c85673ad5"
+  },
+  "ares/en": {
+    "fetched": "2026-09-26T18:34:43+00:00",
+    "source": {
+      "archive": "https://arxiv.org/e-print/2311.09476v2",
+      "file": "ares/en/source/source.tar.gz",
+      "sha256": "de808a2952277e308a8206afe17d04993010f6be88d2d17656de644f8cfc5b96"
+    },
+    "page": {
+      "page": "https://arxiv.org/html/2311.09476v2",
+      "file": "ares/en/page/page.html",
+      "sha256": "ac5fda1655f2b9b1ef5e559e029c6ce617babd3cc2e80422861a67b5bc485311"
+    },
+    "text_pdf": {
+      "url": "https://arxiv.org/pdf/2311.09476v2.pdf",
+      "file": "ares/en/pdf/2311.09476v2.pdf",
+      "bytes": 786035,
+      "sha256": "16f092b08cce88da551a15a978b51721199e93dc95df406089813411fa51ebec"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 24,
+      "found_in_source": 24,
+      "share": 1.0,
+      "threshold": 0.9,
+      "checked_at": "2026-09-26T18:36:09.677055+00:00"
+    }
   }
 }

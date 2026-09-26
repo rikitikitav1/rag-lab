@@ -5,6 +5,8 @@ import hashlib
 import json
 import random
 import re
+import subprocess
+import tarfile
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -73,6 +75,28 @@ def _clone(source, folder):
     return {"repo": source["repo"], "path": source.get("path"), "ref": source.get("ref"), **state}
 
 
+# a source published only as an archive, as arXiv serves a paper's LaTeX: the url has no name, so the file is named here
+def _unpack(url, folder):
+    from use_cases import fetch
+
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "source.tar.gz"
+    fetch.download(url, target)
+    with tarfile.open(target) as archive:
+        archive.extractall(folder, filter="data")
+    return {"archive": url, "file": str(target.relative_to(FILES)), "sha256": _sha256(target)}
+
+
+# a paper's HTML as arXiv renders it from the LaTeX, macros and all: a gold where pandoc cannot read the source
+def _page(url, folder):
+    from use_cases import fetch
+
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "page.html"
+    fetch.download(url, target)
+    return {"page": url, "file": str(target.relative_to(FILES)), "sha256": _sha256(target)}
+
+
 def fetch(only):
     ledger = json.loads(LEDGER.read_text()) if LEDGER.exists() else {}
     for doc_id, lang, entry in _documents():
@@ -82,6 +106,10 @@ def fetch(only):
         record = {"fetched": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         if "repo" in entry["source"]:
             record["source"] = _clone(entry["source"], FILES / doc_id / lang / "source")
+        if "archive" in entry["source"]:
+            record["source"] = _unpack(entry["source"]["archive"], FILES / doc_id / lang / "source")
+        if "page" in entry["source"]:
+            record["page"] = _page(entry["source"]["page"], FILES / doc_id / lang / "page")
         if "text_pdf" in entry:
             record["text_pdf"] = _download(entry["text_pdf"], FILES / doc_id / lang / "pdf")
         ledger[key] = record
@@ -113,6 +141,8 @@ _ASCIIDOC_ANCHOR_LINE = re.compile(r"^\[\[[^\]]*\]\]\s*$|^\[#[^\]]*\]\s*$", re.M
 _ASCIIDOC_TITLE = re.compile(r"^=+ (.+)$")
 _LATEX_LEVELS = formats.format_of("latex").levels
 _LATEX_HEADING = re.compile(rf"^\s*\\({'|'.join(map(re.escape, _LATEX_LEVELS))})\*?\{{(.+)\}}")
+# not measured: the slowest gold section so far took seconds; an ARES fragment ran past fourteen minutes
+PANDOC_SECONDS = 120
 _LATEX_COMMENT_LINE = re.compile(r"^\s*%.*$", re.M)
 
 
@@ -317,12 +347,14 @@ def _kind(doc, boxes: list[dict], detect: dict) -> str:
 def _candidates(pdf: Path, known: set | None, detect: dict) -> list[dict]:
     import pymupdf
 
-    toc = pymupdf.open(pdf).get_toc()
+    doc = pymupdf.open(pdf)
+    toc = doc.get_toc()
     out = []
     for i, (level, title, page) in enumerate(toc):
         if level > detect["max_toc_level"] or page < 1:
             continue
-        end = next((p for lv, _, p in toc[i + 1 :] if lv <= level and p >= 1), page)
+        # the last section at its level runs to the document's end, not to its own first page
+        end = next((p for lv, _, p in toc[i + 1 :] if lv <= level and p >= 1), doc.page_count)
         last = max(page, end)
         if last - page + 1 > detect["max_pages"] or not _folded(title):
             continue
@@ -881,7 +913,15 @@ def _gold_markdown(fragment: str, source: dict, source_dir: Path, base: Path | N
         fragment = _SGML_ENTITY.sub(
             lambda m: m.group(0) if m.group(0) in ("&amp;", "&lt;", "&gt;", "&quot;", "&apos;") else "", fragment
         )
-    markdown = pypandoc.convert_text(fragment, "gfm", format=PANDOC_READERS[fmt], extra_args=["--wrap=none"])
+    # a fragment pandoc cannot finish is a section without gold, not a gold step that never ends
+    markdown = subprocess.run(
+        [pypandoc.get_pandoc_path(), f"--from={PANDOC_READERS[fmt]}", "--to=gfm", "--wrap=none"],
+        input=fragment,
+        capture_output=True,
+        text=True,
+        timeout=PANDOC_SECONDS,
+        check=True,
+    ).stdout
     # index terms come through as empty spans that the page never shows
     markdown = _INDEX_SPAN.sub("", markdown)
     if fmt == "docbook_sgml":
@@ -960,7 +1000,26 @@ def gold(only):
                 "sha256": _sha256(target),
             }
             continue
-        if "repo" not in entry["source"] or not source_dir.exists():
+        if "page" in entry["source"]:
+            page = FILES / section["doc"] / section["lang"] / "page" / "page.html"
+            found = _page_section(page.read_text(), section["title"]) if page.exists() else None
+            if found is None:
+                ledger["sections"][section["id"]] = {"gold": None, "why": "heading not found in the page"}
+                continue
+            element_id, element = found
+            markdown = pypandoc.convert_text(
+                element, "gfm", format="html-native_divs-native_spans", extra_args=["--wrap=none"]
+            )
+            target = GOLD_MD / f"{section['id']}.md"
+            target.write_text(_rebased(_ANCHOR_TAG.sub("", markdown)))
+            ledger["sections"][section["id"]] = {
+                "gold": str(target.relative_to(FILES)),
+                "source_page": f"{entry['source']['page']}#{element_id}",
+                "gold_from": "the paper's section in arXiv's HTML by pandoc",
+                "sha256": _sha256(target),
+            }
+            continue
+        if not ({"repo", "archive"} & set(entry["source"])) or not source_dir.exists():
             ledger["sections"][section["id"]] = {"gold": None, "why": "no source repository"}
             continue
         found = _source_fragment(source_dir, entry["source"], section["title"])
@@ -970,7 +1029,7 @@ def gold(only):
         fragment, file = found
         try:
             markdown, fragment = _gold_markdown(fragment, entry["source"], source_dir)
-        except RuntimeError as e:
+        except (RuntimeError, subprocess.SubprocessError) as e:
             ledger["sections"][section["id"]] = {"gold": None, "why": f"pandoc: {str(e)[:200]}"}
             continue
         target = GOLD_MD / f"{section['id']}.md"
@@ -998,6 +1057,25 @@ def gold(only):
             for w in {v.get("why") for v in ledger["sections"].values() if not v["gold"]}
         },
     )
+
+
+_PAGE_SECTION = re.compile(r'<section id="([^"]+)" class="ltx_\w+"[^>]*>\s*<h\d[^>]*>(.*?)</h\d>', re.S)
+_PAGE_SECTION_TAG = re.compile(r"<(/?)section\b[^>]*>")
+_NUMBER_TAG = re.compile(r'<span class="ltx_tag\b[^"]*">.*?</span>', re.S)
+
+
+# the section element whose heading is the title, subsections and all, without its number, as the LaTeX gold has none
+def _page_section(page: str, title: str) -> tuple[str, str] | None:
+    heads = list(_PAGE_SECTION.finditer(page))
+    found = _best_heading(title, [_folded(_TAG.sub("", _NUMBER_TAG.sub("", m.group(2)))) for m in heads])
+    if found is None:
+        return None
+    start, depth = heads[found[0]].start(), 0
+    for m in _PAGE_SECTION_TAG.finditer(page, start):
+        depth += -1 if m.group(1) else 1
+        if depth == 0:
+            return heads[found[0]].group(1), _NUMBER_TAG.sub("", page[start : m.end()])
+    return None
 
 
 HTML_LEDGER = GOLD / "html.json"

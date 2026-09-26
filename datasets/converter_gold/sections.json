@@ -85,6 +85,11 @@
         "DejaVuSansMono",
         "DejaVuSansMono-Bold"
       ]
+    },
+    {
+      "doc": "ares",
+      "lang": "en",
+      "mono_fonts": []
     }
   ],
   "sections": [
@@ -4784,6 +4789,183 @@
         "size": 12.68
       },
       "notes": []
+    },
+    {
+      "id": "ares_en_prose_00",
+      "doc": "ares",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Results & Analysis",
+      "level": 1,
+      "pages": [
+        6,
+        8
+      ],
+      "kind": "prose",
+      "pdf": "ares/en/pdf/2311.09476v2.pdf",
+      "boxes": [
+        {
+          "page": 6,
+          "clip": [
+            0.0,
+            575.35,
+            595.2760009765625,
+            841.89
+          ]
+        },
+        {
+          "page": 7,
+          "clip": [
+            0.0,
+            0.0,
+            595.2760009765625,
+            841.89
+          ]
+        },
+        {
+          "page": 8,
+          "clip": [
+            0.0,
+            0.0,
+            595.2760009765625,
+            468.06
+          ]
+        }
+      ],
+      "heading": {
+        "y": 575.35,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "ares_en_prose_01",
+      "doc": "ares",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "GPT Prompting for Answer Relevance Scoring",
+      "level": 2,
+      "pages": [
+        12,
+        12
+      ],
+      "kind": "prose",
+      "pdf": "ares/en/pdf/2311.09476v2.pdf",
+      "boxes": [
+        {
+          "page": 12,
+          "clip": [
+            0.0,
+            234.41,
+            595.2760009765625,
+            304.39
+          ]
+        }
+      ],
+      "heading": {
+        "y": 234.41,
+        "size": 10.91
+      },
+      "notes": []
+    },
+    {
+      "id": "ares_en_prose_02",
+      "doc": "ares",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Fine-tuning Configuration for LLM Judges",
+      "level": 2,
+      "pages": [
+        11,
+        11
+      ],
+      "kind": "prose",
+      "pdf": "ares/en/pdf/2311.09476v2.pdf",
+      "boxes": [
+        {
+          "page": 11,
+          "clip": [
+            0.0,
+            719.89,
+            595.2760009765625,
+            727.4
+          ]
+        }
+      ],
+      "heading": {
+        "y": 719.89,
+        "size": 10.91
+      },
+      "notes": []
+    },
+    {
+      "id": "ares_en_prose_03",
+      "doc": "ares",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Experiments",
+      "level": 1,
+      "pages": [
+        5,
+        6
+      ],
+      "kind": "prose",
+      "pdf": "ares/en/pdf/2311.09476v2.pdf",
+      "boxes": [
+        {
+          "page": 5,
+          "clip": [
+            0.0,
+            72.65,
+            595.2760009765625,
+            841.89
+          ]
+        },
+        {
+          "page": 6,
+          "clip": [
+            0.0,
+            0.0,
+            595.2760009765625,
+            575.35
+          ]
+        }
+      ],
+      "heading": {
+        "y": 72.65,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "ares_en_prose_04",
+      "doc": "ares",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "ARES Performance on AIS",
+      "level": 2,
+      "pages": [
+        7,
+        7
+      ],
+      "kind": "prose",
+      "pdf": "ares/en/pdf/2311.09476v2.pdf",
+      "boxes": [
+        {
+          "page": 7,
+          "clip": [
+            0.0,
+            572.59,
+            595.2760009765625,
+            692.79
+          ]
+        }
+      ],
+      "heading": {
+        "y": 572.59,
+        "size": 10.91
+      },
+      "notes": []
     }
   ],
   "deficits": [
@@ -4810,6 +4992,18 @@
       "lang": "ru",
       "kind": "table",
       "short_by": 3
+    },
+    {
+      "doc": "ares",
+      "lang": "en",
+      "kind": "code",
+      "short_by": 5
+    },
+    {
+      "doc": "ares",
+      "lang": "en",
+      "kind": "table",
+      "short_by": 5
     }
   ],
   "skipped": [
@@ -4876,6 +5070,12 @@
       "why": [
         "heading not found on its page"
       ]
+    },
+    {
+      "doc": "ares",
+      "lang": "en",
+      "title": "GPT Prompting for Answer Faithfulness Scoring",
+      "why": []
     }
   ]
 }

@@ -956,6 +956,18 @@ constant:
   scripts/converter_gold.py:_LATEX_COMMENT_LINE:
     class: code
     note: a pattern that reads a format
+  scripts/converter_gold.py:PANDOC_SECONDS:
+    class: cap
+    how: not measured
+  scripts/converter_gold.py:_PAGE_SECTION:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_PAGE_SECTION_TAG:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_NUMBER_TAG:
+    class: code
+    note: a pattern that reads a format
   scripts/converter_gold.py:_DOCBOOK_SECTION:
     class: code
     note: a pattern that reads a format
