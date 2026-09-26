@@ -1,0 +1,1175 @@
+# verdicts of the config inventory: one row a key of the tree, joined by scripts/config_inventory.py
+# class: setting (the record carries it or preflight compares it), code (changes the meaning of a stored row),
+# cap (an operational limit), seed (the config seeds it, the database owns it); move: yes when code holds a setting; family: an id under `families`, one value held in more than one place
+families:
+  rrf_k: 'the RRF constant: the search fuses its legs with `retrieval.rrf_k`, the experiment report fuses arms with its own
+    60, on purpose'
+  max_hops: 'the hop budget: `agent.max_hops` the value, `MAX_HOPS` the cap a request may name, `_CEILING_BEFORE_ROWS_RECORDED_IT`
+    the ceiling old rows ran under, pinned'
+  converter_settings: 'which settings file each converter runs: named in `intake.settings`, held by the file under `converters/*/settings/`'
+  piece_ceiling: 'the bound on one converter piece: `CHUNK_CEILING` in code, `piece_ceiling_seconds` in a settings file overrides
+    it'
+  context_length: 'the ollama window: `llm.context_length` in config and `OLLAMA_CONTEXT_LENGTH` in compose, checked by tests/test_no_card_mode.py'
+  postgres_host: 'the database host: `postgres.host` in config, `POSTGRES_HOST` in the environment wins (`app/orm/dsn.py`)'
+  ollama_url: 'the ollama address: `OLLAMA_BASE_URL` wins, `llm.base_url` is the fallback when compose leaves it empty (`app/engines/core.py`)'
+  judge_model: 'the judge model: `llm.roles.judging.model` in config, `VLLM_MODEL` exported by scripts/up.sh, compose falls
+    back to a written default'
+  alpha: the family-wise alpha 0.05, a default in six signatures
+  seed: 'the bootstrap and draw seeds: 42 in two defaults, 20260908 for the human anchor sheet'
+  slug: the file-name slug pattern, written twice
+  heading_reader: 'the markdown heading reader: `sources/base.HEADING` and `ingest.HEADING_LINE`'
+  search_depth: 'the depth of a search leg: `retrieval.limit_vector` and `retrieval.limit_keywords` both 20, and the comparison
+    report reads 20 of its own'
+config:
+  retrieval.distance_threshold:
+    class: setting
+  retrieval.results_limit:
+    class: setting
+  retrieval.limit_vector:
+    class: setting
+    family: search_depth
+  retrieval.limit_keywords:
+    class: setting
+    family: search_depth
+  retrieval.rrf_k:
+    class: setting
+    family: rrf_k
+  retrieval.keyword.query:
+    class: setting
+  retrieval.keyword.rank:
+    class: setting
+  retrieval.keyword.norm:
+    class: setting
+  retrieval.keyword.query_lang:
+    class: setting
+  retrieval.ef_search:
+    class: setting
+  verdict.criterion_sets:
+    class: setting
+  verdict.veto_sets:
+    class: setting
+  verdict.search_depth.ef_ladder:
+    class: setting
+  verdict.search_depth.recall_gate:
+    class: setting
+  verdict.search_depth.max_mrr_loss:
+    class: setting
+  verdict.search_depth.max_questions_lost:
+    class: setting
+  verdict.index_alive.recall:
+    class: setting
+  verdict.index_alive.questions:
+    class: setting
+  rerank.enabled:
+    class: setting
+  rerank.candidates:
+    class: setting
+  agent.max_hops:
+    class: setting
+    family: max_hops
+  agent.fallback_policy:
+    class: setting
+  agent.gate.signal:
+    class: setting
+  agent.gate.weak_distance:
+    class: setting
+  agent.gate.weak_threshold:
+    class: setting
+  agent.gate.candidates:
+    class: setting
+  agent.topic_threshold.ru:
+    class: setting
+  agent.topic_threshold.en:
+    class: setting
+  ingestion.batch_size:
+    class: setting
+  ingestion.commit_size:
+    class: setting
+  ingest_quality.measure.tiny_share_of_ceiling:
+    class: setting
+  ingest_quality.measure.boilerplate_file_share:
+    class: setting
+  ingest_quality.measure.boilerplate_min_files:
+    class: setting
+  ingest_quality.measure.min_breaching_chunks:
+    class: setting
+  ingest_quality.hard_gates.section_coverage.min:
+    class: setting
+  ingest_quality.hard_gates.section_coverage.max:
+    class: setting
+  ingest_quality.hard_gates.prefix_dominates.min:
+    class: setting
+  ingest_quality.hard_gates.prefix_dominates.max:
+    class: setting
+  ingest_quality.hard_gates.dup_in_file:
+    class: setting
+  ingest_quality.hard_gates.dup_in_source:
+    class: setting
+  ingest_quality.hard_gates.boilerplate:
+    class: setting
+  ingest_quality.hard_gates.tiny:
+    class: setting
+  ingest_quality.hard_gates.orphans:
+    class: setting
+  ingest_quality.hard_gates.size_cut:
+    class: setting
+  ingest_quality.hard_gates.soup:
+    class: setting
+  ingest_quality.hard_gates.code_only:
+    class: setting
+  ingest_quality.soft_gates.section_coverage:
+    class: setting
+  ingest_quality.soft_gates.prefix_dominates:
+    class: setting
+  ingest_quality.soft_gates.dup_in_file.min:
+    class: setting
+  ingest_quality.soft_gates.dup_in_file.max:
+    class: setting
+  ingest_quality.soft_gates.dup_in_source.min:
+    class: setting
+  ingest_quality.soft_gates.dup_in_source.max:
+    class: setting
+  ingest_quality.soft_gates.boilerplate.min:
+    class: setting
+  ingest_quality.soft_gates.boilerplate.max:
+    class: setting
+  ingest_quality.soft_gates.tiny.min:
+    class: setting
+  ingest_quality.soft_gates.tiny.max:
+    class: setting
+  ingest_quality.soft_gates.orphans:
+    class: setting
+  ingest_quality.soft_gates.size_cut:
+    class: setting
+  ingest_quality.soft_gates.soup:
+    class: setting
+  ingest_quality.soft_gates.code_only:
+    class: setting
+  ingest_quality.history_per_variant:
+    class: cap
+  ingest_quality.score_formula:
+    class: code
+    note: a version stamp of the score, not a knob
+  ingest_quality.weights.section_coverage:
+    class: setting
+  ingest_quality.weights.prefix_dominates:
+    class: setting
+  ingest_quality.weights.dup_in_file:
+    class: setting
+  ingest_quality.weights.dup_in_source:
+    class: setting
+  ingest_quality.weights.boilerplate:
+    class: setting
+  ingest_quality.weights.tiny:
+    class: setting
+  ingest_quality.weights.orphans:
+    class: setting
+  ingest_quality.weights.size_cut:
+    class: setting
+  ingest_quality.weights.soup:
+    class: setting
+  ingest_quality.weights.code_only:
+    class: setting
+  intake.route.min_layer_chars:
+    class: setting
+  intake.route.min_raster_run:
+    class: setting
+  intake.route.suspect_min_words:
+    class: setting
+  intake.quality.output_share_min:
+    class: setting
+  intake.quality.output_share_max:
+    class: setting
+  intake.quality.layer_f1_min:
+    class: setting
+  intake.quality.mixed_script_max:
+    class: setting
+  intake.quality.layer_band_engines:
+    class: setting
+  intake.quality.bad_share:
+    class: setting
+  intake.engines.docling:
+    class: setting
+  intake.engines.mineru:
+    class: setting
+  intake.settings.docling:
+    class: setting
+    family: converter_settings
+  intake.settings.mineru:
+    class: setting
+    family: converter_settings
+  fts.languages.en:
+    class: setting
+  fts.languages.ru:
+    class: setting
+  fts.fallback:
+    class: setting
+  corpus.description:
+    class: setting
+  corpus.variant:
+    class: setting
+  corpus.variants.baseline.chunker:
+    class: setting
+  corpus.variants.baseline.max_chunk_size:
+    class: setting
+  corpus.variants.baseline.ceiling_on:
+    class: setting
+  corpus.variants.baseline.drop_boilerplate:
+    class: setting
+  corpus.variants.clean_1024.chunker:
+    class: setting
+  corpus.variants.clean_1024.max_chunk_size:
+    class: setting
+  corpus.variants.clean_1024.ceiling_on:
+    class: setting
+  corpus.variants.clean_1024.drop_boilerplate:
+    class: setting
+  repos_dir:
+    class: setting
+  prompts_dir:
+    class: setting
+  sources.interview.base_url:
+    class: setting
+  sources.interview.language:
+    class: setting
+  sources.interview.repos:
+    class: setting
+  engines.ollama.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama-cpu.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama-cpu.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama-cpu.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama-cpu.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-cpu.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-cpu.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-cpu.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-cpu.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-embed.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-embed.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-embed.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-embed.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-rerank.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-rerank.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-rerank.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-rerank.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-docling.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-docling.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-docling.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-docling.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-mineru.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-mineru.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-mineru.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-mineru.placement:
+    class: seed
+    note: seeded into the engine rows
+  llm.base_url:
+    class: setting
+    family: ollama_url
+  llm.roles.embedding.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.embedding.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.embedding.options:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.generation.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.generation.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.generation.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.generation.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.judging.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+    family: judge_model
+  llm.roles.judging.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.judging.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.judging.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.judging.options.seed:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.judging.options.repetition_penalty:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.grading.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.grading.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.grading.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.grading.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.grading.options.seed:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.ragas.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.ragas.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.ragas.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.ragas.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.ragas.options.seed:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.ragas_embedding.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.ragas_embedding.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.ragas_embedding.options:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.paraphrasing.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.paraphrasing.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.paraphrasing.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.paraphrasing.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.reranking.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.reranking.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.reranking.options:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.context_length:
+    class: setting
+    family: context_length
+  llm.repetition_penalty:
+    class: setting
+  postgres.host:
+    class: setting
+    family: postgres_host
+  postgres.port:
+    class: setting
+  postgres.dbname:
+    class: setting
+  postgres.user:
+    class: setting
+  mcp_integrations.secret_env:
+    class: seed
+    note: seeded into the database, the row wins after bootstrap
+constant:
+  app/api/v1/questions.py:_MAX_UPLOAD:
+    class: cap
+  app/db.py:CATEGORY_RE:
+    class: code
+  app/engines/answer_parsers.py:_DEEPSEEK_CALLS:
+    class: code
+  app/engines/answer_parsers.py:_MINIMAX_CALLS:
+    class: code
+  app/engines/answer_parsers.py:PARSERS:
+    class: code
+  app/engines/balances.py:TIMEOUT:
+    class: cap
+  app/engines/balances.py:HELD_SECONDS:
+    class: cap
+  app/engines/card.py:WAIT_CEILING:
+    class: cap
+  app/engines/card.py:POLL_SECONDS:
+    class: cap
+  app/engines/converter.py:HTTP_TIMEOUT:
+    class: cap
+  app/engines/converter.py:LET_GO_TIMEOUT:
+    class: cap
+  app/engines/converter_tools.py:POST_TIMEOUT:
+    class: cap
+  app/engines/converter_tools.py:POLL_WAIT:
+    class: cap
+  app/engines/core.py:CLOUD_RETRIES:
+    class: cap
+  app/engines/core.py:_SERVED_AS:
+    class: code
+  app/engines/core.py:_GRAMMAR:
+    class: code
+  app/engines/core.py:_GRAMMAR_AS:
+    class: code
+  app/engines/disk.py:FLOOR_BYTES:
+    class: cap
+  app/engines/ollama.py:HTTP_TIMEOUT:
+    class: cap
+  app/engines/ollama.py:PULL_TIMEOUT:
+    class: cap
+  app/engines/ollama.py:CARD_READ_TIMEOUT:
+    class: cap
+  app/engines/ollama.py:_WINDOW_SECONDS:
+    class: cap
+  app/engines/ollama.py:WINDOWED:
+    class: code
+  app/engines/ollama.py:MEASURED_REPEAT_PENALTY:
+    class: setting
+    move: 'yes'
+  app/engines/vllm.py:HTTP_TIMEOUT:
+    class: cap
+  app/engines/vllm.py:PULL_TIMEOUT:
+    class: cap
+  app/engines/vllm.py:WAKE_TIMEOUT:
+    class: cap
+  app/engines/vllm.py:_PROBE:
+    class: code
+  app/engines/vllm.py:SCORE_BATCH:
+    class: cap
+  app/engines/vllm.py:SCORE_TIMEOUT:
+    class: cap
+  app/engines/vllm.py:ORPHAN_AFTER_SECONDS:
+    class: cap
+  app/evals/build_questions.py:QUESTION_RE:
+    class: code
+  app/evals/build_veto.py:QUOTAS:
+    class: setting
+    move: 'yes'
+  app/evals/build_veto.py:MIN_HEADING:
+    class: setting
+    move: 'yes'
+    how: not measured
+  app/evals/columns.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/columns.py:_READERS:
+    class: code
+  app/evals/compare.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/generation_metrics.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/gold_classes.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/grade_candidates.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/grade_curve.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/grade_curve.py:CUTS:
+    class: setting
+    move: 'yes'
+  app/evals/grade_curve.py:curve(seed):
+    class: setting
+    family: seed
+  app/evals/guest_axes.py:AXES:
+    class: code
+  app/evals/guest_probes.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/human_anchor.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/human_anchor.py:SEED:
+    class: code
+    note: the seed a stored sheet was drawn with
+    family: seed
+  app/evals/human_anchor.py:BOTH_SPOKE:
+    class: code
+  app/evals/human_anchor.py:REPEATS:
+    class: code
+  app/evals/judge_correlation.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/judge_correlation.py:WORD:
+    class: code
+  app/evals/judge_correlation.py:RHO_WITH_OVERLAP:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/judge_correlation.py:PARTIAL_GAP:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/judge_correlation.py:STRATUM_GAP:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/judge_correlation.py:MIN_ROWS:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/judge_correlation.py:CODE_STRATUM:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/judge_language.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/judge_language.py:CONTROL_FLOOR:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/judge_language.py:MOVES_ALLOWED:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/language_cost.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/pools.py:_CEILING_BEFORE_ROWS_RECORDED_IT:
+    class: code
+    note: the ceiling old rows ran under, pinned
+    family: max_hops
+  app/evals/replay.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/retrieval_metrics.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/run_tokens.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/evals/stats.py:BOOTSTRAP_N:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/evals/stats.py:bootstrap_ci(seed):
+    class: setting
+    family: seed
+  app/evals/stats.py:holm(alpha):
+    class: setting
+    family: alpha
+  app/evals/stats.py:holm_thresholds(alpha):
+    class: setting
+    family: alpha
+  app/evals/stats.py:annotate_holm(alpha):
+    class: setting
+    family: alpha
+  app/evals/trace.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/ingest.py:FENCE_LINE:
+    class: code
+  app/ingest.py:HEADING_LINE:
+    class: code
+    family: heading_reader
+  app/ingest.py:HEADING_CAP:
+    class: code
+    note: the width a stored chunk field is cut to
+  app/ingest.py:SECTION_CAP:
+    class: code
+    note: the width a stored chunk field is cut to
+  app/job_handlers/converting.py:CHUNK_CEILING:
+    class: cap
+    family: piece_ceiling
+  app/job_handlers/judging.py:_MAX_JUDGE_ATTEMPTS:
+    class: cap
+  app/job_handlers/judging.py:_MAX_SWEEPS:
+    class: cap
+  app/job_handlers/judging.py:_LOCK_WAIT_MS:
+    class: cap
+  app/job_handlers/judging.py:_ERROR_CHARS:
+    class: cap
+  app/job_handlers/onboard.py:_SLUG:
+    class: code
+    family: slug
+  app/job_queue.py:LIVE_BATCH_SECONDS:
+    class: cap
+  app/job_specs.py:FROZEN_POOL_RE:
+    class: code
+  app/job_specs.py:PRIORITY:
+    class: cap
+  app/job_specs.py:STARVED_AFTER_MINUTES:
+    class: cap
+  app/limits.py:MAX_RUN_NAME:
+    class: cap
+  app/limits.py:MAX_RUNS:
+    class: cap
+  app/limits.py:MAX_QUESTION_IDS:
+    class: cap
+  app/limits.py:MAX_K:
+    class: cap
+  app/limits.py:MAX_GUEST_ROWS:
+    class: cap
+  app/limits.py:MAX_TESTS:
+    class: cap
+  app/llm.py:PACE_CEILING_SECONDS:
+    class: cap
+  app/llm.py:PACE_TRIES:
+    class: cap
+  app/llm.py:_LATIN_DIVISOR:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/llm.py:_CYRILLIC_EXTRA:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/llm.py:_LETTER:
+    class: code
+  app/mcp_ops.py:holm_over(alpha):
+    class: setting
+    family: alpha
+  app/mcp_server.py:_MAX_QUERY_LEN:
+    class: cap
+  app/models/mcp_integration.py:TOOL_NAME_RE:
+    class: code
+  app/models/registry.py:MODEL_NAME_RE:
+    class: code
+  app/models/registry.py:MAX_MODEL_NAME:
+    class: cap
+  app/orchestrators/graph.py:STEPS_PER_HOP:
+    class: cap
+    note: '`recursion_limit = STEPS_PER_HOP * max_hops + GUARD_SLACK`: short, it would stop the graph before `max_hops`; needs
+      a test that it never binds'
+  app/orchestrators/graph.py:GUARD_SLACK:
+    class: cap
+    note: '`recursion_limit = STEPS_PER_HOP * max_hops + GUARD_SLACK`: short, it would stop the graph before `max_hops`; needs
+      a test that it never binds'
+  app/orchestrators/react.py:BARE_STEPS_PER_HOP:
+    class: cap
+  app/orchestrators/react.py:BARE_ANSWER_STEP:
+    class: cap
+  app/orm/dsn.py:POOL_SIZE:
+    class: cap
+  app/orm/dsn.py:MAX_OVERFLOW:
+    class: cap
+  app/orm/dsn.py:CONNECT_TIMEOUT_SECONDS:
+    class: cap
+  app/orm/dsn.py:STATEMENT_TIMEOUT_MS:
+    class: cap
+  app/outcomes.py:SOURCES_LACK:
+    class: code
+    note: the outcome rule a stored row is read by
+  app/outcomes.py:REFUSAL_MAX_CHARS:
+    class: code
+    note: the outcome rule a stored row is read by
+  app/outcomes.py:RULE:
+    class: code
+    note: the outcome rule a stored row is read by
+  app/redaction.py:_NAMES:
+    class: code
+  app/redaction.py:_MIN:
+    class: cap
+  app/redaction.py:_IN_QUERY:
+    class: code
+  app/samplers.py:MAX_TOKENS:
+    class: cap
+  app/seed.py:_PROMPT_RE:
+    class: code
+  app/server.py:MAX_BODY_BYTES:
+    class: cap
+  app/sources/base.py:MAX_FILE_BYTES:
+    class: cap
+  app/sources/base.py:HEADING:
+    class: code
+    family: heading_reader
+  app/tool_names.py:SETTINGS_NAME:
+    class: code
+  app/use_cases/agent_policy.py:MAX_HOPS:
+    class: cap
+    family: max_hops
+  app/use_cases/card_wait.py:BUSY_RETRY_SECONDS:
+    class: cap
+  app/use_cases/card_wait.py:FREE_RETRY_SECONDS:
+    class: cap
+  app/use_cases/experiment.py:_RRF_K:
+    class: setting
+    move: 'yes'
+    how: ''
+    family: rrf_k
+  app/use_cases/experiment.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/use_cases/experiment.py:_annotate_significance(alpha):
+    class: setting
+    family: alpha
+  app/use_cases/fetch.py:TIMEOUT:
+    class: cap
+  app/use_cases/index.py:VARIANT_RE:
+    class: code
+  app/use_cases/ingest_quality.py:SOUP_ALNUM_RATIO:
+    class: setting
+    move: 'yes'
+    how: not measured
+  app/use_cases/ingest_quality.py:PROSE_WORD_LETTERS:
+    class: setting
+    move: 'yes'
+    how: not measured
+  app/use_cases/ingest_quality.py:FENCE:
+    class: code
+  app/use_cases/ingest_quality.py:PROSE_WORD:
+    class: code
+  app/use_cases/ingest_quality.py:NOT_ALNUM_OR_SPACE:
+    class: code
+  app/use_cases/ingest_quality.py:OPENS_WITH_HEADING:
+    class: code
+  app/use_cases/judge.py:SCORE_SCHEMA:
+    class: code
+  app/use_cases/mcp_integration.py:_MAX_DESCRIPTION_CHARS:
+    class: cap
+  app/use_cases/mcp_integration.py:_MAX_TOOL_NAME:
+    class: cap
+  app/use_cases/mcp_integration.py:_MAX_TOOLS:
+    class: cap
+  app/use_cases/mcp_integration.py:_MAX_SCHEMA_CHARS:
+    class: cap
+  app/use_cases/prereg.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/use_cases/raw_quality.py:_FENCE:
+    class: code
+  app/use_cases/raw_quality.py:_MARKUP:
+    class: code
+  app/use_cases/raw_quality.py:_LINE_MARKS:
+    class: code
+  app/use_cases/raw_quality.py:_ESCAPES:
+    class: code
+  app/use_cases/rejudge.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/use_cases/rejudge.py:MAX_ARM_ROWS:
+    class: cap
+  app/use_cases/rejudge.py:LABEL_RE:
+    class: code
+  app/use_cases/rejudge.py:PAIR_EVERY_UP_TO:
+    class: cap
+  app/use_cases/rejudge.py:_annotate_family(alpha):
+    class: setting
+    family: alpha
+  app/use_cases/retrieval_compare.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/use_cases/retrieval_compare.py:CANDIDATES:
+    class: setting
+    move: 'yes'
+    how: ''
+  app/use_cases/retrieval_compare.py:DEPTH:
+    class: setting
+    move: 'yes'
+    how: ''
+    family: search_depth
+  app/use_cases/retrieval_compare.py:CUTOFFS:
+    class: setting
+    move: 'yes'
+  app/use_cases/retrieval_compare.py:NO_THRESHOLD:
+    class: code
+  app/use_cases/retrieval_compare.py:GRID_CAP:
+    class: cap
+  app/use_cases/retrieval_compare.py:AXIS_RULES:
+    class: code
+  app/use_cases/retrieval_compare.py:ABSENT_MEANS:
+    class: code
+  app/use_cases/route.py:_WORD:
+    class: code
+  app/use_cases/run_snapshot.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  app/use_cases/run_snapshot.py:DISTANCE_DIGITS:
+    class: code
+  app/use_cases/site_page.py:_DOCBOOK_SECTION_NAME:
+    class: code
+  app/use_cases/site_page.py:_DIV:
+    class: code
+  app/use_cases/site_page.py:_CLASS:
+    class: code
+  app/use_cases/site_page.py:_SELECTOR:
+    class: code
+  app/use_cases/site_page.py:_NOT_TEXT:
+    class: code
+  app/use_cases/site_page.py:_PRE:
+    class: code
+  app/use_cases/site_page.py:_TAG:
+    class: code
+  app/use_cases/source_intake.py:_SLUG:
+    class: code
+    family: slug
+  app/version.py:_ASKED_AT:
+    class: code
+    note: a clock, not a value
+  app/version.py:SAY_AGAIN_AFTER:
+    class: cap
+  app/version.py:_LOADED_ASKED_AT:
+    class: code
+    note: a clock, not a value
+  app/version.py:LOADED_NAMES:
+    class: cap
+  app/worker.py:POLL_INTERVAL:
+    class: cap
+  app/worker.py:MAX_ATTEMPTS:
+    class: cap
+  app/worker.py:MAX_DEFERRED_SECONDS:
+    class: cap
+  converters/supervisor.py:STOP_DEADLINE:
+    class: cap
+  converters/supervisor.py:PROXY_TIMEOUT:
+    class: cap
+  scripts/broker_price.py:CASES:
+    class: setting
+    how: not measured
+  scripts/config_inventory.py:_ENV_IN_CODE:
+    class: code
+    note: a pattern that reads a format
+  scripts/config_inventory.py:_ENV_IN_COMPOSE:
+    class: code
+    note: a pattern that reads a format
+  scripts/config_inventory.py:_ENV_IN_EXAMPLE:
+    class: code
+    note: a pattern that reads a format
+  scripts/config_inventory.py:_TUNED:
+    class: code
+    note: a pattern that reads a format
+  scripts/config_inventory.py:_DECIDING_PARAM:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_RST_UNDERLINE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_RST_ROLE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_MARKUP:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_PUNCTUATION:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_MD_HEADING:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_MD_HEADING_MARK:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_TABLE_RULE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_HTML_CELL:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_TAG:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_INDEX_SPAN:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_SGML_ENTITY:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_UNRESOLVED_XREF:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_ASCIIDOC_INCLUDE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_ASCIIDOC_ANCHOR:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_ASCIIDOC_ANCHOR_LINE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_ASCIIDOC_TITLE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_LATEX_HEADING:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_LATEX_COMMENT_LINE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_LATEX_LEVELS:
+    class: code
+    note: LaTeX's own sectioning ladder, a spec
+  scripts/converter_gold.py:_DOCBOOK_SECTION:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_DOCBOOK_OWNER:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_DOCBOOK_TITLE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_DOCBOOK_SECTION_NAME:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_DOCBOOK_OPENING:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_DOCBOOK_ID:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_LATEX_DEFINITION:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_LATEX_COMMENT:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_LATEX_USE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_ASCIIDOC_XREF:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_MD_CODE_INCLUDE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_LINE_RANGE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_FRONT_MATTER:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_HTML_TITLE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_ANCHOR_TAG:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_SITE_LINK:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_FENCE:
+    class: code
+    note: a pattern that reads a format
+  scripts/converter_gold.py:_WORD:
+    class: code
+    note: a pattern that reads a format
+  scripts/judge_prompt_versions.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+  scripts/lang_disagreement.py:BUCKETS:
+    class: setting
+    how: not measured
+  scripts/preflight_grid.py:TUNED:
+    class: code
+    note: a pattern that reads a format
+  scripts/ragas_id_correlation.py:SCHEMA:
+    class: code
+    note: the shape of a stored record
+env:
+  CODE_VERSION:
+    class: code
+    note: written by the build and the worker, not set by hand
+  CONFIG_OVERLAY:
+    class: setting
+  CONFIG_PATH:
+    class: setting
+  CONTEXT7_API_KEY:
+    class: setting
+  CONVERTER_CHILD:
+    class: setting
+  CONVERTER_CHILDREN:
+    class: setting
+  CONVERTER_CHILD_HEALTH:
+    class: setting
+  CONVERTER_CHILD_PORT:
+    class: setting
+  CONVERTER_DOCLING_API_KEY:
+    class: setting
+  CONVERTER_DOCLING_BASE_URL:
+    class: setting
+  CONVERTER_MINERU_API_KEY:
+    class: setting
+  CONVERTER_MINERU_BASE_URL:
+    class: setting
+  CONVERTER_REQUIRED_MODELS:
+    class: setting
+  CONVERTER_TOOL:
+    class: setting
+  ENGINE_HF_CACHE:
+    class: setting
+  GID:
+    class: setting
+    note: a host fact, not a knob; stays in the environment
+  GONKA_API_KEY:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  GONKA_BASE_URL:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  HF_HOME:
+    class: setting
+  HF_TOKEN:
+    class: setting
+  HOME:
+    class: setting
+    note: a host fact, not a knob; stays in the environment
+  JUDGE_WIDTH:
+    class: setting
+  LLM_TIMEOUT:
+    class: setting
+  LLM_TIMEOUT_CPU:
+    class: setting
+  LOG_LEVEL:
+    class: setting
+  OLLAMA_API_KEY:
+    class: setting
+  OLLAMA_BASE_URL:
+    class: setting
+    family: ollama_url
+  OLLAMA_CONTEXT_LENGTH:
+    class: setting
+    family: context_length
+  OLLAMA_CPU_API_KEY:
+    class: setting
+  OLLAMA_CPU_BASE_URL:
+    class: setting
+  OLLAMA_CPU_KEEP_ALIVE:
+    class: setting
+  OLLAMA_NUM_PARALLEL:
+    class: setting
+  POSTGRES_HOST:
+    class: setting
+    family: postgres_host
+  RAG_LAB_URL:
+    class: setting
+  SUPERVISOR_PORT:
+    class: setting
+  UID:
+    class: setting
+    note: a host fact, not a knob; stays in the environment
+  VLLM_API_KEY:
+    class: setting
+  VLLM_BASE_URL:
+    class: setting
+  VLLM_BATCH_INVARIANT:
+    class: setting
+  VLLM_CPU_API_KEY:
+    class: setting
+  VLLM_CPU_BASE_URL:
+    class: setting
+  VLLM_CPU_DTYPE:
+    class: setting
+  VLLM_CPU_KVCACHE_SPACE:
+    class: setting
+  VLLM_CPU_MODEL:
+    class: setting
+  VLLM_EMBED_API_KEY:
+    class: setting
+  VLLM_EMBED_BASE_URL:
+    class: setting
+  VLLM_EMBED_GPU_UTIL:
+    class: setting
+  VLLM_EMBED_MODEL:
+    class: setting
+  VLLM_GPU_UTIL:
+    class: setting
+  VLLM_HF_OFFLINE:
+    class: setting
+  VLLM_MAX_MODEL_LEN:
+    class: setting
+  VLLM_MODEL:
+    class: setting
+    family: judge_model
+  VLLM_RERANK_API_KEY:
+    class: setting
+  VLLM_RERANK_BASE_URL:
+    class: setting
+  VLLM_RERANK_GPU_UTIL:
+    class: setting
+  VLLM_RERANK_MODEL:
+    class: setting
+  WORKER_QUEUES:
+    class: setting
+  WORKER_STAMP:
+    class: code
+    note: written by the build and the worker, not set by hand
+file:
+  converters/*/settings/*.json:
+    class: setting
+    how: a converter settings arm, measured on the gold
+  datasets/converter_gold/manifest.yaml:
+    class: setting
+    how: owner decision 24.09 (the bar)
+  datasets/sources/*.yaml:
+    class: setting
+  prompts/*.txt:
+    class: seed
+    note: the active version is a row read by `prompt_repo.active_template`

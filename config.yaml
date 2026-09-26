@@ -10,6 +10,7 @@ retrieval:
   results_limit: 5
   # not measured: no run has moved either leg's depth
   limit_vector: 20              # candidates the vector leg hands to the fusion
+  # not measured: the same as the vector leg
   limit_keywords: 20            # the same for the text leg
   # not measured: the constant of the paper that introduced RRF, and every run here used it
   rrf_k: 60
