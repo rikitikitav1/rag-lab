@@ -1,4 +1,4 @@
-# 2026-08-30 - Dropping what repeats across a source, and the six sections it nearly took
+# 2026-08-30 - Dropping blocks repeated across a source (`noboiler_1024`): not adopted
 
 The coverage report has always measured how much of a source is blocks repeated verbatim across its
 files. This entry turns that measurement into a cut rule, and asks what removing such blocks buys.

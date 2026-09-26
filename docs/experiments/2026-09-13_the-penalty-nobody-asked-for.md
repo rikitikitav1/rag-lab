@@ -1,4 +1,4 @@
-# 2026-09-13 - The penalty nobody asked for, and a door that drops it
+# 2026-09-13 - Default repetition penalties on vLLM and ollama, now set explicitly
 
 Both engines on this stand apply a repetition penalty that no request asks for, each its own, and
 ollama's OpenAI-compatible door silently drops the one a request does name. None of this shows in a

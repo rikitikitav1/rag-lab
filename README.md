@@ -9,7 +9,7 @@ Every such comparison is an experiment: several variants of the system that diff
 <details>
 <summary>Diagram: what an experiment can compare</summary>
 
-![What an experiment can compare](docs/diagrams/what_we_compare.svg)
+![What an experiment can compare](docs/diagrams/what_we_compare.drawio.svg)
 
 </details>
 
@@ -19,18 +19,18 @@ Every such comparison is an experiment: several variants of the system that diff
 
 Anyone can put a RAG together, and it works until the first change: another model, another quantization, another engine, a new judge prompt, a new cut of the corpus. Every such change changes the ruler itself. Without a bench a team compares the mean before and after, reads 7.3 against 7.1 as a result, and ships it. With one, "did it get better, or is that noise" becomes a forty-minute question with a numeric answer and a known noise floor.
 
-It is also the only way to see what other people's defaults do to your numbers. A server applies a repetition penalty the request never asked for; a prefix cache answers the first call differently from the rest; an OpenAI-compatible endpoint drops a parameter without a word; a JSON grammar flag moves a share of the scores while the means stand still. None of that shows on a dashboard. It shows only where the bench records what was sent, what the server was running and what came back, and says so before it compares variants that differ in any of it.
+It is also the only way to see what defaults you did not choose (the server's, the engine's, the API layer's) do to your numbers. A server applies a repetition penalty the request never asked for; a prefix cache answers the first call differently from the rest; an OpenAI-compatible endpoint drops a parameter without a word; a JSON grammar flag moves a share of the scores while the means stand still. None of that shows on a dashboard. It shows only where the bench records what was sent, what the server was running and what came back, and says so before it compares variants that differ in any of it.
 
-Who does not need this: a product with one model that nobody plans to replace. Ten questions and a careful look will do. Anyone who swaps a model or an engine more than once a quarter needs it, and usually finds out after an "improvement" has already reached production.
+Who does not need this: a product with one model that nobody plans to replace. Ten questions and a careful look will do. The bench is useful when you regularly change models or engines and need to tell whether a score change is real. Without one, a team usually learns that an "improvement" was noise only after it reached production.
 
 ## Questions it answers
 
 - **Does a bigger model pay off?** A 70b generator answered only slightly better than the 8b one and ran 23 times slower (it had to run on the CPU). Reranking the 8b's context got almost the same gain. [Entry](docs/experiments/2026-07-28_generator-a-b-llama3-1-8b.md)
-- **Is reranking worth its space on the GPU?** On the mixed question set it improves ranking. It is off by default: the agent needs a generator that can call tools, and such a model does not fit on the GPU (called the card below) together with the reranker. [Entry](docs/experiments/2026-08-29_generator-grid-4b-against-8b.md)
+- **Is reranking worth its space on the GPU?** On the mixed question set it improves ranking. It is off by default: the agent needs a generator that can call tools, and such a model does not fit on the 8 GB GPU together with the reranker. [Entry](docs/experiments/2026-08-29_generator-grid-4b-against-8b.md)
 - **How should the corpus be cut?** Two cuts can live side by side, each with its own index, so a new cut is compared against the old one instead of replacing it blindly. Cleaning up the cut improved retrieval; a third heading level did not. [Two cuts](docs/experiments/2026-08-26_a-corpus-you-can-keep-two-of.md) · [cleaning](docs/experiments/2026-08-27_hygiene-that-moved-the-number.md) · [third level](docs/experiments/2026-08-28_a-third-heading-level-in-the-cut.md)
 - **A hand-rolled agent or the standard one?** The agent ported to LangGraph behaved like the hand-rolled one, within the hand-rolled one's usual spread, and only then was the hand-rolled one retired. [Entry](docs/experiments/2026-08-26_the-same-agent-written-four-ways.md)
-- **Does filtering the retrieved chunks with an LLM pay off?** Before the generator sees them, a second model call reads each retrieved chunk against the question and drops the ones it calls irrelevant. This is the document-grading step that Corrective RAG (Yan et al., 2024) and Self-RAG (Asai et al., 2023) both contain, in the form LangGraph's archived tutorials for the two papers share, and LangGraph files both papers under self-reflective RAG. On our English question set (820 questions) a prompted `llama3.1:8b` kept the right section on 97.6% of the rows where retrieval had found it and dropped, on a typical row, 44% of the chunks that came from unrelated files. Our bar asked for at least 95% and at least half, both read on the lower edge of the interval, and no setting of the grader met both. A hundred questions answered with the filter and without it, judged in one residency, moved groundedness by less than the generator scores against itself, so it is off by default and costs 4.4 seconds a question when it is on. A blind reading of a hundred of the chunks the bar counts as unrelated, corroborated by the cross-encoder and by heading overlap, found that 39 to 48 of them are on the subject of the question, so the floor was asking for a large share of what could be dropped at all. [Entry](docs/experiments/2026-09-19_a-grader-that-does-not-buy-it.md)
-- **Does rewriting the question when the search looks weak pay off?** When the nearest retrieved chunk is far, or the five chunks the path serves lie within a hair of each other, a second model call rewrites the question and the search runs again, which is what Corrective RAG (Yan et al., 2024) does when it judges retrieval wrong. The trigger is the stand's own calibrated weak distance, and it fires on 136 of our 820 English questions with precision 0.42 against "the gold section is not in the top five". Replacing the first five chunks with the rewrite's five recovered the right section on 22 rows and lost it on 14: a net of +8 rows, +0.0098, with an interval of [-0.0049, +0.0244] that still covers zero, and exactly zero change in whether the right file was found at all. Telling an effect this size from nothing would need about 1850 questions. The node was then removed: a gain this small does not pay for a second model call and a second search on one row in six. The entry keeps the measurement and the trigger's numbers. [Entry](docs/experiments/2026-09-20_a-rewrite-that-does-not-clear-the-bar.md)
+- **Does filtering the retrieved chunks with an LLM pay off?** Before the generator sees the retrieved chunks, a second model call reads each one against the question and drops the ones it judges irrelevant. This is the document-grading step of Corrective RAG (Yan et al., 2024) and Self-RAG (Asai et al., 2023), built the way LangGraph's archived tutorials for the two papers build it (LangGraph files both papers under self-reflective RAG). We tried a prompted `llama3.1:8b` on our English question set (820 questions). It kept the right section on 97.6% of the rows where retrieval had found it. On a typical row it dropped 44% of the chunks from unrelated files. Our bar asked for at least 95% and at least half, both read on the lower edge of the interval, and no grader setting met both. We then answered a hundred questions with the filter and without it and judged them while one judge model stayed loaded. Groundedness moved less than the generator moves against itself. So the filter is off by default; when it is on, it costs 4.4 seconds a question. Finally, a hundred of the chunks the bar counts as unrelated were read blind, and the cross-encoder and heading overlap backed that reading: 39 to 48 of them are on the subject of the question. So the bar was asking for a large share of what could be dropped at all. [Entry](docs/experiments/2026-09-19_a-grader-that-does-not-buy-it.md)
+- **Does rewriting the question when the search looks weak pay off?** The trigger: the nearest retrieved chunk is far, or the five chunks the path serves lie very close to each other. Then a second model call rewrites the question and the search runs again, as Corrective RAG (Yan et al., 2024) does when it judges retrieval wrong. "Far" is the stand's own calibrated weak distance. It fires on 136 of our 820 English questions, with precision 0.42 against "the gold section is not in the top five". The experiment replaced the first five chunks with the rewrite's five. That recovered the right section on 22 rows and lost it on 14: a net of +8 rows, +0.0098, interval [-0.0049, +0.0244], which still covers zero. Whether the right file was found at all changed by exactly zero. Telling an effect this size from nothing would need about 1850 questions. The node was then removed: a gain this small does not pay for a second model call and a second search on one row in six. The entry keeps the measurement and the trigger's numbers. [Entry](docs/experiments/2026-09-20_a-rewrite-that-does-not-clear-the-bar.md)
 - **Does a reasoning schema lift a small model's tool calling?** Instead of calling a tool itself, `llama3.1:8b` filled a schema whose action field names the tool, so the choice became a validated field, the way Schema-Guided Reasoning proposes. On 200 questions outside the corpus the share of rows that described a tool call instead of making one, or spent every hop, went from 0.745 to 0.990: the schema removed the described calls and the rows ran out of hops instead. Answers without a source went from 4.5% to 11.5%, and on the corpus questions relevance fell from 9.1 to 5.6 of ten. The arm was removed. [Entry](docs/experiments/2026-09-23_a-schema-that-makes-the-loop-worse.md)
 - **Does cutting the noise out of the kept chunks pay off?** Corrective RAG goes past dropping whole chunks: it cuts the kept ones into strips of a few sentences, scores each strip and joins the kept ones back. With the same prompted grader on strips of three lines, the context got a quarter shorter and the answer took almost twice as long, and faithfulness on 200 questions moved by −0.07 [−0.33, +0.17], inside the noise of the control against itself. By our labels a quarter of what it cut came out of the right section. The code was removed. [Entry](docs/experiments/2026-09-23_a-strip-that-does-not-buy-the-answer.md)
 - **Can the judge be trusted?** Judges of different size agree on how complete an answer is and disagree on how well it is grounded, so scores compare only within one judge. Our judge and RAGAS (a standard evaluation library, run here as a second, guest judge) agree moderately (rank correlation 0.5 on questions from the corpus); RAGAS is the noisier one, and on refusals the two disagree by design. [Two judges](docs/experiments/2026-07-29_judge-vs-judge-qwen2-5-7b.md) · [ours against RAGAS](docs/experiments/2026-09-06_our-judge-against-the-standards.md)
@@ -63,25 +63,33 @@ A difference smaller than its instrument's own movement is read as noise.
 
 ## What's inside
 
-Under the bench is an ordinary RAG system: it answers technical questions from a personal knowledge base and a set of public IT repositories, and shows the sources it used. Search is written by hand from basic parts, so that every step can be measured; where the industry has a standard that does the job better, the bench moves onto it and measures what the move costs (the agent runs on LangGraph, markdown is split by `MarkdownHeaderTextSplitter`). Models run locally on one GPU, which ollama and vLLM hand to each other through the job queue, or on the CPU; a cloud model can be plugged in as a remote engine.
+Under the bench is an ordinary RAG system: it answers technical questions from a personal knowledge base and a set of public IT repositories, and shows the sources it used. Search is written by hand from basic parts, so that every step can be measured; where the industry has a standard that does the job better, the bench moves onto it and measures what the move costs (the agent runs on LangGraph, markdown is split by `MarkdownHeaderTextSplitter`). Models run locally on one GPU or on the CPU, and a cloud model can be plugged in as a remote engine. ollama and vLLM take turns on the one GPU: the job queue hands it from one engine to the next.
 
 - **Corpus variants.** The same corpus can be cut in several ways at once, each cut with its own index, so re-cutting it is something you compare rather than a step you cannot take back. [Entry](docs/experiments/2026-08-26_a-corpus-you-can-keep-two-of.md)
 - **Hybrid search.** Vector search (pgvector) and full-text search (Postgres FTS with stemming per language) are merged by RRF. Results can be filtered by category, and a distance threshold lets the system say "the corpus has nothing on this" instead of guessing.
-- **Models by role.** There are eight roles: six of our own (generation, embeddings, judging, paraphrasing, reranking, grading) and two for the RAGAS guest judge, its model and its embedder. Which model serves a role is stored in the database and can be changed without a restart. Each role sits on an engine: ollama or vLLM, on the card or on the CPU, or a cloud API.
+- **Models by role.** There are eight roles: six of our own (generation, embeddings, judging, paraphrasing, reranking, grading) and two for the RAGAS guest judge, its model and its embedder. Which model serves a role is stored in the database and can be changed without a restart. Each role sits on an engine: ollama or vLLM, on the GPU or on the CPU, or a cloud API.
 - **Several sources, one category tree.** Personal notes in Russian, 173 interview-question repositories in English, and three documentation sources (`system-design-primer`, `redis-doc`, `cheatsheets`), each with its own rules for what counts as a heading and what is junk.
+- **Adding a source.** A new source is declared: name, language, licence and where its files come from (URLs, a folder, a git repository or pages of a site). Then it is turned into a raw source, markdown that is not indexed yet, with a suitability report and no gold to compare against. Routing depends on the kind of file: markdown stays as it is, a PDF page without a text layer or an image goes to MinerU, everything else to Docling. Each converter is a separate engine and gets the GPU in its turn. The report then checks quality: it compares the conversion with the file's own text layer a page range at a time, and runs the chunker's gates a chapter at a time. If the breaching share of text passes a declared bound, the source is marked bad with its reasons. It is not stopped. Why two converters: [entry](docs/experiments/2026-09-25_two-converters-one-per-regime.md)
 - **Five quality measures.** Retrieval (did the right file and the right section come back) and, scored by an LLM judge, faithfulness (is the answer supported by the context), relevance, completeness against a reference answer, and whether the system refuses when it should. Scores are kept separately for questions from the corpus, outside it and off topic, and every question gets an outcome. When the system refuses, or answers without any source, the judge leaves the row unscored; such rows are counted by their outcome instead.
 - **A job queue.** Heavy work (pulling models, indexing, running and judging question sets) goes through a queue in Postgres, processed by a worker. The app itself depends only on Postgres: if a model server goes away, jobs wait and the app does not crash; the compose stand starts the API only after the model servers are up.
-- **Reranking.** A cross-encoder (`bge-reranker-v2-m3`) can re-order search results before they reach the generator. It is off by default because it does not fit on the card next to the agent's generator; a run can turn it on once its server is up, while the chat cannot, since the reranker and the generator would be two engines on the card. What it does to ranking and answers is in the questions above.
+- **Reranking.** A cross-encoder (`bge-reranker-v2-m3`) can re-order search results before they reach the generator. It is off by default because it does not fit on the GPU next to the agent's generator. A run can turn it on once its server is up. The chat cannot, since the reranker and the generator would be two engines on the GPU at once. What it does to ranking and answers is in the questions above.
 - **An agent on LangGraph.** The model decides when to search, may rephrase the question and search again, then answers. The rules around it (when retrieval counts as weak, when a question is off topic, which tools it may call) are ours and measured. Any set of questions can be run through the agent or through a single retrieve-and-answer pass, and the two compared.
 - **Everything through the API.** Building question sets (paraphrasing and translating interview questions), importing your own, running and judging them are API calls that go through the queue; every request and every job is logged with its timing.
 
 ## Stack
 
-Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg) · Ollama and vLLM (OpenAI-compatible APIs, one GPU handed between them) · FastAPI · dbmate (migrations) · uv/pyproject · Docker Compose.
+Python · PostgreSQL + pgvector · SQLAlchemy 2.0 (sync psycopg + async asyncpg) · Ollama and vLLM (OpenAI-compatible APIs, taking turns on one GPU) · Docling and MinerU (document converters, each in its own image) · pypdfium2 (a PDF's own text layer) · FastAPI · dbmate (migrations) · uv/pyproject · Docker Compose.
 
 The standard's axes come from **ragas**, pinned at `0.4.3` in the `eval` dependency group and installed in the images of both services, so a guest pass runs inside the queue rather than beside it in a host shell. `langchain-community` is pinned below `0.4`, because that release dropped `chat_models.vertexai`, which ragas imports.
 
-From the LangChain family, five packages: **langgraph** runs the agent as a `StateGraph`, **langchain** provides `create_agent` for a variant of the agent built on the stock `create_agent`, which measures what the standard version costs, **langchain-text-splitters** decides what counts as a markdown heading, and **langchain-core** with **langchain-ollama** are what that variant imports directly. Retrieval, the queue, the eval bench and the corpus policies are ours; the version of the splitter travels in the ingest report, because the cut is external code now and a lock refresh would otherwise move it silently.
+Five packages come from the LangChain family:
+
+- **langgraph** runs the agent as a `StateGraph`;
+- **langchain** provides `create_agent`, the base of a second variant of the agent that measures what the standard version costs;
+- **langchain-core** and **langchain-ollama** are imported directly by that variant;
+- **langchain-text-splitters** decides what counts as a markdown heading.
+
+Retrieval, the queue, the eval bench and the corpus policies are project code. The splitter's version is written into the ingest report: the cut is external code now, and a lock refresh would otherwise move it silently.
 
 ## Models and prompts architecture
 
@@ -95,25 +103,25 @@ The data model, the reranker's server and what bootstrap does on start: [docs/de
 
 Each kind of setting has one home:
 
-- `config.yaml` (mounted into the container): the pipeline, that is the roles and their models, retrieval, reranking, the agent, ingestion, text search, corpus variants and sources. A value chosen by measurement carries its reason and its measurement file beside it, and every run records the values it used in its snapshot.
-- `.env`: what depends on the machine or must stay out of the repo (timeouts, card shares, keys); [`.env.example`](.env.example) lists every variable with its default.
+- `config.yaml` (mounted into the container): the pipeline, that is the roles and their models, retrieval, reranking, the agent, ingestion, text search, corpus variants and sources, and how a source is added (`intake`: the route by file, the report's bounds, each converter's engine and settings). A value chosen by measurement carries its reason and its measurement file beside it, and every run records the values it used in its snapshot.
+- `.env`: what depends on the machine or must stay out of the repo (timeouts, shares of GPU memory, keys); [`.env.example`](.env.example) lists every variable with its default.
 - the database: which model serves a role, prompt versions and engine rows, switched at runtime through the API.
-- `datasets/`: the question banks and the corpus sources. A pass writes its measurement and its frozen candidate pool here too, and those stay out of git: a number reaches a reader as the table in its journal entry, with the file name and the job id as its address.
+- `datasets/`: the question banks, the corpus sources and the raw sources a conversion writes (`datasets/raw_sources/`, out of git). A pass writes its measurement and its frozen candidate pool here too, and those stay out of git: a number reaches a reader as the table in its journal entry, with the file name and the job id as its address.
 - the code: the category trees of the sources and the protocol limits.
 
 ## Quickstart
 
-The host needs Docker Compose v2, an NVIDIA driver and the NVIDIA Container Toolkit with a CDI spec: `docker info` must list `nvidia.com/gpu=all` among the discovered CDI devices (tested on Docker Engine 29.0, Compose 2.40, toolkit 1.20). Without it, `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml` writes the spec, and the toolkit's `nvidia-cdi-refresh` unit keeps it current after a driver update. The card goes to the containers through CDI rather than the runtime hook because on a cgroup v2 host with the systemd driver every `systemctl daemon-reload` (snapd and unattended upgrades run one on their own) took the card from the running containers.
+The host needs Docker Compose v2, an NVIDIA driver and the NVIDIA Container Toolkit with a CDI spec: `docker info` must list `nvidia.com/gpu=all` among the discovered CDI devices (tested on Docker Engine 29.0, Compose 2.40, toolkit 1.20). Without it, `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml` writes the spec, and the toolkit's `nvidia-cdi-refresh` unit keeps it current after a driver update. The GPU goes to the containers through CDI rather than the runtime hook. The reason: on a cgroup v2 host with the systemd driver, every `systemctl daemon-reload` (snapd and unattended upgrades run one on their own) took the GPU from the running containers.
 
 ```bash
-scripts/up.sh                            # checks the card, then docker compose up -d
+scripts/up.sh                            # checks the GPU, then docker compose up -d
 curl localhost:8000/readiness            # 503 only when Postgres is down; otherwise "ok", or "degraded" naming the roles whose engine is down
 curl -X POST localhost:8000/v1/chat/question \
   -H 'Content-Type: application/json' -d '{"text": "What is a hash table?"}'
 # Swagger: http://localhost:8000/docs
 ```
 
-`scripts/up.sh` rather than a bare `docker compose up -d`: on a host without a card it says why the stand would not start instead of Docker's "unresolvable CDI devices", it unloads ollama's models before `vllm` starts, and it hands `vllm` the judge `config.yaml` names. `scripts/up.sh --cpu` brings the stand up without a card, every role on the processor ollama: [docs/stand_modes.md](docs/stand_modes.md), mode 8.
+`scripts/up.sh` rather than a bare `docker compose up -d`: on a host without a GPU it says why the stand would not start instead of Docker's "unresolvable CDI devices", it unloads ollama's models before `vllm` starts, and it hands `vllm` the judge `config.yaml` names. `scripts/up.sh --cpu` brings the stand up without a GPU, every role on the processor ollama: [docs/stand_modes.md](docs/stand_modes.md), mode 8.
 
 <details>
 <summary>Diagram: how the stand comes up</summary>
@@ -128,11 +136,20 @@ The first `up` pulls the models of the roles (on ollama about 15 GiB: `llama3.1:
 
 The `notes` source reads `~/working_docs/notes` on the host, mounted read-only into the containers. On a machine without that directory Docker creates it empty, and the source indexes nothing.
 
-Hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own questions, browsing logs): **[docs/use_cases.md](docs/use_cases.md)**. It is a walkthrough of nine scenarios, not a route index; the complete reference is Swagger at `/docs`, which is generated from the code and cannot fall behind it.
+Hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own questions, browsing logs, adding a source): **[docs/use_cases.md](docs/use_cases.md)**. It is a walkthrough of ten scenarios, not a route index; the complete reference is Swagger at `/docs`, which is generated from the code and cannot fall behind it.
 
-Other layouts of the stand (reranking, an embedder or the generator on vLLM, the processor, the judge on ollama, a stuck card), step by step and with the way back: **[docs/stand_modes.md](docs/stand_modes.md)**.
+Other layouts of the stand (reranking, an embedder or the generator on vLLM, the processor, the judge on ollama, a GPU that was not released), step by step and with the way back: **[docs/stand_modes.md](docs/stand_modes.md)**.
 
 Your first comparison: [scenario 2](docs/use_cases.md#scenario-2-mini-eval-from-scratch-to-numbers) takes a small set from scratch to numbers, and [scenario 9](docs/use_cases.md#scenario-9-parameter-series-measure-a-retrieval-lever) sweeps one lever as an experiment.
+
+### What the host needs
+
+The stand was built and measured on one machine: a laptop RTX 4070 with 8 GB of video memory, 32 processor threads and 62 GB of RAM. Nothing weaker was tried. The stand leans on that one GPU in many places: the generator, the embedder, the judge and the converters take turns on it, and the queue hands it between them. This is a known limit of a bench made for one machine, and it stays. The way around it is the processor mode, slower but without a GPU.
+
+- GPU: NVIDIA with 8 GB, given through CDI. With less, only `scripts/up.sh --cpu` runs, every role on the processor with a timeout of 600 s ([stand_modes.md](docs/stand_modes.md), mode 8).
+- Memory: the sleeping judge keeps about 13 GB of host memory; `vllm-cpu`, when it is up, holds its whole model there, about 19 GB for a 7B.
+- Disk: about 50 GB for the default stand (the vLLM image 21.5 GB, ollama 4.8 GB, the app about 1 GB, the role models about 15 GB on ollama and 5.2 GB for the judge; the ollama volume grows with every pull and holds 61 GB here after a month of experiments); the profile `convert` adds about 39 GB (the MinerU image 28.1 GB, Docling 10.6 GB).
+- Processor: Docling's OCR on scanned pages and the processor mode run on it.
 
 ## Architecture
 
@@ -143,9 +160,9 @@ Your first comparison: [scenario 2](docs/use_cases.md#scenario-2-mini-eval-from-
 
 </details>
 
-How the card moves between engines, and where a failed handover leads: [docs/stand_modes.md](docs/stand_modes.md).
+How the GPU passes between engines, and where a failed handover leads: [docs/stand_modes.md](docs/stand_modes.md).
 
-Diagrams are D2 and PlantUML sources in `docs/diagrams/`, rendered by `scripts/render_diagrams.sh`; CI fails if a committed SVG drifts from its source. Structural and behavioural views are UML and C4; the generated agent graph and the explanatory drawings stay in D2.
+Diagrams in `docs/diagrams/` are of two kinds. Structural and behavioural views are UML and C4 in PlantUML, rendered by `scripts/render_diagrams.sh`, and CI fails if a committed SVG drifts from its source; the agent graph is one of them, generated from the compiled graph. The explanatory drawings are `.drawio.svg`: a picture with its draw.io source inside, edited in draw.io or its VS Code extension, so there is nothing to render and nothing to drift.
 
 ## Compose services
 
@@ -157,11 +174,12 @@ Diagrams are D2 and PlantUML sources in `docs/diagrams/`, rendered by `scripts/r
 | `bootstrap` | prepares models, roles and indexing jobs, runs to completion before the rest; waits for `vllm` and puts it to sleep before ollama loads a role |
 | `rag-lab` | FastAPI server (uvicorn) |
 | `repos-owner` | hands the `repos_data` volume to the host's user before the worker starts, runs once |
-| `worker` | processes the job queue as the host's user, sixteen types listed with what each one takes in [docs/api.md](docs/api.md#the-queue) |
+| `worker` | processes the job queue as the host's user, eighteen types listed with what each one takes in [docs/api.md](docs/api.md#the-queue) |
 | `ollama` | local inference on GPU: the generator, the embedder, the paraphraser and the RAGAS guest's model |
-| `ollama-cpu` | a second ollama on the processor, for a role that should not take the card (the RAGAS guest's embedder by default); always up, since ollama loads a model on the first call and gives the memory back after its keep-alive |
-| `vllm` | the judge (`Qwen/Qwen2.5-7B-Instruct-AWQ`); takes the card first at start and is put to sleep whenever another engine needs it; its port is not published on the host |
-| `vllm-rerank`, `vllm-embed`, `vllm-cpu` | under the compose profiles `rerank`, `embed` and `cpu`: the reranking role, an embedder on vLLM, vLLM on the processor; started only with `--profile`, because a vLLM holds its share of the card, or its whole model in host memory (19 GB for a 7B on the processor), for as long as it runs; how to switch: [docs/stand_modes.md](docs/stand_modes.md) |
+| `ollama-cpu` | a second ollama on the processor, for a role that should not take the GPU (the RAGAS guest's embedder by default); always up, since ollama loads a model on the first call and gives the memory back after its keep-alive |
+| `vllm` | the judge (`Qwen/Qwen2.5-7B-Instruct-AWQ`); takes the GPU first at start and is put to sleep whenever another engine needs it; its port is not published on the host |
+| `converter-docling`, `converter-mineru` | under the compose profile `convert`: Docling and MinerU, each behind a supervisor that runs its tool only while it holds the GPU; a conversion takes the GPU for the engine whose tool it needs, and images are pinned with the models they use baked in |
+| `vllm-rerank`, `vllm-embed`, `vllm-cpu` | under the compose profiles `rerank`, `embed` and `cpu`: the reranking role, an embedder on vLLM, vLLM on the processor; started only with `--profile`, because a vLLM holds its share of GPU memory, or its whole model in host memory (19 GB for a 7B on the processor), for as long as it runs; how to switch: [docs/stand_modes.md](docs/stand_modes.md) |
 
 ### Environment knobs
 
@@ -173,7 +191,7 @@ The complete reference is Swagger at `http://localhost:8000/docs`. [docs/api.md]
 
 ## MCP
 
-Two MCP servers are mounted on the API: `/mcp` for the corpus (`search_corpus`, `answer_question`, `list_categories`) and `/mcp-ops` for the stand itself (runs, comparisons, jobs, engines). The agent is also an MCP client of external servers. Details: [docs/mcp.md](docs/mcp.md).
+Two MCP servers are mounted on the API: `/mcp` for the corpus (`search_corpus`, `answer_question`, `list_categories`) and `/mcp-ops` for the stand itself (runs, comparisons, jobs, engines, adding a source). The agent is also an MCP client of external servers. Details: [docs/mcp.md](docs/mcp.md).
 
 ## Design notes
 
@@ -182,3 +200,7 @@ Why the agent and the corpus are built the way they are, each decision with its 
 ## How it is built
 
 Where each part of the code lives: [docs/code_map.md](docs/code_map.md). The logic lives in transport-neutral `use_cases` behind thin adapters (CLI, FastAPI REST, MCP).
+
+## License
+
+The code is under the [MIT License](LICENSE). The documents the corpus is built from keep their own licences.

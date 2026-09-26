@@ -13,9 +13,9 @@ A lab journal of RAG-quality experiments: question → setup → result → deci
 
 ## How an entry is written
 
-The format is a rule of this repository, not a preference. Entries are read months later, by
-someone deciding whether a number still holds, so every entry carries the same load-bearing
-sections in the same order:
+Entries are often read months later, by someone checking whether a number still holds. Every
+entry uses the same sections in the same order, so that reader can find the setup, the result, the
+decision and the caveats in the same place each time:
 
 ```
 # YYYY-MM-DD - Title
@@ -36,26 +36,27 @@ a table can find the coordinates directly above it:
 **Set** `paraphrased_v2_ru` (n=823) · **corpus** `clean_1024` against `baseline` · **judge** `qwen2.5:7b`
 ```
 
-Rules that decide whether an entry is worth keeping:
+Each entry also follows these rules:
 
-- **One entry, one question.** A second question gets a second entry, linked, not a longer file.
-- **Every number carries its n, its set and its corpus variant.** Not once in the entry: beside the
-  table it belongs to, so a number cannot be lifted out of the file without them. Two numbers taken
-  on different sets are not two measurements of one thing, and without the n printed next to them
-  that difference reads as instrument noise. This rule exists because a set difference was nearly
-  reported as hnsw instability. For runs older than the `variant` column, name the corpus of that
-  era in words rather than leaving the field blank.
-- **Every comparison carries an interval** or says out loud that it is a point estimate. A delta
-  without a spread is not a result.
-- **The decision rule is written before the run** for anything shaped as an A/B, and the entry
-  says where it was written down. A criterion chosen after seeing the numbers is named as such.
-- **Corrections are appended, never rewritten.** A later run that overturns an earlier number gets
-  a `## Correction, measured on YYYY-MM-DD` section in the entry it corrects, pointing at the entry
-  that did the correcting. The original text stays as it was written.
-- **Link files, not lines.** `app/use_cases/chat.py`, never `chat.py:180`: line numbers rot within
-  a week and the reader cannot tell a stale pointer from a wrong one.
-- **No praise of the method.** The entry records what was measured and what it cost. Whether that
-  was a good way to work is the reader's call.
+- **One entry, one question.** A second question gets a second entry, linked from the first. This
+  keeps each file short enough to check against its own numbers.
+- **Every number carries its n, its set and its corpus variant**, written beside the table it belongs
+  to rather than once for the whole entry. A number copied out of the file then keeps its context.
+  Two numbers taken on different sets are not two measurements of one thing, and without the n next
+  to them that difference can look like instrument noise. A set difference was once nearly reported
+  as hnsw instability for exactly this reason. For runs older than the `variant` column, name the
+  corpus of that era in words instead of leaving the field blank.
+- **Every comparison carries an interval**, or states that it is a point estimate. A delta without
+  a spread cannot be told apart from noise.
+- **For anything shaped as an A/B, the decision rule is written before the run**, and the entry says
+  where it was written down. If a criterion was chosen after the numbers were seen, the entry says so.
+- **Corrections are appended, not rewritten.** When a later run overturns an earlier number, the
+  entry it corrects gets a `## Correction, measured on YYYY-MM-DD` section pointing at the entry that
+  did the correcting. The original text stays as written, so the history of the number stays visible.
+- **Link files, not lines.** Write `app/use_cases/chat.py`, not `chat.py:180`. Line numbers go stale
+  within a week, and the reader cannot tell a stale pointer from a wrong one.
+- **Record results, not opinions about the method.** The entry states what was measured and what it
+  cost, and leaves the judgement of the approach to the reader.
 
 ---
 
@@ -74,40 +75,41 @@ Rules that decide whether an entry is worth keeping:
 - [2026-07-28 - Paired significance testing lands in the aggregator (the audit answered)](experiments/2026-07-28_paired-significance-testing-lands-in-the.md)
 - [2026-07-29 - Judge vs judge: qwen2.5 7b against 32b on the same 100 answers (Spearman)](experiments/2026-07-29_judge-vs-judge-qwen2-5-7b.md)
 - [2026-07-29 - Agent becomes an MCP client (DeepWiki first) - comparability boundary](experiments/2026-07-29_agent-becomes-an-mcp-client-deepwiki.md)
-- [2026-08-24 - Phased eval runs, and the unload that freed nothing](experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md)
-- [2026-08-24 - Corpus-first, and the fallback that never fired](experiments/2026-08-24_corpus-first-and-the-fallback-that-never.md)
-- [2026-08-25 - The gate that fires, and the refusal that never comes](experiments/2026-08-25_the-gate-that-fires-and-the-refusal-that.md)
-- [2026-08-25 - A cheaper gate signal, and a win on the wrong axis](experiments/2026-08-25_a-cheaper-gate-signal-and-a.md)
-- [2026-08-25 - A refusal at last, and a threshold that measured nothing](experiments/2026-08-25_a-refusal-at-last-and-the.md)
-- [2026-08-26 - The same agent written four ways, and what the standard costs](experiments/2026-08-26_the-same-agent-written-four-ways.md)
-- [2026-08-26 - A corpus you can keep two of, and the instrument that measures it](experiments/2026-08-26_a-corpus-you-can-keep-two-of.md)
-- [2026-08-27 - Corpus hygiene that moved the number, and four instruments that were lying](experiments/2026-08-27_hygiene-that-moved-the-number.md)
-- [2026-08-28 - A third heading level in the cut, and what it did not buy](experiments/2026-08-28_a-third-heading-level-in-the-cut.md)
-- [2026-08-28 - A gate that degenerated the other way](experiments/2026-08-28_a-gate-that-degenerated-the-other-way.md)
-- [2026-08-28 - Reranking and the language of the question, and why the switch is not the language](experiments/2026-08-28_reranking-and-the-language-of-the-question.md)
+- [2026-08-24 - Phased eval runs: `empty_cache()` did not free live models](experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md)
+- [2026-08-24 - Corpus-first agent: the empty-result fallback fired 0 of 20 times](experiments/2026-08-24_corpus-first-and-the-fallback-that-never.md)
+- [2026-08-25 - Coverage gate on weak retrieval: it opens, but no policy refuses](experiments/2026-08-25_the-gate-that-fires-and-the-refusal-that.md)
+- [2026-08-25 - Gate signal: vector distance against the cross-encoder, no difference found](experiments/2026-08-25_a-cheaper-gate-signal-and-a.md)
+- [2026-08-25 - Topic axis for refusals at threshold 0.50, and a 0.709 threshold caught before the run](experiments/2026-08-25_a-refusal-at-last-and-the.md)
+- [2026-08-26 - Hand-rolled agent loop against its LangGraph ports: the port matches](experiments/2026-08-26_the-same-agent-written-four-ways.md)
+- [2026-08-26 - Corpus variants: two chunkings side by side, and how they are measured](experiments/2026-08-26_a-corpus-you-can-keep-two-of.md)
+- [2026-08-27 - Corpus hygiene (`clean_1024` against `baseline`) moves retrieval; four broken instruments found](experiments/2026-08-27_hygiene-that-moved-the-number.md)
+- [2026-08-28 - Third heading level in the cut (`prefix_1024`): no retrieval gain](experiments/2026-08-28_a-third-heading-level-in-the-cut.md)
+- [2026-08-28 - Conditional reranking gate: rejected](experiments/2026-08-28_a-gate-that-degenerated-the-other-way.md)
+- [2026-08-28 - Reranking by question language: helps Russian, hurts English on `baseline` only, no language switch](experiments/2026-08-28_reranking-and-the-language-of-the-question.md)
 - [2026-08-29 - Generator grid: 4b against 8b, reranking, and two languages](experiments/2026-08-29_generator-grid-4b-against-8b.md)
-- [2026-08-29 - The same question in two languages](experiments/2026-08-29_the-same-question-in-two-languages.md)
-- [2026-08-30 - The questions the criterion cannot see](experiments/2026-08-30_the-questions-the-criterion-cannot-see.md)
-- [2026-08-30 - Dropping what repeats across a source, and the six sections it nearly took](experiments/2026-08-30_dropping-what-repeats-across-a-source.md)
-- [2026-08-30 - The ceiling that changed nothing, and the rule that decided anyway](experiments/2026-08-30_the-ceiling-that-changed-nothing.md)
-- [2026-08-31 - One sentence, two instructions, and the arm that told them apart](experiments/2026-08-31_one-sentence-two-instructions.md)
-- [2026-09-06 - Our ranks against the standard, on the half that has no judge](experiments/2026-09-06_our-ranks-against-the-standard-without-a-judge.md)
-- [2026-09-06 - The axis that makes our refusals, priced by switching it off](experiments/2026-09-06_the-axis-that-makes-our-refusals.md)
-- [2026-09-06 - Our judge against the standard's, and the ruler that had to come first](experiments/2026-09-06_our-judge-against-the-standards.md)
-- [2026-09-07 - The phases split, and the replay that checked it without asking a model twice](experiments/2026-09-07_the-phases-split-and-the-replay-that-checked-it.md)
-- [2026-09-07 - What moving onto the standard was worth, and what it cost](experiments/2026-09-07_what-the-standard-was-worth.md)
-- [2026-09-08 - The directive nobody gave, and what our judge charges for Russian](experiments/2026-09-08_the-directive-nobody-gave.md)
-- [2026-09-09 - What batch invariance costs on an AWQ judge, and what it buys](experiments/2026-09-09_what-batch-invariance-costs-on-an-awq-judge.md)
-- [2026-09-09 - The same rows judged by two engines, and what that comparison cannot say](experiments/2026-09-09_the-same-rows-judged-by-two-engines.md)
-- [2026-09-13 - The judge that looped on whitespace, and a grammar rule that moved 17% of its verdicts](experiments/2026-09-13_the-judge-that-looped-on-whitespace.md)
+- [2026-08-29 - Russian against English on 820 paired questions (post hoc)](experiments/2026-08-29_the-same-question-in-two-languages.md)
+- [2026-08-30 - Veto set over four unseen source families (`veto_v1`): hygiene confirmed](experiments/2026-08-30_the-questions-the-criterion-cannot-see.md)
+- [2026-08-30 - Dropping blocks repeated across a source (`noboiler_1024`): not adopted](experiments/2026-08-30_dropping-what-repeats-across-a-source.md)
+- [2026-08-30 - Chunk ceiling 2048 against 1024: no difference, the tie-break keeps 1024](experiments/2026-08-30_the-ceiling-that-changed-nothing.md)
+- [2026-08-31 - Cross-language clause in the judge prompts: not tested, not adopted](experiments/2026-08-31_one-sentence-two-instructions.md)
+- [2026-09-06 - RAGAS ID-based retrieval metrics against our hit@k and MRR](experiments/2026-09-06_our-ranks-against-the-standard-without-a-judge.md)
+- [2026-09-06 - Topic axis switched off: the agent refuses far less](experiments/2026-09-06_the-axis-that-makes-our-refusals.md)
+- [2026-09-06 - Our faithfulness judge against RAGAS Faithfulness, and the judge noise floor](experiments/2026-09-06_our-judge-against-the-standards.md)
+- [2026-09-07 - Agent graph phase split, checked by replay without model calls](experiments/2026-09-07_the-phases-split-and-the-replay-that-checked-it.md)
+- [2026-09-07 - RAGAS arc summary: worth integrating, not worth keeping in the loop](experiments/2026-09-07_what-the-standard-was-worth.md)
+- [2026-09-08 - Answer-language directive fix, and the judge's penalty for Russian](experiments/2026-09-08_the-directive-nobody-gave.md)
+- [2026-09-09 - Batch invariance on the AWQ judge: 8.7x slower, no verdict changed](experiments/2026-09-09_what-batch-invariance-costs-on-an-awq-judge.md)
+- [2026-09-09 - Same rows judged on two engines: 39% of verdicts differ, not attributable to the engine](experiments/2026-09-09_the-same-rows-judged-by-two-engines.md)
+- [2026-09-13 - Judge looping on whitespace: the grammar rule fix moved 17% of verdicts](experiments/2026-09-13_the-judge-that-looped-on-whitespace.md)
 - [2026-09-13 - A refusal the rule could not read: "the context does not contain"](experiments/2026-09-13_a-refusal-the-rule-could-not-read.md)
-- [2026-09-13 - The penalty nobody asked for, and a door that drops it](experiments/2026-09-13_the-penalty-nobody-asked-for.md)
+- [2026-09-13 - Default repetition penalties on vLLM and ollama, now set explicitly](experiments/2026-09-13_the-penalty-nobody-asked-for.md)
 - [2026-09-13 - Fifteen pairs the owner judged, read again by the new judge](experiments/2026-09-13_fifteen-pairs-the-owner-judged.md)
-- [2026-09-13 - The same generator on two engines, and a refusal that was a rule](experiments/2026-09-13_the-same-generator-on-two-engines.md)
-- [2026-09-13 - A bigger model at the same retrieval, and where it refuses](experiments/2026-09-13_a-bigger-model-at-the-same-retrieval.md)
-- [2026-09-14 - A cloud judge on the same answers, two and a half points kinder on grounding](experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md)
-- [2026-09-14 - A panel for the language probe, and a regime read against a reference](experiments/2026-09-14_a-panel-for-the-language-probe.md)
-- [2026-09-19 - An LLM grader between search and the answer, and the bar it does not clear](experiments/2026-09-19_a-grader-that-does-not-buy-it.md)
+- [2026-09-13 - Same generator on ollama and vLLM: not worse, faster, default unchanged](experiments/2026-09-13_the-same-generator-on-two-engines.md)
+- [2026-09-13 - DeepSeek against llama3.1:8b at the same retrieval, and where each refuses](experiments/2026-09-13_a-bigger-model-at-the-same-retrieval.md)
+- [2026-09-14 - Cloud judge against our judge on the same answers: 2.5 points kinder on grounding](experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md)
+- [2026-09-14 - Language probe: a fixed 60-row panel and a regime read against a reference](experiments/2026-09-14_a-panel-for-the-language-probe.md)
+- [2026-09-19 - LLM chunk grader before generation: does not clear the bar, off by default](experiments/2026-09-19_a-grader-that-does-not-buy-it.md)
 - [2026-09-20 - Rewriting the question when the search looks weak](experiments/2026-09-20_a-rewrite-that-does-not-clear-the-bar.md)
 - [2026-09-23 - Schema-guided reasoning instead of the model's own tool calling](experiments/2026-09-23_a-schema-that-makes-the-loop-worse.md)
 - [2026-09-23 - Stripping the noise inside the chunks the grader kept](experiments/2026-09-23_a-strip-that-does-not-buy-the-answer.md)
+- [2026-09-25 - Which converter turns each kind of document into markdown](experiments/2026-09-25_two-converters-one-per-regime.md)

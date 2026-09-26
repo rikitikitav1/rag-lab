@@ -1,4 +1,4 @@
-# 2026-08-25 - A cheaper gate signal, and a win on the wrong axis
+# 2026-08-25 - Gate signal: vector distance against the cross-encoder, no difference found
 
 The previous entry left the coverage gate working but expensive: every question paid a
 cross-encoder pass before the agent was allowed to answer. This run asks whether that model has

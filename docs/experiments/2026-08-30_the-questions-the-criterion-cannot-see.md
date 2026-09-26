@@ -1,4 +1,4 @@
-# 2026-08-30 - The questions the criterion cannot see
+# 2026-08-30 - Veto set over four unseen source families (`veto_v1`): hygiene confirmed
 
 The criterion set is made entirely from one family of sources. This entry builds a second set over
 the four families it cannot see, measures the hygiene change on it, and says what such a set is

@@ -1,4 +1,4 @@
-# 2026-08-29 - The same question in two languages
+# 2026-08-29 - Russian against English on 820 paired questions (post hoc)
 
 The generator grid ran the same interview questions twice: once paraphrased into Russian, once
 paraphrased in English. Both sets descend from the same parents in `interview`, so the two halves

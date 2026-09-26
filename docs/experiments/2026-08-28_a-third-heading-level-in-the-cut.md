@@ -1,4 +1,4 @@
-# 2026-08-28 - A third heading level in the cut, and what it did not buy
+# 2026-08-28 - Third heading level in the cut (`prefix_1024`): no retrieval gain
 
 `clean_1024` cuts a file by its `##` headings and falls back to the counter when a section does
 not fit. `prefix_1024` inserts one more level before the counter: an oversized section is split by

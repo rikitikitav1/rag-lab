@@ -1,17 +1,22 @@
 # 2026-09-23 - Schema-guided reasoning instead of the model's own tool calling
 
-Schema-Guided Reasoning promises that a rigid reasoning schema lifts a weak model: instead of letting
-it call a tool, you make it fill a schema whose action field is a discriminated union, so the choice of
-tool is a validated field rather than a free decision. This entry records what that buys on an eight
-billion parameter model, measured on 1020 questions a night, and why the arm is not kept.
+Does a rigid reasoning schema make `llama3.1:8b`, an eight billion parameter model, handle our agent
+loop better than its own tool calling? Schema-Guided Reasoning promises that it lifts a weak model:
+instead of letting the model call a tool, you make it fill a schema whose action field is a
+discriminated union, so the choice of tool is a validated field rather than a free decision. Measured
+on 1020 questions a night, it made the loop worse. On the 200 out-of-corpus questions, 0.9900 of the
+arm's rows ended narrated or exhausted against 0.7450 for the control, so the arm is not kept.
 
-**This is not a reproduction of the reference.** `sgr-agent-core`'s `NextStep` carries
-`current_state`, `plan_remaining_steps_brief`, a `task_completed` boolean and a `function` union with a
-terminal `ReportTaskCompletion`; its loop stops when the model picks the terminal variant, not on the
-boolean. Our arm keeps that stopping mechanism and that per-hop replanning, uses four reasoning fields
-of our own (`what_is_known`, `enough_data`, `plan`, `remaining_steps`) and has no `task_completed` at
-all. The reference's headline of 86% on SimpleQA was taken on gpt-4.1-mini; the thesis "a rigid schema
-lifts a weak model" has not been checked by anyone on an 8B, and that is what this measures.
+**Method note: this is not a reproduction of the reference.** The differences from `sgr-agent-core`:
+
+- Its `NextStep` carries `current_state`, `plan_remaining_steps_brief`, a `task_completed` boolean and
+  a `function` union with a terminal `ReportTaskCompletion`. Its loop stops when the model picks the
+  terminal variant, not on the boolean.
+- Our arm keeps that stopping mechanism and that per-hop replanning. It uses four reasoning fields of
+  our own (`what_is_known`, `enough_data`, `plan`, `remaining_steps`) and has no `task_completed` at
+  all.
+- The reference's headline of 86% on SimpleQA was taken on gpt-4.1-mini. Nobody has checked the
+  thesis "a rigid schema lifts a weak model" on an 8B, and that is what this entry measures.
 
 ## What was declared before the code
 

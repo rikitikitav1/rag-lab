@@ -1,4 +1,4 @@
-# 2026-08-26 - A corpus you can keep two of, and the instrument that measures it
+# 2026-08-26 - Corpus variants: two chunkings side by side, and how they are measured
 
 Every threshold in this lab was measured against one corpus: retrieval distance 0.55, the coverage
 gate at 0.39, the topic axis at 0.50. Re-chunking moves the embeddings and every one of those

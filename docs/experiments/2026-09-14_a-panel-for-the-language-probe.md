@@ -1,4 +1,4 @@
-# 2026-09-14 - A panel for the language probe, and a regime read against a reference
+# 2026-09-14 - Language probe: a fixed 60-row panel and a regime read against a reference
 
 The language probe measures what our judge charges for Russian: it restates a row's answer in English
 and in Russian and judges both. Its control said whether the judge was "in regime", and it read that

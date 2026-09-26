@@ -1,4 +1,4 @@
-# 2026-09-09 - What batch invariance costs on an AWQ judge, and what it buys
+# 2026-09-09 - Batch invariance on the AWQ judge: 8.7x slower, no verdict changed
 
 vLLM was brought onto this stand for one reason: its `VLLM_BATCH_INVARIANT` flag promises a judge
 that returns the same verdict on the same input, where ollama moves 14% of its scores across a

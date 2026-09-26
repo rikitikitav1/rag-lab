@@ -1,4 +1,4 @@
-# 2026-09-07 - What moving onto the standard was worth, and what it cost
+# 2026-09-07 - RAGAS arc summary: worth integrating, not worth keeping in the loop
 
 The arc set out to put the industry's judged axes into this stand and find out how far our own
 judge sits from them. It did that. The larger part of what it produced is not the standard's

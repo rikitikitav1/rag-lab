@@ -8,13 +8,20 @@ List endpoints (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) share 
 
 Health:
 - `GET /liveness`, `GET /readiness` (names each role whose engine does not answer)
-- `GET /v1/health/stand` (what the stand is right now: the code each process loaded against the code on disk, the card, which models are resident and how much VRAM each holds, the window the server actually serves against the declared one, the live queue, role drift between config and database, the corpus variant and the search depth per variant. Readable while a run competes with it, so a run that answers slowly can be diagnosed without stopping it)
+- `GET /v1/health/stand` shows the live state of the API, worker, GPU, models, queue and corpus configuration. It stays readable while a run competes with it, so you can diagnose a slow run without stopping it. The main fields:
+  - `code`: the code each process loaded, compared with the code on disk
+  - `card`: free and total GPU memory
+  - `residency`, `engines`: which models are resident and how much VRAM each holds
+  - `window`: the context window the server actually serves, next to the declared one
+  - `queue`: the live queue
+  - `roles`: role drift between config and database
+  - `corpus`, `ef_search`: the corpus variant and the search depth per variant
 
 Chat and search:
 - `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
 - `POST /v1/chat/fast_question` (retrieval only, no generation)
 - `POST /v1/agent/question` (agent answer; optional `max_hops`, `language`, `fallback_policy`, and `debug` for the full message trace)
-- The answering doors never hand the card themselves: while another engine holds it they queue the handover and answer 503 with `Retry-After`; an answer that would need two engines of the card is a 409 (the chat with `rerank: true` in the default layout, where the generator sits on ollama and the reranker on `vllm-rerank`).
+- The answering endpoints never hand over the GPU themselves. While another engine holds it, they queue the handover and answer 503 with `Retry-After`. An answer that would need two GPU engines is a 409. One such case is the chat with `rerank: true` in the default layout, where the generator sits on ollama and the reranker on `vllm-rerank`.
 - `GET /v1/categories` (category tree with chunk counts)
 
 <details>
@@ -25,10 +32,11 @@ Chat and search:
 </details>
 
 Engines and models:
-- `GET /v1/engine`, `POST /v1/engine` (name, `kind` (`ollama`/`vllm`/`openai_compatible`), `env_prefix`, `placement` (`gpu`/`cpu`/`gpu+cpu`/`remote`); a vLLM on the card without sleep routes is a 422), `PATCH /v1/engine/{id}` (`placement`, a 409 while the server runs where the row said, and a cloud's `balance_reader`), `GET /v1/engine/{id}/live` (asks the engine itself, in seconds), `DELETE /v1/engine/{id}` (409 while models point at it). The response shows the address resolved from the environment; a prefix with no address is a 400 before the row is written.
+- `GET /v1/engine`, `POST /v1/engine` (name, `kind` (`ollama`/`vllm`/`openai_compatible`), `env_prefix`, `placement` (`gpu`/`cpu`/`gpu+cpu`/`remote`); a vLLM on the GPU without sleep routes is a 422), `PATCH /v1/engine/{id}` (`placement`, a 409 while the server runs where the row said, and a cloud's `balance_reader`), `GET /v1/engine/{id}/live` (asks the engine itself, in seconds), `DELETE /v1/engine/{id}` (409 while models point at it). The response shows the address resolved from the environment; a prefix with no address is a 400 before the row is written.
 - `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (`engine` by name or `engine_id`; required on the default stand, where the seed registers two ollama engines, `ollama` and `ollama-cpu`; an engine that pulls gets a pull job, one that does not is asked whether it already serves the name: `ready`, 422 if it serves another, 503 if it does not answer), `PATCH /v1/model/{id}` (`quant` and the hub key of the `weights` when the server cannot say them, the `answer_parser`, and `options` of its own over the role's), `POST /v1/model/{id}/load` (202 with the queued `hand_card` job, and a load already waiting answers a second ask with its job; 422 when a vLLM serves another model, 409 for a vLLM on the processor), `DELETE /v1/model/{id}` (501 on a remote engine; 409 if the model is assigned to a role, shares its weights with another row, or is served by a running vLLM). One name may live on two engines, so the list and the response name the engine, along with `quant`, `size_bytes` and the weights row, all read off the server on the pull rather than typed.
 - `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role; the model is asked whether it can do the job first, and a 400 says what it lacks. An asleep vLLM with no tool-call probe recorded answers 202 with a `hand_card` job that wakes it, probes it and then seats the role; an engine that does not answer is a 503. `anyway: true` insists, which is how a model the server describes wrongly is still seated)
-- `GET /v1/source`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index - ablation / source-of-truth scoping)
+- `GET /v1/source?stage=`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index - ablation / source-of-truth scoping; `stage` filters by declared, raw, accepted)
+- `POST /v1/source` (declare a source to add: name, language, licence and one origin, `urls`, `folder`, `git` or `pages` with the site's `main`/`drop`/`generated`; never an engine; it starts declared and inactive), `GET /v1/source/{id}` (one source with its stage, origin, licence and what its raw conversion said), `POST /v1/source/{id}/onboard` (queue `onboard_source` for a declared or raw source; `settings` per engine, optional)
 
 Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
@@ -44,11 +52,11 @@ Eval platform:
 <details>
 <summary>Diagram: Eval pipeline</summary>
 
-![Eval pipeline](diagrams/eval_pipeline.svg)
+![Eval pipeline](diagrams/eval_pipeline.drawio.svg)
 
 </details>
 
-A single run does not loop per question: it goes through phases so each stage owns the GPU alone, which is what makes reranking affordable in bulk. Per question the loop needed the embedder, then the reranker, then the generator, and the three do not fit in 8 GB together, so ollama evicted and reloaded a model on every single question. Phases cost a few model swaps per run instead of two per question, and the run gives the card back when it ends, so a queue of runs on different generators does not end up holding two of them at once. The reranker finally gets a real batch: 31 s for 100 questions on the card against about 16 min on CPU. That 310 ms a question is the whole phase, model load and retrieval included; the reranking itself is the 86 ms measured in `datasets/measurements/rerank_latency.json`.
+A single run does not loop per question: it goes through phases so each stage owns the GPU alone, which is what makes reranking affordable in bulk. Per question the loop needed the embedder, then the reranker, then the generator, and the three do not fit in 8 GB together, so ollama evicted and reloaded a model on every single question. Phases cost a few model swaps per run instead of two per question, and the run gives the GPU back when it ends, so a queue of runs on different generators does not end up holding two of them at once. The reranker finally gets a real batch: 31 s for 100 questions on the GPU against about 16 min on CPU. That 310 ms a question is the whole phase, model load and retrieval included; the reranking itself is the 86 ms measured in `datasets/measurements/rerank_latency.json`.
 
 <details>
 <summary>Diagram: Phases inside one eval run</summary>
@@ -57,12 +65,13 @@ A single run does not loop per question: it goes through phases so each stage ow
 
 </details>
 
-Measured on 100 questions with reranking on: **2092s → 652s (3.2x)** while `hit@5` and `MRR` stayed identical to the third decimal. Most of the win did not come from batching, it came from noticing that the card was never actually released between phases, so ollama had been loading the generator as 26 layers of 33. The full story, including what the batch alone did *not* buy, is in [the journal entry](experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md).
+Measured on 100 questions with reranking on: **2092s → 652s (3.2x)** while `hit@5` and `MRR` stayed identical to the third decimal. Most of the win did not come from batching, it came from noticing that the GPU was never actually released between phases, so ollama had been loading the generator as 26 layers of 33. The full story, including what the batch alone did *not* buy, is in [the journal entry](experiments/2026-08-24_phased-eval-runs-and-the-empty-cache.md).
 
 Experiments (first-class entity over the raw sweep route):
-- `POST /v1/experiment` (creates the experiment - dataset + deterministic seed-based sample / procedure snapshot / varied param - and enqueues the run series), `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`, `POST /v1/experiment/{id}/arms` (a rejudge only: copies more arms of the same answers and re-judges them, from `aggregated` and back to `running`; the arms are named one by one rather than as a grid, the row cap counts what the experiment already holds, and an arm added later is built on the sample, the control size and the seed the experiment was created with)
-- state machine `draft → running → aggregated → concluded` (+ `failed`); when the last judge job of the series finishes, the aggregator computes per-value metrics and an RRF composite over five axes (the three judged ones, the off-domain refusal rate and the supported rate) and stores them in `results` (retrieval hit@k/MRR reported per value but kept out of the fusion: hit@k is monotonic in `k`, it would confound the composite)
-- results carry **paired significance statistics**, not just point estimates: for the winner vs every other value, per axis - mean paired delta (same question in both runs), bootstrap 95% CI (10000 resamples, the one resampling the whole stand draws with) and a Wilcoxon signed-rank p-value, plus Holm step-down flags over the test family the record itself names, so the JSON says what survives multiple-comparison correction and against which family it was corrected
+- `POST /v1/experiment` creates the experiment and queues its series of runs. The experiment records the dataset, a sample drawn deterministically from a seed, a snapshot of the procedure and the varied parameter.
+- `GET /v1/experiment` (filtered list), `GET /v1/experiment/{id}`, `PUT /v1/experiment/{id}/conclusion`
+- `POST /v1/experiment/{id}/arms` works on a rejudge only. It copies more arms of the same answers and judges them again, and the experiment goes from `aggregated` back to `running`. Arms are named one by one, not as a grid. The row cap counts the rows the experiment already holds. An arm added later uses the sample, the control size and the seed the experiment was created with.
+- The states and the statistics in `results` are described in [Experiment states](#experiment-states) and [Significance statistics](#significance-statistics) below.
 
 One call asks the bench a question; generation, judging and aggregation happen in the background. Questions you can ask this way:
 
@@ -94,47 +103,86 @@ curl -sX POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -
 ```
 
 `control_sample: N` judges the axes the arm does not move on N rows only, drawn by question
-with the experiment's own seed, so a repeat costs a third of the card time and the axes that
+with the experiment's own seed, so a repeat costs a third of the GPU time and the axes that
 carry the measurement still read every row. The rows outside the sample are marked skipped
 rather than left owed, which is one-way: only a hand-built `log_ids` job reaches them again.
 
 A rejudge answers a question the other kinds cannot: how much of a difference between two
 runs was the judge rather than the answer. Nothing is generated, so an arm costs a judge
-pass and no card time for the generator. The report drops the RRF composite (retrieval
+pass and no GPU time for the generator. The report drops the RRF composite (retrieval
 metrics are identical across arms by construction) and gives per-arm means, paired deltas
 over eight bootstrap seeds for every pair while the grid holds six arms or fewer and
 first-against-the-rest once it does not, the A/B halves, and an `answers_digest`
 per arm beside the source's, so "the arms judged the same answers" is a fact of the record
 rather than a claim in its description.
 
+### Experiment states
+
+An experiment moves `draft → running → aggregated → concluded`, or ends in `failed`. When the last
+judge job of the series finishes, the aggregator computes the metrics per value and stores them in
+`results`. It also computes an RRF composite over five axes: the three judged axes, the off-domain
+refusal rate and the supported rate. Retrieval hit@k and MRR are reported per value but kept out of
+the composite, because hit@k grows monotonically with `k` and would confound it.
+
+### Significance statistics
+
+`results` carries **paired significance statistics**, not only point estimates. The winner is
+compared with every other value on each axis, and each comparison reports:
+
+- the mean paired delta (the same question in both runs);
+- a bootstrap 95% CI (10000 resamples, the same resampling the whole stand uses);
+- a Wilcoxon signed-rank p-value;
+- Holm step-down flags over the test family that the record itself names.
+
+So the JSON says which differences survive multiple-comparison correction, and against which family
+they were corrected. In the example response further down, `5_vs_10` on faithfulness has a mean delta
+of 0.19, a CI of [-0.17, 0.57] and p = 0.37, and `significant_holm` is false.
+
 ## The queue
 
-Any job type can be queued through one door: `POST /v1/job` with `{"type": ..., "options": {...}}`. It and every door that queues a job of its own (`/v1/eval/*`, `/v1/source/{id}/analyze`) answer with the whole job row: `job_id`, `type`, `queue`, `status`, `options`, `apply_since`, `created_at`. A claimed job also carries `code`, the stamp of the process that took it, so whether a series of runs shared one code is a query rather than a comparison of container start times with file dates by hand.
-What each type accepts is a model per type in `app/job_specs.py`, checked when the job is queued,
-whichever door or script queues it, and again when the worker takes it, so a row written straight
-into the table meets the same refusal. A door of its own is for work done before the enqueue rather
-than for checking: `/eval/rejudge` copies a run, `/eval/guest-axes` answers on a property of the
-runtime. The lane belongs to the type, not to the caller.
-An `eval_run` with `purpose: closing` names the preregistration it was made under (`prereg`), and the
-queue refuses a name the database does not hold; `smoke`, the default, and `probe` owe nothing.
-A worker whose code is not the code on disk still claims its jobs and writes that fact onto each row,
-saying it once in the log: refusing to claim turns an edit made during a batch into a queue that looks
-like it has nothing to do. The row carries two readings. `code.differs` says the tree moved beside the
-worker, which is hygiene; `code.loaded_differs` names the files the worker imported that changed since
-it started, `null` when none did, and that one decides whether passes shared one code. The stamp is over the bytes, so a checkout that restores the
-same content changes nothing, and it says "differs" rather than "older", because a reverted tree is as
-much of a mismatch as an edited one. A reader of a series then knows which passes shared one code, and
-drops what it must, instead of the stand deciding that for it.
+Any job type can be queued through one endpoint: `POST /v1/job` with `{"type": ..., "options": {...}}`.
+This endpoint and every endpoint that queues a job of its own (`/v1/eval/*`, `/v1/source/{id}/analyze`)
+answer with the whole job record: `job_id`, `type`, `queue`, `status`, `options`, `apply_since`,
+`created_at`. Once a worker claims a job, the record also carries `code`: the code version of the
+worker process that took it. Whether a series of runs shared one code version is then a query, not a
+manual comparison of container start times with file dates.
+
+What each type accepts is defined by a model per type in `app/job_specs.py`. The options are checked
+when the job is queued, whichever endpoint or script queues it, and again when the worker takes it.
+A record written straight into the table gets the same refusal. A separate endpoint exists for work
+done before the job is queued, not for validation: `/eval/rejudge` copies a run, and
+`/eval/guest-axes` answers based on a property of the runtime. The queue lane is set by the job type,
+not by the endpoint that queued it.
+
+An `eval_run` with `purpose: closing` names the preregistration it was made under (`prereg`). The
+queue refuses a name that the database does not hold. `smoke` (the default) and `probe` need no
+preregistration.
+
+A worker whose code differs from the code on disk still claims its jobs. It writes the mismatch onto
+each job record and logs it once. Refusing to claim would turn an edit made during a batch into a
+queue that looks idle. The `code` field has two readings:
+
+- `code.differs`: the tree on disk changed beside the running worker. This is a hygiene signal.
+- `code.loaded_differs`: the files the worker imported that changed since it started, or `null` if
+  none did. This one decides whether passes ran the same code.
+
+The worker version is computed from file contents, so a checkout that restores the same content
+changes nothing. The field says "differs" rather than "older", because a reverted tree is as much of
+a mismatch as an edited one. A client reading a series should check `code.loaded_differs` on each
+job, see which passes shared one code version, and decide which runs to drop. The stand does not
+make that choice for it.
 
 Every type the queue knows, what it does and what it takes:
 
-| type | what it does | the options it reads | roles it takes the card for | where the result lands |
+| type | what it does | the options it reads | roles it takes the GPU for | where the result lands |
 |---|---|---|---|---|
 | `pull_llm_model` | pulls weights into an engine | `name`, `engine_id` | none (io lane) | the model row goes `ready` |
 | `delete_llm_model` | removes weights from an engine | `name`, `engine_id` | none (io lane) | the model row |
 | `index_data` | cuts a corpus variant and embeds it | `variant`, `source` | embedding | `data_chunks` of that variant |
 | `build_vector_index` | builds the hnsw index of a variant | `variant` | none | the index |
 | `analyze_source` | reads one source and reports its ingest quality | `source`, `variant`, `mode` | none | `data_sources.ingest_quality` |
+| `convert_source` | turns PDF, image or HTML files of the converter bench into markdown through one converter tool | `settings`, `language`, `inputs`, `out` | none; it takes the GPU for the engine that runs the settings' tool | `datasets/converter_gold/files/runs/<out>/`, with `record.json` |
+| `onboard_source` | turns a declared source into a raw one: each file through the engine its route picks (markdown as it is, a page without a text layer to MinerU, the rest to Docling), a suitability report without a gold (the conversion's signals a piece, the chunker's gates a chapter of each file whole; bad when the breaching share of text passes `intake.quality.bad_share`), the source marked `raw` with its verdict and reasons; nothing is indexed | `source`, `settings`? (per engine, defaults in `intake.settings`) | none; it takes the GPU for each converter it needs | `datasets/raw_sources/<source>_<settings hash>/` (markdown, Docling JSON, `record.json`, `provenance.json`) and a `raw_source` measurement |
 | `embed_questions` | embeds a question set | `set_name` | embedding | `questions.embedding` |
 | `paraphrase_questions` | writes paraphrases of a set | `set_name`, `limit` | paraphrasing | new questions of the paraphrased set |
 | `build_veto_set` | builds the veto set from a source set | `set_name`, `limit` | paraphrasing | the veto question set |
@@ -145,7 +193,7 @@ Every type the queue knows, what it does and what it takes:
 | `compare_retrieval` | measures a grid of retrieval arms of one experiment | `experiment_id` | reranking | the experiment's `results` |
 | `grade_candidates` | grades frozen candidates chunk by chunk, no generator and no judge | `candidates` (the frozen file), `form`, `top`, `limit`, `sample`, `seed`, `shuffle`, `prompt_version`, `name` | grading | a measurement file with a verdict and its probability per chunk, and the curve of both arms over the cuts |
 | `check_mcp_health` | asks a remote integration whether it answers | `integration_id` | none (io lane) | the integration's health |
-| `hand_card` | wakes an engine, probes it and seats a role | `engine_id`, `model`, `seat` | the seat it hands | the card and the role row |
+| `hand_card` | wakes an engine, probes it and seats a role | `engine_id`, `model`, `seat` | the seat it hands | the GPU and the role's database row |
 
 To judge a run in place: `POST /v1/eval/judge` with `{"run_name": "<run>"}` queues our three axes
 over the rows that still owe them, and refuses with 404 when the run holds no answered row or owes

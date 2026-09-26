@@ -1,4 +1,4 @@
-# 2026-08-24 - Phased eval runs, and the unload that freed nothing
+# 2026-08-24 - Phased eval runs: `empty_cache()` did not free live models
 
 An eval run pays for the reranker twice, once in latency and once in evicted models. Can the same
 run get the card to itself, phase by phase, without touching quality?

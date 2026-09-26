@@ -1,4 +1,4 @@
-# 2026-08-25 - The gate that fires, and the refusal that never comes
+# 2026-08-25 - Coverage gate on weak retrieval: it opens, but no policy refuses
 
 The previous entry ended on a gate that never opened. This is the rerun after the gate was taught
 to open on weak retrieval instead of on empty retrieval, and after four rounds of review took the

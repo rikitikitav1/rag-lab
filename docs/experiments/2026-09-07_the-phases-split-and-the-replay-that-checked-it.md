@@ -1,4 +1,4 @@
-# 2026-09-07 - The phases split, and the replay that checked it without asking a model twice
+# 2026-09-07 - Agent graph phase split, checked by replay without model calls
 
 Our graph had one node that searched the corpus, judged what came back, and handed the model its
 tool messages, all in one step. The standard's shape puts a boundary there, and moving to it means

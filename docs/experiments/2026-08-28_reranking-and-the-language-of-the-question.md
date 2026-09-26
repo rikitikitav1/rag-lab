@@ -1,4 +1,4 @@
-# 2026-08-28 - Reranking and the language of the question, and why the switch is not the language
+# 2026-08-28 - Reranking by question language: helps Russian, hurts English on `baseline` only, no language switch
 
 The same cross-encoder helped section ranking on Russian questions and hurt it on English ones, on
 one corpus with the same gold sections. A switch by language suggests itself. This entry records the

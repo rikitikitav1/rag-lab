@@ -1,4 +1,4 @@
-# 2026-08-26 - The same agent written four ways, and what the standard costs
+# 2026-08-26 - Hand-rolled agent loop against its LangGraph ports: the port matches
 
 The agent in this lab was a hand-rolled ReAct loop: our own hop counter, our own dispatch, our own
 coverage gate stitched between the turns. That is fine for a lab and useless as evidence that the

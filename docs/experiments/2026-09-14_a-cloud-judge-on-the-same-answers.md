@@ -1,4 +1,4 @@
-# 2026-09-14 - A cloud judge on the same answers, two and a half points kinder on grounding
+# 2026-09-14 - Cloud judge against our judge on the same answers: 2.5 points kinder on grounding
 
 Our judge is a 7B Qwen, and every comparison on this stand is read through it. A much larger cloud
 model judging the very same answers says how much of what we read is the judge: where the two agree,

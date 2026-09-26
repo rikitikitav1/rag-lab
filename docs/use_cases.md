@@ -1,6 +1,6 @@
 # Use cases
 
-Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthrough, not a route index: it shows the order to pull the handles in to get from nothing to numbers. The complete reference is Swagger at `http://localhost:8000/docs`, which is generated from the code, so a route missing here is not a gap.
+Ten hands-on scenarios for rag-lab, each copy-paste ready. This walkthrough shows the order of API calls for each task, from an empty stand to numbers. It does not list every route. For the complete reference, generated from the code, open Swagger at `http://localhost:8000/docs`.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ Nine hands-on scenarios for rag-lab, each copy-paste ready. This is a walkthroug
 curl -sX POST localhost:8000/v1/chat/question -H 'Content-Type: application/json' \
   -d '{"text":"What is a hash table?"}' | python3 -m json.tool
 ```
-Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Reranking is off by default (the generator the agent needs takes its room on the card), and the chat answers 409 to `"rerank": true` in the default layout, because the reranker and the generator are two engines of the card. A run can rerank once the `rerank` profile is up ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)); scoring costs 86 ms a question on the card.
+Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Reranking is off by default, because the generator the agent needs takes its room on the GPU. In the default layout the chat answers 409 to `"rerank": true`: the reranker and the generator are two separate GPU engines. A run can rerank once the `rerank` profile is up ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)). Scoring costs 86 ms a question on the GPU.
 
 ## Scenario 2: mini-eval from scratch to numbers
 
@@ -197,6 +197,31 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=id&sort_order=desc&limit=6"
 docker compose exec rag-lab python -m evals.generation_metrics paraphrased_ru_agent_<ts>_k_05
 ```
 Every arm takes the generator's sampler (`temperature: 0.1` by default), so the arms differ only in the swept parameter; sampling still moves answers between two runs of one arm, and the floors in the README say by how much. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
+
+## Scenario 10: add a source and read its raw report
+
+A source is declared first and converted second. The declaration names where the files come from and never an engine: the route reads each file and picks it. The converters run under the compose profile `convert`, so bring the stand up with it.
+
+```bash
+COMPOSE_PROFILES=convert scripts/up.sh
+
+# declare: exactly one of urls, folder, git or pages (pages take the site's `main` element and its `drop` furniture)
+curl -s -X POST localhost:8000/v1/source -H 'Content-Type: application/json' -d '{
+  "name": "ctex-ru", "language": "ru", "licence": "CC BY-SA 3.0",
+  "urls": ["https://www.inp.nsk.su/~baldin/LaTeX/ctex.pdf"]
+}'
+# -> {"id": 2510, "stage": "declared", "active": false, ...}
+
+# convert: a job; markdown needs no engine, a PDF page without a text layer or an image goes to MinerU, the rest to Docling
+curl -s -X POST localhost:8000/v1/source/2510/onboard -H 'Content-Type: application/json' -d '{}'
+# -> {"id": 2990, "type": "onboard_source", "status": "new", ...}
+
+# when the job is done: the stage, the verdict with its reasons and the share of text behind it
+curl -s localhost:8000/v1/source/2510
+# -> {"stage": "raw", "raw_verdict": "dirty", "raw": {"reasons": {...}, "bad_share": {"pieces": 0.0, "sections": 0.08}, "folder": "datasets/raw_sources/ctex-ru_0b6a96c6", ...}}
+```
+
+A `bad` verdict marks the source and does not stop it. The rows behind the verdict are read with the MCP tool `raw_rows`: `kind: pieces` for the conversion a page range at a time, `kind: sections` for the chunker's gates a chapter at a time. The raw folder holds each file's markdown whole, the pieces with Docling's own structure beside them, `record.json` (what a rerun resumes from) and `provenance.json`. Nothing is indexed: a raw source is accepted by hand after its flagged parts are dealt with.
 
 ## Command reference
 

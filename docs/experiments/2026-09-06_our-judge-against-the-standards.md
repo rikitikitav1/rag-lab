@@ -1,4 +1,4 @@
-# 2026-09-06 - Our judge against the standard's, and the ruler that had to come first
+# 2026-09-06 - Our faithfulness judge against RAGAS Faithfulness, and the judge noise floor
 
 The second sub-phase of the standard arc asks whether the faithfulness this stand has been
 reporting for two months measures the same thing RAGAS calls faithfulness. Unlike the retrieval
