@@ -130,6 +130,8 @@ def test_a_comment_says_what_the_code_does_and_not_how_it_came_to_be():
     history = re.compile(
         r"[\U0001F534-\U0001F7EB]|\b[0-3][0-9]\.(0[1-9]|1[0-2])\b|\breview\b|\baudit(or)?\b"
         r"|\bowner'?s? (rule|decision|word)|\(owner|\barc (log|[0-9])|\bthis arc\b|[\u2013\u2014]"
+        # a plan's section, a merge request or a commit is a place in the history, not in the code
+        r"|\bMR ?[0-9]|\bМР\b|\bарк[аеиу]\b|\b(section|пункт|item) [0-9]+\.[0-9]|\bcommit [0-9a-f]{7}"
     )
     root = Path(__file__).resolve().parent.parent
     found = []
