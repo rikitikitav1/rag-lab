@@ -14,7 +14,8 @@ CLASSES = ("setting", "code", "cap", "seed")
 FILES = {
     "converters/*/settings/*.json": "a converter's settings arm, hashed whole into a run's record",
     "datasets/converter_gold/manifest.yaml": "the converter gold's documents, cuts and score bar",
-    "datasets/sources/*.yaml": "a source's category tree and policy, loaded beside the config",
+    "formats/*.yaml": "a format's vocabulary, shared by every source of that format",
+    "sources/*.yaml": "a worked-out source: its declaration and the rules only it needs, seeded into the database",
     "prompts/*.txt": "a prompt version, seeded into the database, the active one a row",
 }
 _ENV_IN_CODE = re.compile(r"""os\.(?:environ(?:\.get)?\(|environ\[|getenv\()\s*["']([A-Z][A-Z0-9_]+)""")
@@ -43,8 +44,6 @@ def config_keys() -> dict[str, str]:
         if holder is None:
             return "app/config.py default"
         raw = holders[holder]
-        if path[0] == "sources" and len(path) > 1:
-            return (raw.get("sources") or {}).get(path[1], "app/config.py default")
         node = raw
         for part in path:
             if isinstance(node, list):
@@ -61,7 +60,7 @@ def config_keys() -> dict[str, str]:
         if isinstance(value, BaseModel):
             for name in type(value).model_fields:
                 walk(getattr(value, name), path + [name])
-        elif isinstance(value, dict) and value and path[:1] != ["sources"]:
+        elif isinstance(value, dict) and value:
             for k, v in value.items():
                 walk(v, path + [str(k)])
         elif isinstance(value, list) and value and all(isinstance(v, BaseModel) for v in value):

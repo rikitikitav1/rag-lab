@@ -235,16 +235,6 @@ class IngestionCfg(_Strict):
     commit_size: int
 
 
-class InterviewCfg(_Strict):
-    base_url: str
-    language: str
-    repos: list[str]
-
-
-class SourcesCfg(_Strict):
-    interview: InterviewCfg
-
-
 class EngineCfg(_Strict):
     name: str
     kind: Literal["ollama", "vllm", "openai_compatible", "converter"]
@@ -345,7 +335,6 @@ class AppConfig(_Strict):
     corpus: CorpusCfg
     repos_dir: str
     prompts_dir: str
-    sources: SourcesCfg
     engines: list[EngineCfg]
     llm: LlmCfg
     postgres: PostgresCfg
@@ -367,12 +356,6 @@ def _roles_of(overlay: str) -> dict:
     if missing:
         raise ValueError(f"{overlay}: the layer drops {missing}, and the stand cannot answer without them")
     return llm["roles"]
-
-
-# a data file is named by its path, beside the config that names it
-def _data(here: str, path: str):
-    with open(os.path.join(here, path)) as f:
-        return yaml.safe_load(f)
 
 
 CONFIG_DIR = "config"
@@ -398,12 +381,18 @@ def _sections(here: str, raw: dict) -> dict:
     return raw
 
 
-def _source_files(path: str) -> list[str]:
-    with open(path) as f:
-        doc = yaml.safe_load(f)
-    sources = doc.get("sources") if isinstance(doc, dict) else None
-    here = os.path.dirname(os.path.abspath(path))
-    return [os.path.join(here, file) for file in sources.values()] if isinstance(sources, dict) else []
+def yaml_files(folder: str) -> list[str]:
+    names = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+    return [os.path.join(folder, n) for n in names if n.endswith(".yaml")]
+
+
+def beside_config(name: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(CONFIG_PATH)), name)
+
+
+# a worked-out source's file and a format's vocabulary decide what is indexed, so they count as config
+def _data_files(here: str) -> list[str]:
+    return [f for name in ("sources", "formats") for f in yaml_files(os.path.join(here, name))]
 
 
 # every file the loader reads, a source's data file included: the one answer to which files make the config
@@ -411,7 +400,7 @@ def loaded_files(with_overlay: bool = True, with_data: bool = True) -> list[str]
     here = os.path.dirname(os.path.abspath(CONFIG_PATH))
     overlay = [os.path.join(here, CONFIG_OVERLAY)] if CONFIG_OVERLAY and with_overlay else []
     base = [os.path.abspath(CONFIG_PATH), *_section_files(here), os.path.join(here, ROLES_FILE), *overlay]
-    return base + _source_files(CONFIG_PATH) if with_data and os.path.exists(CONFIG_PATH) else base
+    return base + _data_files(here) if with_data else base
 
 
 # the prompt versions a fresh database starts on belong to the stand, not to a layout: an overlay does not move them
@@ -435,8 +424,6 @@ def _load(path: str, overlay: str | None = None) -> AppConfig:
     raw = _sections(here, raw)
     # the roles are a layer of their own; an overlay replaces them whole, as `config/roles.cpu.yaml` does
     raw["llm"]["roles"] = _roles_of(os.path.join(here, overlay or ROLES_FILE))
-    if isinstance(raw.get("sources"), dict):
-        raw["sources"] = {name: _data(here, file) for name, file in raw["sources"].items()}
     return AppConfig(**raw)
 
 

@@ -57,7 +57,7 @@ select = ["E4", "E5", "E7", "E9", "F", "I", "B"]
 
 [tool.ruff.lint.isort]
 # the `config/` folder of yaml beside the tree is not the `config` module the app imports
-known-third-party = ["config"]
+known-third-party = ["config", "formats", "sources"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [

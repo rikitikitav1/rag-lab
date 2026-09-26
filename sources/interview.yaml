@@ -1,8 +1,10 @@
-# the interview banks the corpus is cloned from: data, not settings
-base_url: https://github.com/Devinterview-io
-# what the question rows are written with, not a text-search config
-language: eng
-repos:
+# the interview banks: one organisation's repositories, one README each; no licence file in them
+name: interview
+language: en
+licence: none declared
+git_family:
+  base_url: https://github.com/Devinterview-io
+  repos:
   - ado-net-interview-questions
   - agile-and-scrum-interview-questions
   - android-interview-questions
@@ -176,3 +178,8 @@ repos:
   - xamarin-interview-questions
   - xgboost-interview-questions
   - xml-interview-questions
+  include:
+  - README.md
+reader: interview
+drop_docs_containing:
+- You can also find all

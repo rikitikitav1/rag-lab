@@ -6,7 +6,7 @@ version the worker loaded. Those conditions decide whether the run's numbers des
 claim to describe.
 
 ```bash
-python scripts/preflight_grid.py                       # nineteen checks, exit 1 on any failure
+python scripts/preflight_grid.py                       # twenty checks, exit 1 on any failure
 python scripts/preflight_grid.py --verify RUN [RUN..]  # a finished run instead of the stand
 ```
 
@@ -31,7 +31,7 @@ Most of these checks exist because the corresponding trap had already cost a gri
 true, the incident is named below, because a check whose reason is forgotten is a check somebody
 deletes.
 
-## The nineteen checks
+## The twenty checks
 
 ### Is the code that runs the code we think runs
 
@@ -78,6 +78,12 @@ what the numbers were measured with. `PUT /v1/role` or an edit to the file settl
 against the one the database holds active. The file decides only what a fresh database starts on, and
 an activation through `POST /v1/prompt/{id}/activate` outlives it the same way a seated model does.
 Activating the named version back or editing the file settles it.
+
+**`sources_match_their_files`** compares, for every source row, the digest of its file in `sources/` with the
+digest recorded when each variant was cut. The file is the declaration and wins over the row, and a skip list or a
+category tree edited after the cut leaves chunks that no longer follow it; re-indexing the source settles it. The
+digest is taken over the rules, so a comment or a skip's reason moves nothing. A row whose file is gone fails too;
+rows cut before digests were kept are counted, not failed.
 
 **`role_engines_answer`** asks each role's engine whether it answers, the same reading `/readiness`
 reports as `roles_down`, and whether an ollama model sits whole on the GPU. A role whose server is

@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # what the code reads is an input and lives in git; what a run writes is an artifact and does not
-KEPT = ("datasets/questions/", "datasets/sources/", "datasets/panels/", "datasets/converter_gold/")
+KEPT = ("datasets/questions/", "datasets/panels/", "datasets/converter_gold/")
 
 
 def _tracked_under(folder: str) -> list[str]:

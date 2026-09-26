@@ -1,0 +1,7 @@
+# LaTeX's sectioning ladder, the depth of each command
+levels:
+  part: 0
+  chapter: 1
+  section: 2
+  subsection: 3
+  subsubsection: 4

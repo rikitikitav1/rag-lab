@@ -52,3 +52,7 @@ def test_a_prompt_activated_past_the_file_is_drift(preflight):
         "grade_chunk: config says v1, the stand serves vnone",
         "judge_faithfulness: config says v3, the stand serves v4",
     ]
+
+
+def test_the_source_files_check_is_among_the_checks(preflight):
+    assert preflight.sources_match_their_files in preflight.CHECKS

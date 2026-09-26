@@ -10,8 +10,6 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def _with(tmp_path, change) -> str:
     raw = yaml.safe_load((ROOT / "config.yaml").read_text())
-    # the data file stays where the repository keeps it
-    raw["sources"] = {name: str(ROOT / path) for name, path in raw["sources"].items()}
     change(raw)
     # the sections a process owns and the roles sit in `config/` beside the file, as in the tree
     shutil.copytree(ROOT / "config", tmp_path / "config", dirs_exist_ok=True)
@@ -59,7 +57,6 @@ def test_the_moved_keys_hold_the_values_they_held_before_the_move():
     }
     assert s.agent.topic_threshold == {"ru": 0.4560, "en": 0.4374}
     assert (s.ingestion.batch_size, s.ingestion.commit_size) == (100, 1000)
-    assert s.sources.interview.language == "eng" and len(s.sources.interview.repos) == 173
 
 
 def test_the_record_names_the_keyword_switches_as_before():
@@ -157,5 +154,6 @@ def test_a_prompt_two_roles_name_refuses(tmp_path, monkeypatch):
 
 # a source's policy file decides what is indexed, so it counts as config for the stamp
 def test_a_source_data_file_is_among_the_loaded_files():
-    assert any(name.endswith("datasets/sources/interview.yaml") for name in config.loaded_files())
-    assert not any("datasets" in name for name in config.loaded_files(with_data=False))
+    assert any(name.endswith("sources/interview.yaml") for name in config.loaded_files())
+    assert any(name.endswith("formats/docbook.yaml") for name in config.loaded_files())
+    assert not any("/sources/" in name or "/formats/" in name for name in config.loaded_files(with_data=False))

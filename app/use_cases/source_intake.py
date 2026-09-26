@@ -4,7 +4,8 @@ from pathlib import Path
 
 from errors import Final
 from models.corpus import DataSource, Stage
-from sources.declaration import Declaration
+from sources import files
+from sources.declaration import DEFAULT_INCLUDE, Declaration
 from use_cases import fetch, site_page
 
 # one vocabulary for the kind column: a folder is `local`, as the code-defined sources already say
@@ -46,6 +47,8 @@ def view(source: DataSource, chunks: int, in_variant: int) -> dict:
         # what the raw conversion said: its folder, verdict, reasons and the report's address
         "raw": source.raw or {},
         "raw_verdict": (source.raw or {}).get("verdict"),
+        # the file this row answers to, and the variants cut by another version of it
+        "file": files.drift(source.name, source.indexed_with),
     }
 
 
@@ -94,7 +97,7 @@ def gather(source: DataSource, inbox: Path, stand: Path) -> tuple[Path, list[Pat
         return inbox, files, _fetched(any(new for _, new in got))
     if "git" in origin:
         root, state = _clone(origin["git"], inbox / "repo")
-        found = {p.resolve() for pattern in origin["git"].get("include", ["**/*.md"]) for p in root.glob(pattern)}
+        found = {p.resolve() for pattern in origin["git"].get("include", DEFAULT_INCLUDE) for p in root.glob(pattern)}
         return root, sorted(p for p in found if p.is_file() and root in p.parents), state
     site = origin.get("site") or {}
     files, fresh = [], False

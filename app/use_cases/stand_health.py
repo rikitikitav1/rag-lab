@@ -257,11 +257,13 @@ def samplers() -> dict:
 def code() -> dict:
     said = version.what_the_worker_loaded()
     on_disk = version.tree_stamp()
-    out = {"on_disk": on_disk, "api_loaded": version.LOADED_TREE, "code_version": version.CODE_VERSION}
+    # the API reloads on a save, before the commit moves the ref: its commit can lag the worker's by one
+    out = {"on_disk": on_disk, "api_loaded": version.LOADED_TREE, "api_code_version": version.CODE_VERSION}
     if said is None:
         return out | {"worker": "has not said which code it loaded"}
     out |= {
         "worker_loaded": said.get("stamp"),
+        "worker_code_version": said.get("code_version"),
         "worker_said_at": said.get("at"),
         # hygiene, as in a run's snapshot: the tree moved beside the worker, which may not have imported it
         "worker_tree_moved": said.get("stamp") != on_disk,

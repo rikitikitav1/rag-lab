@@ -107,7 +107,8 @@ Each kind of setting has one home:
 - `.env`: what depends on the machine or must stay out of the repo (timeouts, shares of GPU memory, keys); [`.env.example`](.env.example) lists every variable with its default.
 - the database: which model serves a role, prompt versions and engine rows, switched at runtime through the API.
 - `datasets/`: the question banks, the corpus sources and the raw sources a conversion writes (`datasets/raw_sources/`, out of git). A pass writes its measurement and its frozen candidate pool here too, and those stay out of git: a number reaches a reader as the table in its journal entry, with the file name and the job id as its address.
-- the code: the category trees of the sources and the protocol limits.
+- `sources/<name>.yaml`: a worked-out source, its origin, language, licence and the rules only it needs (category tree, skipped files, veto families); the file wins over its database row. `formats/<name>.yaml`: a format's vocabulary (DocBook's sections, LaTeX's heading ladder), shared by every source of that format. A new source is tried through `POST /v1/source` first.
+- the code: the parsing a file cannot say, and the protocol limits.
 
 ## Quickstart
 

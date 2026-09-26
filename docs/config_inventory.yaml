@@ -226,12 +226,6 @@ config:
     class: setting
   prompts_dir:
     class: setting
-  sources.interview.base_url:
-    class: setting
-  sources.interview.language:
-    class: setting
-  sources.interview.repos:
-    class: setting
   engines.ollama.name:
     class: seed
     note: seeded into the engine rows
@@ -959,9 +953,6 @@ constant:
   scripts/converter_gold.py:_LATEX_COMMENT_LINE:
     class: code
     note: a pattern that reads a format
-  scripts/converter_gold.py:_LATEX_LEVELS:
-    class: code
-    note: LaTeX's own sectioning ladder, a spec
   scripts/converter_gold.py:_DOCBOOK_SECTION:
     class: code
     note: a pattern that reads a format
@@ -1163,8 +1154,12 @@ file:
   datasets/converter_gold/manifest.yaml:
     class: setting
     how: owner decision 24.09 (the bar)
-  datasets/sources/*.yaml:
+  formats/*.yaml:
+    class: code
+    note: a format's specification, read by rule rather than chosen
+  sources/*.yaml:
     class: setting
+    note: the file wins over the row; the licence and the rules are read by eye before intake
   prompts/*.txt:
     class: seed
     note: the active version is a row read by `prompt_repo.active_template`

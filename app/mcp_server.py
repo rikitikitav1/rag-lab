@@ -6,6 +6,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models.registry import Pipeline
 from pydantic import BaseModel, Field
+from sources import files
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import agent, card_wait, chat
 
@@ -41,8 +42,8 @@ def _safe_category(category: str | None) -> str | None:
 
 _TOOL_DESC = {
     "search_corpus": (
-        "Search the technical knowledge corpus (interview banks, "
-        "system-design-primer, redis docs) and return the most relevant chunks "
+        f"Search the technical knowledge corpus ({', '.join(files.source_files())}) "
+        "and return the most relevant chunks "
         "with their [source] markers. Optionally filter by category."
     ),
     "answer_question": (
@@ -148,12 +149,8 @@ def answer_question(
     annotations={"readOnlyHint": True},
 )
 def list_categories(
-    category: Annotated[
-        str | None, Field(description="Optional literal label to list paths under.")
-    ] = None,
-    only_top: Annotated[
-        bool, Field(description="If true, top-level categories with subtree totals.")
-    ] = False,
+    category: Annotated[str | None, Field(description="Optional literal label to list paths under.")] = None,
+    only_top: Annotated[bool, Field(description="If true, top-level categories with subtree totals.")] = False,
 ) -> dict[str, int]:
     category = _safe_category(category)
     if only_top and category:

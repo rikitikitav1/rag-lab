@@ -6,58 +6,49 @@ import config
 import logging_setup
 from sources import (  # noqa: F401
     cheatsheets,
+    files,
     interview,
     notes,
     redis_docs,
     system_design_primer,
 )
 from sources.base import Base
-from sources.interview import InterviewSource
 
 log = logging_setup.get_logger(__name__)
 
 
+# every repository a source file names, one organisation's family unrolled into its repositories
+def _git_specs(found) -> list[tuple[str, str, object]]:
+    specs = []
+    for source in found:
+        if source.folder is None:
+            specs += [(name, files.row_of(source, name)["git_url"], source) for name in files.rows_of(source)]
+    return specs
+
+
+# a reader named in a file and known to no class would parse nothing its file meant
+def _reader(source) -> type[Base]:
+    if source.reader is not None and source.reader not in Base._registry:
+        raise LookupError(f"{source.name}: reader {source.reader} is no class; known: {sorted(Base._registry)}")
+    return Base._registry.get(source.reader, Base)
+
+
+# the sources the index reads, from their files: local folders first, then one repository each, then families
 def all_sources():
-    git_classes = [c for c in Base._registry.values() if getattr(c, "url", None)]
-    local_classes = [
-        c for c in Base._registry.values() if getattr(c, "url", None) is None
-    ]
-    interview_config = config.settings.sources.interview
-    specs = [(c.name, c.url) for c in git_classes]
-    specs += [
-        (repo, f"{interview_config.base_url}/{repo}") for repo in interview_config.repos
-    ]
-    log.info(
-        "sources.gather",
-        local=len(local_classes),
-        git=len(git_classes),
-        interview=len(interview_config.repos),
-    )
-    roots = provision(specs)
-
-    return build_classes(local_classes, git_classes, roots)
-
-
-def build_classes(local_classes, git_classes, roots):
-    interview_config = config.settings.sources.interview
-    interview_repos = interview_config.repos
+    found = list(files.source_files().values())
+    local = [s for s in found if s.folder is not None]
+    specs = _git_specs(found)
+    readers = {s.name: _reader(s) for s in found}
+    log.info("sources.gather", local=len(local), git=len(specs))
+    roots = provision([(name, url) for name, url, _ in specs])
     built = 0
-    for c in local_classes:
+    for source in local:
         built += 1
-        yield c(Path(c.path))
-    for c in git_classes:
-        if roots[c.name]:
+        yield readers[source.name](Path(source.folder), source)
+    for name, _, source in sorted(specs, key=lambda spec: spec[2].git_family is not None):
+        if roots[name]:
             built += 1
-            yield c(roots[c.name])
-    for repo in interview_repos:
-        if roots[repo]:
-            built += 1
-            yield InterviewSource(
-                roots[repo],
-                name=repo,
-                url=f"{interview_config.base_url}/{repo}",
-                language=interview_config.language,
-            )
+            yield readers[source.name](roots[name], source, name=name)
     log.info("sources.built", total=built)
 
 

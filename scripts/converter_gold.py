@@ -10,6 +10,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import formats
 import requests
 import yaml
 from use_cases import site_page
@@ -110,7 +111,8 @@ _ASCIIDOC_INCLUDE = re.compile(r"^include::([^\[]+)\[\]\s*$", re.M)
 _ASCIIDOC_ANCHOR = re.compile(r"^\[\[([^\],]+)(?:,[^\]]*)?\]\]\s*$|^\[#([^\],.]+)[^\]]*\]\s*$")
 _ASCIIDOC_ANCHOR_LINE = re.compile(r"^\[\[[^\]]*\]\]\s*$|^\[#[^\]]*\]\s*$", re.M)
 _ASCIIDOC_TITLE = re.compile(r"^=+ (.+)$")
-_LATEX_HEADING = re.compile(r"^\s*\\(part|chapter|section|subsection|subsubsection)\*?\{(.+)\}")
+_LATEX_LEVELS = formats.format_of("latex").levels
+_LATEX_HEADING = re.compile(rf"^\s*\\({'|'.join(map(re.escape, _LATEX_LEVELS))})\*?\{{(.+)\}}")
 _LATEX_COMMENT_LINE = re.compile(r"^\s*%.*$", re.M)
 
 
@@ -617,7 +619,6 @@ PANDOC_READERS = {
     "docbook_sgml": "docbook",
     "html": "html",
 }
-_LATEX_LEVELS = {"part": 0, "chapter": 1, "section": 2, "subsection": 3, "subsubsection": 4}
 
 
 # every heading of a source file as (line index, level, title), in the file's own convention
@@ -650,11 +651,7 @@ def _headings(lines: list[str], fmt: str) -> list[tuple[int, int, str]]:
 
 # DocBook 4's sectioning elements, and the other elements its schema lets carry a title of their own
 _DOCBOOK_SECTIONS = site_page.DOCBOOK_SECTIONS
-_DOCBOOK_TITLED = (
-    "table|informaltable|example|informalexample|figure|equation|formalpara|procedure|sidebar|"
-    "note|tip|warning|caution|important|blockquote|variablelist|itemizedlist|orderedlist|"
-    "segmentedlist|calloutlist|qandaset|qandadiv|bibliodiv|glossdiv|task|msgset"
-)
+_DOCBOOK_TITLED = "|".join(map(re.escape, formats.format_of("docbook").titled))
 _DOCBOOK_SECTION = re.compile(rf"<(/?)({_DOCBOOK_SECTIONS})\b[^>]*>")
 _DOCBOOK_OWNER = re.compile(rf"<({_DOCBOOK_SECTIONS}|{_DOCBOOK_TITLED})\b[^>]*>")
 # a reference page has no title element: its name is the refentrytitle

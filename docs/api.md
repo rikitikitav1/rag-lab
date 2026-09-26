@@ -236,7 +236,7 @@ anything: an edited tree, a worker running yesterday's code, a model that spille
 corpus that no longer cuts into the rows it holds, a search depth the planner has quietly stopped
 walking the index at. `--verify` checks a finished run instead. Every one of those failures produces
 a completed run with plausible numbers and no error anywhere, which is why the check exists rather
-than a test. What each of the nineteen refuses and which incident put it there:
+than a test. What each of the twenty refuses and which incident put it there:
 [docs/preflight.md](preflight.md).
 
 Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment becomes a self-contained artifact: what was varied, on what data, the numbers, the verdict.

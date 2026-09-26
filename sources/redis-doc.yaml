@@ -1,0 +1,15 @@
+# the redis documentation repository
+name: redis-doc
+language: en
+licence: CC BY-SA 4.0
+git:
+  repo: https://github.com/redis/redis-doc
+  include:
+  - commands/*.md
+  - docs/**/*.md
+reader: redis-doc
+categories:
+  prefix: databases.redis.
+veto_families:
+- name: redis-doc/docs
+  prefix: redis-doc/docs/

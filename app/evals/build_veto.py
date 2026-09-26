@@ -8,6 +8,7 @@ import prompt_repo
 from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
+from sources import files
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from use_cases.retrieval_compare import clean_gold, heading_text
@@ -18,19 +19,13 @@ log = logging_setup.get_logger(__name__)
 
 ORIGINALS = "veto_headings"
 ROLE = "paraphrasing"
-# `redis-doc/commands` is out: a question made from its file stem is a label
-FAMILIES = {
-    "cheatsheets": "cheatsheets/",
-    "redis-doc/docs": "redis-doc/docs/",
-    "notes": "notes/",
-    "system-design-primer": "system-design-primer/",
-}
+# each source file names its families; `redis-doc/commands` is out: a question made from its file stem is a label
 QUOTAS = config.settings.evals.veto.quotas
 MIN_HEADING = config.settings.evals.veto.min_heading
 
 
-def _family_of(source: str) -> str | None:
-    for name, prefix in FAMILIES.items():
+def _family_of(source: str, families: dict[str, str]) -> str | None:
+    for name, prefix in families.items():
         if source.startswith(prefix):
             return name
     return None
@@ -79,9 +74,10 @@ def candidates(variants: list[str], cut_from: str) -> list[dict]:
             )
         )
 
+    families = files.veto_families()
     seen: dict[str, list[dict]] = {}
     for source, section, language in rows:
-        family = _family_of(source)
+        family = _family_of(source, families)
         if family is None or source not in shared:
             continue
         leaf = _leaf(section)

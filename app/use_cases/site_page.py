@@ -1,10 +1,9 @@
 import re
 
-# DocBook's sectioning vocabulary: the element a DocBook page's own text lives in
-DOCBOOK_SECTIONS = (
-    "set|book|part|reference|preface|chapter|appendix|article|bibliography|glossary|index|colophon|"
-    "sect[1-5]|section|simplesect|refentry|refsynopsisdiv|refsect[1-3]|refsection"
-)
+import formats
+
+# DocBook's sectioning vocabulary, from the format's file: the element a DocBook page's own text lives in
+DOCBOOK_SECTIONS = "|".join(map(re.escape, formats.format_of("docbook").sections))
 _DOCBOOK_SECTION_NAME = re.compile(DOCBOOK_SECTIONS)
 _DIV = re.compile(r"<(/?)div\b([^>]*)>", re.I)
 _CLASS = re.compile(r'class="([^"]*)"')

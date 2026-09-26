@@ -1,0 +1,12 @@
+# one README per topic
+name: system-design-primer
+language: en
+licence: CC BY 4.0
+git:
+  repo: https://github.com/donnemartin/system-design-primer
+  include:
+  - '**/README.md'
+reader: system-design-primer
+veto_families:
+- name: system-design-primer
+  prefix: system-design-primer/

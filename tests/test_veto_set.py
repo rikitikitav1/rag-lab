@@ -1,14 +1,17 @@
 import pytest
 from evals import build_veto
+from sources import files
 from use_cases.retrieval_compare import clean_gold, heading_text
+
+FAMILIES = files.veto_families()
 
 
 def test_a_family_is_named_by_prefix_and_commands_are_not_one():
-    assert build_veto._family_of("cheatsheets/vim.md") == "cheatsheets"
-    assert build_veto._family_of("redis-doc/docs/about/_index.md") == "redis-doc/docs"
+    assert build_veto._family_of("cheatsheets/vim.md", FAMILIES) == "cheatsheets"
+    assert build_veto._family_of("redis-doc/docs/about/_index.md", FAMILIES) == "redis-doc/docs"
     # no heading that is a question: a question made from the file stem is a label
-    assert build_veto._family_of("redis-doc/commands/get.md") is None
-    assert build_veto._family_of("java-interview-questions/README.md") is None
+    assert build_veto._family_of("redis-doc/commands/get.md", FAMILIES) is None
+    assert build_veto._family_of("java-interview-questions/README.md", FAMILIES) is None
 
 
 def test_the_stored_heading_is_the_one_the_matcher_will_look_for():
@@ -21,8 +24,7 @@ def test_the_stored_heading_is_the_one_the_matcher_will_look_for():
 
 def test_a_plan_is_the_same_list_twice_and_a_different_one_under_another_seed(monkeypatch):
     rows = [
-        {"family": "notes", "source": f"notes/{i}.md", "heading": f"Heading number {i}",
-         "language": "rus"}
+        {"family": "notes", "source": f"notes/{i}.md", "heading": f"Heading number {i}", "language": "rus"}
         for i in range(40)
     ]
     monkeypatch.setattr(build_veto, "candidates", lambda *_: rows)
@@ -33,8 +35,7 @@ def test_a_plan_is_the_same_list_twice_and_a_different_one_under_another_seed(mo
 
 
 def test_a_quota_larger_than_the_family_takes_what_there_is(monkeypatch):
-    rows = [{"family": "notes", "source": "notes/a.md", "heading": "Heading number one",
-             "language": "rus"}]
+    rows = [{"family": "notes", "source": "notes/a.md", "heading": "Heading number one", "language": "rus"}]
     monkeypatch.setattr(build_veto, "candidates", lambda *_: rows)
     assert len(build_veto.plan("seed", [], "", {"notes": 5})) == 1
 
@@ -46,5 +47,5 @@ def test_a_set_without_a_seed_cannot_be_rebuilt():
 
 def test_the_families_the_veto_reads_are_the_ones_the_criterion_cannot_see():
     # devinterview is the criterion's own population; a veto over it would veto nothing
-    assert "devinterview" not in build_veto.FAMILIES
-    assert set(build_veto.QUOTAS) == set(build_veto.FAMILIES)
+    assert "devinterview" not in FAMILIES
+    assert set(build_veto.QUOTAS) == set(FAMILIES)

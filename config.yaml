@@ -86,9 +86,6 @@ fts:
   fallback: english
 repos_dir: /repos
 prompts_dir: prompts
-# data, not settings: the repository names live in their own file, beside this one
-sources:
-  interview: datasets/sources/interview.yaml
 # the engines a clean database is seeded with; a cloud comes through `POST /v1/engine`
 engines:
   - { name: ollama,      kind: ollama, env_prefix: OLLAMA,      placement: gpu }

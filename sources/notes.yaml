@@ -1,0 +1,12 @@
+# the owner's own notes, a folder mounted read-only; it moves on its own
+name: notes
+language: ru
+licence: the owner's own
+folder: /notes
+reader: notes
+skip_when_hygienic:
+  index: a hub of links answers nothing, and filtering it in search decided composition twice
+veto_families:
+- name: notes
+  prefix: notes/
+drifts: true

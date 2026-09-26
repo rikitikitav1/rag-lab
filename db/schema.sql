@@ -129,7 +129,8 @@ CREATE TABLE public.data_sources (
     language text,
     licence text,
     origin jsonb,
-    raw jsonb DEFAULT '{}'::jsonb NOT NULL
+    raw jsonb DEFAULT '{}'::jsonb NOT NULL,
+    indexed_with jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -1037,4 +1038,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260923000001'),
     ('20260923000002'),
     ('20260925000001'),
-    ('20260925000002');
+    ('20260925000002'),
+    ('20260926000001');

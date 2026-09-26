@@ -157,6 +157,27 @@ def roles_match_the_config() -> tuple[bool, str]:
     return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(seen["served"].items()))
 
 
+# the file wins over the row: a variant cut by another version of its source file is stale
+def sources_match_their_files() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json; from orm.sync_db import Session; from models.corpus import DataSource; from sources import files;"
+        " rows = Session().query(DataSource.name, DataSource.indexed_with).all();"
+        " print(json.dumps(files.drift_report([tuple(r) for r in rows])))"
+    )
+    if not out.startswith("{"):
+        return False, f"source files: cannot read them ({out[:60] or 'no answer'})"
+    return source_files_verdict(json.loads(out))
+
+
+def source_files_verdict(seen: dict) -> tuple[bool, str]:
+    bad = [f"{file}: {', '.join(variants)}" for file, variants in seen["moved"].items()]
+    if seen["orphaned"]:
+        bad.append(f"rows whose file is gone: {', '.join(seen['orphaned'])}")
+    if bad:
+        return False, "source files moved since their rows were cut: " + "; ".join(bad) + ". Re-index them"
+    return True, f"source files: none moved; {seen['unrecorded']} rows indexed before digests were kept"
+
+
 def prompt_drift(declared: dict, active: dict) -> list[str]:
     return [
         f"{purpose}: config says v{version}, the stand serves v{active.get(purpose, 'none')}"
@@ -360,15 +381,18 @@ def every_variant_cuts_into_its_own_rows() -> tuple[bool, str]:
     except ValueError:
         return False, "variants cut into their own rows: unknown"
 
+    # a source whose file says it drifts, asked of the worker that reads the files
+    said = _in_worker("import json; from sources import files; print(json.dumps(files.drifting_rows()))")
+    drifting = set(json.loads(said)) if said.startswith("[") else set()
     bad = []
     for entry in report:
-        drift_only = entry["differing"] == ["notes"]
+        drift_only = bool(entry["differing"]) and set(entry["differing"]) <= drifting
         if entry["sources_differing"] and not drift_only:
             bad.append(
                 f"{entry['variant']}: {entry['sources_differing']} sources, "
                 f"{entry['files_differing']} files, {entry['chunks_changed']} chunks changed"
             )
-    listing = "; ".join(bad) or "all variants reproduce (notes drifts, by design)"
+    listing = "; ".join(bad) or f"all variants reproduce ({', '.join(sorted(drifting)) or 'none'} drift, by design)"
     return not bad, f"variants cut into their own rows: {listing}"
 
 
@@ -516,6 +540,7 @@ CHECKS = (
     models_are_on_the_card,
     roles_match_the_config,
     prompts_match_the_config,
+    sources_match_their_files,
     role_engines_answer,
     queue_is_idle,
     corpus_variant_is_usable,

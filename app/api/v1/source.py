@@ -42,6 +42,7 @@ class SourceDetail(SourceResponse):
     licence: str | None = None
     origin: dict | None = None
     raw: dict = {}
+    file: dict | None = None
 
 
 class SourceActiveRequest(BaseModel):

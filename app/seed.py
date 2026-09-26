@@ -13,7 +13,7 @@ from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
 from models.registry import Engine, EngineKind, Placement, Prompt, Purpose
 from orm.sync_db import Session
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import exists, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 log = logging_setup.get_logger(__name__)
@@ -254,46 +254,30 @@ def seed_engines() -> None:
         log.info("seed.engine", name=declared.name)
 
 
-# the sources the code defines, as rows a clean database starts with; a row already there is left as it is
-_LANGUAGES = {"eng": "en", "rus": "ru"}
+# the sources their files declare, as rows a clean database starts with; a row already there is left as it is
+def _source_rows(found: dict) -> list[dict]:
+    from sources import files
+
+    return [files.row_of(source, name) for source in found.values() for name in files.rows_of(source)]
 
 
 def seed_sources() -> None:
-    # importing the factory registers every source class with the base
     from models.corpus import DataSource
-    from sources import factory  # noqa: F401
-    from sources.base import Base
+    from sources import files
 
-    rows = [
-        {
-            "name": c.name,
-            "kind": "git" if getattr(c, "url", None) else "local",
-            "git_url": getattr(c, "url", None),
-            "path": getattr(c, "path", None),
-            "language": _LANGUAGES.get(c.language),
-        }
-        for c in Base._registry.values()
-        if getattr(c, "name", None)
-    ]
-    interview = config.settings.sources.interview
-    rows += [
-        {
-            "name": repo,
-            "kind": "git",
-            "git_url": f"{interview.base_url}/{repo}",
-            "path": None,
-            "language": _LANGUAGES.get(interview.language),
-        }
-        for repo in interview.repos
-    ]
+    found = files.source_files()
+    # a family the quotas do not count stops the seed, not the first veto build a week later
+    files.veto_families(found)
+    rows = _source_rows(found)
     with Session() as session:
         known = set(session.scalars(select(DataSource.name)))
         insert = pg_insert(DataSource).values([{**r, "stage": "accepted"} for r in rows])
-        # a row indexing made has no language; the seed fills an empty one and touches nothing else
+        # the file wins over the row, as the index writes it: its fields are set again, the stage and the state stay
+        declared = [k for k in rows[0] if k != "name"]
         session.execute(
             insert.on_conflict_do_update(
                 index_elements=["name"],
-                set_={"language": func.coalesce(DataSource.language, insert.excluded.language)},
+                set_={k: getattr(insert.excluded, k) for k in declared},
             )
         )
         session.commit()
