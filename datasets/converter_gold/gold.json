@@ -1,0 +1,646 @@
+{
+  "tool": "pandoc 3.9",
+  "levels": "relative by rank: the section is ##, each deeper distinct level one more; a skipped level is forgiven, a merged level is caught, an inversion would be forgiven",
+  "sections": {
+    "progit_en_prose_00": {
+      "gold": "gold_md/progit_en_prose_00.md",
+      "source_file": "C-git-commands.asc",
+      "fragment_sha256": "b0edd4c49cc03659f74333ce684efa2299ebf389a8a6ab6831cd77f0eea632e2",
+      "sha256": "4390b00918e65ee3f511fc7a993aa10b465c8074036f6480309398f04a943bf3"
+    },
+    "progit_en_prose_01": {
+      "gold": "gold_md/progit_en_prose_01.md",
+      "source_file": "C-git-commands.asc",
+      "fragment_sha256": "2e84356548b96aebb53867e44dde22f7fb1d979502718e27c9781e74e5af9cd8",
+      "sha256": "19645712a0d61d98c0bd83e797680188fc3c137deb8540d14b6e485d60e7ac4a"
+    },
+    "progit_en_prose_02": {
+      "gold": "gold_md/progit_en_prose_02.md",
+      "source_file": "book/license.asc",
+      "fragment_sha256": "4bc81ac441ee7b705dc297c7ae908b4493e176582f9e3bbbf922eb0ddb8863b4",
+      "sha256": "091656f3fd253ea2b10cbef7dc4fd21b12bf8271ac4b2e2e339315391fa18b67"
+    },
+    "progit_en_prose_03": {
+      "gold": "gold_md/progit_en_prose_03.md",
+      "source_file": "A-git-in-other-environments.asc",
+      "fragment_sha256": "2f6dbe4d52194d82f6498408102617982714cb3e4544fab1a16277905d92104b",
+      "sha256": "9cef46605cbd0f57a168c9a2ca7b7b6f79560c86402aab63d5fcb7794ddcf230"
+    },
+    "progit_en_prose_04": {
+      "gold": "gold_md/progit_en_prose_04.md",
+      "source_file": "book/05-distributed-git/sections/distributed-workflows.asc",
+      "fragment_sha256": "8ad58817b002c8d5a44aa5cccc720bc3e56262b8180894938687baa9b8cc3d47",
+      "sha256": "7e1aca87ae4aa567d659a473d29beb55e60ca4cb44b3ecc12bfd81379f1b6247"
+    },
+    "progit_en_code_00": {
+      "gold": "gold_md/progit_en_code_00.md",
+      "source_file": "book/02-git-basics/sections/getting-a-repository.asc",
+      "fragment_sha256": "20f86f245040a98762ae97388800b6f3fdb1dd1f3f2f423a10754339409acbbd",
+      "sha256": "d274e3693354717dd7b8e6ed456c897858e0a47b6b74e05a5984065c60ea9f4f"
+    },
+    "progit_en_code_01": {
+      "gold": "gold_md/progit_en_code_01.md",
+      "source_file": "book/02-git-basics/sections/aliases.asc",
+      "fragment_sha256": "7ed05a45d0b4180d7835802c39db5cbcdb64231495fef63829e9d0b745a725b4",
+      "sha256": "f4ae4229829f46b7e0f9cc81efb196027e25dc6b8fdf7acb280bd25ce0edf206"
+    },
+    "progit_en_code_02": {
+      "gold": "gold_md/progit_en_code_02.md",
+      "source_file": "A-git-in-other-environments.asc",
+      "fragment_sha256": "cbee5e90a652c27d77101257d3547c566a08025efd705a5e866b22633c903d8b",
+      "sha256": "a844ddbe8003add876d4270e9477d7c223f05f1ebf2c45ac1662f7b26ad361fe"
+    },
+    "progit_en_code_03": {
+      "gold": "gold_md/progit_en_code_03.md",
+      "source_file": "book/04-git-server/sections/protocols.asc",
+      "fragment_sha256": "991ac42c134095394264bddd4afa2f8d0d17dd964946b9ce7f94832e23e353fb",
+      "sha256": "35cc36cb1f19afb7c4a06163ec4f8da079266e9b6aac95d96fa994de145c199b"
+    },
+    "progit_en_code_04": {
+      "gold": "gold_md/progit_en_code_04.md",
+      "source_file": "book/04-git-server/sections/generating-ssh-key.asc",
+      "fragment_sha256": "52e74e21d62e7d70825d4b295d5e41d60e01895d43913182eb87995005ffbf3e",
+      "sha256": "318a2877ea6f1153fe6827c8b827537abc469725696d4f74925b37a37c1409ea"
+    },
+    "progit_en_table_00": {
+      "gold": "gold_md/progit_en_table_00.md",
+      "source_file": "C-git-commands.asc",
+      "fragment_sha256": "fcace531888a61213ac39e63aab2457de42432b9f436ed20fcfc96fe7137bcb3",
+      "sha256": "2c337ccdece7232e7c1d4789da40a4dfe9d53e03e5e86d3641f840650eef2f9b"
+    },
+    "progit_ru_prose_00": {
+      "gold": "gold_md/progit_ru_prose_00.md",
+      "source_file": "A-git-in-other-environments.asc",
+      "fragment_sha256": "10c790dbc5ffc6956180262c4acdf469fba9edd1613a868c8f8a757f904b164a",
+      "sha256": "b677301fae7ca45aaa7521c07d63b4927a42d3372a23918bcc4ae31379568657"
+    },
+    "progit_ru_prose_01": {
+      "gold": "gold_md/progit_ru_prose_01.md",
+      "source_file": "book/01-introduction/sections/about-version-control.asc",
+      "fragment_sha256": "d47e5dfea9f1f4c2d13b529ef84f065b210db32fd9133d568f088de10bfe1067",
+      "sha256": "4d97b6206a022aa758efda8e6216b46d7b400ca7e213a1b71ad09a42b3f2ebc0"
+    },
+    "progit_ru_prose_02": {
+      "gold": "gold_md/progit_ru_prose_02.md",
+      "source_file": "book/06-github/sections/4-managing-organization.asc",
+      "fragment_sha256": "1828494f2a48c8909028b139de9018ad88ea98c0eb4101774d96eaa10887bbfa",
+      "sha256": "4e0b5731333315e7ab99600ea06a80d79836870024d9cfbb9c6fd4df8f8a6342"
+    },
+    "progit_ru_prose_03": {
+      "gold": "gold_md/progit_ru_prose_03.md",
+      "source_file": "book/04-git-server/sections/hosted.asc",
+      "fragment_sha256": "ede1dbe21b5a0530577a36c27f8c5bec346417154a9f9aee5ebfd826c20604b0",
+      "sha256": "b4bcb9ef793e5043fa6e3782350bc16a0634ddc72292641bfc394530bb2b30ad"
+    },
+    "progit_ru_prose_04": {
+      "gold": "gold_md/progit_ru_prose_04.md",
+      "source_file": "A-git-in-other-environments.asc",
+      "fragment_sha256": "10c790dbc5ffc6956180262c4acdf469fba9edd1613a868c8f8a757f904b164a",
+      "sha256": "b677301fae7ca45aaa7521c07d63b4927a42d3372a23918bcc4ae31379568657"
+    },
+    "progit_ru_code_00": {
+      "gold": "gold_md/progit_ru_code_00.md",
+      "source_file": "B-embedding-git-in-your-applications.asc",
+      "fragment_sha256": "b0ff4fca7c5d7c801f18333f9e547118575f51fa0fc4be20b1ff2aac559f8655",
+      "sha256": "076f2a69c1680f41374814c794ed5632ea9e70150aa0765e512a99da22af5843"
+    },
+    "progit_ru_code_01": {
+      "gold": "gold_md/progit_ru_code_01.md",
+      "source_file": "A-git-in-other-environments.asc",
+      "fragment_sha256": "2a07183914e9aa428f2fced4d5ef63ab41733a72f3c0480001463034f1ae3e06",
+      "sha256": "61b3b7b93b2b02ac23ceb617c3b4318d9b86a660ecbaa137cf879e9c73743c84"
+    },
+    "progit_ru_code_02": {
+      "gold": "gold_md/progit_ru_code_02.md",
+      "source_file": "B-embedding-git-in-your-applications.asc",
+      "fragment_sha256": "31f8e6eb45b630af3a58e950a694d812fb11c6fa69cac19f5618f7451275da20",
+      "sha256": "62a9f887458bbf60f651c7525389ccb86a731172176432b9b95243dddb6bbd81"
+    },
+    "progit_ru_code_03": {
+      "gold": "gold_md/progit_ru_code_03.md",
+      "source_file": "book/01-introduction/sections/help.asc",
+      "fragment_sha256": "8c37d1631ffdd6f651a95b568fc3aa2380125acfbc4e2ed298554d9df968b90a",
+      "sha256": "232f2cc556a1a84f942f47ca06f8acf37e69c9099f85cd0dabb05d4797252165"
+    },
+    "progit_ru_code_04": {
+      "gold": "gold_md/progit_ru_code_04.md",
+      "source_file": "book/04-git-server/sections/generating-ssh-key.asc",
+      "fragment_sha256": "79dea210bf2b69ee1b1fed2fdcc4a8671d68fe761c04b1bb7ec9b0078437cfa9",
+      "sha256": "4c0176af95a1c0e5068a1a6f23ab2a2dee6f507b0508913d3d0ec858d0bf7181"
+    },
+    "progit_ru_table_00": {
+      "gold": "gold_md/progit_ru_table_00.md",
+      "source_file": "C-git-commands.asc",
+      "fragment_sha256": "58046a721508ed06f3fb040607a063de90b7b0a53c1371a6676a1da4cd8dd2dd",
+      "sha256": "f85279c16d5af73676f9220201cf8f5fe0612931b1fa0fbf99d83ffd4f13daff"
+    },
+    "postgres_en_prose_00": {
+      "gold": "gold_md/postgres_en_prose_00.md",
+      "source_file": "doc/src/sgml/arch-dev.sgml",
+      "fragment_sha256": "a86807b14c8ae98b282d984dd87c62592ff6c832b8aec3ec6ce789352cee111c",
+      "sha256": "ce169b880ce4263fc06860208d2dfbdd0e439cfe7fbc134c021500635eb170c0"
+    },
+    "postgres_en_prose_01": {
+      "gold": "gold_md/postgres_en_prose_01.md",
+      "source_file": "doc/src/sgml/notation.sgml",
+      "fragment_sha256": "798d11df858d516355763d8dc5bd270450b3c3c5396b297ad602d284c578f16f",
+      "sha256": "be01d8aa33f06366120c0d93a0cd86e824688502db18ed0226634748cd4257a2"
+    },
+    "postgres_en_prose_02": {
+      "gold": "gold_md/postgres_en_prose_02.md",
+      "source_file": "doc/src/sgml/sepgsql.sgml",
+      "fragment_sha256": "62a788e1cc3b89bee10b28aa330a03e1c169f6dfd8aa1b163ee2c8c99435b398",
+      "sha256": "4b0bd39b981f15b4e1cc74ae76ee802c8f2f422388a91f5465d698a3f6e62da9"
+    },
+    "postgres_en_prose_03": {
+      "gold": "gold_md/postgres_en_prose_03.md",
+      "source_file": "doc/src/sgml/geqo.sgml",
+      "fragment_sha256": "6b6b87d54d82adcf571f4d0e7ad367ecf6127ccd0dabd1c506cca0e556088d9a",
+      "sha256": "6a9a1bfdb10296056b6b41181ddcba41d22d999051ade88972cae3da6b2d6084"
+    },
+    "postgres_en_prose_04": {
+      "gold": "gold_md/postgres_en_prose_04.md",
+      "source_file": "doc/src/sgml/xact.sgml",
+      "fragment_sha256": "94724236fb656762bbb12528486323fe7735e0e371e4e9f02d711866e5676600",
+      "sha256": "aeb19f418c95a5737577a1f42dbfe77fddcadba092e2d39731b7f488c251a2dc"
+    },
+    "postgres_en_code_00": {
+      "gold": "gold_md/postgres_en_code_00.md",
+      "source_file": "doc/src/sgml/func.sgml",
+      "fragment_sha256": "11821e25e7c6f6edd5613bdc97b00e80d1c1328f7623a83a8f3408cb17d62bca",
+      "sha256": "c56e7227675e06decd2a183ec3ea713590e0e27b2ac6c80ce2f80eebdd275bef"
+    },
+    "postgres_en_code_01": {
+      "gold": "gold_md/postgres_en_code_01.md",
+      "source_file": "doc/src/sgml/auto-explain.sgml",
+      "fragment_sha256": "98eb34c71b860fdda3b7f9763dd89c3b2bce4a67d91997762664d50e5bc1616a",
+      "sha256": "99eb0c9e316663a19c5d4cd5872ebe85701bf6abb88668f7411c57c0ce1680a4"
+    },
+    "postgres_en_code_02": {
+      "gold": "gold_md/postgres_en_code_02.md",
+      "source_file": "doc/src/sgml/xplang.sgml",
+      "fragment_sha256": "6608edc17aa9818ec5d17b268f669c69c2ee4d4219d0421cc3fcdd3493301997",
+      "sha256": "8134f70dc9bb42dc4d59c90da6076030e74c15673ece6fd2cb6f5019430dada0"
+    },
+    "postgres_en_code_03": {
+      "gold": "gold_md/postgres_en_code_03.md",
+      "source_file": "doc/src/sgml/func.sgml",
+      "fragment_sha256": "e91af92ba59e1bdf043b9909477ac8e23d3a474a13bd8837dfa97bb9cd8d217a",
+      "sha256": "87d927f7adc099f4163968026ff649780ceea7a1ecc78b782926f5bd417eeec2"
+    },
+    "postgres_en_code_04": {
+      "gold": "gold_md/postgres_en_code_04.md",
+      "source_file": "doc/src/sgml/monitoring.sgml",
+      "fragment_sha256": "3208745cf5a03d95a634f2e6c7ee4b536dbc0b202e9985674362971b1e240321",
+      "sha256": "1b9460da21a9355f26501bfa682a384011eb7ad6e4c822ddeeb5e6965b4f1e34"
+    },
+    "postgres_en_table_00": {
+      "gold": "gold_md/postgres_en_table_00.md",
+      "source_file": "doc/src/sgml/high-availability.sgml",
+      "fragment_sha256": "db52933a9b58d911848a5dad7c4d89eefc731d9e8a363f0aa2ce368eff317b1e",
+      "sha256": "50ee95127e3c4caa34b79542653d6bff4d1067b61e8ab2b40d8631ce9a672695"
+    },
+    "postgres_en_table_01": {
+      "gold": "gold_md/postgres_en_table_01.md",
+      "source_file": "doc/src/sgml/extend.sgml",
+      "fragment_sha256": "d1cb70ba8fb5b5cb22ded1c1df8cf88a4aca84980941d086d38603b27a46ce32",
+      "sha256": "4702bdd07169f40b9e79e35bf819cfd42935477203e30d1b7a5725a854b60ac2"
+    },
+    "postgres_en_table_02": {
+      "gold": "gold_md/postgres_en_table_02.md",
+      "source_file": "doc/src/sgml/history.sgml",
+      "fragment_sha256": "f309322e5be7d48085e5f016585a9478183cb923370981ea60924b4df7c7d1e6",
+      "sha256": "d724dce805ca48575951756a7ee627491d447d823f509c3b436981a0f9d92c9e"
+    },
+    "postgres_en_table_03": {
+      "gold": "gold_md/postgres_en_table_03.md",
+      "source_file": "doc/src/sgml/pgrowlocks.sgml",
+      "fragment_sha256": "fd038ca7b95280738d7934fa41c84c7cc36f391fef1dd2dd609b5a46f52119b3",
+      "sha256": "d0ae1b6d4c98d657a5bd1dee49fa02729a56b9af7d30b61274748e2d51d1a7d0"
+    },
+    "postgres_en_table_04": {
+      "gold": "gold_md/postgres_en_table_04.md",
+      "source_file": "doc/src/sgml/catalogs.sgml",
+      "fragment_sha256": "e7f6dff63ffa35e3be9a64cc77a311c39015fe9181c034b9967a6d93b61f369d",
+      "sha256": "f9023916b5a1dead3c7dcdcf081e3aebc62a1e08c691034d1f6f9f16aed4a44e"
+    },
+    "postgres_ru_prose_00": {
+      "gold": "gold_md/postgres_ru_prose_00.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/view-pg-user",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "523e026a023a7323339b79f9daad8e03d47e3575f5757166ced30b30e17ee69e"
+    },
+    "postgres_ru_prose_01": {
+      "gold": "gold_md/postgres_ru_prose_01.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/demodb-bookings-installation",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "1358d574903d25b7b0e84758fc718384a94c5688598fa0ebbda35dbe55da77fc"
+    },
+    "postgres_ru_prose_02": {
+      "gold": "gold_md/postgres_ru_prose_02.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/view-pg-timezone-names",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "1789cfeb18a1009d7c6bb79606aa671799e0a4686a32d9fcc6cef2333f7cfa3b"
+    },
+    "postgres_ru_prose_03": {
+      "gold": "gold_md/postgres_ru_prose_03.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/bulk-data-insertion-params",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "c7c3f9229fb32feb9266717f7bcbca2ed1c5b5ceab5376199b22728fabe44d99"
+    },
+    "postgres_ru_prose_04": {
+      "gold": "gold_md/postgres_ru_prose_04.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/typeconv-select",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "7a281c23a8c8d70dbf5daea825f447165ccc77591dd55c04208b77eb56493970"
+    },
+    "postgres_ru_code_00": {
+      "gold": "gold_md/postgres_ru_code_00.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/rules-privileges",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "b70115ca5479723f0d72d5428d8e6d58e86189a6cfb669ffabe8b615a5fba0bf"
+    },
+    "postgres_ru_code_01": {
+      "gold": "gold_md/postgres_ru_code_01.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/sql-altertablespace",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "13f2a89ce4d7317b56d1357cfa9e6c1490eb6588e121ccbaaf0c6f91de1d2a2a"
+    },
+    "postgres_ru_code_02": {
+      "gold": null,
+      "why": "no site page for the title"
+    },
+    "postgres_ru_code_03": {
+      "gold": "gold_md/postgres_ru_code_03.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/sql-droprule",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "cc59de9683a4f0d2a040622b2a752ecb6e264182c711c6162a4ed2f2c6dc3cc6"
+    },
+    "postgres_ru_code_04": {
+      "gold": "gold_md/postgres_ru_code_04.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/sql-dropusermapping",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "685c7ac89c5b852b78959092312a29e4f99893e663b328c6b14f5733bcfdd746"
+    },
+    "postgres_ru_table_00": {
+      "gold": "gold_md/postgres_ru_table_00.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/datatype-net-types",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "5912cbfab9478eade42d072face390bf1d1e4997af369b60f3f885f1819d3c0a"
+    },
+    "postgres_ru_table_01": {
+      "gold": "gold_md/postgres_ru_table_01.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/datatype-money",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "98579ba8a194913b231eb3e67a0492df7a599307438de08c9b145c582dd1415d"
+    },
+    "postgres_ru_table_02": {
+      "gold": "gold_md/postgres_ru_table_02.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/datatype-boolean",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "9ed97a42bbbc90cf11912cc80f205c9409de6d88cbb3082fb364cbdf47e792c6"
+    },
+    "postgres_ru_table_03": {
+      "gold": "gold_md/postgres_ru_table_03.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/logical-replication-gencols",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "69387832d817bdf390af58ff07c8a37195bf3f20af7e287753d1352da4aec741"
+    },
+    "postgres_ru_table_04": {
+      "gold": "gold_md/postgres_ru_table_04.md",
+      "source_page": "https://postgrespro.ru/docs/enterprise/18/textsearch-parsers",
+      "gold_from": "the page's own DocBook element by pandoc",
+      "sha256": "ab94895e69da7e43d3e9e87d02162ad79e28467e470722a838dfaa521da084ae"
+    },
+    "python_en_prose_00": {
+      "gold": "gold_md/python_en_prose_00.md",
+      "source_file": "Doc/library/doctest.rst",
+      "fragment_sha256": "918c3006eff981fad3ba57e3f4d650ca84d1ef6cf119faa286d8f1401c141e62",
+      "sha256": "7b9f95aebcda18b2d4b91ce01acddb08a8de1abda8ad8d46478791075cfe0a02"
+    },
+    "python_en_prose_01": {
+      "gold": "gold_md/python_en_prose_01.md",
+      "source_file": "Doc/library/dis.rst",
+      "fragment_sha256": "c40c8b5e9763e80e87884c685e3b9d455cfac7119ecca9a32ea78f7dd2aae487",
+      "sha256": "5c607a5b8a62d61d2f773c1ff68fa917f8683053ff42d9d37a145b84bde05316"
+    },
+    "python_en_prose_02": {
+      "gold": "gold_md/python_en_prose_02.md",
+      "source_file": "Doc/howto/isolating-extensions.rst",
+      "fragment_sha256": "35ccb10310b93ff6e8f25a7b02ffbae6f9c38425540438a11254cf8948621518",
+      "sha256": "5664195d31e230f426a4bbb4f36eeaa95e9cf773358e6519cdc2ff9ca054e1ec"
+    },
+    "python_en_prose_03": {
+      "gold": "gold_md/python_en_prose_03.md",
+      "source_file": "Doc/howto/free-threading-extensions.rst",
+      "fragment_sha256": "ad2359a5c32e6a676bc98e3a90a0eb11913dc5ea419b892edeb30fab3b354505",
+      "sha256": "9b8b5ae74a8d473afa040ccf8e342bc920b0a669b1d408829c875d580943e45d"
+    },
+    "python_en_prose_04": {
+      "gold": "gold_md/python_en_prose_04.md",
+      "source_file": "Doc/tutorial/controlflow.rst",
+      "fragment_sha256": "b1386b9375e8f268ee480ddd6d0b4f53770c2c7c268be42b7393dd991ffb17d7",
+      "sha256": "aeae96163e34acc45c4b154b1bd4f9330c13b63229533a2415e9369d6e5ae480"
+    },
+    "python_en_code_00": {
+      "gold": "gold_md/python_en_code_00.md",
+      "source_file": "Doc/faq/programming.rst",
+      "fragment_sha256": "594e8336b6c3b5f3ace2b70d637d9415954685c7fb5c17ddf563ca4b36aa3653",
+      "sha256": "e56281b9c820b29e3e206270f38ebf8e721b8d66afa29256ba50f4a04a777e78"
+    },
+    "python_en_code_01": {
+      "gold": "gold_md/python_en_code_01.md",
+      "source_file": "Doc/library/zoneinfo.rst",
+      "fragment_sha256": "775be8e8c755116c9033008f4e2a57598a23e7c7fc73e573a2b8f5197d52b35e",
+      "sha256": "9de6b924783e56aaf1ee0b7c293742fc32d406f025a708b03b6de36cc91a3268"
+    },
+    "python_en_code_02": {
+      "gold": "gold_md/python_en_code_02.md",
+      "source_file": "Doc/howto/enum.rst",
+      "fragment_sha256": "5e25622e59d18d0809a693879005aa3a9386b5c1bedbc1c6d7d8561bf3379051",
+      "sha256": "f91fb86bc0e4b2f0a9e650810e73c85b7c2c70aaada2b0dff6e8c4291eca281b"
+    },
+    "python_en_code_03": {
+      "gold": "gold_md/python_en_code_03.md",
+      "source_file": "Doc/c-api/init_config.rst",
+      "fragment_sha256": "27c8f7510e7acab932712387431561cb65493ceb711f0e3b95412e6c9a0220b0",
+      "sha256": "9dd56d66009b7a9650c91a286b3cb7168a17b8e7de1e1ff6f8e4536621f9bff8"
+    },
+    "python_en_code_04": {
+      "gold": "gold_md/python_en_code_04.md",
+      "source_file": "Doc/using/configure.rst",
+      "fragment_sha256": "c3e86feadb36bc03d6947d70b22819d6042b696169f78b8c52b317a5eefa504f",
+      "sha256": "12eb836c8b965c9eb84fe670bf677b3ead797174fe3739cf9aa9b2b5f94cff19"
+    },
+    "python_en_table_00": {
+      "gold": "gold_md/python_en_table_00.md",
+      "source_file": "Doc/c-api/memory.rst",
+      "fragment_sha256": "0918576e70cc472326b44fed2bdf5fc9b73e58ddd69e11e48b0fc9c40974eccc",
+      "sha256": "e84241cd13cca90a9c2e92ee2776a5c1f6dbc737d6a4af1c8b5de2d77f8a6cf3"
+    },
+    "python_en_table_01": {
+      "gold": "gold_md/python_en_table_01.md",
+      "source_file": "Doc/howto/logging.rst",
+      "fragment_sha256": "11e18c0dc86f77b3efb317b9248bad9370db1e69a0b2f5ad84ddc8af750da40f",
+      "sha256": "0b1dbf740a941fcbd80c1649279f07e8c81ceadebb42e0f66a18be60b116b834"
+    },
+    "python_en_table_02": {
+      "gold": "gold_md/python_en_table_02.md",
+      "source_file": "Doc/howto/curses.rst",
+      "fragment_sha256": "1a007f3c43c18890e85c1be73fd85a9d47789468847f759e06ba56b2d63ef3bc",
+      "sha256": "6205002e2d3d678e91673dedddff12106c7662130011ca079df135123a380a8c"
+    },
+    "python_en_table_03": {
+      "gold": "gold_md/python_en_table_03.md",
+      "source_file": "Doc/library/sysconfig.rst",
+      "fragment_sha256": "abf8369acf4a578dec6def9f31db9f4d7778a605e7a6ccbe77574e566d732207",
+      "sha256": "0c89eedf7048dac5dd6fda439c5d875eafdddb2fd4acadd652788b35febf02f2"
+    },
+    "python_en_table_04": {
+      "gold": "gold_md/python_en_table_04.md",
+      "source_file": "Doc/howto/regex.rst",
+      "fragment_sha256": "896f990ec9a0f067b45358db647541fea3e8691645616094b17065b83b864e16",
+      "sha256": "4db954939b17e16b08c70256483596269b727664dcfe292091636e712055eedf"
+    },
+    "django_en_prose_00": {
+      "gold": "gold_md/django_en_prose_00.md",
+      "source_file": "docs/index.txt",
+      "fragment_sha256": "1041177a3eebc46d98aacb1e16b8d1a1a137d6600a2c69990400c21d5dacd78e",
+      "sha256": "ec3738841e15eefde55bc35af94b718a051cde16b35dec3a113e8ee306780c5a"
+    },
+    "django_en_prose_01": {
+      "gold": "gold_md/django_en_prose_01.md",
+      "source_file": "docs/faq/admin.txt",
+      "fragment_sha256": "3410cf333e9cddb94000acce99399ed61f3b447a63685155e5c2a852536ac713",
+      "sha256": "e46f14db8e5ab7e0351e21f946493872da828e8266b4a5ec587c6f7cbac481c5"
+    },
+    "django_en_prose_02": {
+      "gold": "gold_md/django_en_prose_02.md",
+      "source_file": "docs/faq/admin.txt",
+      "fragment_sha256": "f9eae7908dee287dd35b67038fafb9f5466399da7443a9d630e25cba00c608d4",
+      "sha256": "a6503b7b1c9a0bd5067995fe88b77c1e2fef9657e6b4c72e6a00b0f84f57b25a"
+    },
+    "django_en_prose_03": {
+      "gold": "gold_md/django_en_prose_03.md",
+      "source_file": "docs/misc/api-stability.txt",
+      "fragment_sha256": "d89a6d367f5d3ee1d738a2251f682ef512e1883108437958d39b5b1b90c4d7c5",
+      "sha256": "22480757e244b71e5d17810125abb6048d70621fbe8bd849d46f3d42506c749b"
+    },
+    "django_en_prose_04": {
+      "gold": "gold_md/django_en_prose_04.md",
+      "source_file": "docs/topics/migrations.txt",
+      "fragment_sha256": "8aed670da37ee2b44ae1d21a1f8a584b8a15676112c57bb8de541058b597cb57",
+      "sha256": "f91e8d2135d449c31dae580ebecf4983dffb7a530545e3aa35e1c13b445cca15"
+    },
+    "django_en_code_00": {
+      "gold": "gold_md/django_en_code_00.md",
+      "source_file": "docs/ref/models/lookups.txt",
+      "fragment_sha256": "78ab4e4d9f49a20e816d15b66a69b24b3fc214240fcc5349dacd1c46293a9d78",
+      "sha256": "8382bd3b1935fd93b30f411f274a64f971a40d0a3794bdebc3bb9a8d394ad714"
+    },
+    "django_en_code_01": {
+      "gold": "gold_md/django_en_code_01.md",
+      "source_file": "docs/ref/exceptions.txt",
+      "fragment_sha256": "03d556cdde3ec7ac429dc6dfefe084391735b907c840307dd51c819d25e214ac",
+      "sha256": "2d2401663695f92d95ac1e87dad1ebacab31d41c0d8a697096461c225bb4b745"
+    },
+    "django_en_code_02": {
+      "gold": "gold_md/django_en_code_02.md",
+      "source_file": "docs/releases/5.2.txt",
+      "fragment_sha256": "06a8fcd4ac2e800895093028ecf770d73cc1959992c37ca15e719ea93f765b27",
+      "sha256": "16004a9502bc6ccb00816459ce48a362ceae87e2552156d082558fe5f320795f"
+    },
+    "django_en_code_03": {
+      "gold": "gold_md/django_en_code_03.md",
+      "source_file": "docs/ref/tasks.txt",
+      "fragment_sha256": "e01ce625fd7d3be9aca6f2f9aa235bd98776dc5e2c2bc7d5630ad4500c1704ab",
+      "sha256": "f0778dbbf4b61838e99354ccda0696cb6d198c7cc08a5575722c20926f8e9be4"
+    },
+    "django_en_code_04": {
+      "gold": "gold_md/django_en_code_04.md",
+      "source_file": "docs/ref/urls.txt",
+      "fragment_sha256": "9d10909eaa883a493f8a877a75dee451997d3cc24e76c359a372eaf870bfa282",
+      "sha256": "910276da753800ec933add5e09c365776646075fb3f07356d4e5482b066d77f9"
+    },
+    "django_en_table_00": {
+      "gold": "gold_md/django_en_table_00.md",
+      "source_file": "docs/faq/install.txt",
+      "fragment_sha256": "b25b982bcbf370d348e189942bbc9fef16f15a980fa836eb964f1b515db01ec9",
+      "sha256": "cf45b34285dedfb33406c725cae9b7406a98abf1086a347b0bcbc6631bec9dc8"
+    },
+    "django_en_table_01": {
+      "gold": "gold_md/django_en_table_01.md",
+      "source_file": "docs/ref/tasks.txt",
+      "fragment_sha256": "9341c0ffb34c5c62089e5811b5ac6eda8e291832d1cf17f14f173e4d19f4bbdf",
+      "sha256": "1141341d97fba45061a3f428618577dd9f3b71611875aa3a0bd7d7509b010c08"
+    },
+    "django_en_table_02": {
+      "gold": "gold_md/django_en_table_02.md",
+      "source_file": "docs/faq/install.txt",
+      "fragment_sha256": "06ce0df6544891388c21d7f2bde9215e42e35ebb0c033323414fcbdcea6c96e0",
+      "sha256": "77feed32c34678641fd20fb6749c0992447cb4e4dce46940b19f342af81fe15c"
+    },
+    "latex_baldin_ru_prose_00": {
+      "gold": "gold_md/latex_baldin_ru_prose_00.md",
+      "source_file": "catalog/catalog.tex",
+      "fragment_sha256": "43d5b782977505701c7e92c92cc6a37cfd409310b54aeb50a09f11963cf0daae",
+      "sha256": "87cdbd980b1799a1d89bd570734db65cb68695d2c697b12b30eb1b038952f404"
+    },
+    "latex_baldin_ru_prose_01": {
+      "gold": "gold_md/latex_baldin_ru_prose_01.md",
+      "source_file": "catalog/catalog.tex",
+      "fragment_sha256": "bdca2d853fac31eee3714ccc79ac978234fc96d76d1fc1cf1d1e775bc15ad4c0",
+      "sha256": "11c6f1c3c0958874aa2593473cdb0fe0fb62892b9c32a4db49165834dd4547f0"
+    },
+    "latex_baldin_ru_prose_02": {
+      "gold": "gold_md/latex_baldin_ru_prose_02.md",
+      "source_file": "catalog/catalog.tex",
+      "fragment_sha256": "8bc2b6edc88f19bb7347a17a8949748b024f27d3c43aadea2f696eb38671cff9",
+      "sha256": "273e6c503ef0514dc17d58ebc9c690486046b11b3c78ceca7ff4306b186538ca"
+    },
+    "latex_baldin_ru_prose_03": {
+      "gold": "gold_md/latex_baldin_ru_prose_03.md",
+      "source_file": "math/math-2.tex",
+      "fragment_sha256": "2030b93a6acb4ffae7b1a16ee3e8a94e49973873a83612fc370c1488d6904c91",
+      "sha256": "23f4510945f052018d38a1159257a3fd1bb9026d3bc4ae3edade68b5749e450b"
+    },
+    "latex_baldin_ru_prose_04": {
+      "gold": "gold_md/latex_baldin_ru_prose_04.md",
+      "source_file": "make-up/make-up.tex",
+      "fragment_sha256": "91515a80f303a4d2b8c4ba63b625f0072517ec32d533d8d436657dbfaed53b7f",
+      "sha256": "fd29cfd933e41b5d648c96e6dafdf2f8a44659f2db423c6fb690aec26651142e"
+    },
+    "latex_baldin_ru_code_00": {
+      "gold": "gold_md/latex_baldin_ru_code_00.md",
+      "source_file": "preamble/preamble.tex",
+      "fragment_sha256": "4ee0c84ff2a6e5b16032e7fdb52b1b2a8e36fc3fff2f66e214aa4bf7dcb9d5ae",
+      "sha256": "1ddccc5fdff600745baac9ab04391ece2940b342796141a51be0d86c31da9f55"
+    },
+    "latex_baldin_ru_code_01": {
+      "gold": "gold_md/latex_baldin_ru_code_01.md",
+      "source_file": "preamble/preamble.tex",
+      "fragment_sha256": "b9b34e876897f8ae9085af8edb694ffbe3ff17df135cb19c3b61665da063e74e",
+      "sha256": "6ab55327be7d8094ceed496fae761816bc112a8e8c6f40f70d0b1de82aa8b259"
+    },
+    "latex_baldin_ru_code_02": {
+      "gold": "gold_md/latex_baldin_ru_code_02.md",
+      "source_file": "base/base-2.tex",
+      "fragment_sha256": "625f12ad22798ec77b4ad62eaeab3189bf5228d96c6cd37bcfabb6d14a38680f",
+      "sha256": "282422479a35f1e2bcf7537bf5f805bc4ba3ccfcfc682d410a816219337c0971"
+    },
+    "latex_baldin_ru_code_03": {
+      "gold": "gold_md/latex_baldin_ru_code_03.md",
+      "source_file": "program/program.tex",
+      "fragment_sha256": "94719da797ae606fef52069898f4dee66ff3fe94373732e0de4b0bc8db08223a",
+      "sha256": "e93e25ca51e2bfb370499cb42eafc1f05f1ec86599b6934b27b24809fad032c2"
+    },
+    "latex_baldin_ru_code_04": {
+      "gold": "gold_md/latex_baldin_ru_code_04.md",
+      "source_file": "base/base-2.tex",
+      "fragment_sha256": "dc5232a6a80027fb756f2a660999aef94efbe230185f01819e54ba62ed72b5fc",
+      "sha256": "825288b191312f6ee7b7dd2b1f367bea6f249ab2d6ea7e75c5b7b63fe4ec8024"
+    },
+    "latex_baldin_ru_table_00": {
+      "gold": "gold_md/latex_baldin_ru_table_00.md",
+      "source_file": "catalog/catalog.tex",
+      "fragment_sha256": "6c18ce5c9c792b8a3b52ff14b3fbb8e7394026f0f328859bebbcbdd18f90fcac",
+      "sha256": "0004fd033a7dc31104437a3fc7190f4a1414ba61f3c91ef138ee713838f30482"
+    },
+    "latex_baldin_ru_table_01": {
+      "gold": "gold_md/latex_baldin_ru_table_01.md",
+      "source_file": "math/math-2.tex",
+      "fragment_sha256": "d14436fede4b21378c97f2326f6817035b65cb30a761754ee2f4d05f4e8d97ba",
+      "sha256": "1178d0a774f82ba1616afa7ed1c92b3c27d566b63d1f78deaf69e3574584ffa4"
+    },
+    "latex_baldin_ru_table_02": {
+      "gold": "gold_md/latex_baldin_ru_table_02.md",
+      "source_file": "code/code.tex",
+      "fragment_sha256": "09c38c50dd85bf29945a164f4a0f565914069b352bb645215e0b9686340eba40",
+      "sha256": "acb2e2dd719ead03b534d8c9570e5270f1b04bd7153f5f13aed97203286ffa4f"
+    },
+    "latex_baldin_ru_table_03": {
+      "gold": "gold_md/latex_baldin_ru_table_03.md",
+      "source_file": "catalog/catalog.tex",
+      "fragment_sha256": "f0849b0adab6b25f632ff366953b9c33ac5d1ddf9fa3f6c51a4e655571a63f52",
+      "sha256": "3ea82f3301ad2895cff911ef904da25c8417cd8ba3a64c9d0500d648d9cbf047"
+    },
+    "latex_baldin_ru_table_04": {
+      "gold": "gold_md/latex_baldin_ru_table_04.md",
+      "source_file": "tables/tables.tex",
+      "fragment_sha256": "19f7bc39752449087c81857666e6b1340e731c0079c201be5c720b54874dd427",
+      "sha256": "7bd31d472b0dd0889dc5cf6896e8129e8c3a437becd6ad59d56049d710eafa04"
+    },
+    "haskell_kholomiev_ru_prose_00": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_00.md",
+      "source_file": "pandoc/1.txt",
+      "fragment_sha256": "677a83a05e7664decd7f6b1a87ca11e24986346bd170d0bca0907d3cc9504e93",
+      "sha256": "20624b451643322a550651b9aa18b8217c1e9ca8526aa17bae782481844d840d"
+    },
+    "haskell_kholomiev_ru_prose_01": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_01.md",
+      "source_file": "pandoc/1.txt",
+      "fragment_sha256": "1632b518610e3b721da7ac1a031b76d3ef928b57b458aae88a93f9ff7d046a46",
+      "sha256": "1823b105b8e7fdbc2647364c581c9a46276d0ae356e27c36123d5f5a4a0fd46c"
+    },
+    "haskell_kholomiev_ru_prose_02": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_02.md",
+      "source_file": "pandoc/6.txt",
+      "fragment_sha256": "30b33bda1a70f237de28bcb283eba97a200345fbb2fba412fbe81b8aa1aac620",
+      "sha256": "976a288038b012d9ae133880ea357eddffb21663e0c0ecf5c2a68a3a043c7b09"
+    },
+    "haskell_kholomiev_ru_prose_03": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_03.md",
+      "source_file": "pandoc/3.txt",
+      "fragment_sha256": "ef0bda9e398e39b6eb0eb8d628fe27cca2fe7b8de28bfa6634ea98239ebea4f5",
+      "sha256": "340e3871172d7b85a8f0876aeb05685162d6318d91915f7641f23adbc05c2b71"
+    },
+    "haskell_kholomiev_ru_prose_04": {
+      "gold": "gold_md/haskell_kholomiev_ru_prose_04.md",
+      "source_file": "pandoc/12.txt",
+      "fragment_sha256": "8748e0a27519835b6ed9071638e3ae9f019690d64fe2eb087c9fbdfb529e2a39",
+      "sha256": "5e925909b1f37d2aa074823cd96b591bee630e5e9c37043abbf433b672ddc7f7"
+    },
+    "haskell_kholomiev_ru_code_00": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_00.md",
+      "source_file": "pandoc/17.txt",
+      "fragment_sha256": "c3e9ea4c6ff5c392fabdb1ddd9ce1ed661ff0da0aaadc11eae7d0a43f8a45cba",
+      "sha256": "9a9c91ad6cea80b3a9a240c65d13481ad5ebdd03ad499f0443f7fd276623ddea"
+    },
+    "haskell_kholomiev_ru_code_01": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_01.md",
+      "source_file": "pandoc/17.txt",
+      "fragment_sha256": "d86a0d4ef5a1171985ef73d20695b50836019f6977930a472bb2f11a05aa7901",
+      "sha256": "571e21a19946ced9a57bb6ee85467422c7a8eca465d7a15ee0c71700320e1872"
+    },
+    "haskell_kholomiev_ru_code_02": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_02.md",
+      "source_file": "pandoc/2.txt",
+      "fragment_sha256": "e904e8e96ed52fb7440af39d2325b5b7e5aa29fb92ddca8aa584d415ce1f22db",
+      "sha256": "5881750c6b440f6d321f56e541c44da78e65120501fa72041d38e0bc54057ab9"
+    },
+    "haskell_kholomiev_ru_code_03": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_03.md",
+      "source_file": "pandoc/7.txt",
+      "fragment_sha256": "94d01e07f36721dd0165096bb443ce35a058ab297a50650dfe195f1355f9ad4b",
+      "sha256": "bbaaa7e1424721032c301a637e50d840855d3629d2ad9fe438d5464fd5149005"
+    },
+    "haskell_kholomiev_ru_code_04": {
+      "gold": "gold_md/haskell_kholomiev_ru_code_04.md",
+      "source_file": "pandoc/8.txt",
+      "fragment_sha256": "08656f8e3738cffee33cc24257850da698b0fd74205e30a1faccb4d4472eb85a",
+      "sha256": "4182b268df95cad2b7ee0cbfa58229ca372b21284ddb8bf8e0cc28acf805c7e9"
+    },
+    "haskell_kholomiev_ru_table_00": {
+      "gold": "gold_md/haskell_kholomiev_ru_table_00.md",
+      "source_file": "pandoc/13.txt",
+      "fragment_sha256": "bd4e22e1439b7c41b84faec85fd2959ecd86d115bfd99246fe0e75f4539e718d",
+      "sha256": "c50a1761703e938ca8a8bfcecc41a19e9e5f2f084c80859a7c234725b2a48992"
+    },
+    "haskell_kholomiev_ru_table_01": {
+      "gold": "gold_md/haskell_kholomiev_ru_table_01.md",
+      "source_file": "pandoc/13.txt",
+      "fragment_sha256": "3a0bd51915297202f4c3684bfa824f893ffc0b4e2cfd65405428281e215aa178",
+      "sha256": "f935f4b41f8080fe446177a842faf8c51f30f80a7fab77c804713ff852256fb9"
+    }
+  }
+}

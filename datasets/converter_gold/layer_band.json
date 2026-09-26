@@ -1,0 +1,58 @@
+{
+  "progit/en": {
+    "pages": 501,
+    "under_50_chars": 1,
+    "chars_p5": 517,
+    "mixed_script_max": 0.0,
+    "once_in_file_max": 0.8127
+  },
+  "progit/ru": {
+    "pages": 541,
+    "under_50_chars": 2,
+    "chars_p5": 434,
+    "mixed_script_max": 0.0051,
+    "once_in_file_max": 0.6993
+  },
+  "postgres/en": {
+    "pages": 3156,
+    "under_50_chars": 6,
+    "chars_p5": 636,
+    "mixed_script_max": 0.0,
+    "once_in_file_max": 0.8696
+  },
+  "postgres/ru": {
+    "pages": 4220,
+    "under_50_chars": 5,
+    "chars_p5": 885,
+    "mixed_script_max": 0.0647,
+    "once_in_file_max": 0.8462
+  },
+  "python/en": {
+    "pages": 167,
+    "under_50_chars": 2,
+    "chars_p5": 76,
+    "mixed_script_max": 0.0,
+    "once_in_file_max": 0.375
+  },
+  "django/en": {
+    "pages": 3078,
+    "under_50_chars": 1,
+    "chars_p5": 1015,
+    "mixed_script_max": 0.0,
+    "once_in_file_max": 0.1908
+  },
+  "latex_baldin/ru": {
+    "pages": 308,
+    "under_50_chars": 12,
+    "chars_p5": 432,
+    "mixed_script_max": 0.0372,
+    "once_in_file_max": 0.277
+  },
+  "haskell_kholomiev/ru": {
+    "pages": 329,
+    "under_50_chars": 2,
+    "chars_p5": 1091,
+    "mixed_script_max": 0.062,
+    "once_in_file_max": 0.3564
+  }
+}
