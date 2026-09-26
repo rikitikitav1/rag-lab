@@ -94,7 +94,39 @@ corpus:
       # what the ceiling counts, said out loud rather than inherited from a default
       ceiling_on: body
     # variants that lost are gone; their policy rides in the entry that measured them
+
+# how an added source is turned into raw markdown before any cut
+intake:
+  route:
+    # tuned: file=datasets/converter_gold/layer_band.json (pages under 50 chars: 1-7 a book, Baldin 12 of 308)
+    min_layer_chars: 50
+    # not measured: a shorter raster run in a text book stays with its neighbours; handovers read 9.8 and 22.6 s (2910, 2911)
+    min_raster_run: 3
+    # not measured: a page with fewer words gives no share worth reading for the suspect-layer signals
+    suspect_min_words: 50
+  # tuned: file=datasets/converter_gold/raw_band.json (Docling cuts vs own layer: f1 0.78-1.0, share 0.68-1.15)
+  # read on the gold's section cuts and applied to each piece of a run; a piece is longer, so its signals sit tighter
+  quality:
+    output_share_min: 0.6
+    output_share_max: 1.25
+    # the ru floor is Docling gluing words on TeX books: without a hand repair of glued words such a book reads dirty
+    layer_f1_min: 0.75
+    mixed_script_max: 0.02
+    # the engines the layer band was read on; the others' layer signals are recorded and not gated
+    layer_band_engines: [docling]
+    # not measured: over this share of breaching units the raw source is bad; coarse below about five units, read the reasons
+    bad_share: 0.2
+  # the engine each tool runs on; its supervisor is asked only whether it is up
+  engines: { docling: converter-docling, mineru: converter-mineru }
+  # each engine's settings file when a run names none; a loop passes its own as options
+  settings: { docling: docling/default, mineru: mineru/ocr }
 ingest_quality:
+  # not measured: how the metrics themselves read a cut, shared by the cut that acts and the report that counts
+  measure:
+    tiny_share_of_ceiling: 0.1   # a chunk below this share of its ceiling is a sliver
+    boilerplate_file_share: 0.5  # a body repeated in this share of a source's files is boilerplate
+    boilerplate_min_files: 3     # a source of fewer files cannot show boilerplate
+    min_breaching_chunks: 5      # a share over fewer chunks than this abstains
   # hard means the cut is broken, soft means dirty; a ceiling abstains below few chunks
   # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
   hard_gates:
@@ -138,6 +170,9 @@ engines:
   - { name: vllm-cpu,    kind: vllm,   env_prefix: VLLM_CPU,    placement: cpu }
   - { name: vllm-embed,  kind: vllm,   env_prefix: VLLM_EMBED,  placement: gpu }
   - { name: vllm-rerank, kind: vllm,   env_prefix: VLLM_RERANK, placement: gpu }
+  # one engine a converter tool: a text-layer PDF and a page go to Docling, a scan to MinerU
+  - { name: converter-docling, kind: converter, env_prefix: CONVERTER_DOCLING, placement: gpu }
+  - { name: converter-mineru,  kind: converter, env_prefix: CONVERTER_MINERU,  placement: gpu }
 llm:
   # what we expect OLLAMA_CONTEXT_LENGTH to be; the server is the authority
   context_length: 8192          # tokens

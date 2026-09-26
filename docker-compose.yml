@@ -9,6 +9,8 @@ x-engine-env: &engine-env
   VLLM_RERANK_BASE_URL: ${VLLM_RERANK_BASE_URL:-http://vllm-rerank:8000}
   VLLM_RERANK_API_KEY: ${VLLM_RERANK_API_KEY:-}
   OLLAMA_CPU_BASE_URL: ${OLLAMA_CPU_BASE_URL:-http://ollama-cpu:11434}
+  CONVERTER_DOCLING_BASE_URL: ${CONVERTER_DOCLING_BASE_URL:-http://converter-docling:5001}
+  CONVERTER_MINERU_BASE_URL: ${CONVERTER_MINERU_BASE_URL:-http://converter-mineru:5001}
   # `orm/dsn.py` still reads these on the host, and one left in .env would move the containers
   POSTGRES_HOST: ""
   OLLAMA_BASE_URL: ""
@@ -16,6 +18,9 @@ x-engine-env: &engine-env
 
 # pinned by digest: the sleep routes and their memory were measured on this build, 0.29.1
 x-vllm-image: &vllm-image vllm/vllm-openai@sha256:aa542864b00a69e711a8352448683800d0224ef39d1c2246cdfd741d63711efa
+
+# ollama 0.32.0
+x-ollama-image: &ollama-image ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
 
 # CDI, not the runtime hook: a `systemctl daemon-reload` took the card from running containers
 x-gpu: &gpu
@@ -66,7 +71,8 @@ services:
       - ${HOME}/.cache/huggingface:/engine_weights:ro
 
   postgresql:
-    image: pgvector/pgvector:pg17
+    # pgvector on PostgreSQL 17, pinned by digest like every image the stand runs
+    image: pgvector/pgvector:pg17@sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0
     # an hnsw build asks for 512m of shared memory and the docker default is 64m
     shm_size: 1gb
     ports:
@@ -187,7 +193,7 @@ services:
     deploy: *gpu
 
   ollama:
-    image: ollama/ollama
+    image: *ollama-image
     ports:
       - "127.0.0.1:11434:11434"
     environment:
@@ -248,7 +254,7 @@ services:
 
   # always up: ollama loads a model on the first call and gives the memory back after the keep-alive
   ollama-cpu:
-    image: ollama/ollama
+    image: *ollama-image
     environment:
       # hidden from the card on purpose: this engine answers on the processor or not at all
       CUDA_VISIBLE_DEVICES: ""
@@ -338,6 +344,36 @@ services:
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     deploy: *gpu
+
+  # one service a converter tool; each supervisor holds its tool only while it has the card
+  converter-docling: &converter
+    profiles: ["convert"]
+    # a tool is a folder under converters/ whose image carries every model the tool is set to use
+    build:
+      context: converters
+      dockerfile: docling/Dockerfile
+    image: rag-lab-converter-docling
+    # a supervisor starts and kills the tool; tini reaps what the tool leaves behind
+    init: true
+    # the supervisor's stop waits up to 40 s for the tool before it kills it
+    stop_grace_period: 45s
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "0"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      start_period: 10s
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy: *gpu
+
+  converter-mineru:
+    <<: *converter
+    build:
+      context: converters
+      dockerfile: mineru/Dockerfile
+    image: rag-lab-converter-mineru
+    environment: {}
 
 volumes:
   ollama_data:

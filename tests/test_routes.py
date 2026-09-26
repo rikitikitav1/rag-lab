@@ -18,9 +18,7 @@ def test_agent_language_invalid_422(client):
     assert r.status_code == 422
 
 
-def test_the_agent_door_refuses_foreign_vectors_rather_than_answering_without_the_corpus(
-    client, monkeypatch
-):
+def test_the_agent_door_refuses_foreign_vectors_rather_than_answering_without_the_corpus(client, monkeypatch):
     import api.v1.agent as agent_door
 
     import db
@@ -42,17 +40,13 @@ def test_eval_run_pipeline_invalid_422(client):
 def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
     import api.v1.eval as eval_mod
 
-    monkeypatch.setattr(
-        eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o)
-    )
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
 
     async def _refresh(session, obj):
         return obj
 
     monkeypatch.setattr(eval_mod, "commit_and_refresh", _refresh)
-    r = client.post(
-        "/v1/eval/run", json={"set_name": "s", "pipeline": "agent", "rerank": True}
-    )
+    r = client.post("/v1/eval/run", json={"set_name": "s", "pipeline": "agent", "rerank": True})
     assert r.status_code == 200
 
 
@@ -60,9 +54,7 @@ def test_every_field_a_run_declares_reaches_the_queue(client, monkeypatch):
     # the options dict is copied field by field, so a new field is accepted and never carried
     import api.v1.eval as eval_mod
 
-    monkeypatch.setattr(
-        eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o)
-    )
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
 
     async def _refresh(session, obj):
         return obj
@@ -91,17 +83,13 @@ def test_question_log_pipeline_invalid_422(client):
 
 def test_import_too_large_413(client):
     big = b"x" * (5 * 1024 * 1024 + 1)
-    r = client.post(
-        "/v1/questions/import", files={"file": ("big.txt", big)}, data={"set_name": "s"}
-    )
+    r = client.post("/v1/questions/import", files={"file": ("big.txt", big)}, data={"set_name": "s"})
     assert r.status_code == 413
 
 
 def test_body_over_max_413(client):
     big = b"x" * (7 * 1024 * 1024)
-    r = client.post(
-        "/v1/questions/import", files={"file": ("big.txt", big)}, data={"set_name": "s"}
-    )
+    r = client.post("/v1/questions/import", files={"file": ("big.txt", big)}, data={"set_name": "s"})
     assert r.status_code == 413
     assert r.json()["detail"] == "request body too large"
 
@@ -237,9 +225,7 @@ def test_cancelling_a_type_with_no_run_name_is_said_out_loud(client, monkeypatch
     assert r.status_code == 200 and r.json()["cancelled"] == [11, 12]
 
 
-def test_a_cancel_goes_through_the_queue_so_the_experiment_is_not_left_waiting(
-    client, monkeypatch
-):
+def test_a_cancel_goes_through_the_queue_so_the_experiment_is_not_left_waiting(client, monkeypatch):
     # the route flipped the status itself while `mark_failed_for_run` lives in the queue
     import job_queue
 
@@ -339,23 +325,37 @@ def test_a_resumed_run_changes_nothing_and_runs_on_the_stopped_jobs_options(clie
 
     from models import JobStatus
 
-    stopped = SimpleNamespace(status=JobStatus.error, options={
-        "run_name": "r", "set_name": "s", "model": "MiniMaxAI/MiniMax-M2.7", "pipeline": "single_shot",
-        "attempts": 3, "resume": False,
-    })
+    stopped = SimpleNamespace(
+        status=JobStatus.error,
+        options={
+            "run_name": "r",
+            "set_name": "s",
+            "model": "MiniMaxAI/MiniMax-M2.7",
+            "pipeline": "single_shot",
+            "attempts": 3,
+            "resume": False,
+        },
+    )
     _door_that_queues(monkeypatch, rows=3, jobs=[stopped])
     edited = client.post("/v1/eval/run", json={"run_name": "r", "resume": True, "model": "other"})
     assert edited.status_code == 422 and "model" in edited.json()["detail"]
     resumed = client.post("/v1/eval/run", json={"run_name": "r", "resume": True})
     assert resumed.status_code == 200
     assert resumed.json()["options"] == {
-        "run_name": "r", "set_name": "s", "model": "MiniMaxAI/MiniMax-M2.7", "pipeline": "single_shot", "resume": True,
+        "run_name": "r",
+        "set_name": "s",
+        "model": "MiniMaxAI/MiniMax-M2.7",
+        "pipeline": "single_shot",
+        "resume": True,
     }
     # the job door resumed on whatever options it was handed, so another generator finished the run
-    other_door = client.post("/v1/job", json={
-        "type": "eval_run",
-        "options": {"run_name": "r", "resume": True, "set_name": "s", "model": "other"},
-    })
+    other_door = client.post(
+        "/v1/job",
+        json={
+            "type": "eval_run",
+            "options": {"run_name": "r", "resume": True, "set_name": "s", "model": "other"},
+        },
+    )
     assert other_door.status_code == 422 and "model" in other_door.json()["detail"]
 
 
@@ -399,3 +399,13 @@ def test_the_chat_refuses_options_it_would_not_read(client):
     # a model, a temperature and tags were accepted and never read
     assert client.post("/v1/chat/question", json={"text": "x", "options": {"model": "m"}}).status_code == 422
     assert client.post("/v1/chat/question", json={"text": "x", "filter": {"tags": ["t"]}}).status_code == 422
+
+
+# the route reads the engine from the file, so a declaration that names one is refused at the door
+def test_a_source_is_declared_without_an_engine(client):
+    body = {"name": "a", "language": "en", "licence": "MIT", "urls": ["https://example.org/a.pdf"], "engine": "mineru"}
+    assert client.post("/v1/source", json=body).status_code == 422
+
+
+def test_the_one_source_path_does_not_swallow_compare(client):
+    assert client.get("/v1/source/compare?variants=baseline").status_code == 422

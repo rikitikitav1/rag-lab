@@ -23,9 +23,7 @@ class Role(StrEnum):
 
 
 # the roles whose model writes tokens: an embedder or a cross-encoder scores and samples nothing
-SAMPLING_ROLES = frozenset(
-    {Role.generation, Role.judging, Role.paraphrasing, Role.ragas, Role.grading}
-)
+SAMPLING_ROLES = frozenset({Role.generation, Role.judging, Role.paraphrasing, Role.ragas, Role.grading})
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
@@ -85,6 +83,8 @@ class EngineKind(StrEnum):
     ollama = "ollama"
     vllm = "vllm"
     openai_compatible = "openai_compatible"
+    # a document converter behind a supervisor: it holds the card and serves no model to a role
+    converter = "converter"
 
 
 # what the engine takes from the machine; `remote` is an answer, not a missing value
@@ -136,9 +136,7 @@ class Model(Base):
     # `raise`, because a lazy load on an async session fails at runtime and no test could see it
     engine: Mapped[Engine] = relationship(lazy="raise")
     # null is not "the same weights": a comparison reads it as unknown and refuses
-    weights_id: Mapped[int | None] = mapped_column(
-        ForeignKey("weights.id", ondelete="RESTRICT"), default=None
-    )
+    weights_id: Mapped[int | None] = mapped_column(ForeignKey("weights.id", ondelete="RESTRICT"), default=None)
     quant: Mapped[str | None] = mapped_column(default=None)
     # what this artifact takes on disk, so a pull can refuse before it starts, not halfway
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, default=None)
@@ -149,9 +147,7 @@ class Model(Base):
     answer_parser: Mapped[str] = mapped_column(default="none")
     # laid over the role's options when this model answers: a verbose model asks a larger budget anywhere
     options: Mapped[dict] = mapped_column(JSONB, default=dict)
-    status: Mapped[Status] = mapped_column(
-        Enum(Status, native_enum=False), default=Status.available
-    )
+    status: Mapped[Status] = mapped_column(Enum(Status, native_enum=False), default=Status.available)
 
     def __repr__(self) -> str:
         return f"Model(id={self.id!r}, name={self.name!r}, engine_id={self.engine_id!r})"

@@ -1,4 +1,4 @@
-# 2026-08-31 - One sentence, two instructions, and the arm that told them apart
+# 2026-08-31 - Cross-language clause in the judge prompts: not tested, not adopted
 
 ## Setup
 

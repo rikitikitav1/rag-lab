@@ -1,4 +1,4 @@
-# 2026-09-13 - The same generator on two engines, and a refusal that was a rule
+# 2026-09-13 - Same generator on ollama and vLLM: not worse, faster, default unchanged
 
 Moving the generator from ollama to vLLM would free the stand from one engine's drift and put the
 answering path on the engine the judge already uses. The question is whether the answers get better

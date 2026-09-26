@@ -1,8 +1,9 @@
 # Preflight: what it refuses, and why each refusal exists
 
-`scripts/preflight_grid.py` runs before a grid and after one. It is not a test suite. Tests ask
-whether the code is right on fixed inputs; this asks whether the stand is still the stand the
-numbers will claim it was.
+`scripts/preflight_grid.py` runs before a grid and after one. It is not a test suite. It checks
+runtime conditions that unit tests cannot establish, such as which model is resident and which code
+version the worker loaded. Those conditions decide whether the run's numbers describe the setup they
+claim to describe.
 
 ```bash
 python scripts/preflight_grid.py                       # eighteen checks, exit 1 on any failure
@@ -52,7 +53,7 @@ in a rarely-loaded module surfaces as a failed job three hours into a run, not a
 
 **`models_are_on_the_card`** asks what is actually resident, per role, and refuses when anything is
 loaded with zero VRAM. It asks residency rather than free memory on purpose: the scheduler keeps
-reporting free VRAM after the card has gone away, so "there is room" is not evidence that anything
+reporting free VRAM after the GPU has gone away, so "there is room" is not evidence that anything
 is on it. A model that spilled to the CPU produces correct numbers about thirty times slower, which
 turns a forty-minute arm into a day and looks like nothing but slowness.
 
@@ -60,12 +61,12 @@ It names the role beside the model, because a job runs one model and the others 
 proves nothing about the one that matters.
 
 The reranker is a role like the others, on the `vllm-rerank` server, and is read the same way. An
-asleep vLLM is reported as not on the card rather than as a spill, and the line ends with the
-driver's own numbers for the card, free and total.
+asleep vLLM is reported as not on the GPU rather than as a spill, and the line ends with the
+driver's own numbers for GPU memory, free and total.
 
 The incident that put it there, from when the reranker still ran inside the processes: on 2026-08-30
 a paraphrasing model left resident with
-`keep_alive: Forever` took 6.4 GB of an 8 GB card, the reranker fell back to the CPU with a warning,
+`keep_alive: Forever` took 6.4 GB of an 8 GB GPU, the reranker fell back to the CPU with a warning,
 and the run would have taken thirteen times longer with identical numbers. It was caught by eye.
 
 **`roles_match_the_config`** compares the model `config.yaml` declares for each role against the one
@@ -74,7 +75,7 @@ and outlives the run that switched it, so a file that says otherwise misleads th
 what the numbers were measured with. `PUT /v1/role` or an edit to the file settles it.
 
 **`role_engines_answer`** asks each role's engine whether it answers, the same reading `/readiness`
-reports as `roles_down`, and whether an ollama model sits whole on the card. A role whose server is
+reports as `roles_down`, and whether an ollama model sits whole on the GPU. A role whose server is
 down does not stop the stand at start; it fails the first job that calls it, hours into a queue. The
 reranking role is not counted while nothing asks for reranking.
 
@@ -85,7 +86,7 @@ claim. It asks whichever generator is loaded rather than the configured one, bec
 model override leaves the configured name unloaded, and reading that as "the server says nothing"
 made the check fail on every override.
 
-**`queue_is_idle`** refuses when jobs are queued or running. Two jobs on one card do not fail; they
+**`queue_is_idle`** refuses when jobs are queued or running. Two jobs on one GPU do not fail; they
 take turns, evict each other's models, and produce timings that belong to neither.
 
 ### Is the corpus the corpus we think

@@ -1,4 +1,4 @@
-# 2026-09-13 - A bigger model at the same retrieval, and where it refuses
+# 2026-09-13 - DeepSeek against llama3.1:8b at the same retrieval, and where each refuses
 
 The owner's question: what does a large cloud model buy over the 8b on this RAG when retrieval is
 held the same? Not the cloud against the stand: the same questions, the same retrieved context and

@@ -16,6 +16,13 @@ class Verdict(StrEnum):
     broken = "broken"
 
 
+# where an added source stands: declared by hand, converted to a raw folder, or accepted for indexing
+class Stage(StrEnum):
+    declared = "declared"
+    raw = "raw"
+    accepted = "accepted"
+
+
 class DataSource(Base):
     __tablename__ = "data_sources"
 
@@ -31,24 +38,27 @@ class DataSource(Base):
     ingest_variant: Mapped[str | None]
     ingest_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ingest_reports: Mapped[dict] = mapped_column(JSONB, default=dict)
-    chunks: Mapped[list["DataChunk"]] = relationship(
-        back_populates="data_source", cascade="all, delete-orphan"
+    # declared by hand, converted to a raw folder, or accepted for indexing
+    stage: Mapped[Stage] = mapped_column(
+        Enum(Stage, native_enum=False, values_callable=lambda e: [x.value for x in e]),
+        default=Stage.accepted,
+        server_default="accepted",
     )
+    language: Mapped[str | None]
+    licence: Mapped[str | None]
+    origin: Mapped[dict | None] = mapped_column(JSONB)
+    raw: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    chunks: Mapped[list["DataChunk"]] = relationship(back_populates="data_source", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
-        return (
-            f"DataSource(id={self.id!r}, name={self.name!r}, "
-            f"kind={self.kind!r}, git_url={self.git_url!r})"
-        )
+        return f"DataSource(id={self.id!r}, name={self.name!r}, kind={self.kind!r}, git_url={self.git_url!r})"
 
 
 class DataChunk(Base):
     __tablename__ = "data_chunks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    source_id: Mapped[int] = mapped_column(
-        ForeignKey("data_sources.id", ondelete="CASCADE")
-    )
+    source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id", ondelete="CASCADE"))
     source: Mapped[str]
     variant: Mapped[str]
     section: Mapped[str | None]

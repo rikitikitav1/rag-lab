@@ -47,3 +47,10 @@ datasets/measurements/grid/
 # the journal entry, the files live beside the stand and, when they are worth sharing, on the hub
 datasets/candidates/
 datasets/measurements/
+
+# converter benchmark downloads, the manifest is in git
+datasets/converter_gold/files/
+
+# files a source is added from and the raw markdown made of them: data of the stand, not of the repository
+datasets/inbox/
+datasets/raw_sources/

@@ -1,4 +1,4 @@
-# 2026-08-27 - Corpus hygiene that moved the number, and four instruments that were lying
+# 2026-08-27 - Corpus hygiene (`clean_1024` against `baseline`) moves retrieval; four broken instruments found
 
 Cleaning the sources moves retrieval on its own, before any change of splitter: parse the
 frontmatter, take the heading path from a declared root, drop the junk by rule, and measure

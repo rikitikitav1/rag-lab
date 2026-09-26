@@ -1,4 +1,4 @@
-# 2026-08-25 - A refusal at last, and a threshold that measured nothing
+# 2026-08-25 - Topic axis for refusals at threshold 0.50, and a 0.709 threshold caught before the run
 
 Two entries ago the agent learned to leave the corpus when the corpus is weak. It also turned out
 never to refuse: on a hundred questions no available source can answer, every policy answered,

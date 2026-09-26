@@ -1,4 +1,4 @@
-# 2026-09-19 - An LLM grader between search and the answer, and the bar it does not clear
+# 2026-09-19 - LLM chunk grader before generation: does not clear the bar, off by default
 
 Before the generator sees the retrieved chunks, a second model call reads each chunk against the
 question and drops the ones it calls irrelevant. This is the document-grading step that Corrective RAG

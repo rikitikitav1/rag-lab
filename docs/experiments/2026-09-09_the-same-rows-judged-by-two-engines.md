@@ -1,4 +1,4 @@
-# 2026-09-09 - The same rows judged by two engines, and what that comparison cannot say
+# 2026-09-09 - Same rows judged on two engines: 39% of verdicts differ, not attributable to the engine
 
 Arc 5 puts a second engine on the stand, so the first question a reader will ask of any two-engine
 result is whether the engine moved the verdicts. This entry measures the move on identical rows, and

@@ -1,4 +1,4 @@
-# 2026-09-08 - The directive nobody gave, and what our judge charges for Russian
+# 2026-09-08 - Answer-language directive fix, and the judge's penalty for Russian
 
 The stand answers Russian questions about an English corpus. Nothing in it ever told the model which
 language to answer in. The single-shot path got away with it and the agent did not, and fixing the

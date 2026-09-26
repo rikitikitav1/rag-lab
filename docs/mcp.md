@@ -11,13 +11,15 @@ A second, separate ops server is mounted at `/mcp-ops` - an eval control plane k
 - `run_metrics(run_name)` - aggregated eval metrics for one run (generation axes + retrieval hit@k/MRR) plus `debts`: how many rows still owe each axis, what the others are missing, what finishing the debt costs at this run's own measured price, and whether a replay can drive each row at all.
 - `compare_runs(run_names)` - side-by-side metrics with an RRF composite ranking over the five judged-and-behavioural axes, retrieval excluded.
 - `compare_pools(run_names)` - the same runs split by pool (in-corpus / out-of-corpus / off-domain) with gate firings, latency, outcome histogram and a paired Wilcoxon per pair of runs.
-- `engines()` - who holds the GPU now and which models it has there, whether each vLLM on the card is asleep, and whether every registered engine answers; read from the servers, not from a table.
+- `engines()` - who holds the GPU now and which models it has there, whether each vLLM on the GPU is asleep, and whether every registered engine answers; read from the servers, not from a table.
 - `broker_balances()` - each cloud engine's balance as its broker reports it now; the balance belongs to the key, so anything else spent on that key lands in it too.
 - `judge_correlation(run_name?)` - our judge against the standard's on the same rows: spearman, the overlap covariate, the partial correlation behind it, and the strata by code share.
 - `question_sets(set_name?)` - what each question set holds and therefore which axes a run over it can be scored on: pools, languages, how many carry marked sources (the retrieval axes) and how many carry a reference answer (the two guest context axes).
 - `questions(set_name?, language?, pool?, limit?, offset?)` - the rows of a set, for picking a run's `question_ids`; the pool is the rule `question_sets` counts with.
 - `experiment_results(id, pair?)` - one experiment's report, whatever its kind: the arms with their n, the paired deltas per axis with interval and p, and whether each survives the correction over the family the record names.
 - `agent_trace(run_name)` - what the agent recorded about its own hops and nodes: rows by the hop they finished on, rows and steps per node, what the gate said, how often the fallback opened or dropped context, failed hops, and the outcome against the hops spent. Rows with no trace are named rather than counted as zero.
+- `add_source(name, language, licence, urls? | folder? | git? | pages?, site?)` / `source(name)` / `sources(stage?)` - declare a source to add and read one or all by stage (`declared`, `raw`, `accepted`), with what its raw conversion said.
+- `onboard_source(name, settings?)` / `raw_rows(name, breached_only?, kind?, limit?)` - turn a declared source into a raw one through the queue, and read its report: `pieces` (the conversion a page range: agreement with the file's own text layer, share of the layer, mixed-script words, seconds) or `sections` (the chunker's gates a chapter of each file's whole markdown).
 - `list_jobs(status?, type?, run_name?)` / `cancel_job(id)` - job queue control, cancel takes the dependent judge down with the run.
 - `holm_over(tests, family, alpha?)` - correct a family the reader declares rather than the one a single record happens to hold: give the p-values by name, get each with its Holm threshold and whether it survives. A report corrects over its own record, and reading arms from two experiments is a wider family.
 - `language_cost(before, after, floor_against?)` - what our own axes charge when the answer comes back in the language it was asked in: two arms paired by question over the corpus pool, cut two ways (the cut declared from the record before the change, and the cut the outcome selected), with the drift floor and the comparability block beside them.
@@ -30,7 +32,7 @@ The lab is both sides of the protocol: its own MCP server above, and an MCP *cli
 <details>
 <summary>Diagram: Agent flow with remote fallback</summary>
 
-![Agent flow with remote fallback](diagrams/agent_flow.svg)
+![Agent flow with remote fallback](diagrams/agent_flow.drawio.svg)
 
 </details>
 

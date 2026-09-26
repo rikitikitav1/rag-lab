@@ -1,4 +1,4 @@
-# 2026-09-06 - The axis that makes our refusals, priced by switching it off
+# 2026-09-06 - Topic axis switched off: the agent refuses far less
 
 This run was meant to build a set the guest axes had never been shown: rows where our agent
 refuses **while holding a non-empty context**. It failed at that, three rows out of two hundred

@@ -1,0 +1,244 @@
+{
+  "progit/en": {
+    "fetched": "2026-09-24T05:54:58+00:00",
+    "source": {
+      "repo": "https://github.com/progit/progit2",
+      "path": null,
+      "ref": "2.1.450",
+      "revision": "a013e3230a1207cfa5ae94d28ba7d2021063c337",
+      "committed": "2026-05-25T10:07:29+02:00"
+    },
+    "text_pdf": {
+      "url": "https://github.com/progit/progit2/releases/download/2.1.450/progit.pdf",
+      "file": "progit/en/pdf/progit.pdf",
+      "bytes": 18847129,
+      "sha256": "403f4051cdca2c585361d85f6e87d5dd87d8c544fc91dced007711babe81e8ef"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 123,
+      "found_in_source": 122,
+      "share": 0.9919,
+      "threshold": 0.9,
+      "checked_at": "2026-09-24T15:18:31.764735+00:00"
+    }
+  },
+  "progit/ru": {
+    "fetched": "2026-09-24T05:55:26+00:00",
+    "source": {
+      "repo": "https://github.com/progit/progit2-ru",
+      "path": null,
+      "ref": "2.1.125",
+      "revision": "bef0ce52475e44b8c9d66d7ff8c6a03b37758a03",
+      "committed": "2026-08-24T15:03:32+03:00"
+    },
+    "text_pdf": {
+      "url": "https://github.com/progit/progit2-ru/releases/download/2.1.125/progit.pdf",
+      "file": "progit/ru/pdf/progit.pdf",
+      "bytes": 20173117,
+      "sha256": "1d28970ac131b1d76fd9bd61e048f9172527f232512f73d2f0a9ec2093c68a69"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 124,
+      "found_in_source": 123,
+      "share": 0.9919,
+      "threshold": 0.9,
+      "checked_at": "2026-09-24T15:18:32.025901+00:00"
+    }
+  },
+  "django/en": {
+    "fetched": "2026-09-24T05:56:34+00:00",
+    "source": {
+      "repo": "https://github.com/django/django",
+      "path": "docs",
+      "ref": "6.1.1",
+      "revision": "249b13d6e93ee3164dee8ed1775395622a50c337",
+      "committed": "2026-09-02T13:10:27-04:00"
+    },
+    "text_pdf": {
+      "url": "https://media.readthedocs.org/pdf/django/stable/django.pdf",
+      "file": "django/en/pdf/django.pdf",
+      "bytes": 11174227,
+      "sha256": "4cc97e62e68789a278b3102fc0639b5740066682eb0e27ee5ed768432db7e772"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 720,
+      "found_in_source": 720,
+      "share": 1.0,
+      "threshold": 0.9,
+      "checked_at": "2026-09-24T15:18:44.109637+00:00"
+    }
+  },
+  "latex_baldin/ru": {
+    "fetched": "2026-09-24T05:48:20+00:00",
+    "source": {
+      "repo": "https://github.com/EvgeniiBaldin/ctex-ru",
+      "path": null,
+      "revision": "325f47c2db3dd47e9baeb1933c6a17867ab8e581",
+      "committed": "2014-05-29T17:34:41+07:00"
+    },
+    "text_pdf": {
+      "url": "https://www.inp.nsk.su/~baldin/LaTeX/ctex.pdf",
+      "file": "latex_baldin/ru/pdf/ctex.pdf",
+      "bytes": 4089736,
+      "sha256": "8d23274761df0891a542985fe55417053fd365c75235eb07c35320a88e05c005"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 278,
+      "found_in_source": 274,
+      "share": 0.9856,
+      "threshold": 0.9,
+      "checked_at": "2026-09-24T15:18:45.105244+00:00"
+    }
+  },
+  "postgres/en": {
+    "fetched": "2026-09-24T05:56:01+00:00",
+    "source": {
+      "repo": "https://github.com/postgres/postgres",
+      "path": "doc/src/sgml",
+      "ref": "REL_18_6",
+      "revision": "724edf9bde9d356724ad384a2e196edc3c9f80f7",
+      "committed": "2026-08-11T14:38:31-04:00"
+    },
+    "text_pdf": {
+      "url": "https://www.postgresql.org/files/documentation/pdf/18/postgresql-18-A4.pdf",
+      "file": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "bytes": 15864875,
+      "sha256": "9c6af8d2c8f0eda1b05e510bd8028f752162d2f5ce2db405bbf197336ce638d2"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 1063,
+      "found_in_source": 1061,
+      "share": 0.9981,
+      "threshold": 0.9,
+      "checked_at": "2026-09-24T15:18:34.825665+00:00"
+    }
+  },
+  "postgres/ru": {
+    "fetched": "2026-09-24T05:56:15+00:00",
+    "text_pdf": {
+      "url": "https://repo.postgrespro.ru/doc/ent/18.6.1/ru/postgres-A4.pdf",
+      "file": "postgres/ru/pdf/postgres-A4.pdf",
+      "bytes": 29195796,
+      "sha256": "31a2b1d4fbe1296672a26ff4a839882d960d09582550f11d38b57b0824c3e039"
+    }
+  },
+  "python/en": {
+    "fetched": "2026-09-24T05:57:13+00:00",
+    "source": {
+      "repo": "https://github.com/python/cpython",
+      "path": "Doc",
+      "ref": "v3.14.0rc3",
+      "revision": "1c5b28405a77df68d40991051b4c0769e728bf76",
+      "committed": "2025-09-18T09:45:38+01:00"
+    },
+    "text_pdf": {
+      "url": "https://docs.python.org/3/archives/python-3.14-docs-pdf-a4.zip",
+      "file": "python/en/pdf/python-3.14-docs-pdf-a4.zip",
+      "bytes": 21613232,
+      "sha256": "b6caa5c018a8937f5656c9fad5c487676e7571f3cce61f8b28177efc6c901e22"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 2936,
+      "found_in_source": 2935,
+      "share": 0.9997,
+      "threshold": 0.9,
+      "checked_at": "2026-09-24T15:18:40.676239+00:00"
+    }
+  },
+  "fastapi/en": {
+    "fetched": "2026-09-25T06:20:12+00:00",
+    "source": {
+      "repo": "https://github.com/fastapi/fastapi",
+      "path": "docs/en/docs",
+      "ref": null,
+      "revision": "50113da16fec53b66b80d75e80a89296de4fa5a5",
+      "committed": "2026-09-01T20:59:53+00:00"
+    }
+  },
+  "fastapi/ru": {
+    "fetched": "2026-09-25T06:20:14+00:00",
+    "source": {
+      "repo": "https://github.com/fastapi/fastapi",
+      "path": "docs/ru/docs",
+      "ref": null,
+      "revision": "50113da16fec53b66b80d75e80a89296de4fa5a5",
+      "committed": "2026-09-01T20:59:53+00:00"
+    }
+  },
+  "kubernetes/en": {
+    "fetched": "2026-09-24T05:52:09+00:00",
+    "source": {
+      "repo": "https://github.com/kubernetes/website",
+      "path": "content/en",
+      "revision": "a199ec8be7360da84d69687e9c16710f462194a2",
+      "committed": "2026-09-24T01:46:18+00:00"
+    }
+  },
+  "kubernetes/ru": {
+    "fetched": "2026-09-24T05:53:39+00:00",
+    "source": {
+      "repo": "https://github.com/kubernetes/website",
+      "path": "content/ru",
+      "revision": "a199ec8be7360da84d69687e9c16710f462194a2",
+      "committed": "2026-09-24T01:46:18+00:00"
+    }
+  },
+  "vue/en": {
+    "fetched": "2026-09-24T05:53:43+00:00",
+    "source": {
+      "repo": "https://github.com/vuejs/docs",
+      "path": "src",
+      "revision": "40aa88af0094f7bab4aaf786e55c748a6a251d88",
+      "committed": "2026-09-15T14:47:19+02:00"
+    }
+  },
+  "vue/ru": {
+    "fetched": "2026-09-24T05:53:52+00:00",
+    "source": {
+      "repo": "https://github.com/vuejs-translations/docs-ru",
+      "path": "src",
+      "revision": "91916937b210bd4bf4580d3f51bbd4286a9e5072",
+      "committed": "2026-08-25T18:02:11+06:00"
+    }
+  },
+  "haskell_kholomiev/ru": {
+    "fetched": "2026-09-24T06:33:58+00:00",
+    "source": {
+      "repo": "https://github.com/anton-k/ru-haskell-book",
+      "path": "pandoc",
+      "ref": null,
+      "revision": "5ac3bf8953677f0c537412042428282b0aab8f6b",
+      "committed": "2023-08-08T08:30:20+03:00"
+    },
+    "text_pdf": {
+      "url": "http://anton-k.github.io/ru-haskell-book/files/ru-haskell-book.pdf",
+      "file": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "bytes": 1646176,
+      "sha256": "09937e0203a596d8e2261f92cc2b13fd310985b57e893ccee67db9c3ec0cd1b9"
+    },
+    "pair": {
+      "outline_depth": 3,
+      "outline_titles": 331,
+      "found_in_source": 315,
+      "share": 0.9517,
+      "threshold": 0.9,
+      "checked_at": "2026-09-24T15:18:45.320798+00:00"
+    }
+  },
+  "smoke/progit_ru_p20-27": {
+    "from": "progit/ru/pdf/progit.pdf",
+    "from_sha256": "1d28970ac131b1d76fd9bd61e048f9172527f232512f73d2f0a9ec2093c68a69",
+    "pages": [
+      20,
+      27
+    ],
+    "file": "smoke/progit_ru_p20-27.pdf",
+    "sha256": "d1e14a11ea32bd4623bc95c9bedf1875b81b942d949f3992516e653c85673ad5"
+  }
+}

@@ -1,0 +1,4881 @@
+{
+  "seed": 20260924,
+  "detect": {
+    "max_toc_level": 3,
+    "max_pages": 5,
+    "code_min_lines": 3,
+    "kind_priority": [
+      "table",
+      "code",
+      "prose"
+    ],
+    "table_min_rows": 2,
+    "table_min_cols": 2,
+    "table_min_filled": 0.5,
+    "running_block_share": 0.5,
+    "mono_width_spread": 1.05,
+    "mono_min_distinct": 10
+  },
+  "fonts": [
+    {
+      "doc": "progit",
+      "lang": "en",
+      "mono_fonts": [
+        "mplus1mn-regular"
+      ]
+    },
+    {
+      "doc": "progit",
+      "lang": "ru",
+      "mono_fonts": [
+        "mplus1mn-regular"
+      ]
+    },
+    {
+      "doc": "postgres",
+      "lang": "en",
+      "mono_fonts": [
+        "Courier",
+        "Courier-Bold",
+        "Courier-Oblique"
+      ]
+    },
+    {
+      "doc": "postgres",
+      "lang": "ru",
+      "mono_fonts": [
+        "FreeMono"
+      ]
+    },
+    {
+      "doc": "python",
+      "lang": "en",
+      "mono_fonts": [
+        "FreeMono",
+        "FreeMonoBold",
+        "FreeMonoBoldOblique",
+        "FreeMonoOblique"
+      ]
+    },
+    {
+      "doc": "django",
+      "lang": "en",
+      "mono_fonts": [
+        "LMMono10-Italic",
+        "LMMono10-Regular",
+        "LMMono8-Regular",
+        "LMMonoLt10-Bold",
+        "LMMonoLt10-BoldOblique"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "mono_fonts": [
+        "SFTT0800",
+        "SFTT0900",
+        "SFTT1000"
+      ]
+    },
+    {
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "mono_fonts": [
+        "DejaVuSans",
+        "DejaVuSansMono",
+        "DejaVuSansMono-Bold"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "progit_en_prose_00",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Branching and Merging",
+      "level": 2,
+      "pages": [
+        489,
+        491
+      ],
+      "kind": "prose",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 489,
+          "clip": [
+            0.0,
+            504.9,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 490,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 491,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            720.98
+          ]
+        }
+      ],
+      "heading": {
+        "y": 504.9,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_prose_01",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Inspection and Comparison",
+      "level": 2,
+      "pages": [
+        493,
+        494
+      ],
+      "kind": "prose",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 493,
+          "clip": [
+            0.0,
+            619.8,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 494,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            340.94
+          ]
+        }
+      ],
+      "heading": {
+        "y": 619.8,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_prose_02",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "License",
+      "level": 1,
+      "pages": [
+        7,
+        8
+      ],
+      "kind": "prose",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 7,
+          "clip": [
+            0.0,
+            36.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 8,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 36.0,
+        "size": 22.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_prose_03",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Summary",
+      "level": 2,
+      "pages": [
+        372,
+        373
+      ],
+      "kind": "prose",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 372,
+          "clip": [
+            0.0,
+            334.78,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 373,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 334.78,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_prose_04",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Distributed Workflows",
+      "level": 2,
+      "pages": [
+        132,
+        135
+      ],
+      "kind": "prose",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 132,
+          "clip": [
+            0.0,
+            215.98,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 133,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 134,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 135,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            240.32
+          ]
+        }
+      ],
+      "heading": {
+        "y": 215.98,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_code_00",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Getting a Git Repository",
+      "level": 2,
+      "pages": [
+        32,
+        34
+      ],
+      "kind": "code",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 32,
+          "clip": [
+            0.0,
+            203.98,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 33,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 34,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 203.98,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_code_01",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Git Aliases",
+      "level": 2,
+      "pages": [
+        66,
+        68
+      ],
+      "kind": "code",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 66,
+          "clip": [
+            0.0,
+            736.3,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 67,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 68,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            133.1
+          ]
+        }
+      ],
+      "heading": {
+        "y": 736.3,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_code_02",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Git in PowerShell",
+      "level": 2,
+      "pages": [
+        469,
+        471
+      ],
+      "kind": "code",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 469,
+          "clip": [
+            0.0,
+            353.97,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 470,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 471,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            359.88
+          ]
+        }
+      ],
+      "heading": {
+        "y": 353.97,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_code_03",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Smart HTTP",
+      "level": 2,
+      "pages": [
+        123,
+        125
+      ],
+      "kind": "code",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 123,
+          "clip": [
+            0.0,
+            552.48,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 124,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 125,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            167.48
+          ]
+        }
+      ],
+      "heading": {
+        "y": 552.48,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_code_04",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Generating Your SSH Public Key",
+      "level": 2,
+      "pages": [
+        118,
+        119
+      ],
+      "kind": "code",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 118,
+          "clip": [
+            0.0,
+            425.7,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 119,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            513.74
+          ]
+        }
+      ],
+      "heading": {
+        "y": 425.7,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_en_table_00",
+      "doc": "progit",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Setup and Config",
+      "level": 2,
+      "pages": [
+        484,
+        486
+      ],
+      "kind": "table",
+      "pdf": "progit/en/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 484,
+          "clip": [
+            0.0,
+            283.32,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 485,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 486,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            187.96
+          ]
+        }
+      ],
+      "heading": {
+        "y": 283.32,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_prose_00",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Заключение",
+      "level": 2,
+      "pages": [
+        32,
+        33
+      ],
+      "kind": "prose",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 32,
+          "clip": [
+            0.0,
+            36.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 33,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 36.0,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_prose_01",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "О системе контроля версий",
+      "level": 2,
+      "pages": [
+        16,
+        20
+      ],
+      "kind": "prose",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 16,
+          "clip": [
+            0.0,
+            156.64,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 17,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 18,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 19,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 20,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 156.64,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_prose_02",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Управление организацией",
+      "level": 2,
+      "pages": [
+        223,
+        226
+      ],
+      "kind": "prose",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 223,
+          "clip": [
+            0.0,
+            127.92,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 224,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 225,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 226,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            596.5
+          ]
+        }
+      ],
+      "heading": {
+        "y": 127.92,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_prose_03",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Git-хостинг",
+      "level": 2,
+      "pages": [
+        137,
+        137
+      ],
+      "kind": "prose",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 137,
+          "clip": [
+            0.0,
+            238.38,
+            595.280029296875,
+            535.38
+          ]
+        }
+      ],
+      "heading": {
+        "y": 238.38,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_prose_04",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Заключение",
+      "level": 2,
+      "pages": [
+        115,
+        116
+      ],
+      "kind": "prose",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 115,
+          "clip": [
+            0.0,
+            388.62,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 116,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 388.62,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_code_00",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "go-git",
+      "level": 2,
+      "pages": [
+        518,
+        520
+      ],
+      "kind": "code",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 518,
+          "clip": [
+            0.0,
+            505.7,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 519,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 520,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            319.6
+          ]
+        }
+      ],
+      "heading": {
+        "y": 505.7,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_code_01",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Git в Zsh",
+      "level": 2,
+      "pages": [
+        504,
+        506
+      ],
+      "kind": "code",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 504,
+          "clip": [
+            0.0,
+            415.69,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 505,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 506,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            263.07
+          ]
+        }
+      ],
+      "heading": {
+        "y": 415.69,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_code_02",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Dulwich",
+      "level": 2,
+      "pages": [
+        520,
+        522
+      ],
+      "kind": "code",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 520,
+          "clip": [
+            0.0,
+            319.6,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 521,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 522,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 319.6,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_code_03",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Как получить помощь?",
+      "level": 2,
+      "pages": [
+        31,
+        32
+      ],
+      "kind": "code",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 31,
+          "clip": [
+            0.0,
+            108.28,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 32,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            36.0
+          ]
+        }
+      ],
+      "heading": {
+        "y": 108.28,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_code_04",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Генерация открытого SSH ключа",
+      "level": 2,
+      "pages": [
+        124,
+        125
+      ],
+      "kind": "code",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 124,
+          "clip": [
+            0.0,
+            175.26,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 125,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            340.22
+          ]
+        }
+      ],
+      "heading": {
+        "y": 175.26,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "progit_ru_table_00",
+      "doc": "progit",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Настройка и конфигурация",
+      "level": 2,
+      "pages": [
+        522,
+        524
+      ],
+      "kind": "table",
+      "pdf": "progit/ru/pdf/progit.pdf",
+      "boxes": [
+        {
+          "page": 522,
+          "clip": [
+            0.0,
+            299.1,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 523,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            818.02
+          ]
+        },
+        {
+          "page": 524,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            260.1
+          ]
+        }
+      ],
+      "heading": {
+        "y": 299.1,
+        "size": 18.0
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_prose_00",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "51.4. The PostgreSQL Rule System",
+      "level": 3,
+      "pages": [
+        2409,
+        2409
+      ],
+      "kind": "prose",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 2409,
+          "clip": [
+            0.0,
+            261.71,
+            595.2750244140625,
+            486.18
+          ]
+        }
+      ],
+      "heading": {
+        "y": 261.71,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_prose_01",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "3. Conventions",
+      "level": 2,
+      "pages": [
+        35,
+        35
+      ],
+      "kind": "prose",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 35,
+          "clip": [
+            0.0,
+            382.79,
+            595.2750244140625,
+            562.56
+          ]
+        }
+      ],
+      "heading": {
+        "y": 382.79,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_prose_02",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "1.1. Installation",
+      "level": 3,
+      "pages": [
+        42,
+        42
+      ],
+      "kind": "prose",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 42,
+          "clip": [
+            0.0,
+            106.13,
+            595.2750244140625,
+            390.63
+          ]
+        }
+      ],
+      "heading": {
+        "y": 106.13,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_prose_03",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "61.1. Query Handling as a Complex Optimization Problem",
+      "level": 3,
+      "pages": [
+        2605,
+        2605
+      ],
+      "kind": "prose",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 2605,
+          "clip": [
+            0.0,
+            200.21,
+            595.2750244140625,
+            513.98
+          ]
+        }
+      ],
+      "heading": {
+        "y": 200.21,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_prose_04",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Chapter 67. Transaction Processing",
+      "level": 2,
+      "pages": [
+        2700,
+        2702
+      ],
+      "kind": "prose",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 2700,
+          "clip": [
+            0.0,
+            66.66,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2701,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2702,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            66.66
+          ]
+        }
+      ],
+      "heading": {
+        "y": 66.66,
+        "size": 24.88
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_code_00",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "9.24. Subquery Expressions",
+      "level": 3,
+      "pages": [
+        426,
+        429
+      ],
+      "kind": "code",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 426,
+          "clip": [
+            0.0,
+            434.95,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 427,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 428,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 429,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            285.84
+          ]
+        }
+      ],
+      "heading": {
+        "y": 434.95,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_code_01",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "F.3. auto_explain — log execution plans of slow queries",
+      "level": 3,
+      "pages": [
+        2867,
+        2870
+      ],
+      "kind": "code",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 2867,
+          "clip": [
+            0.0,
+            67.55,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2868,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2869,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2870,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            67.55
+          ]
+        }
+      ],
+      "heading": {
+        "y": 67.55,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_code_02",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "40.1. Installing Procedural Languages",
+      "level": 3,
+      "pages": [
+        1424,
+        1427
+      ],
+      "kind": "code",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 1424,
+          "clip": [
+            0.0,
+            281.28,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 1425,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 1426,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 1427,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            66.66
+          ]
+        }
+      ],
+      "heading": {
+        "y": 281.28,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_code_03",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "9.29. Trigger Functions",
+      "level": 3,
+      "pages": [
+        476,
+        477
+      ],
+      "kind": "code",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 476,
+          "clip": [
+            0.0,
+            335.6,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 477,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            349.33
+          ]
+        }
+      ],
+      "heading": {
+        "y": 335.6,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_code_04",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "27.6. Monitoring Disk Usage",
+      "level": 3,
+      "pages": [
+        938,
+        941
+      ],
+      "kind": "code",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 938,
+          "clip": [
+            0.0,
+            341.69,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 939,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 940,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 941,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            66.66
+          ]
+        }
+      ],
+      "heading": {
+        "y": 341.69,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_table_00",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "26.1. Comparison of Different Solutions",
+      "level": 3,
+      "pages": [
+        856,
+        859
+      ],
+      "kind": "table",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 856,
+          "clip": [
+            0.0,
+            583.27,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 857,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 858,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 859,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            476.74
+          ]
+        }
+      ],
+      "heading": {
+        "y": 583.27,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_table_01",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "36.2. The PostgreSQL Type System",
+      "level": 3,
+      "pages": [
+        1285,
+        1288
+      ],
+      "kind": "table",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 1285,
+          "clip": [
+            0.0,
+            460.51,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 1286,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 1287,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 1288,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            643.33
+          ]
+        }
+      ],
+      "heading": {
+        "y": 460.51,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_table_02",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Appendix K. PostgreSQL Limits",
+      "level": 2,
+      "pages": [
+        3098,
+        3099
+      ],
+      "kind": "table",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 3098,
+          "clip": [
+            0.0,
+            66.66,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 3099,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            66.66
+          ]
+        }
+      ],
+      "heading": {
+        "y": 66.66,
+        "size": 24.88
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_table_03",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "F.31. pgrowlocks — show a table's row locking information",
+      "level": 3,
+      "pages": [
+        2996,
+        2998
+      ],
+      "kind": "table",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 2996,
+          "clip": [
+            0.0,
+            67.55,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2997,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2998,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            67.55
+          ]
+        }
+      ],
+      "heading": {
+        "y": 67.55,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_en_table_04",
+      "doc": "postgres",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "53.1. Overview",
+      "level": 3,
+      "pages": [
+        2466,
+        2467
+      ],
+      "kind": "table",
+      "pdf": "postgres/en/pdf/postgresql-18-A4.pdf",
+      "boxes": [
+        {
+          "page": 2466,
+          "clip": [
+            0.0,
+            250.95,
+            595.2750244140625,
+            791.69
+          ]
+        },
+        {
+          "page": 2467,
+          "clip": [
+            0.0,
+            47.14,
+            595.2750244140625,
+            353.4
+          ]
+        }
+      ],
+      "heading": {
+        "y": 250.95,
+        "size": 20.74
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_prose_00",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "57.39. pg_user",
+      "level": 3,
+      "pages": [
+        2579,
+        2580
+      ],
+      "kind": "prose",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 2579,
+          "clip": [
+            0.0,
+            588.04,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 2580,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            318.14
+          ]
+        }
+      ],
+      "heading": {
+        "y": 588.04,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_prose_01",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "N.1. Установка",
+      "level": 3,
+      "pages": [
+        4138,
+        4139
+      ],
+      "kind": "prose",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 4138,
+          "clip": [
+            0.0,
+            714.19,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 4139,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            321.92
+          ]
+        }
+      ],
+      "heading": {
+        "y": 714.19,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_prose_02",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "57.38. pg_timezone_names",
+      "level": 3,
+      "pages": [
+        2579,
+        2579
+      ],
+      "kind": "prose",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 2579,
+          "clip": [
+            0.0,
+            297.68,
+            595.2750244140625,
+            588.04
+          ]
+        }
+      ],
+      "heading": {
+        "y": 297.68,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_prose_03",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "19.21. Массовая вставка данных",
+      "level": 3,
+      "pages": [
+        747,
+        748
+      ],
+      "kind": "prose",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 747,
+          "clip": [
+            0.0,
+            607.19,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 748,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            326.17
+          ]
+        }
+      ],
+      "heading": {
+        "y": 607.19,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_prose_04",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "10.6. Выходные столбцы SELECT",
+      "level": 3,
+      "pages": [
+        470,
+        471
+      ],
+      "kind": "prose",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 470,
+          "clip": [
+            0.0,
+            476.18,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 471,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            65.37
+          ]
+        }
+      ],
+      "heading": {
+        "y": 476.18,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_code_00",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "43.5. Правила и права",
+      "level": 3,
+      "pages": [
+        1481,
+        1483
+      ],
+      "kind": "code",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 1481,
+          "clip": [
+            0.0,
+            348.22,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 1482,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 1483,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            455.58
+          ]
+        }
+      ],
+      "heading": {
+        "y": 348.22,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_code_01",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "ALTER TABLESPACE",
+      "level": 3,
+      "pages": [
+        1786,
+        1788
+      ],
+      "kind": "code",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 1786,
+          "clip": [
+            0.0,
+            84.6,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 1787,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 1788,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            86.19
+          ]
+        }
+      ],
+      "heading": {
+        "y": 84.6,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_code_02",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "19.17. Обработка ошибок",
+      "level": 3,
+      "pages": [
+        736,
+        738
+      ],
+      "kind": "code",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 736,
+          "clip": [
+            0.0,
+            294.59,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 737,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 738,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            523.86
+          ]
+        }
+      ],
+      "heading": {
+        "y": 294.59,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_code_03",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "DROP RULE",
+      "level": 3,
+      "pages": [
+        2062,
+        2063
+      ],
+      "kind": "code",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 2062,
+          "clip": [
+            0.0,
+            84.77,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 2063,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            84.77
+          ]
+        }
+      ],
+      "heading": {
+        "y": 84.77,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_code_04",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "DROP USER MAPPING",
+      "level": 3,
+      "pages": [
+        2079,
+        2080
+      ],
+      "kind": "code",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 2079,
+          "clip": [
+            0.0,
+            84.77,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 2080,
+          "clip": [
+            0.0,
+            0.0,
+            595.2750244140625,
+            84.77
+          ]
+        }
+      ],
+      "heading": {
+        "y": 84.77,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_table_00",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "8.9. Типы, описывающие сетевые адреса",
+      "level": 3,
+      "pages": [
+        196,
+        198
+      ],
+      "kind": "table",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 196,
+          "clip": [
+            0.0,
+            373.69,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 197,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 198,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            744.75
+          ]
+        }
+      ],
+      "heading": {
+        "y": 373.69,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_table_01",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "8.2. Денежные типы",
+      "level": 3,
+      "pages": [
+        176,
+        177
+      ],
+      "kind": "table",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 176,
+          "clip": [
+            0.0,
+            452.05,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 177,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            213.23
+          ]
+        }
+      ],
+      "heading": {
+        "y": 452.05,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_table_02",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "8.6. Логический тип",
+      "level": 3,
+      "pages": [
+        191,
+        192
+      ],
+      "kind": "table",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 191,
+          "clip": [
+            0.0,
+            369.19,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 192,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            395.25
+          ]
+        }
+      ],
+      "heading": {
+        "y": 369.19,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_table_03",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "30.6. Репликация генерируемых столбцов",
+      "level": 3,
+      "pages": [
+        1046,
+        1048
+      ],
+      "kind": "table",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 1046,
+          "clip": [
+            0.0,
+            519.69,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 1047,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 1048,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            579.86
+          ]
+        }
+      ],
+      "heading": {
+        "y": 519.69,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "postgres_ru_table_04",
+      "doc": "postgres",
+      "lang": "ru",
+      "gold_titles_checked": false,
+      "title": "12.5. Анализаторы",
+      "level": 3,
+      "pages": [
+        508,
+        509
+      ],
+      "kind": "table",
+      "pdf": "postgres/ru/pdf/postgres-A4.pdf",
+      "boxes": [
+        {
+          "page": 508,
+          "clip": [
+            0.0,
+            141.39,
+            595.2750244140625,
+            791.39
+          ]
+        },
+        {
+          "page": 509,
+          "clip": [
+            0.0,
+            48.06,
+            595.2750244140625,
+            665.98
+          ]
+        }
+      ],
+      "heading": {
+        "y": 141.39,
+        "size": 16.59
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_prose_00",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Simple Usage: Checking Examples in a Text File",
+      "level": 3,
+      "pages": [
+        1797,
+        1798
+      ],
+      "kind": "prose",
+      "pdf": "python/en/pdf/docs-pdf/library.pdf",
+      "boxes": [
+        {
+          "page": 1797,
+          "clip": [
+            0.0,
+            166.67,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 1798,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            72.4
+          ]
+        }
+      ],
+      "heading": {
+        "y": 166.67,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_prose_01",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Command-line interface",
+      "level": 3,
+      "pages": [
+        1389,
+        1390
+      ],
+      "kind": "prose",
+      "pdf": "python/en/pdf/docs-pdf/library.pdf",
+      "boxes": [
+        {
+          "page": 1389,
+          "clip": [
+            0.0,
+            166.67,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 1390,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            271.48
+          ]
+        }
+      ],
+      "heading": {
+        "y": 166.67,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_prose_02",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Background",
+      "level": 3,
+      "pages": [
+        950,
+        952
+      ],
+      "kind": "prose",
+      "pdf": "python/en/pdf/docs-pdf/library.pdf",
+      "boxes": [
+        {
+          "page": 950,
+          "clip": [
+            0.0,
+            664.55,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 951,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 952,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            571.7
+          ]
+        }
+      ],
+      "heading": {
+        "y": 664.55,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_prose_03",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Protecting Internal Extension State",
+      "level": 1,
+      "pages": [
+        4,
+        5
+      ],
+      "kind": "prose",
+      "pdf": "python/en/pdf/docs-pdf/howto-free-threading-extensions.pdf",
+      "boxes": [
+        {
+          "page": 4,
+          "clip": [
+            0.0,
+            697.29,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 5,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            145.77
+          ]
+        }
+      ],
+      "heading": {
+        "y": 697.29,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_prose_04",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "The range() Function",
+      "level": 2,
+      "pages": [
+        24,
+        25
+      ],
+      "kind": "prose",
+      "pdf": "python/en/pdf/docs-pdf/tutorial.pdf",
+      "boxes": [
+        {
+          "page": 24,
+          "clip": [
+            0.0,
+            260.32,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 25,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            282.04
+          ]
+        }
+      ],
+      "heading": {
+        "y": 260.32,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_code_00",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Index",
+      "level": 1,
+      "pages": [
+        141,
+        141
+      ],
+      "kind": "code",
+      "pdf": "python/en/pdf/docs-pdf/using.pdf",
+      "boxes": [
+        {
+          "page": 141,
+          "clip": [
+            0.0,
+            120.8,
+            595.280029296875,
+            791.81
+          ]
+        }
+      ],
+      "heading": {
+        "y": 120.8,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_code_01",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Using ZoneInfo",
+      "level": 3,
+      "pages": [
+        281,
+        282
+      ],
+      "kind": "code",
+      "pdf": "python/en/pdf/docs-pdf/library.pdf",
+      "boxes": [
+        {
+          "page": 281,
+          "clip": [
+            0.0,
+            405.9,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 282,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            338.62
+          ]
+        }
+      ],
+      "heading": {
+        "y": 405.9,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_code_02",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Allowed members and attributes of enumerations",
+      "level": 1,
+      "pages": [
+        8,
+        9
+      ],
+      "kind": "code",
+      "pdf": "python/en/pdf/docs-pdf/howto-enum.pdf",
+      "boxes": [
+        {
+          "page": 8,
+          "clip": [
+            0.0,
+            292.33,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 9,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            164.71
+          ]
+        }
+      ],
+      "heading": {
+        "y": 292.33,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_code_03",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Example",
+      "level": 3,
+      "pages": [
+        1943,
+        1944
+      ],
+      "kind": "code",
+      "pdf": "python/en/pdf/docs-pdf/library.pdf",
+      "boxes": [
+        {
+          "page": 1943,
+          "clip": [
+            0.0,
+            335.76,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 1944,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            363.74
+          ]
+        }
+      ],
+      "heading": {
+        "y": 335.76,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_code_04",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Performance options",
+      "level": 3,
+      "pages": [
+        36,
+        38
+      ],
+      "kind": "code",
+      "pdf": "python/en/pdf/docs-pdf/using.pdf",
+      "boxes": [
+        {
+          "page": 36,
+          "clip": [
+            0.0,
+            187.59,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 37,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 38,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            72.4
+          ]
+        }
+      ],
+      "heading": {
+        "y": 187.59,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_table_00",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Customize pymalloc Arena Allocator",
+      "level": 3,
+      "pages": [
+        299,
+        300
+      ],
+      "kind": "table",
+      "pdf": "python/en/pdf/docs-pdf/c-api.pdf",
+      "boxes": [
+        {
+          "page": 299,
+          "clip": [
+            0.0,
+            582.49,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 300,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            118.54
+          ]
+        }
+      ],
+      "heading": {
+        "y": 582.49,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_table_01",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Basic Logging Tutorial",
+      "level": 1,
+      "pages": [
+        2,
+        5
+      ],
+      "kind": "table",
+      "pdf": "python/en/pdf/docs-pdf/howto-logging.pdf",
+      "boxes": [
+        {
+          "page": 2,
+          "clip": [
+            0.0,
+            116.07,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 3,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 4,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 5,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            519.88
+          ]
+        }
+      ],
+      "heading": {
+        "y": 116.07,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_table_02",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Attributes and Color",
+      "level": 2,
+      "pages": [
+        5,
+        6
+      ],
+      "kind": "table",
+      "pdf": "python/en/pdf/docs-pdf/howto-curses.pdf",
+      "boxes": [
+        {
+          "page": 5,
+          "clip": [
+            0.0,
+            441.19,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 6,
+          "clip": [
+            0.0,
+            131.78,
+            595.280029296875,
+            513.75
+          ]
+        }
+      ],
+      "heading": {
+        "y": 441.19,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_table_03",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Prefix scheme",
+      "level": 3,
+      "pages": [
+        2032,
+        2033
+      ],
+      "kind": "table",
+      "pdf": "python/en/pdf/docs-pdf/library.pdf",
+      "boxes": [
+        {
+          "page": 2032,
+          "clip": [
+            0.0,
+            319.77,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 2033,
+          "clip": [
+            0.0,
+            45.5,
+            595.280029296875,
+            238.7
+          ]
+        }
+      ],
+      "heading": {
+        "y": 319.77,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "python_en_table_04",
+      "doc": "python",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Modifying Strings",
+      "level": 1,
+      "pages": [
+        14,
+        16
+      ],
+      "kind": "table",
+      "pdf": "python/en/pdf/docs-pdf/howto-regex.pdf",
+      "boxes": [
+        {
+          "page": 14,
+          "clip": [
+            0.0,
+            492.65,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 15,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            791.81
+          ]
+        },
+        {
+          "page": 16,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            666.2
+          ]
+        }
+      ],
+      "heading": {
+        "y": 492.65,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_prose_00",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "The admin",
+      "level": 2,
+      "pages": [
+        9,
+        10
+      ],
+      "kind": "prose",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 9,
+          "clip": [
+            0.0,
+            554.78,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 10,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            76.76
+          ]
+        }
+      ],
+      "heading": {
+        "y": 554.78,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_prose_01",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "I can’t log in. When I enter a valid username and password, it brings up the login page again, with a “Please enter a correct username and password” error.",
+      "level": 3,
+      "pages": [
+        966,
+        966
+      ],
+      "kind": "prose",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 966,
+          "clip": [
+            0.0,
+            247.58,
+            612.0,
+            318.13
+          ]
+        }
+      ],
+      "heading": {
+        "y": 247.58,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_prose_02",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "FAQ: The admin",
+      "level": 2,
+      "pages": [
+        966,
+        968
+      ],
+      "kind": "prose",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 966,
+          "clip": [
+            0.0,
+            76.76,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 967,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 968,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            76.76
+          ]
+        }
+      ],
+      "heading": {
+        "y": 76.76,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_prose_03",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Exceptions",
+      "level": 3,
+      "pages": [
+        2190,
+        2190
+      ],
+      "kind": "prose",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 2190,
+          "clip": [
+            0.0,
+            191.14,
+            612.0,
+            460.54
+          ]
+        }
+      ],
+      "heading": {
+        "y": 191.14,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_prose_04",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "The Commands",
+      "level": 3,
+      "pages": [
+        460,
+        460
+      ],
+      "kind": "prose",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 460,
+          "clip": [
+            0.0,
+            168.36,
+            612.0,
+            640.71
+          ]
+        }
+      ],
+      "heading": {
+        "y": 168.36,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_code_00",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Lookup API reference",
+      "level": 3,
+      "pages": [
+        1850,
+        1854
+      ],
+      "kind": "code",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 1850,
+          "clip": [
+            0.0,
+            349.77,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1851,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1852,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1853,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1854,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            176.19
+          ]
+        }
+      ],
+      "heading": {
+        "y": 349.77,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_code_01",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Django Core Exceptions",
+      "level": 3,
+      "pages": [
+        1530,
+        1534
+      ],
+      "kind": "code",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 1530,
+          "clip": [
+            0.0,
+            287.84,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1531,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1532,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1533,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 1534,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            120.58
+          ]
+        }
+      ],
+      "heading": {
+        "y": 287.84,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_code_02",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Composite primary keys",
+      "level": 2,
+      "pages": [
+        647,
+        651
+      ],
+      "kind": "code",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 647,
+          "clip": [
+            0.0,
+            413.33,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 648,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 649,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 650,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 651,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            580.46
+          ]
+        }
+      ],
+      "heading": {
+        "y": 413.33,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_code_03",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Task results",
+      "level": 3,
+      "pages": [
+        810,
+        813
+      ],
+      "kind": "code",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 810,
+          "clip": [
+            0.0,
+            325.86,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 811,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 812,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 813,
+          "clip": [
+            0.0,
+            0.0,
+            612.0,
+            181.38
+          ]
+        }
+      ],
+      "heading": {
+        "y": 325.86,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_code_04",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "handler400",
+      "level": 3,
+      "pages": [
+        2159,
+        2159
+      ],
+      "kind": "code",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 2159,
+          "clip": [
+            0.0,
+            303.55,
+            612.0,
+            437.44
+          ]
+        }
+      ],
+      "heading": {
+        "y": 303.55,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_table_00",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "What Python version can I use with Django?",
+      "level": 3,
+      "pages": [
+        961,
+        962
+      ],
+      "kind": "table",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 961,
+          "clip": [
+            0.0,
+            457.6,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 962,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            151.68
+          ]
+        }
+      ],
+      "heading": {
+        "y": 457.6,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_table_01",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "Backends",
+      "level": 3,
+      "pages": [
+        2045,
+        2047
+      ],
+      "kind": "table",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 2045,
+          "clip": [
+            0.0,
+            457.26,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 2046,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 2047,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            512.19
+          ]
+        }
+      ],
+      "heading": {
+        "y": 457.26,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "django_en_table_02",
+      "doc": "django",
+      "lang": "en",
+      "gold_titles_checked": true,
+      "title": "FAQ: Installation",
+      "level": 2,
+      "pages": [
+        961,
+        962
+      ],
+      "kind": "table",
+      "pdf": "django/en/pdf/django.pdf",
+      "boxes": [
+        {
+          "page": 961,
+          "clip": [
+            0.0,
+            76.76,
+            612.0,
+            741.86
+          ]
+        },
+        {
+          "page": 962,
+          "clip": [
+            0.0,
+            45.44,
+            612.0,
+            380.82
+          ]
+        }
+      ],
+      "heading": {
+        "y": 76.76,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_prose_00",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Ориентация страницы",
+      "level": 3,
+      "pages": [
+        267,
+        268
+      ],
+      "kind": "prose",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 267,
+          "clip": [
+            0.0,
+            456.99,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 268,
+          "clip": [
+            0.0,
+            0.0,
+            419.52801513671875,
+            95.66
+          ]
+        }
+      ],
+      "heading": {
+        "y": 456.99,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_prose_01",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Математика",
+      "level": 3,
+      "pages": [
+        254,
+        257
+      ],
+      "kind": "prose",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 254,
+          "clip": [
+            0.0,
+            483.31,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 255,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 256,
+          "clip": [
+            0.0,
+            0.0,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 257,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            170.19
+          ]
+        }
+      ],
+      "heading": {
+        "y": 483.31,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_prose_02",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Верстаем книги",
+      "level": 3,
+      "pages": [
+        270,
+        270
+      ],
+      "kind": "prose",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 270,
+          "clip": [
+            0.0,
+            388.23,
+            419.52801513671875,
+            519.01
+          ]
+        }
+      ],
+      "heading": {
+        "y": 388.23,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_prose_03",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Операторы переменного размера",
+      "level": 3,
+      "pages": [
+        195,
+        195
+      ],
+      "kind": "prose",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 195,
+          "clip": [
+            0.0,
+            54.46,
+            419.52801513671875,
+            320.27
+          ]
+        }
+      ],
+      "heading": {
+        "y": 54.46,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_prose_04",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Строка",
+      "level": 3,
+      "pages": [
+        88,
+        89
+      ],
+      "kind": "prose",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 88,
+          "clip": [
+            0.0,
+            329.74,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 89,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            178.99
+          ]
+        }
+      ],
+      "heading": {
+        "y": 329.74,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_code_00",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Об этой книге",
+      "level": 2,
+      "pages": [
+        15,
+        17
+      ],
+      "kind": "code",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 15,
+          "clip": [
+            0.0,
+            209.23,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 16,
+          "clip": [
+            0.0,
+            0.0,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 17,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            170.72
+          ]
+        }
+      ],
+      "heading": {
+        "y": 209.23,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_code_01",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Немного истории",
+      "level": 2,
+      "pages": [
+        11,
+        14
+      ],
+      "kind": "code",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 11,
+          "clip": [
+            0.0,
+            420.05,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 12,
+          "clip": [
+            0.0,
+            0.0,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 13,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 14,
+          "clip": [
+            0.0,
+            0.0,
+            419.52801513671875,
+            595.28
+          ]
+        }
+      ],
+      "heading": {
+        "y": 420.05,
+        "size": 14.35
+      },
+      "notes": [
+        "next heading not found on the last page, the crop runs to the page end"
+      ]
+    },
+    {
+      "id": "latex_baldin_ru_code_02",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "WWW-элементы",
+      "level": 3,
+      "pages": [
+        141,
+        143
+      ],
+      "kind": "code",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 141,
+          "clip": [
+            0.0,
+            529.1,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 142,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 143,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            99.3
+          ]
+        }
+      ],
+      "heading": {
+        "y": 529.1,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_code_03",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Вычисления с calc",
+      "level": 3,
+      "pages": [
+        75,
+        76
+      ],
+      "kind": "code",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 75,
+          "clip": [
+            0.0,
+            329.13,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 76,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            173.31
+          ]
+        }
+      ],
+      "heading": {
+        "y": 329.13,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_code_04",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Выделение текста",
+      "level": 3,
+      "pages": [
+        127,
+        129
+      ],
+      "kind": "code",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 127,
+          "clip": [
+            0.0,
+            332.44,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 128,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 129,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            54.46
+          ]
+        }
+      ],
+      "heading": {
+        "y": 332.44,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_table_00",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Клетки",
+      "level": 3,
+      "pages": [
+        155,
+        157
+      ],
+      "kind": "table",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 155,
+          "clip": [
+            0.0,
+            519.24,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 156,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 157,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            165.81
+          ]
+        }
+      ],
+      "heading": {
+        "y": 519.24,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_table_01",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Пробелы в формулах",
+      "level": 2,
+      "pages": [
+        199,
+        200
+      ],
+      "kind": "table",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 199,
+          "clip": [
+            0.0,
+            183.68,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 200,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            131.25
+          ]
+        }
+      ],
+      "heading": {
+        "y": 183.68,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_table_02",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Битовые поля",
+      "level": 2,
+      "pages": [
+        212,
+        214
+      ],
+      "kind": "table",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 212,
+          "clip": [
+            0.0,
+            455.87,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 213,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 214,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            112.42
+          ]
+        }
+      ],
+      "heading": {
+        "y": 455.87,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_table_03",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Создаём отчёты",
+      "level": 3,
+      "pages": [
+        102,
+        103
+      ],
+      "kind": "table",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 102,
+          "clip": [
+            0.0,
+            463.73,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 103,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            395.97
+          ]
+        }
+      ],
+      "heading": {
+        "y": 463.73,
+        "size": 11.96
+      },
+      "notes": []
+    },
+    {
+      "id": "latex_baldin_ru_table_04",
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Немного теории",
+      "level": 2,
+      "pages": [
+        149,
+        150
+      ],
+      "kind": "table",
+      "pdf": "latex_baldin/ru/pdf/ctex.pdf",
+      "boxes": [
+        {
+          "page": 149,
+          "clip": [
+            0.0,
+            465.97,
+            419.52801513671875,
+            595.28
+          ]
+        },
+        {
+          "page": 150,
+          "clip": [
+            0.0,
+            37.23,
+            419.52801513671875,
+            494.22
+          ]
+        }
+      ],
+      "heading": {
+        "y": 465.97,
+        "size": 14.35
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_prose_00",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Значения",
+      "level": 2,
+      "pages": [
+        16,
+        18
+      ],
+      "kind": "prose",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 16,
+          "clip": [
+            0.0,
+            120.74,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 17,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 18,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            477.43
+          ]
+        }
+      ],
+      "heading": {
+        "y": 120.74,
+        "size": 12.68
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_prose_01",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Экземпляры классов типов",
+      "level": 2,
+      "pages": [
+        20,
+        21
+      ],
+      "kind": "prose",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 20,
+          "clip": [
+            0.0,
+            131.94,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 21,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            23.15
+          ]
+        }
+      ],
+      "heading": {
+        "y": 131.94,
+        "size": 12.68
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_prose_02",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Аппликативные функторы",
+      "level": 3,
+      "pages": [
+        95,
+        96
+      ],
+      "kind": "prose",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 95,
+          "clip": [
+            0.0,
+            310.81,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 96,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            25.68
+          ]
+        }
+      ],
+      "heading": {
+        "y": 310.81,
+        "size": 10.56
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_prose_03",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Структура констант",
+      "level": 2,
+      "pages": [
+        41,
+        45
+      ],
+      "kind": "prose",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 41,
+          "clip": [
+            0.0,
+            476.74,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 42,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 43,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 44,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 45,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            470.07
+          ]
+        }
+      ],
+      "heading": {
+        "y": 476.74,
+        "size": 12.68
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_prose_04",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Списки",
+      "level": 3,
+      "pages": [
+        196,
+        197
+      ],
+      "kind": "prose",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 196,
+          "clip": [
+            0.0,
+            398.95,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 197,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            209.35
+          ]
+        }
+      ],
+      "heading": {
+        "y": 398.95,
+        "size": 10.56
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_code_00",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Ограничение мономорфизма",
+      "level": 3,
+      "pages": [
+        52,
+        54
+      ],
+      "kind": "code",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 52,
+          "clip": [
+            0.0,
+            371.06,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 53,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 54,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            403.15
+          ]
+        }
+      ],
+      "heading": {
+        "y": 371.06,
+        "size": 10.56
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_code_01",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Лексически связанные типы",
+      "level": 3,
+      "pages": [
+        263,
+        264
+      ],
+      "kind": "code",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 263,
+          "clip": [
+            0.0,
+            422.68,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 264,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            322.03
+          ]
+        }
+      ],
+      "heading": {
+        "y": 422.68,
+        "size": 10.56
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_code_02",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "У-вей",
+      "level": 2,
+      "pages": [
+        25,
+        27
+      ],
+      "kind": "code",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 25,
+          "clip": [
+            0.0,
+            667.08,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 26,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 27,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            23.15
+          ]
+        }
+      ],
+      "heading": {
+        "y": 667.08,
+        "size": 12.68
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_code_03",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Накопление чисел",
+      "level": 3,
+      "pages": [
+        114,
+        115
+      ],
+      "kind": "code",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 114,
+          "clip": [
+            0.0,
+            409.21,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 115,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            25.68
+          ]
+        }
+      ],
+      "heading": {
+        "y": 409.21,
+        "size": 10.56
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_code_04",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Композиция монад",
+      "level": 2,
+      "pages": [
+        138,
+        139
+      ],
+      "kind": "code",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 138,
+          "clip": [
+            0.0,
+            208.4,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 139,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            600.05
+          ]
+        }
+      ],
+      "heading": {
+        "y": 208.4,
+        "size": 12.68
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_table_00",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Описание задачи",
+      "level": 3,
+      "pages": [
+        200,
+        200
+      ],
+      "kind": "table",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 200,
+          "clip": [
+            0.0,
+            291.33,
+            595.280029296875,
+            679.88
+          ]
+        }
+      ],
+      "heading": {
+        "y": 291.33,
+        "size": 10.56
+      },
+      "notes": []
+    },
+    {
+      "id": "haskell_kholomiev_ru_table_01",
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "gold_titles_checked": true,
+      "title": "Стратегия написания программ",
+      "level": 2,
+      "pages": [
+        200,
+        204
+      ],
+      "kind": "table",
+      "pdf": "haskell_kholomiev/ru/pdf/ru-haskell-book.pdf",
+      "boxes": [
+        {
+          "page": 200,
+          "clip": [
+            0.0,
+            263.23,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 201,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 202,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 203,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            792.7
+          ]
+        },
+        {
+          "page": 204,
+          "clip": [
+            0.0,
+            0.0,
+            595.280029296875,
+            511.02
+          ]
+        }
+      ],
+      "heading": {
+        "y": 263.23,
+        "size": 12.68
+      },
+      "notes": []
+    }
+  ],
+  "deficits": [
+    {
+      "doc": "progit",
+      "lang": "en",
+      "kind": "table",
+      "short_by": 4
+    },
+    {
+      "doc": "progit",
+      "lang": "ru",
+      "kind": "table",
+      "short_by": 4
+    },
+    {
+      "doc": "django",
+      "lang": "en",
+      "kind": "table",
+      "short_by": 2
+    },
+    {
+      "doc": "haskell_kholomiev",
+      "lang": "ru",
+      "kind": "table",
+      "short_by": 3
+    }
+  ],
+  "skipped": [
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "Программирование в среде LaTeX",
+      "why": [
+        "heading not found on its page"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "Появление LaTeX",
+      "why": [
+        "heading not found on its page"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "Дистрибутивы LaTeX",
+      "why": [
+        "heading not found on its page"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "Вычисления с использованием LaTeX",
+      "why": [
+        "heading not found on its page"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "LaTeX в России",
+      "why": [
+        "heading not found on its page"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "Путеводитель по классам LaTeX",
+      "why": [
+        "heading not found on its page"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "Пакеты LaTeX",
+      "why": [
+        "heading not found on its page"
+      ]
+    },
+    {
+      "doc": "latex_baldin",
+      "lang": "ru",
+      "title": "Структура LaTeX-файла",
+      "why": [
+        "heading not found on its page"
+      ]
+    }
+  ]
+}

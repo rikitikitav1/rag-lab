@@ -9,6 +9,8 @@ import samplers
 from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from sources.declaration import Language
+from tool_names import SETTINGS_NAME
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.index import VARIANT_RE
@@ -41,9 +43,7 @@ class EvalRunFields(Spec):
     language: Literal["ru", "en"] | None = None
     k: int | None = Field(default=None, ge=1, le=limits.MAX_K)
     max_hops: int | None = Field(default=None, ge=1, le=agent_policy.MAX_HOPS)
-    model: str | None = Field(
-        default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern
-    )
+    model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
     fallback_policy: FallbackPolicy | None = None
     gate_signal: GateSignal | None = None
     weak_distance: float | None = Field(default=None, ge=0, le=2)
@@ -149,9 +149,9 @@ class GradeCandidates(Spec):
     def _under_the_frozen_pools(cls, value: str) -> str:
         # a job reads a file the worker can reach, so the name is a pool of ours, not any path
         if not FROZEN_POOL_RE.fullmatch(value):
-            raise ValueError("candidates names a frozen pool, like"
-                             " /app/datasets/candidates/<name>.json")
+            raise ValueError("candidates names a frozen pool, like /app/datasets/candidates/<name>.json")
         return value
+
     form: Literal["per_chunk", "whole_text"] = "per_chunk"
     top: int = Field(default=5, ge=1, le=20)
     # a slice for a probe; a declared arm draws `sample` by `seed`, as the guest axes do
@@ -181,9 +181,7 @@ class HandCard(Spec):
     # the API queues this (the chat, `/load`, a role seat): who asked, for the reader, not the turn
     asked_by: str | None = Field(default=None, max_length=64)
     # for ollama the model to load once the card is free; vLLM serves one model and needs no name
-    model: str | None = Field(
-        default=None, min_length=1, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern
-    )
+    model: str | None = Field(default=None, min_length=1, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
     # the role door on an asleep vLLM: probe the woken server, then seat the role or fail with why
     seat: Literal["generation"] | None = None
     # the model the role held when the door asked; the seat is refused if another has come since
@@ -233,6 +231,37 @@ class IndexData(Spec):
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
 
 
+class ConvertSource(Spec):
+    # a settings file under converters/<tool>/settings/, written before the run and hashed into its record
+    settings: str = Field(pattern=f"^{SETTINGS_NAME.pattern}$")
+    language: Language
+    # paths under the gold's files; a path of its own would let a job read any file
+    inputs: list[str] = Field(min_length=1, max_length=5000)
+    out: str = Field(pattern=r"^[\w.-]{1,80}$")
+
+    @field_validator("inputs")
+    @classmethod
+    def _inside_the_gold(cls, inputs):
+        for path in inputs:
+            if path.startswith("/") or ".." in path.split("/"):
+                raise ValueError(f"{path}: a path relative to the gold's files, without ..")
+        return inputs
+
+
+class OnboardSource(Spec):
+    # a declared source by name; the route picks each file's engine, these name the settings each engine runs with
+    source: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")
+    settings: dict[str, str] | None = None
+
+    @field_validator("settings")
+    @classmethod
+    def _settings_files(cls, settings):
+        for tool, name in (settings or {}).items():
+            if not SETTINGS_NAME.fullmatch(name) or not name.startswith(f"{tool}/"):
+                raise ValueError(f"{tool}: {name} is not a settings file of that tool")
+        return settings
+
+
 class BuildVectorIndex(Spec):
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
 
@@ -245,6 +274,8 @@ SPECS: dict[str, type[Spec]] = {
     "paraphrase_questions": ParaphraseQuestions,
     "build_veto_set": BuildVetoSet,
     "index_data": IndexData,
+    "convert_source": ConvertSource,
+    "onboard_source": OnboardSource,
     "build_vector_index": BuildVectorIndex,
     "embed_questions": EmbedQuestions,
     "eval_run": EvalRun,
@@ -274,6 +305,10 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "paraphrase_questions": (Role.paraphrasing,),
     "build_veto_set": (Role.paraphrasing,),
     "index_data": (Role.embedding,),
+    # the converter is an engine, not a role: the handler takes the card for it
+    "convert_source": (),
+    # the converters are engines, not roles: the handler takes the card for each
+    "onboard_source": (),
     "embed_questions": (Role.embedding,),
     "build_vector_index": (),
     "analyze_source": (),

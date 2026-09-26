@@ -1,4 +1,4 @@
-# 2026-09-13 - The judge that looped on whitespace, and a grammar rule that moved 17% of its verdicts
+# 2026-09-13 - Judge looping on whitespace: the grammar rule fix moved 17% of verdicts
 
 One row out of 2419 judge calls never got a faithfulness score: the judge wrote a short reason and
 then whitespace until its token ceiling. The fix is a server rule that forbids free whitespace in the

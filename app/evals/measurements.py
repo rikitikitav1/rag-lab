@@ -8,7 +8,9 @@ import re
 from datetime import date
 from pathlib import Path
 
-FOLDER = Path(__file__).resolve().parents[2] / "datasets" / "measurements"
+# a record names its file relative to the stand, so every reader resolves it from here
+ROOT = Path(__file__).resolve().parents[2]
+FOLDER = ROOT / "datasets" / "measurements"
 # inputs of an instrument, not artifacts of a run: they are read by the code and live in git
 PANELS = FOLDER.parent / "panels"
 
@@ -51,8 +53,7 @@ def _put_bulk(path: Path, payload: dict, bulk) -> dict:
         beside = path.with_name(f"{path.stem}_{key}.json.gz")
         beside.write_bytes(gzip.compress(blob))
         hand_back(beside)
-        out[f"{key}_file"] = {"name": beside.name, "count": len(rows),
-                              "sha256": hashlib.sha256(blob).hexdigest()[:16]}
+        out[f"{key}_file"] = {"name": beside.name, "count": len(rows), "sha256": hashlib.sha256(blob).hexdigest()[:16]}
     return out
 
 

@@ -19,9 +19,11 @@ from evals.loaders import load_logs
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models import Job, JobStatus
+from models.corpus import Stage
 from models.experiment import Experiment, ExperimentKind
 from orm.sync_db import Session
 from pydantic import Field
+from sources.declaration import Language
 from sqlalchemy import select
 from use_cases import experiment as experiment_uc
 from use_cases import prereg, rejudge, retrieval_compare
@@ -44,7 +46,8 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
         "which of question_text/answer/contexts/reference the others lack, the seconds "
         "one row of this run costs on that axis, and what finishing the debt would cost. "
         "Read debts before spending a judge or a guest pass on a run. tokens says what the run cost: "
-        + run_tokens.READS + "."
+        + run_tokens.READS
+        + "."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -58,7 +61,10 @@ def run_metrics(
         raise ToolError(f"no logs for run {run_name!r}")
     ret = retrieval_metrics.evaluate(run_name)
     return {
-        "run_name": run_name, **gen, **ret, "debts": run_debts.safely(run_name),
+        "run_name": run_name,
+        **gen,
+        **ret,
+        "debts": run_debts.safely(run_name),
         "tokens": run_tokens.of(run_name),
     }
 
@@ -78,9 +84,7 @@ def run_metrics(
     annotations={"readOnlyHint": True},
 )
 def list_question_sets(
-    set_name: Annotated[
-        str | None, Field(description="Only this set; omit for every set, largest first.")
-    ] = None,
+    set_name: Annotated[str | None, Field(description="Only this set; omit for every set, largest first.")] = None,
 ) -> list[dict]:
     found = question_sets.inventory((set_name or "").strip() or None)
     if not found:
@@ -161,9 +165,7 @@ def agent_trace(
     annotations={"readOnlyHint": True},
 )
 def judge_correlation_report(
-    run_name: Annotated[
-        str, Field(default="", description="One run_name, or empty for every judged row.")
-    ] = "",
+    run_name: Annotated[str, Field(default="", description="One run_name, or empty for every judged row.")] = "",
 ) -> dict:
     name = run_name.strip() or None
     if name:
@@ -191,9 +193,7 @@ def holm_over(
         dict[str, Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]],
         Field(description="Each test by name with its p-value.", max_length=limits.MAX_TESTS),
     ],
-    family: Annotated[
-        str, Field(min_length=1, description="What this family is, in the reader's words.")
-    ],
+    family: Annotated[str, Field(min_length=1, description="What this family is, in the reader's words.")],
     alpha: Annotated[float, Field(gt=0, lt=1)] = 0.05,
 ) -> dict:
     if not tests:
@@ -201,8 +201,13 @@ def holm_over(
     named = [{"name": name, "p": p} for name, p in tests.items()]
     # the summary's own `tests` is a count, and spreading it used to overwrite the annotated list
     summary = stats.annotate_holm(named, family, alpha)
-    return {"tests": named, "family": summary["family"], "method": summary["method"],
-            "alpha": summary["alpha"], "n": summary["tests"]}
+    return {
+        "tests": named,
+        "family": summary["family"],
+        "method": summary["method"],
+        "alpha": summary["alpha"],
+        "n": summary["tests"],
+    }
 
 
 @mcp_ops.tool(
@@ -218,9 +223,7 @@ def holm_over(
     annotations={"readOnlyHint": True},
 )
 def compare_runs(
-    run_names: Annotated[
-        list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)
-    ],
+    run_names: Annotated[list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)],
 ) -> dict:
     names = _logged(run_names)
     try:
@@ -272,9 +275,7 @@ def language_cost(
     annotations={"readOnlyHint": True},
 )
 def compare_pools(
-    run_names: Annotated[
-        list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)
-    ],
+    run_names: Annotated[list[str], Field(description="Run names to compare.", max_length=limits.MAX_RUNS)],
 ) -> dict:
     runs = {name: load_logs(name) for name in _named_runs(run_names)}
     # the same refusal `_logged` makes, on logs already loaded here
@@ -333,16 +334,21 @@ def experiment_results(
         if exp.kind != ExperimentKind.retrieval:
             out["outcome_rule"] = (exp.results or {}).get("outcome_rule")
             out["code"] = (exp.results or {}).get("code") or {}
-        guests = session.execute(
-            select(Job.status).where(
-                Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])
+        guests = (
+            session.execute(
+                select(Job.status).where(
+                    Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if guests:
             out["guest_passes"] = {
-                "done": sum(1 for status in guests if status == JobStatus.done), "of": len(guests),
+                "done": sum(1 for status in guests if status == JobStatus.done),
+                "of": len(guests),
                 "reads": "guest numbers are read per question_id, not compared here; "
-                         "run_metrics debts.guests says what a copy still owes",
+                "run_metrics debts.guests says what a copy still owes",
             }
         deltas = read["deltas"]
         if pair is not None:
@@ -350,10 +356,7 @@ def experiment_results(
                 raise ToolError(f"no pair {pair!r}; this report has {sorted(deltas)}")
             deltas = {pair: deltas[pair]}
         # halves are the aggregation's own check and read as four more numbers per axis here
-        out["deltas"] = {
-            name: {k: v for k, v in body.items() if k != "halves"}
-            for name, body in deltas.items()
-        }
+        out["deltas"] = {name: {k: v for k, v in body.items() if k != "halves"} for name, body in deltas.items()}
         return out
 
 
@@ -462,24 +465,44 @@ def cancel_job(
 )
 def preregister(
     name: Annotated[str, Field(description="A name for this promise, unique, e.g. `mr4_sgr`.")],
-    population: Annotated[dict, Field(description=(
-        "{'sets': [question set names], 'question_ids': [ids]?}; named ids narrow the sets to a declared draw."
-    ))],
+    population: Annotated[
+        dict,
+        Field(
+            description=(
+                "{'sets': [question set names], 'question_ids': [ids]?}; named ids narrow the sets to a declared draw."
+            )
+        ),
+    ],
     arms: Annotated[dict, Field(description="{'control': ..., 'arm': ...}.")],
-    closing: Annotated[dict, Field(description=(
-        "{'columns': [names], 'arm_should': 'lower' | 'raise', 'floor_value': x?}; shares join into a"
-        " union, a judge score closes alone; the bar is the floor run's upper edge or `floor_value`."
-    ))],
-    guards: Annotated[list | None, Field(description=(
-        "[{'column': name, 'must_not': 'rise' | 'fall', 'margin': share >= 0, 'sets': [names]?}];"
-        " without `sets` a guard reads the closing population."
-    ))] = None,
+    closing: Annotated[
+        dict,
+        Field(
+            description=(
+                "{'columns': [names], 'arm_should': 'lower' | 'raise', 'floor_value': x?}; shares join into a"
+                " union, a judge score closes alone; the bar is the floor run's upper edge or `floor_value`."
+            )
+        ),
+    ],
+    guards: Annotated[
+        list | None,
+        Field(
+            description=(
+                "[{'column': name, 'must_not': 'rise' | 'fall', 'margin': share >= 0, 'sets': [names]?}];"
+                " without `sets` a guard reads the closing population."
+            )
+        ),
+    ] = None,
     declared: Annotated[dict | None, Field(description="Stop rules, price, expectations, in words.")] = None,
-    vetoes: Annotated[list | None, Field(description=(
-        "[{'column': name, 'above': name, 'margin': x >= 0, 'min_rows': n, 'on': 'arm' | 'control'}]: fires"
-        " when the mean of `column` exceeds the mean of `above` by more than the margin, on one arm, by"
-        " point, and only on at least `min_rows` rows; on fewer it is undecided."
-    ))] = None,
+    vetoes: Annotated[
+        list | None,
+        Field(
+            description=(
+                "[{'column': name, 'above': name, 'margin': x >= 0, 'min_rows': n, 'on': 'arm' | 'control'}]: fires"
+                " when the mean of `column` exceeds the mean of `above` by more than the margin, on one arm, by"
+                " point, and only on at least `min_rows` rows; on fewer it is undecided."
+            )
+        ),
+    ] = None,
 ) -> dict:
     try:
         return prereg.write(name, population, arms, closing, guards or [], declared or {}, vetoes or [])
@@ -520,14 +543,164 @@ def preregistration(
 )
 def close_preregistration(
     name: Annotated[str, Field(description="The preregistration's name.")],
-    runs: Annotated[dict | None, Field(description=(
-        "{'control': run_name, 'arm': run_name, 'floor': run_name?}."
-    ))] = None,
-    measurements: Annotated[dict | None, Field(description=(
-        "{'control': file, 'arm': file, 'floor': file?}: measurement file names in datasets/measurements."
-    ))] = None,
+    runs: Annotated[
+        dict | None, Field(description=("{'control': run_name, 'arm': run_name, 'floor': run_name?}."))
+    ] = None,
+    measurements: Annotated[
+        dict | None,
+        Field(
+            description=(
+                "{'control': file, 'arm': file, 'floor': file?}: measurement file names in datasets/measurements."
+            )
+        ),
+    ] = None,
 ) -> dict:
     try:
         return prereg.close(name, runs, measurements)
     except prereg.Refused as e:
         raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="add_source",
+    description=(
+        "Declare a source to add: its name, language (en or ru), licence and exactly one origin: urls to "
+        "download, a folder placed by hand, a git repository, or pages of a site with the site's settings "
+        "(main, drop, generated). Never an engine: the route reads each file and picks it. The source starts "
+        "`declared` and inactive; converting it to a raw folder is a separate step."
+    ),
+)
+def add_source(
+    name: Annotated[str, Field(description="Lowercase name, letters, digits, dash, underscore.")],
+    language: Annotated[Language, Field(description="The language of its text.")],
+    licence: Annotated[str, Field(description="The licence the source is published under.")],
+    urls: Annotated[list[str] | None, Field(description="Files to download.")] = None,
+    folder: Annotated[str | None, Field(description="A folder under the stand holding the files.")] = None,
+    git: Annotated[dict | None, Field(description="{'repo', 'ref'?, 'path'?, 'include'?}.")] = None,
+    pages: Annotated[list[str] | None, Field(description="Pages of a site.")] = None,
+    site: Annotated[dict | None, Field(description="{'main', 'drop'?, 'generated'?} for pages.")] = None,
+) -> dict:
+    from models.corpus import DataSource
+    from pydantic import ValidationError
+    from sources.declaration import Declaration
+    from sqlalchemy.exc import IntegrityError
+    from use_cases import source_intake
+
+    try:
+        declaration = Declaration(
+            name=name, language=language, licence=licence, urls=urls, folder=folder, git=git, pages=pages, site=site
+        )
+    except ValidationError as e:
+        raise ToolError(str(e)) from e
+    with Session() as session:
+        if session.scalar(select(DataSource.id).where(DataSource.name == name)):
+            raise ToolError(source_intake.name_taken(name))
+        source = source_intake.declared_row(declaration)
+        session.add(source)
+        try:
+            session.commit()
+        except IntegrityError as e:
+            raise ToolError(source_intake.name_taken(name)) from e
+        session.refresh(source)
+        return source_intake.view(source, 0, 0)
+
+
+@mcp_ops.tool(
+    name="source",
+    description="One source by name: its stage, origin, licence, chunk count and what its raw conversion said.",
+    annotations={"readOnlyHint": True},
+)
+def source(name: Annotated[str, Field(description="The source's name.")]) -> dict:
+    from models.corpus import DataChunk, DataSource
+    from sqlalchemy import func
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = session.scalar(select(DataSource).where(DataSource.name == name))
+        if found is None:
+            raise ToolError(f"no source named {name}")
+        count = select(func.count()).select_from(DataChunk).where(DataChunk.source_id == found.id)
+        chunks = session.scalar(count) or 0
+        in_variant = session.scalar(count.where(DataChunk.variant == found.ingest_variant)) or 0
+        return source_intake.view(found, chunks, in_variant if found.ingest_variant else 0)
+
+
+@mcp_ops.tool(
+    name="sources",
+    description="Sources by stage (declared, raw, accepted): name, stage, raw verdict and whether active.",
+    annotations={"readOnlyHint": True},
+)
+def sources(
+    stage: Annotated[Stage | None, Field(description="Filter by stage.")] = None,
+) -> list[dict]:
+    from models.corpus import DataSource
+
+    with Session() as session:
+        stmt = select(DataSource).order_by(DataSource.name)
+        if stage is not None:
+            stmt = stmt.where(DataSource.stage == stage)
+        return [
+            {"name": s.name, "stage": s.stage, "active": s.active, "raw_verdict": (s.raw or {}).get("verdict")}
+            for s in session.scalars(stmt)
+        ]
+
+
+@mcp_ops.tool(
+    name="onboard_source",
+    description=(
+        "Convert a declared source to a raw one: the job routes every file to its engine (markdown as it is, a "
+        "page without a text layer to MinerU, the rest to Docling), writes the markdown and a suitability report "
+        "without a gold, and marks the source raw with its verdict and reasons. Nothing is indexed. `settings` "
+        "names a settings file per engine, e.g. {'docling': 'docling/default'}; another set is another raw folder."
+    ),
+)
+def onboard_source(
+    name: Annotated[str, Field(description="The declared source's name.")],
+    settings: Annotated[dict | None, Field(description="{engine: 'tool/settings'} overriding intake.settings.")] = None,
+) -> dict:
+    from models.corpus import DataSource
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = session.scalar(select(DataSource).where(DataSource.name == name))
+        if found is None:
+            raise ToolError(f"no source named {name}")
+        if refusal := source_intake.onboard_refusal(found):
+            raise ToolError(refusal)
+    return {"job_id": job_queue.enqueue("onboard_source", source_intake.onboard_options(name, settings))}
+
+
+@mcp_ops.tool(
+    name="raw_rows",
+    description=(
+        "The rows of a source's raw report. `pieces`: one per page range or file, the engine and settings that made "
+        "it, the conversion's signals (agreement with the file's own text layer, share of the layer, mixed-script "
+        "words, seconds). `sections`: one per chapter of a file's whole markdown, the chunker's metrics and gates. "
+        "Each row says what it breached; `breached_only` keeps the rows to look at first."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def raw_rows(
+    name: Annotated[str, Field(description="The source's name.")],
+    breached_only: Annotated[bool, Field(description="Only rows that breached something.")] = True,
+    kind: Annotated[
+        Literal["pieces", "sections"],
+        Field(description="pieces: the conversion a page range; sections: the chunker's gates a chapter."),
+    ] = "pieces",
+    limit: Annotated[int, Field(description="Max rows (1-500).", ge=1, le=500)] = 50,
+) -> dict:
+    from evals import measurements
+    from models.corpus import DataSource
+
+    with Session() as session:
+        found = session.scalar(select(DataSource).where(DataSource.name == name))
+        if found is None or not (found.raw or {}).get("report"):
+            raise ToolError(f"{name} has no raw report yet")
+        report = found.raw["report"]
+    try:
+        rows = measurements.rows_of(measurements.ROOT / report, "rows" if kind == "pieces" else kind)
+    except FileNotFoundError as e:
+        # a report written before chapters were read has no sections
+        raise ToolError(str(e)) from e
+    kept = [r for r in rows if r["breached"]] if breached_only else rows
+    return {"report": report, "rows": len(rows), "shown": kept[:limit]}

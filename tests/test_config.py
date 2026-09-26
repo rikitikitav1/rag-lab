@@ -33,15 +33,27 @@ def test_a_missing_or_misspelled_key_fails_the_start_rather_than_falling_back(tm
 def test_the_moved_keys_hold_the_values_they_held_before_the_move():
     # the layout changed and no number did: the old flat names, read at their new places
     s = config._load(str(ROOT / "config.yaml"))
-    assert s.retrieval.keyword.model_dump() == {"query": "and", "rank": "ts_rank", "norm": 0,
-                                                "query_lang": "function_words"}
+    assert s.retrieval.keyword.model_dump() == {
+        "query": "and",
+        "rank": "ts_rank",
+        "norm": 0,
+        "query_lang": "function_words",
+    }
     assert (s.retrieval.ef_search, s.retrieval.distance_threshold, s.retrieval.results_limit) == (100, 0.55, 5)
     assert s.verdict.criterion_sets == ["paraphrased_v2_ru", "paraphrased_v2"] and s.verdict.veto_sets == ["veto_v1"]
-    assert s.verdict.search_depth.model_dump() == {"ef_ladder": [100, 200, 400], "recall_gate": 0.98,
-                                                   "max_mrr_loss": 0.01, "max_questions_lost": 0}
+    assert s.verdict.search_depth.model_dump() == {
+        "ef_ladder": [100, 200, 400],
+        "recall_gate": 0.98,
+        "max_mrr_loss": 0.01,
+        "max_questions_lost": 0,
+    }
     assert (s.verdict.index_alive.recall, s.verdict.index_alive.questions) == (0.9, 40)
-    assert s.agent.gate.model_dump() == {"signal": "distance", "weak_distance": 0.39,
-                                         "weak_threshold": 0.5, "candidates": 5}
+    assert s.agent.gate.model_dump() == {
+        "signal": "distance",
+        "weak_distance": 0.39,
+        "weak_threshold": 0.5,
+        "candidates": 5,
+    }
     assert s.agent.topic_threshold == {"ru": 0.4560, "en": 0.4374}
     assert (s.ingestion.batch_size, s.ingestion.commit_size) == (100, 1000)
     assert s.sources.interview.language == "eng" and len(s.sources.interview.repos) == 173
@@ -81,3 +93,13 @@ def test_the_gate_says_whether_the_language_it_answered_for_was_ever_measured():
     assert agent.topic_threshold_is_measured("eng") and agent.topic_threshold_is_measured("ru")
     assert not agent.topic_threshold_is_measured("tl")
     assert not agent.topic_threshold_is_measured(None)
+
+
+# the route may send a file to either tool, so a tool without its engine or settings is refused at load
+def test_every_converter_tool_has_its_engine_and_settings():
+    from pydantic import ValidationError
+
+    raw = config.settings.intake.model_dump()
+    raw["settings"].pop("mineru")
+    with pytest.raises(ValidationError, match="no entry for"):
+        config.IntakeCfg(**raw)

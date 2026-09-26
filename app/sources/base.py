@@ -24,8 +24,6 @@ def hygienic(policy) -> bool:
     return bool(policy) and policy.get("chunker") in HYGIENIC_CHUNKERS
 
 
-
-
 # the only carrier of its section stays: on this corpus that saved six gold sections
 def drop_wide_boilerplate(docs: list["Doc"], policy: dict | None = None) -> list["Doc"]:
     if not (policy or {}).get("drop_boilerplate"):
@@ -38,16 +36,33 @@ def drop_wide_boilerplate(docs: list["Doc"], policy: dict | None = None) -> list
     wide = ingest.wide_bodies(((d.body, d.source) for d in bodied), len(files))
     if not wide:
         return docs
-    carried = {
-        (d.source, d.section) for d in docs if d.body is None or d.body not in wide
-    }
-    return [
-        doc
-        for doc in docs
-        if doc.body is None
-        or doc.body not in wide
-        or (doc.source, doc.section) not in carried
-    ]
+    carried = {(d.source, d.section) for d in docs if d.body is None or d.body not in wide}
+    return [doc for doc in docs if doc.body is None or doc.body not in wide or (doc.source, doc.section) not in carried]
+
+
+# the first heading, not the first line: primer opens with a banner, redis with frontmatter
+def first_heading(content) -> str | None:
+    found = HEADING.search(content or "")
+    return found.group(1).strip() or None if found else None
+
+
+# one file's text as the variant's chunker cuts it, for the index and for a raw report alike
+def cuts_of(content: str, root: str | None, policy: dict, file: str):
+    ceiling = policy.get("max_chunk_size")
+    if not hygienic(policy):
+        # naming the H1 copy is what lets the same body metrics run on baseline
+        head = content.lstrip().split("\n", 1)[0]
+        h1 = f"{head}\n" if head.startswith("# ") else ""
+        section = None
+        for i, chunk in enumerate(ingest.chunk_markdown(content, ceiling=ceiling)):
+            section = ingest.heading_path(chunk) or section
+            body = chunk[len(h1) :] if h1 and i and chunk.startswith(h1) else chunk
+            yield chunk, body, section, None, None
+        return
+    cut_by = ingest.cut_structured if policy.get("chunker") == STRUCTURED else ingest.cut_with_root
+    on = policy.get("ceiling_on", ingest.BODY)
+    for cut in cut_by(content, root, ceiling=ceiling, ceiling_on=on, file=file):
+        yield cut.prefix + cut.body, cut.body, cut.section, root, cut.cut_by
 
 
 @dataclass
@@ -105,9 +120,7 @@ class Base(ABC):
 
     def discover(self, policy=None):
         skip = self.skips(policy)
-        return (
-            f for f in self.files() if f.stem not in skip and self._inside_root(f)
-        )
+        return (f for f in self.files() if f.stem not in skip and self._inside_root(f))
 
     # a .md symlink out of the corpus reads whatever the worker can, and it ends up quoted
     def _inside_root(self, file) -> bool:
@@ -124,24 +137,15 @@ class Base(ABC):
 
     # a byte order mark hides the frontmatter fence and the first heading: one redis page had one
     def text_of(self, file) -> str:
-        if file.stat().st_size > MAX_FILE_BYTES:
-            log.warning("source.file_too_large", file=str(file), bytes=file.stat().st_size)
-            return ""
-        return file.read_text(encoding="utf-8", errors="ignore").lstrip("\ufeff")
+        return self.legacy_text_of(file).lstrip("\ufeff")
 
     def read(self, file, rel, policy=None):
         content = self.text_of(file) if hygienic(policy) else self.legacy_text_of(file)
-        title = (
-            self.title_from(content)
-            if hygienic(policy)
-            else self.legacy_title_from(content)
-        )
+        title = self.title_from(content) if hygienic(policy) else self.legacy_title_from(content)
         return Parsed(content, self.category_for(rel), title, [], [])
 
     def title_from(self, content):
-        # the first heading, not the first line: primer opens with a banner, redis with frontmatter
-        found = HEADING.search(content or "")
-        return found.group(1).strip() or None if found else None
+        return first_heading(content)
 
     def legacy_text_of(self, file) -> str:
         if file.stat().st_size > MAX_FILE_BYTES:
@@ -163,11 +167,7 @@ class Base(ABC):
     # the one door onto a source's files, for the index, the quality report and the digest
     def documents(self, policy=None):
         policy = policy or {}
-        docs = [
-            doc
-            for file in self.discover(policy)
-            for doc in self.to_documents(file, policy)
-        ]
+        docs = [doc for file in self.discover(policy) for doc in self.to_documents(file, policy)]
         return drop_wide_boilerplate(docs, policy)
 
     def to_documents(self, file, policy=None):
@@ -198,27 +198,8 @@ class Base(ABC):
             )
 
     def _cuts(self, file, parsed, policy):
-        if not hygienic(policy):
-            # naming the H1 copy is what lets the same body metrics run on baseline
-            head = parsed.content.lstrip().split("\n", 1)[0]
-            h1 = f"{head}\n" if head.startswith("# ") else ""
-            section = None
-            ceiling = policy.get("max_chunk_size")
-            for i, chunk in enumerate(ingest.chunk_markdown(parsed.content, ceiling=ceiling)):
-                section = ingest.heading_path(chunk) or section
-                body = chunk[len(h1) :] if h1 and i and chunk.startswith(h1) else chunk
-                yield chunk, body, section, None, None
-            return
-        root = self.section_root_for(file, parsed)
-        ceiling = policy.get("max_chunk_size")
-        cut_by = (
-            ingest.cut_structured
-            if policy.get("chunker") == STRUCTURED
-            else ingest.cut_with_root
-        )
-        on = policy.get("ceiling_on", ingest.BODY)
-        for cut in cut_by(parsed.content, root, ceiling=ceiling, ceiling_on=on, file=str(file)):
-            yield cut.prefix + cut.body, cut.body, cut.section, root, cut.cut_by
+        root = self.section_root_for(file, parsed) if hygienic(policy) else None
+        return cuts_of(parsed.content, root, policy, str(file))
 
     # a share-of-symbols rule caught nothing: ascii art reads as prose to every ratio we tried
     def postprocess(self, docs: list[Doc], policy: dict | None = None) -> list[Doc]:

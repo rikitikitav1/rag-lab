@@ -1,0 +1,22 @@
+{
+  "tool": "docling",
+  "fields": {
+    "to_formats": "md",
+    "do_pdf_heading_hierarchy": "true",
+    "do_code_enrichment": "false",
+    "do_formula_enrichment": "true",
+    "code_formula_preset": "codeformulav2",
+    "do_picture_classification": "true",
+    "ocr_preset": "easyocr"
+  },
+  "ocr_lang": {
+    "ru": [
+      "ru",
+      "en"
+    ],
+    "en": [
+      "en"
+    ]
+  },
+  "pages_per_chunk": 50
+}

@@ -1,4 +1,4 @@
-# 2026-08-30 - The ceiling that changed nothing, and the rule that decided anyway
+# 2026-08-30 - Chunk ceiling 2048 against 1024: no difference, the tie-break keeps 1024
 
 Doubling the chunk ceiling from 1024 to 2048 was the change the corpus shape argued for: at 1024
 the size counter cuts 69% of the sections, so the structural cut barely gets to act. This entry

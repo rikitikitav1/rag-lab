@@ -22,6 +22,7 @@ ACCEPTS = {
     EngineKind.ollama: frozenset(SAMPLER_KEYS) - _NOT_PER_CALL,
     EngineKind.vllm: frozenset(SAMPLER_KEYS),
     EngineKind.openai_compatible: frozenset(SAMPLER_KEYS) - _NOT_PER_CALL,
+    EngineKind.converter: frozenset(),
 }
 
 # the seeded engine, whose address predates the table and still comes from the old variable
@@ -181,11 +182,13 @@ def added_by(spec: EngineSpec, model: str) -> dict:
     if spec.kind is EngineKind.ollama:
         from . import ollama
 
-        return _named({
-            "num_ctx": ollama.context_length(model, spec),
-            "repetition_penalty": ollama.repetition_penalty_served(model, spec),
-            "server_version": ollama.server_version(spec),
-        })
+        return _named(
+            {
+                "num_ctx": ollama.context_length(model, spec),
+                "repetition_penalty": ollama.repetition_penalty_served(model, spec),
+                "server_version": ollama.server_version(spec),
+            }
+        )
     # a paid engine's host is not asked vLLM's routes; a run across two keys spent on two accounts
     if is_cloud(spec.kind):
         return _named({"key_fingerprint": key_fingerprint(spec)})
@@ -194,17 +197,19 @@ def added_by(spec: EngineSpec, model: str) -> dict:
     from . import vllm
 
     started = vllm.started_at(spec)
-    return _named({
-        "max_model_len": vllm.max_model_len(spec, model),
-        "engine_version": _asked(spec, "/version", "version"),
-        # the flag every vLLM noise floor rests on, and nothing in the record said whether it was on
-        "batch_invariant": _vllm_env(spec).get("VLLM_BATCH_INVARIANT"),
-        "started_at": started,
-        "tool_calls_probed": vllm.known_probe(spec, model, started),
-        # what the server applies where a call names none, from the model's own generation_config
-        "repetition_penalty": vllm.model_default(model, "repetition_penalty"),
-        **_weights_as_served(spec),
-    })
+    return _named(
+        {
+            "max_model_len": vllm.max_model_len(spec, model),
+            "engine_version": _asked(spec, "/version", "version"),
+            # the flag every vLLM noise floor rests on, and nothing in the record said whether it was on
+            "batch_invariant": _vllm_env(spec).get("VLLM_BATCH_INVARIANT"),
+            "started_at": started,
+            "tool_calls_probed": vllm.known_probe(spec, model, started),
+            # what the server applies where a call names none, from the model's own generation_config
+            "repetition_penalty": vllm.model_default(model, "repetition_penalty"),
+            **_weights_as_served(spec),
+        }
+    )
 
 
 _SERVED_AS = re.compile(r"\b(dtype|quantization|kv_cache_dtype)=([^,)\s]+)")
@@ -238,7 +243,6 @@ def _named(seen: dict) -> dict:
 
 def _asked(spec: EngineSpec, path: str, key: str):
     try:
-
         return requests.get(f"{base_url(spec)}{path}", headers=_auth(spec), timeout=5).json().get(key)
     except Exception:
         return None

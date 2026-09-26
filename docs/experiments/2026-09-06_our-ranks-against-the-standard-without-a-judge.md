@@ -1,4 +1,4 @@
-# 2026-09-06 - Our ranks against the standard, on the half that has no judge
+# 2026-09-06 - RAGAS ID-based retrieval metrics against our hit@k and MRR
 
 The first sub-phase of the standard arc asks a narrow question: where RAGAS measures retrieval
 without an LLM, does it agree with the `hit@k` and MRR this stand has been reporting for two

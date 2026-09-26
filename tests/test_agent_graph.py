@@ -32,8 +32,7 @@ def script_from_turns(turns) -> list:
 def _graph_run(monkeypatch_factory, turns, corpus_sources, **kwargs):
     with monkeypatch_factory() as monkeypatch:
         return _scenario(
-            monkeypatch, turns, corpus_sources,
-            orchestrator=agent_policy.Orchestrator.langgraph_ported, **kwargs
+            monkeypatch, turns, corpus_sources, orchestrator=agent_policy.Orchestrator.langgraph_ported, **kwargs
         )
 
 
@@ -110,9 +109,7 @@ def test_a_plain_corpus_answer_is_identical(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    graph, graph_tools = _graph_run(
-        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
-    )
+    graph, graph_tools = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)])
     # one toolbox per hop, and the corpus tool is the only thing offered while it holds
     assert graph_tools == [["search_corpus"], ["search_corpus"]]
     assert graph.fallback_reason == agent.FallbackReason.none
@@ -123,9 +120,7 @@ def test_weak_retrieval_opens_the_toolbox_the_same_way(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    graph, graph_tools = _graph_run(
-        monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak"
-    )
+    graph, graph_tools = _graph_run(monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak")
     assert graph.fallback_reason == agent.FallbackReason.weak
 
 
@@ -166,9 +161,7 @@ def test_a_narrated_call_is_nudged_the_same_way(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
-    )
+    graph, _ = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3)
     assert agent_policy.TOOL_CALL_NUDGE in [m.get("content") for m in graph.messages]
 
 
@@ -186,20 +179,15 @@ def test_a_failing_tool_is_reported_the_same_way(monkeypatch_factory):
     with monkeypatch_factory() as monkeypatch:
         _agent_harness(monkeypatch, list(turns), [])
         monkeypatch.setattr(agent_tools, "dispatch", failing)
-        graph = agent.run(
-            "q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_ported
-        )
+        graph = agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_ported)
     assert graph.tool_errors == {"search_corpus": "timeout"}
 
 
 def test_the_graph_reports_the_same_hop_count_when_it_runs_out(monkeypatch_factory):
     turns = [
-        _turn(tool_calls=[_tool_call(str(i), "search_corpus", "{}")], message={"role": "assistant"})
-        for i in range(4)
+        _turn(tool_calls=[_tool_call(str(i), "search_corpus", "{}")], message={"role": "assistant"}) for i in range(4)
     ] + [_turn(text="late answer")]
-    graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
-    )
+    graph, _ = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)])
     assert graph.hops == 3
 
 
@@ -208,9 +196,7 @@ def test_the_graph_leaves_a_context_for_the_judge(monkeypatch_factory):
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
-    )
+    graph, _ = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)])
     # a run whose context comes back empty is silently skipped by the judge
     assert agent._context_from_messages(graph.messages)
 
@@ -222,8 +208,11 @@ def test_the_notice_is_not_repeated_once_the_toolbox_is_open(monkeypatch_factory
         _turn(text="final"),
     ]
     graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_weak_hit()],
-        fallback_policy="corpus_first_weak", max_hops=3,
+        monkeypatch_factory,
+        turns,
+        [_weak_hit()],
+        fallback_policy="corpus_first_weak",
+        max_hops=3,
     )
     notices = [m for m in graph.messages if "tpl:agent.fallback" in str(m.get("content"))]
     assert len(notices) == 1
@@ -236,15 +225,11 @@ def test_a_nudge_on_the_last_hop_does_not_buy_another_hop(monkeypatch_factory):
         _turn(text=narration, message={"role": "assistant", "content": narration}),
         _turn(text="final after the nudge"),
     ]
-    graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=2
-    )
+    graph, _ = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=2)
 
 
 def _remote_hit():
-    return SimpleNamespace(
-        source="mcp:deepwiki__ask_question", rerank_score=None, vector_distance=None
-    )
+    return SimpleNamespace(source="mcp:deepwiki__ask_question", rerank_score=None, vector_distance=None)
 
 
 def test_an_external_answer_keeps_its_source(monkeypatch_factory):
@@ -257,8 +242,11 @@ def test_an_external_answer_keeps_its_source(monkeypatch_factory):
         _turn(text="answered from the tool"),
     ]
     graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_weak_hit()],
-        fallback_policy="corpus_first_weak", max_hops=3,
+        monkeypatch_factory,
+        turns,
+        [_weak_hit()],
+        fallback_policy="corpus_first_weak",
+        max_hops=3,
     )
     assert [s.source for s in graph.sources] == ["remote"]
     assert str(graph.outcome) == "answered"
@@ -266,12 +254,9 @@ def test_an_external_answer_keeps_its_source(monkeypatch_factory):
 
 def test_the_loop_and_the_graph_stop_at_the_same_hop_cap(monkeypatch_factory):
     turns = [
-        _turn(tool_calls=[_tool_call(str(i), "search_corpus", "{}")], message={"role": "assistant"})
-        for i in range(8)
+        _turn(tool_calls=[_tool_call(str(i), "search_corpus", "{}")], message={"role": "assistant"}) for i in range(8)
     ]
-    graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3
-    )
+    graph, _ = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)], max_hops=3)
     assert graph.hops == 4
 
 
@@ -323,9 +308,7 @@ def _run_into_the_recursion_limit(monkeypatch_factory, orchestrator):
 
 
 def test_the_bare_arm_runs_out_of_hops_at_the_limit_rather_than_breaking(monkeypatch_factory):
-    result = _run_into_the_recursion_limit(
-        monkeypatch_factory, agent_policy.Orchestrator.langgraph_idiomatic
-    )
+    result = _run_into_the_recursion_limit(monkeypatch_factory, agent_policy.Orchestrator.langgraph_idiomatic)
 
     # the bare arm has no budget of its own, so the limit is what ends a run that keeps calling
     assert result.failed is False
@@ -344,9 +327,7 @@ def test_a_client_failure_is_logged_as_an_error_not_a_missing_row(monkeypatch_fa
         _agent_harness(monkeypatch, [], [])
         monkeypatch.setattr(react, "chat_model", lambda role=None, model=None: object())
         monkeypatch.setattr(agents_module, "create_agent", lambda **kw: Broken())
-        result = agent.run(
-            "q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_idiomatic
-        )
+        result = agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_idiomatic)
 
     # the loop writes a row for a hop that blew up, and the arms have to write one too
     assert result.failed is True
@@ -372,8 +353,10 @@ def test_a_stand_fault_ends_every_agent_arm_instead_of_failing_the_row(monkeypat
             foreign()
 
     search = [_turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"})]
-    for patch, fault in ((lambda mp: mp.setattr(agent.llm, "chat", lost), CardNotHanded),
-                         (lambda mp: mp.setattr(agent_tools, "dispatch", foreign), db.ForeignVectors)):
+    for patch, fault in (
+        (lambda mp: mp.setattr(agent.llm, "chat", lost), CardNotHanded),
+        (lambda mp: mp.setattr(agent_tools, "dispatch", foreign), db.ForeignVectors),
+    ):
         with monkeypatch_factory() as monkeypatch:
             _agent_harness(monkeypatch, list(search), [])
             patch(monkeypatch)
@@ -406,9 +389,7 @@ def test_the_plain_corpus_path_matches_a_written_down_shape(monkeypatch_factory)
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="final"),
     ]
-    graph, offered = _graph_run(
-        monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)]
-    )
+    graph, offered = _graph_run(monkeypatch_factory, turns, [_hit(rerank_score=0.9, vector_distance=0.2)])
 
     assert _core(graph) == {
         "outcome": "answered",
@@ -437,9 +418,7 @@ def test_two_corpus_calls_in_one_turn_get_one_verdict_and_one_notice(monkeypatch
         ),
         _turn(text="final"),
     ]
-    graph, _ = _graph_run(
-        monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak"
-    )
+    graph, _ = _graph_run(monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak")
 
     assert str(graph.fallback_reason) == "weak"
     assert graph.fallback_opened is True
@@ -470,15 +449,14 @@ def test_an_empty_first_call_on_the_last_hop_still_opens_the_toolbox(monkeypatch
         _turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"}),
         _turn(text="nothing here covers it"),
     ]
-    graph, _ = _graph_run(
-        monkeypatch_factory, turns, [], max_hops=2, fallback_policy="corpus_first_weak"
-    )
+    graph, _ = _graph_run(monkeypatch_factory, turns, [], max_hops=2, fallback_policy="corpus_first_weak")
 
     assert str(graph.fallback_reason) == "empty"
     assert graph.fallback_opened is True
 
 
 # an empty turn before the cap still ends in the no-evidence turn when nothing was found
+
 
 def _dispatch_with_depth(monkeypatch, depth):
     import agent_tools
@@ -527,9 +505,7 @@ def test_the_idiomatic_arm_records_the_depth_too(monkeypatch_factory):
             [{"tool_calls": [{"name": "search_corpus", "args": {}, "id": "a"}]}, {"text": "final"}]
         )
         monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
-        result = agent.run(
-            "q", orchestrator=agent_policy.Orchestrator.langgraph_idiomatic, max_hops=2
-        )
+        result = agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_idiomatic, max_hops=2)
     assert result.ef_search == 400
 
 
@@ -565,7 +541,10 @@ def test_the_context_and_the_chunks_hold_the_same_material(monkeypatch_factory):
         _turn(text="final"),
     ]
     dropped, _ = _graph_run(
-        monkeypatch_factory, turns, [_weak_hit()], fallback_policy="corpus_first_weak",
+        monkeypatch_factory,
+        turns,
+        [_weak_hit()],
+        fallback_policy="corpus_first_weak",
     )
 
     from use_cases import agent
@@ -584,9 +563,7 @@ def test_search_and_the_verdict_on_it_are_two_nodes_with_the_verdict_on_the_edge
     from orchestrators import graph
 
     compiled = graph.build().get_graph()
-    assert {"retrieve", "fallback", "emit"} <= {
-        n for n in compiled.nodes if not n.startswith("__")
-    }
+    assert {"retrieve", "fallback", "emit"} <= {n for n in compiled.nodes if not n.startswith("__")}
     # grading stands between the search and the verdict: it filters what the verdict then reads
     assert {e.target for e in compiled.edges if e.source == "retrieve"} == {"grade"}
     out_of_grade = {e.target for e in compiled.edges if e.source == "grade"}
@@ -609,10 +586,10 @@ def test_the_hand_drawn_diagram_names_no_node_the_graph_does_not_have():
     import re
     from pathlib import Path
 
+    from diagrams import cells
     from orchestrators import graph
 
     drawing = Path(__file__).resolve().parent.parent / "docs" / "diagrams"
-    text = (drawing / "agent_nodes_and_the_row.d2").read_text()
-    block = text[text.index("today:"): text.index("planned:")]
-    drawn = set(re.findall(r"^  (\w+):", block, re.M))
+    today = cells(drawing / "agent_nodes_and_the_row.drawio.svg", parent="today")
+    drawn = {re.match(r"\w+", label).group(0) for label in today}
     assert drawn == {n for n in graph.build().get_graph().nodes if not n.startswith("__")}

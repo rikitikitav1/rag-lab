@@ -1,4 +1,4 @@
-# 2026-08-24 - Corpus-first, and the fallback that never fired
+# 2026-08-24 - Corpus-first agent: the empty-result fallback fired 0 of 20 times
 
 The agent can now be forced to ask the corpus before it sees any external tool. Does the trigger
 for going outside, "the corpus came back empty", actually catch the cases where the corpus has

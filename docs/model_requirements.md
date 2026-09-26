@@ -1,9 +1,10 @@
 # What each role requires of a model
 
 Seven roles point at models, five of our own and two for the RAGAS guest, and each one imposes a
-requirement that is invisible in the model's name and its benchmark scores. A model that fails its role's requirement does not degrade, it
-fails, and usually it fails quietly enough to be mistaken for a bad result rather than a broken
-run. This page says what each role needs and which incident put the line here.
+requirement that is invisible in the model's name and its benchmark scores. A model that lacks a
+required capability may make the run fail or produce misleading results. Often nothing looks broken,
+so the run reads as a bad result rather than a failed one. This page lists each role's requirements
+and the incidents that exposed them.
 
 The list of models we actually run, with sizes and licences, is not here on purpose: models come
 and go, requirements do not.
@@ -72,15 +73,15 @@ not matter. What it does need is real fluency in the language it writes: a set b
 that writes stilted Russian measures the model's Russian, not the corpus.
 
 It has one operational hazard that has nothing to do with quality. A model loaded for a one-off
-data-preparation job and left resident takes the card away from whatever runs next. On 2026-08-30 the
-paraphrasing model held the card, the reranker fell back to the CPU with a warning rather than an
+data-preparation job and left resident takes the GPU away from whatever runs next. On 2026-08-30 the
+paraphrasing model held the GPU, the reranker fell back to the CPU with a warning rather than an
 error, and the run would have been an order of magnitude slower while reporting nothing unusual. A
-role raised for a task releases the card after it, including on the failure path.
+role raised for a task releases the GPU after it, including on the failure path.
 
 ## The reranker is a role
 
 The cross-encoder is the `reranking` role on `vllm-rerank`, a vLLM pooling server under the compose
-profile `rerank`. It takes the card like any other role, through the same handover, and it cannot
+profile `rerank`. It takes the GPU like any other role, through the same handover, and it cannot
 quietly fall back to the processor: a pooling server answers pairs or does not, and a run without the
 profile up is refused with the role named. What used to bite, a reranker loaded in-process that
 residency checks could not see and that ran about thirty times slower on the CPU without a word, went
@@ -94,19 +95,19 @@ server may not take generation.
 The guest judges with the standard's own prompts, which are long and ask for long answers: lists of
 claims, each one checked. Its model needs a window for them and an output budget to finish them. At
 `max_tokens` 1024 the guest cut 36 of 338 calls, at 4096 none; a window of 16384 holds the inputs
-that 8192 cut, and still fits the card. A model that drifts into another language inside its JSON
+that 8192 cut, and still fits the GPU. A model that drifts into another language inside its JSON
 breaks the parse, and the guest gives up on that row rather than scoring it.
 
 Its embedder scores answer relevancy on a handful of texts a row. It sits on the processor, so the
-card holds the guest's model alone.
+GPU holds the guest's model alone.
 
-## The card decides more than quality does
+## GPU memory decides more than quality does
 
-Every role on an engine of the card competes for it. Ollama's models share it, capped by
+Every role on a GPU engine competes for GPU memory. Ollama's models share it, capped by
 `OLLAMA_MAX_LOADED_MODELS` and kept alive, so the third arrival evicts the first; an awake vLLM (the
-judge, the reranker) holds the share it was started with until the card is handed away and the
+judge, the reranker) holds the share it was started with until the GPU is handed away and the
 server is put to sleep. This is why a role change is an arithmetic problem before it is a quality problem: the
-model, the embedder, and the reranker if it is on, against the card.
+model, the embedder, and the reranker if it is on, against GPU memory.
 
 The choice that follows from that arithmetic is a decision, not a fact, and it belongs in the
 record with its price attached. Reranking is off by default here because the generator the agent
@@ -120,15 +121,16 @@ bootstrap assigns on an empty database. Once a role is assigned, the name is ser
 database and bootstrap leaves it alone, because the door for changing it is `PUT /v1/role` and a
 restart must not undo a deliberate change.
 
-The consequence is that editing the file changes nothing about which model answers. Run snapshots
-record what the database served, so runs stay honest and only the file lies. Change the role
+So editing `config.yaml` does not change an already assigned role. After bootstrap, the database
+value is authoritative, and the file holds the default for a role not yet seated. Run snapshots
+record what the database served, so they show the model that actually answered. Change the role
 through the route, and read the file as a declaration rather than as the current state.
 
 ## Before giving a role to a model
 
 1. `ollama show <tag>`: capabilities, context, and the sampling parameters baked into the template.
    Check the digest when a family ships several builds under one name.
-2. Add up the card: the model, the embedder, the reranker if it is on, against what the card has.
+2. Add up GPU memory: the model, the embedder, the reranker if it is on, against what the GPU has.
 3. Smoke ten questions and read the distribution of outcomes, not just that the job finished. A
    dead pipeline shows up as every question landing in one bucket.
 4. Change the role through `PUT /v1/role`, then run the preflight.

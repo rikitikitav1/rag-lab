@@ -1,4 +1,4 @@
-# 2026-08-28 - A gate that degenerated the other way
+# 2026-08-28 - Conditional reranking gate: rejected
 
 Reranking every question costs 168 ms and, on the English set, does not pay for itself. The obvious
 next move is a gate: rerank only where the fusion looks unsure. This entry measures that gate and
