@@ -1,0 +1,9 @@
+{
+  "tool": "mineru",
+  "fields": {
+    "tier": "standard",
+    "ocr_mode": "txt",
+    "output_formats": ["markdown"]
+  },
+  "pages_per_chunk": 50
+}

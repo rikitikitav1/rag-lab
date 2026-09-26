@@ -1,0 +1,9 @@
+/root/.mineru/models/MinerU-4_models_torch/Layout/PP-DocLayoutV2/model.safetensors
+/root/.mineru/models/MinerU-4_models_torch/MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M.pth
+/root/.mineru/models/MinerU-4_models_torch/OCR/paddleocr/ch_PP-OCRv6_small_rec_infer.safetensors
+/root/.mineru/models/MinerU-4_models_torch/OCR/paddleocr/ch_PP-OCRv6_tiny_det_infer.safetensors
+/root/.mineru/models/MinerU-4_models_torch/OCR/paddleocr/seal_PP-OCRv4_det_infer.pth
+/root/.mineru/models/MinerU-4_models_torch/Table/PP-LCNet_x1_0_table_cls.onnx
+/root/.mineru/models/MinerU-4_models_torch/Table/slanet-plus.onnx
+/root/.mineru/models/MinerU-4_models_torch/Table/unet.onnx
+/root/.mineru/models/MinerU2.5-Pro-2605-1.2B/model.safetensors

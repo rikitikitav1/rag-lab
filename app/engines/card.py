@@ -6,7 +6,7 @@ import requests
 from errors import StandFault
 from models.registry import EngineKind
 
-from . import vllm
+from . import converter, vllm
 from .core import SILENT, CardState, EngineSpec
 from .drivers import driver
 from .lookup import CARD, card_engines
@@ -124,8 +124,12 @@ def _release(held: Holding) -> None:
 
 def _take(target: EngineSpec, model: str | None, allow_spill: bool = False) -> None:
     taking = driver(target.kind)
-    _until(lambda: taking.take_once(target, model),
-           f"{target.name} did not {taking.takes_the_card} in {WAIT_CEILING}s")
+    try:
+        _until(
+            lambda: taking.take_once(target, model), f"{target.name} did not {taking.takes_the_card} in {WAIT_CEILING}s"
+        )
+    except converter.WillNotStart as e:
+        raise CardNotHanded(str(e)) from e
     # a model half on the processor answers, with other kernels, in silence
     if model and spilled(target, model):
         if not allow_spill:

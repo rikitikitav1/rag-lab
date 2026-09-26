@@ -17,8 +17,12 @@ def take(spec, model: str | None = None, allow_spill: bool = False) -> None:
     with _taking:
         try:
             # a model already partly on the card is no reason to skip the check the handover makes
-            if (spec.placement in engines.CARD and card.holds_for(spec) and not _to_load(spec, model)
-                    and (allow_spill or not (model and card.spilled(spec, model)))):
+            if (
+                spec.placement in engines.CARD
+                and card.holds_for(spec)
+                and not _to_load(spec, model)
+                and (allow_spill or not (model and card.spilled(spec, model)))
+            ):
                 return
             card.hand_to(spec, model, allow_spill=allow_spill)
         except card.CardNotHanded:
@@ -27,6 +31,17 @@ def take(spec, model: str | None = None, allow_spill: bool = False) -> None:
             raise card.CardNotHanded(f"the card did not reach {spec.name}: {e}") from e
         # after the handover, so a failed probe does not read as a lost card
         _probe_the_woken_generator(spec)
+
+
+# a hung task holds a converter's only worker and cannot be cancelled: its process goes and comes back
+def restart_holder(spec) -> None:
+    reading = engines.driver(spec.kind)
+    with _taking:
+        reading.let_go(spec, ())
+        # a child the supervisor could not kill still holds the card, and a take would answer ready on it
+        if reading.holding(spec) is not None:
+            raise card.CardNotHanded(f"{spec.name} did not let go of its tool; the restart stops here")
+    take(spec)
 
 
 # ollama holding the card may still lack the model a load asked for; a vLLM serves its one model

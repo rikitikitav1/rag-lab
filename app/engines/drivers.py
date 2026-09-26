@@ -3,7 +3,7 @@ import logging_setup
 import requests
 from models.registry import EngineKind
 
-from . import ollama, vllm
+from . import converter, ollama, vllm
 from .core import CardState, EngineSpec, NotSupported, Unconfigured
 from .lookup import registered
 
@@ -22,6 +22,8 @@ class Driver:
     owns_a_free_card = False
     # a prompt past the window is refused rather than cut
     refuses_past_the_window = False
+    # it lists models at /v1/models; a converter answers through its own door instead
+    serves_models = True
 
     def state(self, spec: EngineSpec) -> CardState | None:
         return None
@@ -233,7 +235,32 @@ def _unknown(spec: EngineSpec, name: str, e: Exception) -> str:
     return f"{spec.name} did not answer, so whether it serves {name} is unknown: {e}"
 
 
-_DRIVERS = {EngineKind.ollama: Ollama(), EngineKind.vllm: Vllm()}
+class Converter(Driver):
+    instrument = "converter /supervisor"
+    takes_the_card = "start the tool"
+    serves_models = False
+
+    def state(self, spec: EngineSpec) -> CardState:
+        return converter.card_state(spec)
+
+    # the tool runs as one process, so it holds the card under its own name or not at all
+    def holding(self, spec: EngineSpec) -> tuple[str, ...] | None:
+        state, body = converter.reading(spec)
+        if state not in (CardState.HOLDS, CardState.UNKNOWN):
+            return None
+        return (body.get("tool") or spec.name,)
+
+    def on_card(self, spec: EngineSpec, model: str) -> bool | None:
+        return {CardState.HOLDS: True, CardState.FREE: False}.get(converter.card_state(spec))
+
+    def let_go(self, spec: EngineSpec, models: tuple[str, ...]) -> None:
+        converter.let_go(spec)
+
+    def take_once(self, spec: EngineSpec, model: str | None) -> bool:
+        return converter.take_once(spec)
+
+
+_DRIVERS = {EngineKind.ollama: Ollama(), EngineKind.vllm: Vllm(), EngineKind.converter: Converter()}
 # a paid engine: no card, no weights here, and every question about them answers nothing
 _REMOTE = Driver()
 

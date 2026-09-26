@@ -33,16 +33,8 @@ def card() -> dict:
 
 def queue() -> dict:
     with Session() as session:
-        counts = dict(
-            session.execute(
-                select(Job.status, func.count()).group_by(Job.status)
-            ).all()
-        )
-        live = session.scalars(
-            select(Job)
-            .where(Job.status.in_(job_queue.ACTIVE))
-            .order_by(Job.id)
-        ).all()
+        counts = dict(session.execute(select(Job.status, func.count()).group_by(Job.status)).all())
+        live = session.scalars(select(Job).where(Job.status.in_(job_queue.ACTIVE)).order_by(Job.id)).all()
         return {
             "by_status": {str(k): v for k, v in counts.items()},
             "live": [
@@ -60,11 +52,7 @@ def queue() -> dict:
 
 # over the union: a role served and never declared drifts as silently as a name that differs
 def drifting_roles(declared: dict, served: dict) -> list[str]:
-    return sorted(
-        role
-        for role in set(declared) | set(served)
-        if declared.get(role) != served.get(role)
-    )
+    return sorted(role for role in set(declared) | set(served) if declared.get(role) != served.get(role))
 
 
 # a role that names no engine sits on the seeded ollama; None when that cannot be read
@@ -128,12 +116,11 @@ def engines_section() -> dict:
     return {
         "holder": [h.engine.name for h in held],
         # in words: an empty holder list read as a fault on a host that has no card at all
-        "summary": (f"the card is held by {', '.join(h.engine.name for h in held)}" if held
-                    else "no engine holds the card"),
+        "summary": (
+            f"the card is held by {', '.join(h.engine.name for h in held)}" if held else "no engine holds the card"
+        ),
         "on_card": {h.engine.name: list(h.models) for h in held},
-        "vllm_sleeping": {
-            spec.name: vllm.is_sleeping(spec) for spec in engines.card_engines(EngineKind.vllm)
-        },
+        "vllm_sleeping": {spec.name: vllm.is_sleeping(spec) for spec in engines.card_engines(EngineKind.vllm)},
         "answers": {spec.name: engine_answers(spec) for spec in engines.registered()},
     }
 
@@ -166,8 +153,10 @@ def roles_down() -> list[str]:
             down.append(f"{role}: {picked.engine.name} does not answer{_no_card_hint(picked.engine)}")
         # an ollama that lost the card still answers, and loads its models on the processor
         elif card_holder.spilled(picked.engine, picked.name):
-            down.append(f"{role}: {engines.label(picked.name, picked.engine.name)} is not whole on the card;"
-                        " a container that lost the card answers so (docs/stand_modes.md)")
+            down.append(
+                f"{role}: {engines.label(picked.name, picked.engine.name)} is not whole on the card;"
+                " a container that lost the card answers so (docs/stand_modes.md)"
+            )
         elif role == Role.generation and _parserless(picked):
             down.append(f"{role}: {engines.label(picked.name, picked.engine.name)} returns no tool calls")
     return down
@@ -194,6 +183,9 @@ def _parserless(picked) -> bool:
 # one answer for every door, in seconds: an engine with no address or key is unconfigured (None), not down
 def engine_answers(spec) -> bool | None:
     try:
+        reading = engines.driver(getattr(spec, "kind", None))
+        if not reading.serves_models:
+            return reading.state(spec) not in engines.SILENT
         return engines.served_models(spec) is not None
     except engines.Unconfigured:
         return None
@@ -206,9 +198,13 @@ def window() -> dict:
     picked = llm.resolve("generation")
     reading = engines.driver(picked.engine.kind)
     asked = reading.window_model(picked.engine, picked.name)
-    return {"engine": picked.engine.name, "declared": config.settings.llm.context_length,
-            "asked": asked, "served": reading.window(picked.engine, asked) if asked else None,
-            "refuses_past_it": reading.refuses_past_the_window}
+    return {
+        "engine": picked.engine.name,
+        "declared": config.settings.llm.context_length,
+        "asked": asked,
+        "served": reading.window(picked.engine, asked) if asked else None,
+        "refuses_past_it": reading.refuses_past_the_window,
+    }
 
 
 # every role by its own engine's instrument; only ollama spills, an asleep vLLM is just asleep
@@ -217,13 +213,14 @@ def roles_on_card() -> dict:
     for role, picked in _roles():
         if picked is None:
             # the reranker without its weights on a clean machine: named, and the others still read
-            seen[role] = {"model": None, "engine": None, "placement": None, "on_card": None,
-                          "spilled": False}
+            seen[role] = {"model": None, "engine": None, "placement": None, "on_card": None, "spilled": False}
             continue
         spec = picked.engine
         on = card_holder.model_on_card(spec, picked.name)
         seen[role] = {
-            "model": picked.name, "engine": spec.name, "placement": str(spec.placement),
+            "model": picked.name,
+            "engine": spec.name,
+            "placement": str(spec.placement),
             "on_card": on,
             "spilled": card_holder.spilled_reading(spec, on),
         }
@@ -260,8 +257,7 @@ def samplers() -> dict:
 def code() -> dict:
     said = version.what_the_worker_loaded()
     on_disk = version.tree_stamp()
-    out = {"on_disk": on_disk, "api_loaded": version.LOADED_TREE,
-           "code_version": version.CODE_VERSION}
+    out = {"on_disk": on_disk, "api_loaded": version.LOADED_TREE, "code_version": version.CODE_VERSION}
     if said is None:
         return out | {"worker": "has not said which code it loaded"}
     out |= {
@@ -272,8 +268,10 @@ def code() -> dict:
     }
     # the reading that decides, the same one `compare.code_by_run` uses: a file the worker imported moved
     if "loaded_differs" not in said:
-        return out | {"worker_loaded_moved": None,
-                      "too_old_to_tell": "the worker's stamp predates the loaded-files reading"}
+        return out | {
+            "worker_loaded_moved": None,
+            "too_old_to_tell": "the worker's stamp predates the loaded-files reading",
+        }
     return out | {"worker_loaded_moved": said["loaded_differs"]}
 
 

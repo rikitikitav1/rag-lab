@@ -14,5 +14,18 @@ def queued_job(type: str = "eval_run", options: dict | None = None, id: int = 1)
     from types import SimpleNamespace
 
     now = datetime.now(UTC)
-    return SimpleNamespace(id=id, type=type, options=options or {}, queue="default", status="new",
-                           error=None, elapsed=None, apply_since=now, created_at=now, updated_at=now)
+    return SimpleNamespace(
+        id=id,
+        type=type,
+        options=options or {},
+        queue="default",
+        status="new",
+        error=None,
+        elapsed=None,
+        apply_since=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+CONVERTER = engines.EngineSpec(9, "converter", EngineKind.converter, "CONVERTER", Placement.gpu)

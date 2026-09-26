@@ -1,0 +1,4 @@
+/opt/app-root/src/.cache/docling/models/EasyOcr/cyrillic_g2.pth
+/opt/app-root/src/.cache/docling/models/docling-project--CodeFormulaV2/model.safetensors
+/opt/app-root/src/.cache/docling/models/docling-project--DocumentFigureClassifier-v2.5/model.safetensors
+/usr/share/tesseract/tessdata/rus.traineddata
