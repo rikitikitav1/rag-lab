@@ -4,6 +4,7 @@ from typing import Literal
 import samplers
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from tool_names import Tool
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
 # a file that replaces `llm.roles`, as the layout of a host without a card does
@@ -178,13 +179,51 @@ class MetricWeightsCfg(_Strict):
     code_only: float = 0
 
 
+class MeasureRulesCfg(_Strict):
+    tiny_share_of_ceiling: float
+    boilerplate_file_share: float
+    boilerplate_min_files: int
+    min_breaching_chunks: int
+
+
 class IngestQualityCfg(_Strict):
     # thresholds live here, not in code: they are turned by hand and land in every report
+    measure: MeasureRulesCfg
     hard_gates: MetricGatesCfg
     soft_gates: MetricGatesCfg
     history_per_variant: int
     score_formula: str
     weights: MetricWeightsCfg
+
+
+class RouteCfg(_Strict):
+    min_layer_chars: int
+    min_raster_run: int
+    suspect_min_words: int
+
+
+class RawQualityCfg(_Strict):
+    output_share_min: float
+    output_share_max: float
+    layer_f1_min: float
+    mixed_script_max: float
+    layer_band_engines: list[Tool]
+    bad_share: float
+
+
+class IntakeCfg(_Strict):
+    route: RouteCfg
+    quality: RawQualityCfg
+    engines: dict[Tool, str]
+    settings: dict[Tool, str]
+
+    # the route may send a file to any tool, so every tool has its engine and its settings
+    @field_validator("engines", "settings")
+    @classmethod
+    def _every_tool(cls, value):
+        if missing := set(Tool) - set(value):
+            raise ValueError(f"no entry for {sorted(missing)}")
+        return value
 
 
 class IngestionCfg(_Strict):
@@ -204,7 +243,7 @@ class SourcesCfg(_Strict):
 
 class EngineCfg(_Strict):
     name: str
-    kind: Literal["ollama", "vllm", "openai_compatible"]
+    kind: Literal["ollama", "vllm", "openai_compatible", "converter"]
     env_prefix: str
     placement: Literal["gpu", "cpu", "gpu+cpu", "remote"]
 
@@ -244,6 +283,7 @@ class AppConfig(_Strict):
     agent: AgentCfg
     ingestion: IngestionCfg
     ingest_quality: IngestQualityCfg
+    intake: IntakeCfg
     fts: FtsCfg
     corpus: CorpusCfg
     repos_dir: str

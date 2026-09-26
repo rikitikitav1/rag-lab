@@ -25,6 +25,8 @@
       "langchain-core>=1.0",
       "langchain-ollama>=1.0",
       "langchain-text-splitters>=1.0",
+      "pypdf>=6.19.0",
+      "pypdfium2>=4.30",
 ]
 
 [dependency-groups]

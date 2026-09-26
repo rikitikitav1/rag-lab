@@ -124,7 +124,12 @@ CREATE TABLE public.data_sources (
     ingest_quality text,
     ingest_variant text,
     ingest_checked_at timestamp with time zone,
-    ingest_reports jsonb DEFAULT '{}'::jsonb NOT NULL
+    ingest_reports jsonb DEFAULT '{}'::jsonb NOT NULL,
+    stage text DEFAULT 'accepted'::text NOT NULL,
+    language text,
+    licence text,
+    origin jsonb,
+    raw jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -1030,4 +1035,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260919000001'),
     ('20260919000002'),
     ('20260923000001'),
-    ('20260923000002');
+    ('20260923000002'),
+    ('20260925000001'),
+    ('20260925000002');

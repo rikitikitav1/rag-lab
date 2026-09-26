@@ -13,7 +13,7 @@ from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
 from models.registry import Engine, EngineKind, Placement, Prompt, Purpose
 from orm.sync_db import Session
-from sqlalchemy import exists, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 log = logging_setup.get_logger(__name__)
@@ -37,9 +37,7 @@ def load_prompt_files(prompts_dir=config.settings.prompts_dir) -> list[PromptFil
         try:
             purpose = Purpose[match.group("purpose")]
         except KeyError:
-            raise ValueError(
-                f"unknown prompt purpose in filename: {path.name}"
-            ) from None
+            raise ValueError(f"unknown prompt purpose in filename: {path.name}") from None
         result.append(
             PromptFile(
                 purpose=purpose,
@@ -66,9 +64,7 @@ def seed_prompts() -> None:
 
         for purpose, new_files in by_purpose.items():
             # freshest version becomes active only when no active prompt exists yet
-            has_active = session.scalar(
-                select(exists().where(Prompt.purpose == purpose, Prompt.active))
-            )
+            has_active = session.scalar(select(exists().where(Prompt.purpose == purpose, Prompt.active)))
             freshest = max(new_files, key=lambda f: f.version)
             if has_active:
                 log.warning(
@@ -176,9 +172,7 @@ def _link_originals(session, rows: list[dict]) -> None:
         return
     ids = dict(
         session.execute(
-            select(Question.text_hash, Question.id).where(
-                Question.text_hash.in_([text_hash(t) for t in wanted])
-            )
+            select(Question.text_hash, Question.id).where(Question.text_hash.in_([text_hash(t) for t in wanted]))
         ).all()
     )
     linked = 0
@@ -202,9 +196,7 @@ def _link_originals(session, rows: list[dict]) -> None:
 def _insert_questions(session, rows: list[dict]) -> None:
     size = config.settings.ingestion.commit_size
     for i in range(0, len(rows), size):
-        stmt = pg_insert(Question).values(
-            rows[i : i + size]
-        ).on_conflict_do_nothing(index_elements=["text_hash"])
+        stmt = pg_insert(Question).values(rows[i : i + size]).on_conflict_do_nothing(index_elements=["text_hash"])
         session.execute(stmt)
         session.commit()
 
@@ -242,6 +234,54 @@ def seed_engines() -> None:
         log.info("seed.engine", name=declared.name)
 
 
+# the sources the code defines, as rows a clean database starts with; a row already there is left as it is
+_LANGUAGES = {"eng": "en", "rus": "ru"}
+
+
+def seed_sources() -> None:
+    # importing the factory registers every source class with the base
+    from models.corpus import DataSource
+    from sources import factory  # noqa: F401
+    from sources.base import Base
+
+    rows = [
+        {
+            "name": c.name,
+            "kind": "git" if getattr(c, "url", None) else "local",
+            "git_url": getattr(c, "url", None),
+            "path": getattr(c, "path", None),
+            "language": _LANGUAGES.get(c.language),
+        }
+        for c in Base._registry.values()
+        if getattr(c, "name", None)
+    ]
+    interview = config.settings.sources.interview
+    rows += [
+        {
+            "name": repo,
+            "kind": "git",
+            "git_url": f"{interview.base_url}/{repo}",
+            "path": None,
+            "language": _LANGUAGES.get(interview.language),
+        }
+        for repo in interview.repos
+    ]
+    with Session() as session:
+        known = set(session.scalars(select(DataSource.name)))
+        insert = pg_insert(DataSource).values([{**r, "stage": "accepted"} for r in rows])
+        # a row indexing made has no language; the seed fills an empty one and touches nothing else
+        session.execute(
+            insert.on_conflict_do_update(
+                index_elements=["name"],
+                set_={"language": func.coalesce(DataSource.language, insert.excluded.language)},
+            )
+        )
+        session.commit()
+    log.info(
+        "seed.sources", seeded=len({r["name"] for r in rows} - known), known=len(known & {r["name"] for r in rows})
+    )
+
+
 MCP_INTEGRATIONS = [
     {
         "name": "deepwiki",
@@ -267,16 +307,10 @@ MCP_INTEGRATIONS = [
 
 def seed_mcp_integrations() -> None:
     with Session() as session:
-        rows = session.execute(
-            select(McpIntegration.name, McpIntegration.url)
-        ).all()
+        rows = session.execute(select(McpIntegration.name, McpIntegration.url)).all()
         names = {row.name for row in rows}
         urls = {row.url for row in rows}
-        fresh = [
-            item
-            for item in MCP_INTEGRATIONS
-            if item["name"] not in names and item["url"] not in urls
-        ]
+        fresh = [item for item in MCP_INTEGRATIONS if item["name"] not in names and item["url"] not in urls]
         if fresh:
             session.execute(pg_insert(McpIntegration).values(fresh))
             session.commit()
@@ -293,6 +327,7 @@ def main() -> None:
     seed_prompts()
     seed_questions()
     seed_mcp_integrations()
+    seed_sources()
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ class Report:
     breaches: list[str] = field(default_factory=list)
 
 
-TINY_SHARE_OF_CEILING = 0.1
+TINY_SHARE_OF_CEILING = ingest.SLIVER_SHARE
 SOUP_ALNUM_RATIO = 0.55
 PROSE_WORD_LETTERS = 4
 
@@ -120,9 +120,7 @@ def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:
     return sum(1 for s in samples if s.body in wide)
 
 
-def measure(
-    samples: list[Sample], ceiling: int, records_sections: bool = True
-) -> Metrics:
+def measure(samples: list[Sample], ceiling: int, records_sections: bool = True) -> Metrics:
     total = len(samples)
     files = len({s.file for s in samples})
     tiny_below = ceiling * TINY_SHARE_OF_CEILING
@@ -142,14 +140,8 @@ def measure(
     return Metrics(
         chunks=total,
         files=files,
-        section_coverage=(
-            _share(sum(1 for s in samples if _under_a_heading(s)), total)
-            if records_sections
-            else None
-        ),
-        prefix_dominates=_share(
-            sum(1 for s, p in bodied if len(p) > len(s.body)), len(bodied)
-        ),
+        section_coverage=(_share(sum(1 for s in samples if _under_a_heading(s)), total) if records_sections else None),
+        prefix_dominates=_share(sum(1 for s, p in bodied if len(p) > len(s.body)), len(bodied)),
         dup_in_file=_share(sum(_repeats(_count(t)) for t in text.values()), n),
         dup_in_source=_share(_repeats(_count(bodies)), n),
         tiny=_share(sum(1 for b in bodies if len(b) < tiny_below), n),
@@ -158,12 +150,8 @@ def measure(
             if measurable_files < BOILERPLATE_MIN_FILES or not measurable
             else _share(_boilerplate_hits(measurable, measurable_files), n)
         ),
-        orphans=_share(
-            sum(1 for s in samples if not OPENS_WITH_HEADING.match(s.content)), total
-        ),
-        size_cut=_share(
-            sum(1 for s in decided if s.cut_by == "size"), len(decided)
-        ),
+        orphans=_share(sum(1 for s in samples if not OPENS_WITH_HEADING.match(s.content)), total),
+        size_cut=_share(sum(1 for s in decided if s.cut_by == "size"), len(decided)),
         soup=_share(sum(1 for b in bodies if _is_soup(b)), n),
         code_only=_share(sum(1 for b in bodies if _is_code_only(b)), n),
         denominators={
@@ -182,7 +170,7 @@ def measure(
 
 
 # a share over a small denominator measures the size of the source, not its cut
-MIN_BREACHING_CHUNKS = 5
+MIN_BREACHING_CHUNKS = config.settings.ingest_quality.measure.min_breaching_chunks
 
 
 def _too_few_to_judge(metrics: Metrics, name: str, value: float) -> bool:
@@ -216,16 +204,10 @@ def gate_breaches(metrics: Metrics, gates) -> list[str]:
 
 def judged_by(metrics: Metrics, gates) -> list[str]:
     declared = gates if isinstance(gates, dict) else gates.model_dump(exclude_none=True)
-    return [
-        name
-        for name, bounds in declared.items()
-        if bounds and _measured(metrics, name) is not None
-    ]
+    return [name for name, bounds in declared.items() if bounds and _measured(metrics, name) is not None]
 
 
-def verdict(
-    hard: list[str], soft: list[str] | None = None, judged: bool = True
-) -> str | None:
+def verdict(hard: list[str], soft: list[str] | None = None, judged: bool = True) -> str | None:
     # no verdict where no hard gate could be evaluated: "ok" would be the opposite of true
     if not judged:
         return None
@@ -237,11 +219,7 @@ def verdict(
 # a metric that was not measured leaves the score, weight and all
 def scored_weights(metrics: Metrics, weights) -> dict[str, float]:
     declared = weights if isinstance(weights, dict) else weights.model_dump()
-    return {
-        name: weight
-        for name, weight in declared.items()
-        if weight and _measured(metrics, name) is not None
-    }
+    return {name: weight for name, weight in declared.items() if weight and _measured(metrics, name) is not None}
 
 
 def score(metrics: Metrics, weights) -> int | None:
@@ -298,6 +276,14 @@ def collect_indexed(source_name: str, *, variant: str) -> list[Sample]:
         ]
 
 
+# the declared gates over a cut's metrics, for the source report and the raw report alike
+def gates_of(metrics, cfg) -> tuple[list[str], list[str], list[str], str]:
+    hard = gate_breaches(metrics, cfg.hard_gates)
+    soft = gate_breaches(metrics, cfg.soft_gates)
+    judged = judged_by(metrics, cfg.hard_gates)
+    return hard, soft, judged, verdict(hard, soft, judged=bool(judged))
+
+
 def analyze(source_name: str, *, variant: str, mode: str) -> dict:
     from use_cases.index import check_variant
 
@@ -309,9 +295,7 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
     # refused before the rows are loaded: an undeclared variant is not a shape question
     policy = config.settings.corpus.policy(variant)
     samples = (
-        collect_dry(source_name, variant=variant)
-        if mode == "dry"
-        else collect_indexed(source_name, variant=variant)
+        collect_dry(source_name, variant=variant) if mode == "dry" else collect_indexed(source_name, variant=variant)
     )
     # the legacy cut records a section only where the file opens H1 then H2
     metrics = measure(
@@ -320,13 +304,11 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         records_sections=sources.base.hygienic(policy),
     )
     metrics.score = score(metrics, cfg.weights)
-    hard = gate_breaches(metrics, cfg.hard_gates)
-    soft = gate_breaches(metrics, cfg.soft_gates)
-    judged = judged_by(metrics, cfg.hard_gates)
+    hard, soft, judged, said = gates_of(metrics, cfg)
     entry = {
         "at": datetime.now(UTC).isoformat(),
         "mode": mode,
-        "verdict": verdict(hard, soft, judged=bool(judged)),
+        "verdict": said,
         "judged_by": judged,
         # a variant that abstains on a metric is scored on another basis, and the two differ
         "score_basis": list(scored_weights(metrics, cfg.weights)),
@@ -359,9 +341,7 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
 def _persist(source_name: str, *, variant: str, entry: dict, mode: str) -> None:
     keep = config.settings.ingest_quality.history_per_variant
     with Session() as session:
-        source = session.scalar(
-            select(DataSource).where(DataSource.name == source_name)
-        )
+        source = session.scalar(select(DataSource).where(DataSource.name == source_name))
         if source is None:
             raise LookupError(f"no such source: {source_name}")
         reports = dict(source.ingest_reports or {})
