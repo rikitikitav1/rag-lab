@@ -27,23 +27,6 @@ retrieval:
   # tuned: file=datasets/measurements/index_cost_clean_1024.json
   # tuned: file=datasets/measurements/recall_ladder_clean_1024.json
   ef_search: 100
-# what a run is judged on: read by the preflight and the reports, never by a query
-verdict:
-  # the sets a verdict is read on, named once for the preflight and the report
-  criterion_sets: [paraphrased_v2_ru, paraphrased_v2]
-  # the winner on the criterion must not lose here; it vetoes, it never chooses
-  veto_sets: [veto_v1]
-  search_depth:
-    # a red preflight at 100 is an order to measure the lower rungs, not to invent a number
-    ef_ladder: [100, 200, 400]
-    # recall is a diagnostic; the gate on the depth is max_mrr_loss, on the same questions
-    recall_gate: 0.98
-    # not set below what the set can resolve: half-width 0.0088 by section on 823
-    max_mrr_loss: 0.01
-    # a mean hides a catastrophe on one question, so the gate counts questions lost
-    max_questions_lost: 0
-  # a smoke test, not the gate: enough to catch an empty or half-built index
-  index_alive: { recall: 0.9, questions: 40 }
 rerank:
   # off: worth +0.0454 of section MRR, and the 8b the agent needs takes its card room
   # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md
@@ -96,63 +79,6 @@ corpus:
       ceiling_on: body
     # variants that lost are gone; their policy rides in the entry that measured them
 
-# how an added source is turned into raw markdown before any cut
-intake:
-  route:
-    # tuned: file=datasets/converter_gold/layer_band.json (pages under 50 chars: 1-7 a book, Baldin 12 of 308)
-    min_layer_chars: 50
-    # not measured: a shorter raster run in a text book stays with its neighbours; handovers read 9.8 and 22.6 s (2910, 2911)
-    min_raster_run: 3
-    # not measured: a page with fewer words gives no share worth reading for the suspect-layer signals
-    suspect_min_words: 50
-  # tuned: file=datasets/converter_gold/raw_band.json (Docling cuts vs own layer: f1 0.78-1.0, share 0.68-1.15)
-  # read on the gold's section cuts and applied to each piece of a run; a piece is longer, so its signals sit tighter
-  quality:
-    output_share_min: 0.6
-    output_share_max: 1.25
-    # the ru floor is Docling gluing words on TeX books: without a hand repair of glued words such a book reads dirty
-    layer_f1_min: 0.75
-    mixed_script_max: 0.02
-    # the engines the layer band was read on; the others' layer signals are recorded and not gated
-    layer_band_engines: [docling]
-    # not measured: over this share of breaching units the raw source is bad; coarse below about five units, read the reasons
-    bad_share: 0.2
-  # the engine each tool runs on; its supervisor is asked only whether it is up
-  engines: { docling: converter-docling, mineru: converter-mineru }
-  # each engine's settings file when a run names none; a loop passes its own as options
-  settings: { docling: docling/default, mineru: mineru/ocr }
-ingest_quality:
-  # not measured: how the metrics themselves read a cut, shared by the cut that acts and the report that counts
-  measure:
-    tiny_share_of_ceiling: 0.1   # a chunk below this share of its ceiling is a sliver
-    boilerplate_file_share: 0.5  # a body repeated in this share of a source's files is boilerplate
-    boilerplate_min_files: 3     # a source of fewer files cannot show boilerplate
-    min_breaching_chunks: 5      # a share over fewer chunks than this abstains
-  # hard means the cut is broken, soft means dirty; a ceiling abstains below few chunks
-  # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
-  hard_gates:
-    # a floor, so the abstention above does not apply: missing chunks cannot be counted
-    section_coverage: { min: 0.4 }
-    # three sources read over it, all three holding two short code answers
-    prefix_dominates: { max: 0.05 }
-  # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
-  soft_gates:
-    dup_in_file: { max: 0.1 }        # max 0.0011, nothing near it
-    dup_in_source: { max: 0.15 }     # max 0.1454 (primer), mean 0.0008, nothing breaches
-    # the primer breaches and stays breaching: its nine large files do repeat navigation
-    boilerplate: { max: 0.1 }
-    tiny: { max: 0.15 }              # max 0.0599, mean 0.0046
-  # the score sorts variants of one source and never decides the verdict; its weights are set by hand, not measured
-  weights:
-    section_coverage: 40
-    prefix_dominates: 15
-    dup_in_source: 10
-    tiny: 10
-  # not measured: how many reports are kept, a matter of disk and not of quality
-  history_per_variant: 20       # reports kept per variant
-  # written into every report, so a score from another formula is not read as this one
-  score_formula: v1
-
 fts:
   # index-time: changing this re-indexes the corpus, it does not re-rank a query
   languages: { en: english, ru: russian }
@@ -180,24 +106,10 @@ llm:
   # held in every ollama model a role uses: its OpenAI door drops a penalty per call, and a pull resets the model
   repetition_penalty: 1.1
   base_url: http://ollama:11434
-  # in the order the pipeline uses them
-  roles:
-    # index time
-    embedding:    { model: bge-m3 }
-    # 8b: gemma3 reports no tool calling in ollama, so the agent path refuses every question
-    generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 } }
-    # evaluation on vLLM: the same scale without ollama's drift, served by `vllm`
-    judging:      { model: Qwen/Qwen2.5-7B-Instruct-AWQ, engine: vllm, options: { max_tokens: 1024, temperature: 0, seed: 0, repetition_penalty: 1.05 } }
-    # the grader of chunks: the cap holds the json verdict with room to spare, and cuts a loop early
-    grading:      { model: llama3.1:8b, options: { max_tokens: 16, temperature: 0, seed: 0 } }
-    # the guest axes: 1024 cut 36 of 338 calls, 4096 none; a 16384 window holds the inputs 8192 cut, and fits the card
-    ragas:        { model: qwen2.5:7b-w16384, options: { max_tokens: 4096, temperature: 0, seed: 0 } }
-    # answer relevancy embeds a handful of texts a row: on the processor, so the card holds the guest's model alone
-    ragas_embedding: { model: bge-m3, engine: ollama-cpu }
-    # building the question sets
-    paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 } }
-    # the cross-encoder, out of the API and the worker: `vllm-rerank`, `--profile rerank`
-    reranking:    { model: BAAI/bge-reranker-v2-m3, engine: vllm-rerank }
+  # against qwen2.5's own tokenizer on live rows and docs, cl100k reads Latin as long and Cyrillic up to 1.6 times longer
+  token_estimate: { latin_divisor: 1.02, cyrillic_extra: 0.65 }
+  # the penalty a server applies where the model names none, measured byte for byte; another version is unknown
+  measured_repeat_penalty: { "0.32.0": 1.1 }
 
 postgres:
   host: postgresql

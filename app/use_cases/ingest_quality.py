@@ -60,8 +60,8 @@ class Report:
 
 
 TINY_SHARE_OF_CEILING = ingest.SLIVER_SHARE
-SOUP_ALNUM_RATIO = 0.55
-PROSE_WORD_LETTERS = 4
+SOUP_ALNUM_RATIO = config.settings.ingest_quality.measure.soup_alnum_ratio
+PROSE_WORD_LETTERS = config.settings.ingest_quality.measure.prose_word_letters
 
 # every other metric is a defect: more is worse
 HIGHER_IS_BETTER = frozenset({"section_coverage"})

@@ -3,6 +3,7 @@
 import json
 import statistics
 
+import config
 import llm
 from evals.guest_probes import RESTATE, sentence_of
 from evals.measurements import PANELS
@@ -12,8 +13,7 @@ from use_cases.judge import faithful_verdict
 # the report's shape, raised with every key it gains
 SCHEMA = 8
 
-# a floor that catches only the gross: the judge's history on these rows sat at 96.4% and 95.6% at least 7
-CONTROL_FLOOR = 0.90
+CONTROL_FLOOR = config.settings.evals.judge_language.control_floor
 
 # fixed English rows: the regime is a property of the instrument, so it is not read on the run it measures
 PANEL = PANELS / "judge_language_panel_ids.txt"
@@ -21,8 +21,7 @@ PANEL = PANELS / "judge_language_panel_ids.txt"
 # the panel's first reading under today's ruler, rewritten by hand when the ruler changes, never by the probe
 REFERENCE = PANELS / "judge_language_panel_reference.json"
 
-# a regime holds while at most this share of the panel crosses 7 against the reference, on either part
-MOVES_ALLOWED = 0.10
+MOVES_ALLOWED = config.settings.evals.judge_language.moves_allowed
 
 
 def panel_ids() -> list[int]:
@@ -57,10 +56,7 @@ def measure(run_name: str, rows: int, note=None, stop=None, log_ids=None, stamp=
     from evals.pools import kind
 
     # the corpus pool alone: the control threshold comes from it, and a mixed pool fails it rightly
-    pool = [
-        q for q in load_logs(run_name)
-        if q.answered and q.contexts and q.answer and kind(q) == "in_corpus"
-    ]
+    pool = [q for q in load_logs(run_name) if q.answered and q.contexts and q.answer and kind(q) == "in_corpus"]
     # a declared group is named, not counted off the top: a cut is not the first rows of a run
     pool = [q for q in pool if q.id in set(log_ids)] if log_ids else pool[:rows]
     panel_rows = judge_panel(stop)
@@ -73,15 +69,24 @@ def measure(run_name: str, rows: int, note=None, stop=None, log_ids=None, stamp=
         originals.append(ql.faithfulness)
         for lang, answer in pairs_for(ql):
             got, why = score(ql, answer)
-            scored.append({"row": ql.id, "lang": lang, "score": got,
-                           "chars": len(answer), "reason": why})
+            scored.append({"row": ql.id, "lang": lang, "score": got, "chars": len(answer), "reason": why})
             if note:
                 note(f"{lang} {ql.id}: {scored[-1]['score']}")
     population = "the named rows" if log_ids else f"the first {rows} of the corpus pool"
-    return (report(scored) | regime(panel_rows, panel_reference()) | run_answers(originals)
-            | {"run_name": run_name, "population": population, "n_asked": len(pool),
-               # a control out of regime is unreadable without knowing what judged it
-               "instrument": stamp or {}, "rows": scored, "panel_rows": panel_rows})
+    return (
+        report(scored)
+        | regime(panel_rows, panel_reference())
+        | run_answers(originals)
+        | {
+            "run_name": run_name,
+            "population": population,
+            "n_asked": len(pool),
+            # a control out of regime is unreadable without knowing what judged it
+            "instrument": stamp or {},
+            "rows": scored,
+            "panel_rows": panel_rows,
+        }
+    )
 
 
 # the panel's own answer gives the judge's regime, its English restatement the restating path's
@@ -97,8 +102,7 @@ def judge_panel(stop=None) -> list[dict]:
             english = llm.ask(RESTATE, ql.answer, role="generation").text or ""
         except RuntimeError as e:
             rows += [
-                {"row": ql.id, "part": part, "score": None, "reason": f"failed: {e}"}
-                for part in ("own", "restated")
+                {"row": ql.id, "part": part, "score": None, "reason": f"failed: {e}"} for part in ("own", "restated")
             ]
             continue
         for part, answer in (("own", ql.answer), ("restated", english)):
@@ -136,29 +140,37 @@ def regime(panel_rows: list[dict], reference: dict | None) -> dict:
         **parts,
         "floor": CONTROL_FLOOR,
         "above_floor": (
-            all(p["share"] is not None and p["share"] >= CONTROL_FLOOR for p in parts.values())
-            if whole else None
+            all(p["share"] is not None and p["share"] >= CONTROL_FLOOR for p in parts.values()) if whole else None
         ),
     }
     if reference is None:
-        return {"control": control | {
-            "reference": None, "moved_vs_reference": None, "in_regime": None,
-            "why": "no reference reading yet: the first reading under a ruler is kept by hand, never by the probe",
-        }}
+        return {
+            "control": control
+            | {
+                "reference": None,
+                "moved_vs_reference": None,
+                "in_regime": None,
+                "why": "no reference reading yet: the first reading under a ruler is kept by hand, never by the probe",
+            }
+        }
     # a verdict lost, a row the reference never read, or one this reading never reached counts as moved
     was = {(r["row"], r["part"]): _crosses_7(r["score"]) for r in reference["rows"]}
     seen = {(r["row"], r["part"]) for r in panel_rows}
-    moved = {p: sum(1 for r in panel_rows if r["part"] == p
-                    and was.get((r["row"], p), "unread") != _crosses_7(r["score"]))
-                + sum(1 for row, part in was if part == p and (row, part) not in seen)
-             for p in ("own", "restated")}
+    moved = {
+        p: sum(1 for r in panel_rows if r["part"] == p and was.get((r["row"], p), "unread") != _crosses_7(r["score"]))
+        + sum(1 for row, part in was if part == p and (row, part) not in seen)
+        for p in ("own", "restated")
+    }
     allowed = int(len(panel_ids()) * MOVES_ALLOWED)
-    return {"control": control | {
-        "reference": {"file": REFERENCE.name, "taken": reference.get("taken")},
-        "moved_vs_reference": moved,
-        "moves_allowed": allowed,
-        "in_regime": all(n <= allowed for n in moved.values()),
-    }}
+    return {
+        "control": control
+        | {
+            "reference": {"file": REFERENCE.name, "taken": reference.get("taken")},
+            "moved_vs_reference": moved,
+            "moves_allowed": allowed,
+            "in_regime": all(n <= allowed for n in moved.values()),
+        }
+    }
 
 
 # a run's own rows mix the judge's state with the run's quality, so they are the run's, not a regime
@@ -173,13 +185,15 @@ def report(rows: list[dict]) -> dict:
     paired = {}
     for r in rows:
         paired.setdefault(r["row"], {})[r["lang"]] = r["score"]
-    deltas = [p["en"] - p["ru"] for p in paired.values()
-              if p.get("en") is not None and p.get("ru") is not None]
+    deltas = [p["en"] - p["ru"] for p in paired.values() if p.get("en") is not None and p.get("ru") is not None]
     return {
         "schema": SCHEMA,
         "n_rows": len(paired),
-        "means": {lang: round(statistics.fmean([s for s in v if s is not None]), 3)
-                  for lang, v in by.items() if any(s is not None for s in v)},
+        "means": {
+            lang: round(statistics.fmean([s for s in v if s is not None]), 3)
+            for lang, v in by.items()
+            if any(s is not None for s in v)
+        },
         "paired": {
             "of": "en minus ru, our own judge",
             "n": len(deltas),

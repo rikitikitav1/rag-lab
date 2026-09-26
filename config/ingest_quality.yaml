@@ -1,0 +1,35 @@
+ingest_quality:
+  # not measured: how the metrics themselves read a cut, shared by the cut that acts and the report that counts
+  measure:
+    tiny_share_of_ceiling: 0.1   # a chunk below this share of its ceiling is a sliver
+    boilerplate_file_share: 0.5  # a body repeated in this share of a source's files is boilerplate
+    boilerplate_min_files: 3     # a source of fewer files cannot show boilerplate
+    min_breaching_chunks: 5      # a share over fewer chunks than this abstains
+    # not measured: soup is a chunk whose share of letters and digits falls below this
+    soup_alnum_ratio: 0.55
+    # not measured: a prose word is at least this many letters
+    prose_word_letters: 4
+  # hard means the cut is broken, soft means dirty; a ceiling abstains below few chunks
+  # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
+  hard_gates:
+    # a floor, so the abstention above does not apply: missing chunks cannot be counted
+    section_coverage: { min: 0.4 }
+    # three sources read over it, all three holding two short code answers
+    prefix_dominates: { max: 0.05 }
+  # tuned: file=datasets/measurements/ingest_gate_readings_20260830.json
+  soft_gates:
+    dup_in_file: { max: 0.1 }        # max 0.0011, nothing near it
+    dup_in_source: { max: 0.15 }     # max 0.1454 (primer), mean 0.0008, nothing breaches
+    # the primer breaches and stays breaching: its nine large files do repeat navigation
+    boilerplate: { max: 0.1 }
+    tiny: { max: 0.15 }              # max 0.0599, mean 0.0046
+  # the score sorts variants of one source and never decides the verdict; its weights are set by hand, not measured
+  weights:
+    section_coverage: 40
+    prefix_dominates: 15
+    dup_in_source: 10
+    tiny: 10
+  # not measured: how many reports are kept, a matter of disk and not of quality
+  history_per_variant: 20       # reports kept per variant
+  # written into every report, so a score from another formula is not read as this one
+  score_formula: v1

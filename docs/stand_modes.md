@@ -76,7 +76,7 @@ other; numbers judged before 2026-09-11 used another judge on another engine and
 docker compose --profile rerank up -d vllm-rerank
 ```
 
-The role is already seated by the bootstrap from `config.yaml`. A run asks for it with `"rerank":
+The role is already seated by the bootstrap from `config/roles.yaml`. A run asks for it with `"rerank":
 true`, and the agent's gate uses it at `gate_signal: cross_encoder` or `either`. The server takes a
 0.3 share of GPU memory (`VLLM_RERANK_GPU_UTIL`). In a phased run the embedder answers first, the
 reranker takes the GPU for one scoring pass, and the GPU goes back to ollama for generation.
@@ -216,7 +216,7 @@ scripts/up.sh --cpu
 ```
 
 `docker-compose.cpu.yml` goes over the main file: no service reserves the GPU, `ollama` and `vllm`
-are left out, and the roles come from `config.cpu.yaml`, every one on `ollama-cpu`, with
+are left out, and the roles come from `config/roles.cpu.yaml`, every one on `ollama-cpu`, with
 `LLM_TIMEOUT_CPU` (600 s) as the timeout. `scripts/up.sh` without the flag checks `docker info` for
 the GPU first, and on a host without one says why the stand would not start and gives this command.
 

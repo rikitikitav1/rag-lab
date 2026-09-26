@@ -40,10 +40,18 @@ def _moment(stamp: str):
     return datetime.fromisoformat(f"{body}{'+00:00' if offset in ('Z', '') else offset}")
 
 
+# the config files the worker loaded, asked of the worker: an overlay it does not read is not its source
+@lru_cache(maxsize=1)
+def _worker_config_files() -> list[Path]:
+    out = _in_worker("import json, config; print(json.dumps(config.loaded_files()))")
+    names = json.loads(out) if out.startswith("[") else []
+    return [ROOT / Path(name).relative_to("/app") for name in names]
+
+
 def _newest_source() -> tuple[float, str]:
     files = [p for p in (ROOT / "app").rglob("*.py") if "__pycache__" not in p.parts]
     # the run reads thresholds and the window from the config, so it counts as source here
-    files.append(ROOT / "config.yaml")
+    files += _worker_config_files()
     newest = max(files, key=lambda p: p.stat().st_mtime)
     return newest.stat().st_mtime, str(newest.relative_to(ROOT))
 
@@ -53,6 +61,8 @@ def worker_newer_than_sources() -> tuple[bool, str]:
     started = sh("docker", "inspect", "-f", "{{.State.StartedAt}}", "rag-lab-worker-1")
     if not started:
         return False, "cannot read the worker start time"
+    if not _worker_config_files():
+        return False, "cannot ask the worker which config files it read"
     mtime, name = _newest_source()
     return _moment(started).timestamp() > mtime, f"worker started {started}, newest source {name}"
 
@@ -66,17 +76,21 @@ def tree_is_clean() -> tuple[bool, str]:
 
 def worker_imports() -> tuple[bool, str]:
     out = sh(
-        "docker", "compose", "exec", "-T", "worker", "python", "-c",
-        "from orchestrators import graph, react;"
-        " from use_cases import agent; print('ok')",
+        "docker",
+        "compose",
+        "exec",
+        "-T",
+        "worker",
+        "python",
+        "-c",
+        "from orchestrators import graph, react; from use_cases import agent; print('ok')",
     )
     return out.endswith("ok"), f"imports inside the worker: {out or 'failed'}"
 
 
 def window_matches_config() -> tuple[bool, str]:
     # asked of the worker, by the generator's own engine: `/api/ps` on a vLLM read as no answer
-    out = _in_worker("import json; from use_cases import stand_health;"
-                     " print(json.dumps(stand_health.window()))")
+    out = _in_worker("import json; from use_cases import stand_health; print(json.dumps(stand_health.window()))")
     if not out.startswith("{"):
         return False, f"context window: cannot read it ({out[:40] or 'no answer'})"
     seen = json.loads(out)
@@ -98,8 +112,7 @@ def window_matches_config() -> tuple[bool, str]:
 
 # the scheduler keeps reporting free VRAM after the card is gone, so ask what is actually resident
 def models_are_on_the_card() -> tuple[bool, str]:
-    out = _in_worker("import json; from use_cases import stand_health;"
-                     " print(json.dumps(stand_health.roles_on_card()))")
+    out = _in_worker("import json; from use_cases import stand_health; print(json.dumps(stand_health.roles_on_card()))")
     if not out.startswith("{"):
         return False, f"residency: cannot read ({out[:60] or 'no answer'})"
     seen = json.loads(out)
@@ -108,16 +121,16 @@ def models_are_on_the_card() -> tuple[bool, str]:
         return False, f"no model is loaded: ask one to load before reading the window; {_card()}"
     # per role; an asleep vLLM is not a spill and is not called one
     lines = [
-        f"{role}={r['model']}@{r['engine']} " + (
-            "spilled to the cpu" if r["spilled"] else
-            {True: "on the card", False: "not on the card now", None: "not resident"}[r["on_card"]]
+        f"{role}={r['model']}@{r['engine']} "
+        + (
+            "spilled to the cpu"
+            if r["spilled"]
+            else {True: "on the card", False: "not on the card now", None: "not resident"}[r["on_card"]]
         )
         for role, r in seen.items()
     ]
     spilled = [f"{role}={r['model']}" for role, r in seen.items() if r["spilled"]]
-    return not spilled, (
-        "; ".join(lines) + (f"; ON CPU: {', '.join(spilled)}" if spilled else "") + f"; {_card()}"
-    )
+    return not spilled, ("; ".join(lines) + (f"; ON CPU: {', '.join(spilled)}" if spilled else "") + f"; {_card()}")
 
 
 # sentences for the roles `stand_health.roles()` names as drift: the rule itself lives there alone
@@ -125,8 +138,8 @@ def role_drift(seen: dict) -> list[str]:
     declared, served = seen["declared"], seen["served"]
     return [
         f"{role}: config says {declared[role]}, the stand serves {served.get(role, 'nothing')}"
-        if role in declared else
-        f"{role}: the stand serves {served[role]}, the config declares no such role"
+        if role in declared
+        else f"{role}: the stand serves {served[role]}, the config declares no such role"
         for role in sorted(seen["drift"])
     ]
 
@@ -134,8 +147,7 @@ def role_drift(seen: dict) -> list[str]:
 # the file declares a role's model and the database serves it, and the two drift in silence
 def roles_match_the_config() -> tuple[bool, str]:
     # one reader with `/v1/stand`, and by engine: a name kept on another engine is drift too
-    out = _in_worker("import json; from use_cases import stand_health;"
-                     " print(json.dumps(stand_health.roles()))")
+    out = _in_worker("import json; from use_cases import stand_health; print(json.dumps(stand_health.roles()))")
     if not out.startswith("{"):
         return False, f"roles: cannot read them ({out[:60] or 'no answer'})"
     seen = json.loads(out)
@@ -145,13 +157,41 @@ def roles_match_the_config() -> tuple[bool, str]:
     return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(seen["served"].items()))
 
 
+def prompt_drift(declared: dict, active: dict) -> list[str]:
+    return [
+        f"{purpose}: config says v{version}, the stand serves v{active.get(purpose, 'none')}"
+        for purpose, version in sorted(declared.items())
+        if active.get(purpose) != version
+    ]
+
+
+# the file names the prompt version a role starts on, and an activation through the API leaves it behind
+def prompts_match_the_config() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, config, prompt_repo; from models.registry import Purpose;"
+        " d = config.declared_prompts();"
+        " print(json.dumps({'declared': d, 'active': prompt_repo.active_versions([Purpose[p] for p in d])}))"
+    )
+    if not out.startswith("{"):
+        return False, f"prompts: cannot read them ({out[:60] or 'no answer'})"
+    seen = json.loads(out)
+    drift = prompt_drift(seen["declared"], seen["active"])
+    if drift:
+        return False, "; ".join(drift) + ". POST /v1/prompt/{id}/activate, or edit the file to match"
+    return True, f"prompts: {len(seen['declared'])} active as declared"
+
+
 # only what the driver says
 def _card() -> str:
     out = sh(
-        "docker", "compose", "exec", "-T", "rag-lab", "python", "-c",
-        "import json, gpu;"
-        " free, total = gpu.memory_mb() or (0, 0);"
-        " print(json.dumps({'free': free, 'total': total}))",
+        "docker",
+        "compose",
+        "exec",
+        "-T",
+        "rag-lab",
+        "python",
+        "-c",
+        "import json, gpu; free, total = gpu.memory_mb() or (0, 0); print(json.dumps({'free': free, 'total': total}))",
     )
     line = [row for row in out.splitlines() if row.startswith("{")]
     if not line:
@@ -164,8 +204,7 @@ def _card() -> str:
 
 # a dead engine read as "not resident" beside the others; this names it
 def role_engines_answer() -> tuple[bool, str]:
-    out = _in_worker("import json; from use_cases import stand_health;"
-                     " print(json.dumps(stand_health.roles_down()))")
+    out = _in_worker("import json; from use_cases import stand_health; print(json.dumps(stand_health.roles_down()))")
     if not out.startswith("["):
         return False, f"role engines: cannot read them ({out[:60] or 'no answer'})"
     down = json.loads(out)
@@ -201,24 +240,15 @@ def corpus_variant_is_usable() -> tuple[bool, str]:
 
 # every indexed variant: indexing one moves where every other stops walking its index
 def every_variant_walks_its_index() -> tuple[bool, str]:
-    out = _in_worker(
-        "import json; from use_cases import search_depth;"
-        " print(json.dumps(search_depth.audit()))"
-    )
+    out = _in_worker("import json; from use_cases import search_depth; print(json.dumps(search_depth.audit()))")
     if not out.startswith("["):
         return False, f"depth audit: cannot read ({out[-60:] or 'no answer'})"
     rows = json.loads(out)
     if not rows:
         return True, "depth: no variant holds rows yet"
     sorting = [r["variant"] for r in rows if not r["serving_uses_index"]]
-    reading = ", ".join(
-        f"{r['variant']}@{r['serving']}"
-        + ("" if r["serving_uses_index"] else " SORTS")
-        for r in rows
-    )
-    return not sorting, (
-        f"depth ({rows[0]['declared']}, {rows[0]['rows_estimate']} rows estimated): {reading}"
-    )
+    reading = ", ".join(f"{r['variant']}@{r['serving']}" + ("" if r["serving_uses_index"] else " SORTS") for r in rows)
+    return not sorting, (f"depth ({rows[0]['declared']}, {rows[0]['rows_estimate']} rows estimated): {reading}")
 
 
 # a comment claiming provenance cannot be checked; a `# tuned: file=` line can be
@@ -226,7 +256,7 @@ TUNED = re.compile(r"^\s*#\s*tuned:\s*file=(\S+)\s*$")
 
 
 def _tuned_files() -> list[str]:
-    text = (ROOT / "config.yaml").read_text().splitlines()
+    text = [line for f in _worker_config_files() for line in f.read_text().splitlines()]
     return sorted({m.group(1) for line in text if (m := TUNED.match(line))})
 
 
@@ -241,6 +271,8 @@ def _live_fingerprints() -> dict:
 
 
 def tuned_numbers_still_describe_the_corpus() -> tuple[bool, str]:
+    if not _worker_config_files():
+        return False, "tuned numbers: cannot ask the worker which config files it read"
     missing, stale, unchecked, compared = [], [], [], 0
     live = _live_fingerprints()
     for name in _tuned_files():
@@ -265,9 +297,7 @@ def tuned_numbers_still_describe_the_corpus() -> tuple[bool, str]:
             continue
         compared += 1
         if taken != live[variant]:
-            stale.append(
-                f"{Path(name).name} ({taken.get('chunks')} chunks against {live[variant].get('chunks')})"
-            )
+            stale.append(f"{Path(name).name} ({taken.get('chunks')} chunks against {live[variant].get('chunks')})")
     parts = []
     if missing:
         parts.append(f"MISSING {missing}")
@@ -284,7 +314,7 @@ def tuned_numbers_still_describe_the_corpus() -> tuple[bool, str]:
 def table_is_vacuumed() -> tuple[bool, str]:
     out = _in_worker(
         "from orm.sync_db import engine; from sqlalchemy import text;"
-        " print(engine.connect().execute(text(\"SELECT n_dead_tup FROM pg_stat_user_tables"
+        ' print(engine.connect().execute(text("SELECT n_dead_tup FROM pg_stat_user_tables'
         " WHERE relname = 'data_chunks'\")).scalar())"
     )
     dead = int(out) if out.isdigit() else -1
@@ -298,7 +328,7 @@ def one_question_per_original() -> tuple[bool, str]:
         " print(engine.connect().execute(text(\"SELECT coalesce(string_agg(set_name || '=' ||"
         " n, ', '), 'none') FROM (SELECT set_name, count(*) n FROM (SELECT set_name,"
         " source_question_id FROM questions WHERE source_question_id IS NOT NULL"
-        " GROUP BY 1, 2 HAVING count(*) > 1) d GROUP BY set_name) s\")).scalar())"
+        ' GROUP BY 1, 2 HAVING count(*) > 1) d GROUP BY set_name) s")).scalar())'
     )
     # a requeued job paraphrases the same original twice, with a new hash nothing catches
     return out == "none", f"originals paraphrased more than once: {out or 'unknown'}"
@@ -324,9 +354,7 @@ SELECT coalesce(string_agg(base || '=' || cnt, ', '), 'none') FROM (
 # by the text of each chunk: fourteen of sixteen changed sources kept their counts
 def every_variant_cuts_into_its_own_rows() -> tuple[bool, str]:
     out = _in_worker("import runpy; runpy.run_path('scripts/cut_digest.py', run_name='__main__')")
-    line = next(
-        (row for row in reversed(out.splitlines()) if row.startswith("[")), ""
-    )
+    line = next((row for row in reversed(out.splitlines()) if row.startswith("[")), "")
     try:
         report = json.loads(line)
     except ValueError:
@@ -350,10 +378,7 @@ def halves_of_pairs_are_counted() -> tuple[bool, str]:
         f' print(engine.connect().execute(text("""{PAIRED_SETS}""")).scalar())'
     )
     # descriptive on purpose: a set with one row per original is not half of anything
-    listed = [
-        part for part in (out or "").split(", ")
-        if part and not part.split("=")[0].startswith(UNPAIRED_SETS)
-    ]
+    listed = [part for part in (out or "").split(", ") if part and not part.split("=")[0].startswith(UNPAIRED_SETS)]
     return True, (
         "originals missing half of their pair: "
         + (", ".join(listed) if listed else "none")
@@ -372,9 +397,7 @@ def schema_holds_no_variant_indexes() -> tuple[bool, str]:
     ]
     # one in the dump means the dump became a function of what was indexed locally
     return not leaked, (
-        f"schema.sql carries variant indexes: {leaked}"
-        if leaked
-        else "schema.sql holds no variant indexes"
+        f"schema.sql carries variant indexes: {leaked}" if leaked else "schema.sql holds no variant indexes"
     )
 
 
@@ -390,9 +413,7 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
         logged = {**logged, "ef_search": config_row.get("ef_search")}
     # resolved, not declared, and per variant: the crossover is a property of the table
     variant = json.dumps(config_row.get("variant"))
-    depth = (
-        f" 'ef_search': search_depth.resolve({variant})," if searched else ""
-    )
+    depth = f" 'ef_search': search_depth.resolve({variant})," if searched else ""
     out = _in_worker(
         "import json, config; from use_cases import search_depth;"
         " print(json.dumps({**config.keyword_switches(),"
@@ -409,9 +430,7 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
 # asked of the worker rather than written twice; `marks_are_reachable` blocks on these sets
 @lru_cache(maxsize=1)
 def criterion_sets() -> tuple[str, ...]:
-    out = _in_worker(
-        "import config; print(','.join(config.settings.verdict.criterion_sets))"
-    )
+    out = _in_worker("import config; print(','.join(config.settings.verdict.criterion_sets))")
     return tuple(name for name in out.split(",") if name) or ("paraphrased_v2_ru",)
 
 
@@ -427,11 +446,11 @@ def marks_are_reachable() -> tuple[bool, str]:
     out = _in_worker(
         "import json, config, db;"
         " from orm.sync_db import engine; from sqlalchemy import text;"
-        " sql = text(\"SELECT q.set_name, count(*) AS unreachable FROM questions q\""
-        " \" WHERE array_length(q.marked_sources, 1) > 0 AND NOT EXISTS (\""
-        " \"   SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m\""
+        ' sql = text("SELECT q.set_name, count(*) AS unreachable FROM questions q"'
+        ' " WHERE array_length(q.marked_sources, 1) > 0 AND NOT EXISTS ("'
+        ' "   SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m"'
         " f\"   WHERE {db.live_rows('dc')} AND dc.source LIKE '%' || m || '%')\""
-        " \" GROUP BY q.set_name ORDER BY 2 DESC\");"
+        ' " GROUP BY q.set_name ORDER BY 2 DESC");'
         " rows = engine.connect().execute("
         "   sql, {'variant': config.settings.corpus.variant}).all();"
         " print(json.dumps([[r[0], r[1]] for r in rows]))"
@@ -455,9 +474,18 @@ def index_is_alive() -> tuple[bool, str]:
         return False, "index recall: cannot read the thresholds from the worker"
     floor, asked = thresholds
     out = sh(
-        "docker", "compose", "exec", "-T", "worker", "python",
-        "/app/scripts/retrieval_report.py", "--set", criterion_sets()[0], "--recall",
-        "--limit", str(asked),
+        "docker",
+        "compose",
+        "exec",
+        "-T",
+        "worker",
+        "python",
+        "/app/scripts/retrieval_report.py",
+        "--set",
+        criterion_sets()[0],
+        "--recall",
+        "--limit",
+        str(asked),
     )
     score = out.rsplit(":", 1)[-1].strip()
     try:
@@ -472,11 +500,7 @@ def index_is_alive() -> tuple[bool, str]:
 
 def _alive_thresholds() -> tuple[float, int] | None:
     # sh() returns "" on any non-zero exit, which is what a downed worker looks like
-    out = _in_worker(
-        "import config;"
-        " r = config.settings.verdict.index_alive;"
-        " print(f'{r.recall} {r.questions}')"
-    )
+    out = _in_worker("import config; r = config.settings.verdict.index_alive; print(f'{r.recall} {r.questions}')")
     try:
         floor, asked = out.split()
         return float(floor), int(asked)
@@ -485,12 +509,25 @@ def _alive_thresholds() -> tuple[float, int] | None:
 
 
 CHECKS = (
-    tree_is_clean, worker_newer_than_sources, worker_imports, window_matches_config,
-    models_are_on_the_card, roles_match_the_config, role_engines_answer, queue_is_idle, corpus_variant_is_usable,
-    every_variant_walks_its_index, tuned_numbers_still_describe_the_corpus,
-    table_is_vacuumed, schema_holds_no_variant_indexes, one_question_per_original,
+    tree_is_clean,
+    worker_newer_than_sources,
+    worker_imports,
+    window_matches_config,
+    models_are_on_the_card,
+    roles_match_the_config,
+    prompts_match_the_config,
+    role_engines_answer,
+    queue_is_idle,
+    corpus_variant_is_usable,
+    every_variant_walks_its_index,
+    tuned_numbers_still_describe_the_corpus,
+    table_is_vacuumed,
+    schema_holds_no_variant_indexes,
+    one_question_per_original,
     every_variant_cuts_into_its_own_rows,
-    keyword_switches_match_the_worker, marks_are_reachable, index_is_alive,
+    keyword_switches_match_the_worker,
+    marks_are_reachable,
+    index_is_alive,
 )
 
 # these read something out and never refuse, so they stood as permanently green gates
@@ -542,20 +579,15 @@ def verify_run(spec: str, expect: int | None, shared: set | None) -> int:
     agent_rows = [row for row in logs if row.get("pipeline") == "agent"]
     agent_snapshots = [(row.get("metrics") or {}).get("config") or {} for row in agent_rows]
     missing = [
-        key
-        for key in ("orchestrator", "context_length")
-        if any(key not in snapshot for snapshot in agent_snapshots)
+        key for key in ("orchestrator", "context_length") if any(key not in snapshot for snapshot in agent_snapshots)
     ]
     windows = {snapshot.get("context_length") for snapshot in agent_snapshots}
     # an options payload without an orchestrator silently runs the hand-rolled loop
-    orchestrators = {
-        (snapshot.get("orchestrator") or {}).get("name") for snapshot in agent_snapshots
-    }
+    orchestrators = {(snapshot.get("orchestrator") or {}).get("name") for snapshot in agent_snapshots}
     broken = [
         row
         for row in logs
-        if (row.get("metrics") or {}).get("outcome") == "error"
-        or (row.get("metrics") or {}).get("failed")
+        if (row.get("metrics") or {}).get("outcome") == "error" or (row.get("metrics") or {}).get("failed")
     ]
     problems = []
     over = _prompts_over_the_window(logs)
@@ -598,9 +630,21 @@ def verify_run(spec: str, expect: int | None, shared: set | None) -> int:
 
 # what has to be identical across arms, or the runs are not comparable at all
 PINNED = (
-    "corpus_fingerprint", "variant", "variant_policy", "keyword", "ef_search", "k", "max_hops",
-    "fallback_policy", "gate", "topic", "context_length", "rerank", "distance_threshold",
-    "mcp_configured", "code_version",
+    "corpus_fingerprint",
+    "variant",
+    "variant_policy",
+    "keyword",
+    "ef_search",
+    "k",
+    "max_hops",
+    "fallback_policy",
+    "gate",
+    "topic",
+    "context_length",
+    "rerank",
+    "distance_threshold",
+    "mcp_configured",
+    "code_version",
 )
 
 
@@ -646,10 +690,7 @@ def _pinned(spec: str) -> dict:
         for group in ("models", "prompts"):
             for name, version in (row.get(group) or {}).items():
                 values.setdefault(f"{group}.{name}", set()).add(json.dumps(version))
-    return {
-        key: (seen.pop() if len(seen) == 1 else f"MIXED {sorted(seen)}")
-        for key, seen in values.items()
-    }
+    return {key: (seen.pop() if len(seen) == 1 else f"MIXED {sorted(seen)}") for key, seen in values.items()}
 
 
 def compare_runs(specs: list[str]) -> int:
@@ -664,9 +705,10 @@ def compare_runs(specs: list[str]) -> int:
         values = {name: pinned[name][key] for name in names if key in pinned[name]}
         if len(set(values.values())) > 1:
             problems += 1
-            print(f"     FAIL {key} differs between runs: " + ", ".join(
-                f"{name}={value}" for name, value in values.items()
-            ))
+            print(
+                f"     FAIL {key} differs between runs: "
+                + ", ".join(f"{name}={value}" for name, value in values.items())
+            )
     print(f"pinned settings identical across {len(names)} runs: {'no' if problems else 'yes'}")
     return 1 if problems else 0
 
@@ -681,13 +723,9 @@ def _verify(runs: list[str], expect: int | None) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--verify", action="store_true", help="check runs that already happened, not the stand"
-    )
+    parser.add_argument("--verify", action="store_true", help="check runs that already happened, not the stand")
     parser.add_argument("--expect", type=int, help="how many rows each run must have")
-    parser.add_argument(
-        "runs", nargs="*", metavar="RUN[=ORCHESTRATOR]", help="run names to verify"
-    )
+    parser.add_argument("runs", nargs="*", metavar="RUN[=ORCHESTRATOR]", help="run names to verify")
     args = parser.parse_args(argv)
 
     if args.verify:

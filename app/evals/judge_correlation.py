@@ -4,6 +4,7 @@ import math
 import re
 import statistics
 
+import config
 from evals.loaders import load_logs
 from evals.pools import (
     JOINS_BOTH_JUDGES,
@@ -22,20 +23,19 @@ SCHEMA = 5
 
 WORD = re.compile(r"\w+", re.U)
 
-# the pre-registered thresholds, named before the count: moving one is a decision, not a tweak
-RHO_WITH_OVERLAP = 0.3
-PARTIAL_GAP = 0.1
-STRATUM_GAP = 0.1
-MIN_ROWS = 100
-# what counts as a code-bearing context: `_is_code_only` fired on none of 729
-CODE_STRATUM = 0.2
+_DECLARED = config.settings.evals.judge_correlation
+RHO_WITH_OVERLAP = _DECLARED.rho_with_overlap
+PARTIAL_GAP = _DECLARED.partial_gap
+STRATUM_GAP = _DECLARED.stratum_gap
+MIN_ROWS = _DECLARED.min_rows
+CODE_STRATUM = _DECLARED.code_stratum
 
 
 # the covariate: deterministic, no calls, a property of the answer rather than a cut through it
 def overlap(answer: str, contexts: list[str], n: int = 4) -> float:
     def grams(text):
         words = WORD.findall((text or "").lower())
-        return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
+        return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
 
     got = grams(answer)
     return round(len(got & grams("\n".join(contexts or []))) / len(got), 4) if got else 0.0
@@ -73,21 +73,30 @@ def rows_of(run_name=None) -> tuple[list[dict], dict]:
         # the gate is the named predicate, and the branches above only say why a row is out
         if not joins_both_judges(ql):
             continue
-        kept.append({
-            # the arm copies carry new log ids, so only the question joins a row to its twin
-            "id": ql.id, "question_id": getattr(ql, "question_id", None),
-            "run_name": ql.run_name, "pipeline": str(ql.pipeline),
-            "ours": to_unit(ql.faithfulness), "guest": guest,
-            "overlap": overlap(ql.answer, ql.contexts),
-            "code_share": code_share(ql.contexts),
-            # the row's own reading; on rows written before the pass stamp took the key it is it
-            "on_card": entry.get("on_card_at_this_row", entry.get("on_card")),
-            "guest_precision": guest_score(ql, "ragas_context_precision"),
-            "guest_recall": guest_score(ql, "ragas_context_recall"),
-        })
-    return kept, {"population": JOINS_BOTH_JUDGES,
-                  "refused_excluded": refused, "guest_abstained": abstained,
-                  "refused_and_abstained": both, "outside_the_declared_population": off_pool}
+        kept.append(
+            {
+                # the arm copies carry new log ids, so only the question joins a row to its twin
+                "id": ql.id,
+                "question_id": getattr(ql, "question_id", None),
+                "run_name": ql.run_name,
+                "pipeline": str(ql.pipeline),
+                "ours": to_unit(ql.faithfulness),
+                "guest": guest,
+                "overlap": overlap(ql.answer, ql.contexts),
+                "code_share": code_share(ql.contexts),
+                # the row's own reading; on rows written before the pass stamp took the key it is it
+                "on_card": entry.get("on_card_at_this_row", entry.get("on_card")),
+                "guest_precision": guest_score(ql, "ragas_context_precision"),
+                "guest_recall": guest_score(ql, "ragas_context_recall"),
+            }
+        )
+    return kept, {
+        "population": JOINS_BOTH_JUDGES,
+        "refused_excluded": refused,
+        "guest_abstained": abstained,
+        "refused_and_abstained": both,
+        "outside_the_declared_population": off_pool,
+    }
 
 
 def rho(rows, left: str, right: str) -> float | None:
@@ -114,12 +123,8 @@ def strata(rows) -> dict:
         return round(statistics.fmean(r[key] for r in sample), 4) if sample else None
 
     return {
-        "code_contexts": {
-            "n": len(coded), "guest": mean(coded, "guest"), "ours": mean(coded, "ours")
-        },
-        "prose_contexts": {
-            "n": len(prose), "guest": mean(prose, "guest"), "ours": mean(prose, "ours")
-        },
+        "code_contexts": {"n": len(coded), "guest": mean(coded, "guest"), "ours": mean(coded, "ours")},
+        "prose_contexts": {"n": len(prose), "guest": mean(prose, "guest"), "ours": mean(prose, "ours")},
     }
 
 
@@ -155,8 +160,9 @@ def report(rows, counts) -> dict:
         "runs": sorted({r["run_name"] for r in rows}),
         "counts": counts,
         "rows_off_card": sum(1 for r in rows if r["on_card"] is False),
-        "means": {key: round(statistics.fmean(r[key] for r in rows), 4)
-                  for key in ("ours", "guest", "overlap", "code_share")},
+        "means": {
+            key: round(statistics.fmean(r[key] for r in rows), 4) for key in ("ours", "guest", "overlap", "code_share")
+        },
         "correlations": {
             "ours_vs_guest": ours_guest,
             # the number was quoted with a band that no file held; now the file holds it
@@ -167,9 +173,9 @@ def report(rows, counts) -> dict:
         },
         "strata": split,
         "predictions": {
-            "guest_vs_overlap_below_0_3": None if guest_overlap is None
-            else abs(guest_overlap) < RHO_WITH_OVERLAP,
-            "partial_within_0_1_of_plain": None if controlled is None or ours_guest is None
+            "guest_vs_overlap_below_0_3": None if guest_overlap is None else abs(guest_overlap) < RHO_WITH_OVERLAP,
+            "partial_within_0_1_of_plain": None
+            if controlled is None or ours_guest is None
             else abs(controlled - ours_guest) < PARTIAL_GAP,
             "strata_within_0_1": None if gap is None else gap < STRATUM_GAP,
             "n_at_least_100": len(rows) >= MIN_ROWS,

@@ -53,6 +53,16 @@ def _existing_keys(session) -> set[tuple[Purpose, int]]:
     return {tuple(row) for row in rows}
 
 
+# the prompt versions config/roles.yaml names by file name; a version with no file refuses the seed
+def _declared_versions() -> dict[str, int]:
+    declared = config.declared_prompts()
+    files = {(f.purpose.name, f.version) for f in load_prompt_files()}
+    missing = [f"{p}.v{v}" for p, v in declared.items() if (p, v) not in files]
+    if missing:
+        raise ValueError(f"config/roles.yaml names prompts with no file: {missing}")
+    return declared
+
+
 def seed_prompts() -> None:
     with Session() as session:
         existing = _existing_keys(session)
@@ -62,11 +72,21 @@ def seed_prompts() -> None:
             if (file.purpose, file.version) not in existing:
                 by_purpose[file.purpose].append(file)
 
+        declared = _declared_versions()
         for purpose, new_files in by_purpose.items():
-            # freshest version becomes active only when no active prompt exists yet
+            # the version a role names becomes active only when no active prompt exists yet, else the freshest
             has_active = session.scalar(select(exists().where(Prompt.purpose == purpose, Prompt.active)))
             freshest = max(new_files, key=lambda f: f.version)
-            if has_active:
+            if purpose.name in declared:
+                freshest = next((f for f in new_files if f.version == declared[purpose.name]), None)
+                # the named version is already a row: it is the one to wake, a newer file must not take its place
+                if freshest is None and not has_active:
+                    version = declared[purpose.name]
+                    session.execute(
+                        update(Prompt).where(Prompt.purpose == purpose, Prompt.version == version).values(active=True)
+                    )
+                    log.info("seed.prompt_declared_activated", purpose=str(purpose), version=version)
+            if has_active and freshest is not None:
                 log.warning(
                     "seed.prompt_inactive",
                     purpose=str(purpose),

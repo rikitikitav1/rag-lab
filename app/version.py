@@ -44,8 +44,7 @@ CODE_VERSION = _read()
 def _config_files() -> list:
     import config
 
-    names = [config.CONFIG_PATH, config.CONFIG_OVERLAY]
-    return [Path(name) if Path(name).is_absolute() else APP.parent / name for name in names if name]
+    return [Path(name) for name in config.loaded_files()]
 
 
 # the path, not the basename: two `base.py` in two packages are two files

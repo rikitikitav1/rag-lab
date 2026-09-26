@@ -2,8 +2,8 @@
 # class: setting (the record carries it or preflight compares it), code (changes the meaning of a stored row),
 # cap (an operational limit), seed (the config seeds it, the database owns it); move: yes when code holds a setting; family: an id under `families`, one value held in more than one place
 families:
-  rrf_k: 'the RRF constant: the search fuses its legs with `retrieval.rrf_k`, the experiment report fuses arms with its own
-    60, on purpose'
+  rrf_k: 'the RRF constant: the search fuses its legs with `retrieval.rrf_k`, the experiment and comparison reports fuse arms
+    with `evals.retrieval_compare.rrf_k`, on purpose'
   max_hops: 'the hop budget: `agent.max_hops` the value, `MAX_HOPS` the cap a request may name, `_CEILING_BEFORE_ROWS_RECORDED_IT`
     the ceiling old rows ran under, pinned'
   converter_settings: 'which settings file each converter runs: named in `intake.settings`, held by the file under `converters/*/settings/`'
@@ -14,12 +14,10 @@ families:
   ollama_url: 'the ollama address: `OLLAMA_BASE_URL` wins, `llm.base_url` is the fallback when compose leaves it empty (`app/engines/core.py`)'
   judge_model: 'the judge model: `llm.roles.judging.model` in config, `VLLM_MODEL` exported by scripts/up.sh, compose falls
     back to a written default'
-  alpha: the family-wise alpha 0.05, a default in six signatures
-  seed: 'the bootstrap and draw seeds: 42 in two defaults, 20260908 for the human anchor sheet'
   slug: the file-name slug pattern, written twice
   heading_reader: 'the markdown heading reader: `sources/base.HEADING` and `ingest.HEADING_LINE`'
   search_depth: 'the depth of a search leg: `retrieval.limit_vector` and `retrieval.limit_keywords` both 20, and the comparison
-    report reads 20 of its own'
+    report reads `evals.retrieval_compare.depth`, 20 of its own'
 config:
   retrieval.distance_threshold:
     class: setting
@@ -450,6 +448,106 @@ config:
   mcp_integrations.secret_env:
     class: seed
     note: seeded into the database, the row wins after bootstrap
+  evals.stats.bootstrap_n:
+    class: setting
+  evals.stats.alpha:
+    class: setting
+  evals.stats.seed:
+    class: setting
+  evals.judge_correlation.rho_with_overlap:
+    class: setting
+  evals.judge_correlation.partial_gap:
+    class: setting
+  evals.judge_correlation.stratum_gap:
+    class: setting
+  evals.judge_correlation.min_rows:
+    class: setting
+  evals.judge_correlation.code_stratum:
+    class: setting
+  evals.judge_language.control_floor:
+    class: setting
+  evals.judge_language.moves_allowed:
+    class: setting
+  evals.veto.quotas.cheatsheets:
+    class: setting
+  evals.veto.quotas.redis-doc/docs:
+    class: setting
+  evals.veto.quotas.notes:
+    class: setting
+  evals.veto.quotas.system-design-primer:
+    class: setting
+  evals.veto.min_heading:
+    class: setting
+  evals.grade_curve.cuts:
+    class: setting
+  evals.retrieval_compare.candidates:
+    class: setting
+  evals.retrieval_compare.depth:
+    class: setting
+    family: search_depth
+  evals.retrieval_compare.cutoffs:
+    class: setting
+  evals.retrieval_compare.rrf_k:
+    class: setting
+    family: rrf_k
+  ingest_quality.measure.soup_alnum_ratio:
+    class: setting
+  ingest_quality.measure.prose_word_letters:
+    class: setting
+  llm.roles.embedding.prompts:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.generation.prompts.generate_answer:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.generation.prompts.agent_system:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.generation.prompts.agent_fallback:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.generation.prompts.agent_no_evidence:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.generation.prompts.agent_tool_match:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.judging.prompts.judge_faithfulness:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.judging.prompts.judge_relevance:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.judging.prompts.judge_completeness:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.grading.prompts.grade_chunk:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.ragas.prompts:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.ragas_embedding.prompts:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.paraphrasing.prompts.paraphrase_question:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.paraphrasing.prompts.translate_question:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.paraphrasing.prompts.question_from_heading:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.reranking.prompts:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.token_estimate.latin_divisor:
+    class: setting
+  llm.token_estimate.cyrillic_extra:
+    class: setting
+  llm.measured_repeat_penalty.0.32.0:
+    class: setting
 constant:
   app/api/v1/questions.py:_MAX_UPLOAD:
     class: cap
@@ -497,9 +595,6 @@ constant:
     class: cap
   app/engines/ollama.py:WINDOWED:
     class: code
-  app/engines/ollama.py:MEASURED_REPEAT_PENALTY:
-    class: setting
-    move: 'yes'
   app/engines/vllm.py:HTTP_TIMEOUT:
     class: cap
   app/engines/vllm.py:PULL_TIMEOUT:
@@ -516,13 +611,6 @@ constant:
     class: cap
   app/evals/build_questions.py:QUESTION_RE:
     class: code
-  app/evals/build_veto.py:QUOTAS:
-    class: setting
-    move: 'yes'
-  app/evals/build_veto.py:MIN_HEADING:
-    class: setting
-    move: 'yes'
-    how: not measured
   app/evals/columns.py:SCHEMA:
     class: code
     note: the shape of a stored record
@@ -543,12 +631,6 @@ constant:
   app/evals/grade_curve.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/evals/grade_curve.py:CUTS:
-    class: setting
-    move: 'yes'
-  app/evals/grade_curve.py:curve(seed):
-    class: setting
-    family: seed
   app/evals/guest_axes.py:AXES:
     class: code
   app/evals/guest_probes.py:SCHEMA:
@@ -560,7 +642,6 @@ constant:
   app/evals/human_anchor.py:SEED:
     class: code
     note: the seed a stored sheet was drawn with
-    family: seed
   app/evals/human_anchor.py:BOTH_SPOKE:
     class: code
   app/evals/human_anchor.py:REPEATS:
@@ -570,37 +651,9 @@ constant:
     note: the shape of a stored record
   app/evals/judge_correlation.py:WORD:
     class: code
-  app/evals/judge_correlation.py:RHO_WITH_OVERLAP:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/evals/judge_correlation.py:PARTIAL_GAP:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/evals/judge_correlation.py:STRATUM_GAP:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/evals/judge_correlation.py:MIN_ROWS:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/evals/judge_correlation.py:CODE_STRATUM:
-    class: setting
-    move: 'yes'
-    how: ''
   app/evals/judge_language.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/evals/judge_language.py:CONTROL_FLOOR:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/evals/judge_language.py:MOVES_ALLOWED:
-    class: setting
-    move: 'yes'
-    how: ''
   app/evals/language_cost.py:SCHEMA:
     class: code
     note: the shape of a stored record
@@ -617,22 +670,6 @@ constant:
   app/evals/run_tokens.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/evals/stats.py:BOOTSTRAP_N:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/evals/stats.py:bootstrap_ci(seed):
-    class: setting
-    family: seed
-  app/evals/stats.py:holm(alpha):
-    class: setting
-    family: alpha
-  app/evals/stats.py:holm_thresholds(alpha):
-    class: setting
-    family: alpha
-  app/evals/stats.py:annotate_holm(alpha):
-    class: setting
-    family: alpha
   app/evals/trace.py:SCHEMA:
     class: code
     note: the shape of a stored record
@@ -685,19 +722,8 @@ constant:
     class: cap
   app/llm.py:PACE_TRIES:
     class: cap
-  app/llm.py:_LATIN_DIVISOR:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/llm.py:_CYRILLIC_EXTRA:
-    class: setting
-    move: 'yes'
-    how: ''
   app/llm.py:_LETTER:
     class: code
-  app/mcp_ops.py:holm_over(alpha):
-    class: setting
-    family: alpha
   app/mcp_server.py:_MAX_QUERY_LEN:
     class: cap
   app/models/mcp_integration.py:TOOL_NAME_RE:
@@ -761,29 +787,13 @@ constant:
     class: cap
   app/use_cases/card_wait.py:FREE_RETRY_SECONDS:
     class: cap
-  app/use_cases/experiment.py:_RRF_K:
-    class: setting
-    move: 'yes'
-    how: ''
-    family: rrf_k
   app/use_cases/experiment.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/use_cases/experiment.py:_annotate_significance(alpha):
-    class: setting
-    family: alpha
   app/use_cases/fetch.py:TIMEOUT:
     class: cap
   app/use_cases/index.py:VARIANT_RE:
     class: code
-  app/use_cases/ingest_quality.py:SOUP_ALNUM_RATIO:
-    class: setting
-    move: 'yes'
-    how: not measured
-  app/use_cases/ingest_quality.py:PROSE_WORD_LETTERS:
-    class: setting
-    move: 'yes'
-    how: not measured
   app/use_cases/ingest_quality.py:FENCE:
     class: code
   app/use_cases/ingest_quality.py:PROSE_WORD:
@@ -822,24 +832,9 @@ constant:
     class: code
   app/use_cases/rejudge.py:PAIR_EVERY_UP_TO:
     class: cap
-  app/use_cases/rejudge.py:_annotate_family(alpha):
-    class: setting
-    family: alpha
   app/use_cases/retrieval_compare.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/use_cases/retrieval_compare.py:CANDIDATES:
-    class: setting
-    move: 'yes'
-    how: ''
-  app/use_cases/retrieval_compare.py:DEPTH:
-    class: setting
-    move: 'yes'
-    how: ''
-    family: search_depth
-  app/use_cases/retrieval_compare.py:CUTOFFS:
-    class: setting
-    move: 'yes'
   app/use_cases/retrieval_compare.py:NO_THRESHOLD:
     class: code
   app/use_cases/retrieval_compare.py:GRID_CAP:
@@ -904,7 +899,7 @@ constant:
   scripts/config_inventory.py:_ENV_IN_EXAMPLE:
     class: code
     note: a pattern that reads a format
-  scripts/config_inventory.py:_TUNED:
+  scripts/config_inventory.py:_NOT_MEASURED:
     class: code
     note: a pattern that reads a format
   scripts/config_inventory.py:_DECIDING_PARAM:

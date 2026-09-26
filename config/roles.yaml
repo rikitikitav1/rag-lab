@@ -1,0 +1,19 @@
+llm:
+  # in the order the pipeline uses them; `prompts` names the version the seed activates on an empty database
+  roles:
+    # index time
+    embedding:    { model: bge-m3 }
+    # 8b: gemma3 reports no tool calling in ollama, so the agent path refuses every question
+    generation:   { model: llama3.1:8b, options: { max_tokens: 1024, temperature: 0.1 }, prompts: { generate_answer: 3, agent_system: 5, agent_fallback: 3, agent_no_evidence: 1, agent_tool_match: 3 } }
+    # evaluation on vLLM: the same scale without ollama's drift, served by `vllm`
+    judging:      { model: Qwen/Qwen2.5-7B-Instruct-AWQ, engine: vllm, options: { max_tokens: 1024, temperature: 0, seed: 0, repetition_penalty: 1.05 }, prompts: { judge_faithfulness: 2, judge_relevance: 2, judge_completeness: 2 } }
+    # the grader of chunks: the cap holds the json verdict with room to spare, and cuts a loop early
+    grading:      { model: llama3.1:8b, options: { max_tokens: 16, temperature: 0, seed: 0 }, prompts: { grade_chunk: 1 } }
+    # the guest axes: 1024 cut 36 of 338 calls, 4096 none; a 16384 window holds the inputs 8192 cut, and fits the card
+    ragas:        { model: qwen2.5:7b-w16384, options: { max_tokens: 4096, temperature: 0, seed: 0 } }
+    # answer relevancy embeds a handful of texts a row: on the processor, so the card holds the guest's model alone
+    ragas_embedding: { model: bge-m3, engine: ollama-cpu }
+    # building the question sets
+    paraphrasing: { model: gemma2:9b,   options: { max_tokens: 512, temperature: 0.3 }, prompts: { paraphrase_question: 1, translate_question: 1, question_from_heading: 1 } }
+    # the cross-encoder, out of the API and the worker: `vllm-rerank`, `--profile rerank`
+    reranking:    { model: BAAI/bge-reranker-v2-m3, engine: vllm-rerank }

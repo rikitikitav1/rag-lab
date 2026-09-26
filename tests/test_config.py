@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import config
@@ -12,6 +13,8 @@ def _with(tmp_path, change) -> str:
     # the data file stays where the repository keeps it
     raw["sources"] = {name: str(ROOT / path) for name, path in raw["sources"].items()}
     change(raw)
+    # the sections a process owns and the roles sit in `config/` beside the file, as in the tree
+    shutil.copytree(ROOT / "config", tmp_path / "config", dirs_exist_ok=True)
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(raw))
     return str(path)
@@ -103,3 +106,56 @@ def test_every_converter_tool_has_its_engine_and_settings():
     raw["settings"].pop("mineru")
     with pytest.raises(ValidationError, match="no entry for"):
         config.IntakeCfg(**raw)
+
+
+# twenty numbers left the code for config/: each holds what the code held before
+def test_the_values_moved_out_of_the_code_hold_what_the_code_held():
+    s = config._load(str(ROOT / "config.yaml"))
+    e = s.evals
+    assert (e.stats.bootstrap_n, e.stats.alpha, e.stats.seed) == (10_000, 0.05, 42)
+    assert e.judge_correlation.model_dump() == {
+        "rho_with_overlap": 0.3,
+        "partial_gap": 0.1,
+        "stratum_gap": 0.1,
+        "min_rows": 100,
+        "code_stratum": 0.2,
+    }
+    assert (e.judge_language.control_floor, e.judge_language.moves_allowed) == (0.90, 0.10)
+    assert e.veto.quotas == {"cheatsheets": 80, "redis-doc/docs": 80, "notes": 80, "system-design-primer": 30}
+    assert e.veto.min_heading == 12
+    assert e.grade_curve.cuts == [None, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+    assert (e.retrieval_compare.candidates, e.retrieval_compare.depth, e.retrieval_compare.rrf_k) == (100, 20, 60)
+    assert e.retrieval_compare.cutoffs == [1, 3, 5, 10]
+    assert (s.ingest_quality.measure.soup_alnum_ratio, s.ingest_quality.measure.prose_word_letters) == (0.55, 4)
+    assert (s.llm.token_estimate.latin_divisor, s.llm.token_estimate.cyrillic_extra) == (1.02, 0.65)
+    assert s.llm.measured_repeat_penalty == {"0.32.0": 1.1}
+
+
+# a section is owned by one file: the same one in two would leave which wins to the order of a listing
+def test_a_section_in_two_files_refuses_to_load(tmp_path):
+    with pytest.raises(ValueError, match="already come from another file"):
+        config._load(_with(tmp_path, lambda raw: raw.update(intake={})))
+
+
+# a roles block left in the base would be dropped without a word, since the roles file replaces it
+def test_roles_written_in_the_base_refuse_to_load(tmp_path):
+    with pytest.raises(ValueError, match="the roles live in"):
+        config._load(_with(tmp_path, lambda raw: raw["llm"].update(roles={})))
+
+
+# the seed reads one version per purpose; two roles naming one purpose would let the last one win
+def test_a_prompt_two_roles_name_refuses(tmp_path, monkeypatch):
+    path = _with(tmp_path, lambda raw: None)
+    roles = tmp_path / "config" / "roles.yaml"
+    layer = yaml.safe_load(roles.read_text())
+    layer["llm"]["roles"]["grading"]["prompts"] = {"judge_faithfulness": 3}
+    roles.write_text(yaml.safe_dump(layer))
+    monkeypatch.setattr(config, "CONFIG_PATH", path)
+    with pytest.raises(ValueError, match="named by two roles"):
+        config.declared_prompts()
+
+
+# a source's policy file decides what is indexed, so it counts as config for the stamp
+def test_a_source_data_file_is_among_the_loaded_files():
+    assert any(name.endswith("datasets/sources/interview.yaml") for name in config.loaded_files())
+    assert not any("datasets" in name for name in config.loaded_files(with_data=False))

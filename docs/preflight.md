@@ -6,7 +6,7 @@ version the worker loaded. Those conditions decide whether the run's numbers des
 claim to describe.
 
 ```bash
-python scripts/preflight_grid.py                       # eighteen checks, exit 1 on any failure
+python scripts/preflight_grid.py                       # nineteen checks, exit 1 on any failure
 python scripts/preflight_grid.py --verify RUN [RUN..]  # a finished run instead of the stand
 ```
 
@@ -31,7 +31,7 @@ Most of these checks exist because the corresponding trap had already cost a gri
 true, the incident is named below, because a check whose reason is forgotten is a check somebody
 deletes.
 
-## The eighteen checks
+## The nineteen checks
 
 ### Is the code that runs the code we think runs
 
@@ -40,7 +40,7 @@ commit, in its snapshot. With uncommitted edits that field names code which neve
 snapshot becomes a confident lie about a run nobody can reproduce.
 
 **`worker_newer_than_sources`** compares the worker container's start time against the newest file
-under `app/` (and `config.yaml`, since a run reads its thresholds from there). The API runs with
+under `app/` (and the config files, `config.yaml` and `config/`, since a run reads its thresholds from there). The API runs with
 `--reload` and the worker does not: it holds its code in memory from the moment it started. Edit a
 file, and the worker keeps executing yesterday's version while the API serves today's. This cost
 three separate incidents in two days: prompt keys that were never re-read, an experiment that
@@ -69,10 +69,15 @@ a paraphrasing model left resident with
 `keep_alive: Forever` took 6.4 GB of an 8 GB GPU, the reranker fell back to the CPU with a warning,
 and the run would have taken thirteen times longer with identical numbers. It was caught by eye.
 
-**`roles_match_the_config`** compares the model `config.yaml` declares for each role against the one
+**`roles_match_the_config`** compares the model `config/roles.yaml` declares for each role against the one
 the database serves, by engine as well as by name. Which model serves a role is switched at runtime
 and outlives the run that switched it, so a file that says otherwise misleads the next reader about
 what the numbers were measured with. `PUT /v1/role` or an edit to the file settles it.
+
+**`prompts_match_the_config`** compares the prompt version `config/roles.yaml` names for each purpose
+against the one the database holds active. The file decides only what a fresh database starts on, and
+an activation through `POST /v1/prompt/{id}/activate` outlives it the same way a seated model does.
+Activating the named version back or editing the file settles it.
 
 **`role_engines_answer`** asks each role's engine whether it answers, the same reading `/readiness`
 reports as `roles_down`, and whether an ollama model sits whole on the GPU. A role whose server is
@@ -131,7 +136,7 @@ turned out to be a property of the **variant**, not of the table alone: on 2026-
 13,068 rows in the same table stopped at 200. Checking only the served variant is how the crossover
 moved twice before anybody noticed.
 
-**`tuned_numbers_still_describe_the_corpus`** reads every `# tuned: file=` line in `config.yaml`,
+**`tuned_numbers_still_describe_the_corpus`** reads every `# tuned: file=` line in `config.yaml` and `config/`,
 opens the measurement each one points at, and compares the corpus fingerprint recorded there with
 the live one. A number that came out of a measurement is only as good as the corpus it was measured
 on, and a comment claiming provenance cannot be checked while a file carrying a fingerprint can. It
@@ -164,7 +169,7 @@ double-weight that original in every paired comparison.
 **`keyword_switches_match_the_worker`** compares the keyword-leg switches the config on the worker's
 disk declares (`keyword_query`, `keyword_rank`, `keyword_norm`, `query_lang`, and the resolved depth)
 against the switches recorded in the most recent answer log. It runs `python -c` inside the worker
-container, which reads `config.yaml` fresh, so it sees the file rather than the memory of the
+container, which reads the config files fresh, so it sees the file rather than the memory of the
 process that is actually serving: a worker running yesterday's code is caught by
 `worker_newer_than_sources`, not here. A switch flipped between two arms is invisible in
 the numbers, and both arms look like valid measurements of different things.

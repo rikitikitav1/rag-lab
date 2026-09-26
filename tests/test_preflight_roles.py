@@ -43,3 +43,12 @@ def test_a_name_that_differs_is_drift_and_a_matching_pair_is_not(preflight):
     assert preflight.role_drift(_seen(declared, {"judging": "qwen2.5:7b"})) == [
         "generation: config says llama3.1:8b, the stand serves nothing"
     ]
+
+
+def test_a_prompt_activated_past_the_file_is_drift(preflight):
+    declared = {"judge_faithfulness": 3, "grade_chunk": 1}
+    assert preflight.prompt_drift(declared, dict(declared)) == []
+    assert preflight.prompt_drift(declared, {"judge_faithfulness": 4}) == [
+        "grade_chunk: config says v1, the stand serves vnone",
+        "judge_faithfulness: config says v3, the stand serves v4",
+    ]

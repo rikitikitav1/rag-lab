@@ -3,12 +3,13 @@
 import json
 from pathlib import Path
 
+import config
 import numpy as np
 from evals import gold_classes, measurements, stats
 from use_cases import grading
 
 SCHEMA = 1
-CUTS = (None, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95)
+CUTS = tuple(config.settings.evals.grade_curve.cuts)
 QUANTILES = tuple(round(0.05 * n, 2) for n in range(20))
 ARMS = {"A": "rank", "B": "rerank_score"}
 
@@ -63,8 +64,7 @@ def kept_by_grader(row: dict, cut: float | None, form: str) -> set:
     if form == "whole_text":
         kept = _kept(next(iter(verdicts.values()), None), cut)
         return set(range(len(row["addresses"]))) if kept else set()
-    return {nth for nth, address in enumerate(row["addresses"])
-            if _kept(verdicts.get(address), cut)}
+    return {nth for nth, address in enumerate(row["addresses"]) if _kept(verdicts.get(address), cut)}
 
 
 def arm_of(frozen_row: dict, top: int, name: str) -> set:
@@ -79,8 +79,7 @@ def arm_of(frozen_row: dict, top: int, name: str) -> set:
 def shares(classes: list, addresses: list, arm: set, kept: set) -> dict:
     seats = [n for n, a in enumerate(addresses) if a in arm]
     of = lambda name: [n for n in seats if classes[n] == name]  # noqa: E731
-    gold, neighbours, strangers = (of(c) for c in
-                                   (gold_classes.GOLD, gold_classes.NEIGHBOUR, gold_classes.STRANGER))
+    gold, neighbours, strangers = (of(c) for c in (gold_classes.GOLD, gold_classes.NEIGHBOUR, gold_classes.STRANGER))
     dropped = lambda seen: sum(1 for n in seen if n not in kept) / len(seen)  # noqa: E731
     return {
         "gold_any": float(any(n in kept for n in gold)) if gold else None,
@@ -95,23 +94,24 @@ def _column(values: list, seed: int) -> dict:
     if not kept:
         return {"point": None, "low": None, "n": 0}
     low, high = stats.bootstrap_ci(kept, seed=seed)
-    return {"point": round(float(np.mean(kept)), 4), "low": round(low, 4),
-            "high": round(high, 4), "n": len(kept)}
+    return {"point": round(float(np.mean(kept)), 4), "low": round(low, 4), "high": round(high, 4), "n": len(kept)}
 
 
 def _point(rows: list, seed: int) -> dict:
-    return {name: _column([r[name] for r in rows], seed)
-            for name in ("gold_any", "gold_share", "neighbours_dropped", "strangers_dropped")}
+    return {
+        name: _column([r[name] for r in rows], seed)
+        for name in ("gold_any", "gold_share", "neighbours_dropped", "strangers_dropped")
+    }
 
 
 def _paired(rows_a: list, rows_b: list, name: str, seed: int) -> dict:
-    deltas = [a[name] - b[name] for a, b in zip(rows_a, rows_b, strict=True)
-              if a[name] is not None and b[name] is not None]
+    deltas = [
+        a[name] - b[name] for a, b in zip(rows_a, rows_b, strict=True) if a[name] is not None and b[name] is not None
+    ]
     if not deltas:
         return {"n": 0}
     low, high = stats.bootstrap_ci(deltas, seed=seed)
-    return {"mean_delta": round(float(np.mean(deltas)), 4), "ci95": [round(low, 4), round(high, 4)],
-            "n": len(deltas)}
+    return {"mean_delta": round(float(np.mean(deltas)), 4), "ci95": [round(low, 4), round(high, 4)], "n": len(deltas)}
 
 
 def _thresholds(frozen: dict, rows: list, top: int, arm: str) -> list:
@@ -119,8 +119,11 @@ def _thresholds(frozen: dict, rows: list, top: int, arm: str) -> list:
     for row in rows:
         source = frozen[row["question_id"]]
         keep = arm_of(source, top, arm)
-        seen += [c.get("rerank_score") for c in source["candidates"]
-                 if c["address"] in keep and c.get("rerank_score") is not None]
+        seen += [
+            c.get("rerank_score")
+            for c in source["candidates"]
+            if c["address"] in keep and c.get("rerank_score") is not None
+        ]
     if not seen:
         return []
     return [round(float(np.quantile(seen, q)), 4) for q in QUANTILES]
@@ -128,11 +131,10 @@ def _thresholds(frozen: dict, rows: list, top: int, arm: str) -> list:
 
 def _by_score(row: dict, frozen_row: dict, threshold: float) -> set:
     scored = {c["address"]: c.get("rerank_score") for c in frozen_row["candidates"]}
-    return {n for n, a in enumerate(row["addresses"])
-            if scored.get(a) is None or scored[a] >= threshold}
+    return {n for n, a in enumerate(row["addresses"]) if scored.get(a) is None or scored[a] >= threshold}
 
 
-def curve(measurement: dict, frozen: dict, arm: str = "A", seed: int = 42) -> dict:
+def curve(measurement: dict, frozen: dict, arm: str = "A", seed: int = stats.SEED) -> dict:
     top, form = measurement["top"], measurement["form"]
     by_id = {r["id"]: r for r in frozen["rows"]}
     rows = [r for r in measurement["rows"] if r["question_id"] in by_id]
@@ -140,30 +142,35 @@ def curve(measurement: dict, frozen: dict, arm: str = "A", seed: int = 42) -> di
 
     grader = []
     for cut in CUTS:
-        read = [shares(r["classes"], r["addresses"], arms[r["question_id"]],
-                       kept_by_grader(r, cut, form)) for r in rows]
+        read = [
+            shares(r["classes"], r["addresses"], arms[r["question_id"]], kept_by_grader(r, cut, form)) for r in rows
+        ]
         grader.append({"cut": cut, "rows": read, **_point(read, seed)})
 
     reranker = []
     for threshold in _thresholds(by_id, rows, top, arm):
-        read = [shares(r["classes"], r["addresses"], arms[r["question_id"]],
-                       _by_score(r, by_id[r["question_id"]], threshold)) for r in rows]
+        read = [
+            shares(
+                r["classes"], r["addresses"], arms[r["question_id"]], _by_score(r, by_id[r["question_id"]], threshold)
+            )
+            for r in rows
+        ]
         reranker.append({"threshold": threshold, "rows": read, **_point(read, seed)})
 
     matched = []
     for step in grader:
         if step["gold_any"]["point"] is None or not reranker:
             continue
-        near = min(reranker, key=lambda s: abs((s["gold_any"]["point"] or 0)
-                                               - step["gold_any"]["point"]))
-        matched.append({
-            "cut": step["cut"],
-            "threshold": near["threshold"],
-            "retention": [step["gold_any"]["point"], near["gold_any"]["point"]],
-            "strangers_dropped": [step["strangers_dropped"]["point"],
-                                  near["strangers_dropped"]["point"]],
-            "paired_delta": _paired(step["rows"], near["rows"], "strangers_dropped", seed),
-        })
+        near = min(reranker, key=lambda s: abs((s["gold_any"]["point"] or 0) - step["gold_any"]["point"]))
+        matched.append(
+            {
+                "cut": step["cut"],
+                "threshold": near["threshold"],
+                "retention": [step["gold_any"]["point"], near["gold_any"]["point"]],
+                "strangers_dropped": [step["strangers_dropped"]["point"], near["strangers_dropped"]["point"]],
+                "paired_delta": _paired(step["rows"], near["rows"], "strangers_dropped", seed),
+            }
+        )
 
     strip = lambda steps: [{k: v for k, v in s.items() if k != "rows"} for s in steps]  # noqa: E731
     return {
@@ -179,8 +186,9 @@ def curve(measurement: dict, frozen: dict, arm: str = "A", seed: int = 42) -> di
     }
 
 
-def run(measurement_path: str, candidates_path: str, arm: str = "A",
-        name: str | None = None, record: bool = False) -> dict:
+def run(
+    measurement_path: str, candidates_path: str, arm: str = "A", name: str | None = None, record: bool = False
+) -> dict:
     measurement = json.loads(Path(measurement_path).read_text())
     measurement["rows"] = measurements.rows_of(measurement_path)
     frozen = json.loads(Path(candidates_path).read_text())

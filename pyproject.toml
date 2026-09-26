@@ -55,6 +55,10 @@ line-length = 120
 # E5 is the width: declared and never selected, so nothing read it and the code drifted past it
 select = ["E4", "E5", "E7", "E9", "F", "I", "B"]
 
+[tool.ruff.lint.isort]
+# the `config/` folder of yaml beside the tree is not the `config` module the app imports
+known-third-party = ["config"]
+
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [
     "fastapi.Depends",

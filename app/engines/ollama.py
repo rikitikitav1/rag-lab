@@ -70,9 +70,7 @@ def context_length(model: str, spec=None) -> int | None:
         return window
     # the full tag, or llama3.1:8b would read the window of a loaded llama3.1:70b
     wanted = spellings(model)
-    window = next(
-        (e.get("context_length") for e in loaded_models(spec) if e.get("name") in wanted), None
-    )
+    window = next((e.get("context_length") for e in loaded_models(spec) if e.get("name") in wanted), None)
     # an unloaded model has no window yet: a cached None hid the real one for a minute after the load
     if window is not None:
         _windows[key] = (time.monotonic(), window)
@@ -137,9 +135,7 @@ def registry_size(model: str) -> int | None:
     if "/" not in repo:
         repo = f"library/{repo}"
     try:
-        seen = requests.get(
-            f"https://registry.ollama.ai/v2/{repo}/manifests/{tag}", timeout=10
-        ).json()
+        seen = requests.get(f"https://registry.ollama.ai/v2/{repo}/manifests/{tag}", timeout=10).json()
         return sum(layer["size"] for layer in seen["layers"]) or None
     except Exception as e:
         log.warning("ollama.registry_size_unknown", model=model, error=str(e))
@@ -165,12 +161,15 @@ def pull_model(model, spec=None):
     post("/api/pull", {"model": base, "stream": False}, spec, timeout=PULL_TIMEOUT)
     # the base first: the tag made from it carries its penalty along with its own window
     hold_repetition_penalty(base, spec)
-    return post("/api/create", {"model": model, "from": base, "parameters": {"num_ctx": window}, "stream": False},
-                spec, timeout=PULL_TIMEOUT)
+    return post(
+        "/api/create",
+        {"model": model, "from": base, "parameters": {"num_ctx": window}, "stream": False},
+        spec,
+        timeout=PULL_TIMEOUT,
+    )
 
 
-# the penalty a server applies where the model names none, measured byte for byte; another version is unknown
-MEASURED_REPEAT_PENALTY = {"0.32.0": 1.1}
+MEASURED_REPEAT_PENALTY = config.settings.llm.measured_repeat_penalty
 
 
 def server_version(spec=None) -> str | None:
@@ -213,8 +212,12 @@ def hold_repetition_penalty(model: str, spec=None) -> bool:
     held = _parameters(seen).get("repeat_penalty")
     if held is not None and float(held) == wanted:
         return False
-    post("/api/create", {"model": model, "from": model, "parameters": {"repeat_penalty": wanted}, "stream": False},
-         spec, timeout=PULL_TIMEOUT)
+    post(
+        "/api/create",
+        {"model": model, "from": model, "parameters": {"repeat_penalty": wanted}, "stream": False},
+        spec,
+        timeout=PULL_TIMEOUT,
+    )
     # a runner already loaded keeps the parameters it started with until it loads again
     unload(model, spec)
     log.info("ollama.repetition_penalty_held", model=model, was=held, now=wanted)
@@ -245,9 +248,7 @@ def load_into_memory(model: str, spec=None) -> dict:
 
 
 def delete_model(model, spec=None):
-    response = requests.delete(
-        f"{_at(spec)}/api/delete", json={"model": model}, timeout=HTTP_TIMEOUT
-    )
+    response = requests.delete(f"{_at(spec)}/api/delete", json={"model": model}, timeout=HTTP_TIMEOUT)
     if response.status_code == 404:
         log.info("ollama.model_already_absent", model=model)
         return None

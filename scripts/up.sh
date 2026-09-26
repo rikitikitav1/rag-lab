@@ -24,9 +24,9 @@ if ! grep -q "nvidia.com/gpu=all" <<<"$info"; then
   exit 1
 fi
 
-# config.yaml names the judge; the vllm service starts with that model, and nothing else names it
+# config/roles.yaml names the judge; the vllm service starts with that model, and nothing else names it
 judge_on_vllm() {
-  sed -nE 's/^ *judging: *\{ *model: *([^,} ]+) *,.*engine: *vllm[,} ].*/\1/p' config.yaml | head -n 1
+  sed -nE 's/^ *judging: *\{ *model: *([^,} ]+) *,.*engine: *vllm[,} ].*/\1/p' config/roles.yaml | head -n 1
 }
 if model=$(judge_on_vllm) && [ -n "$model" ]; then
   export VLLM_MODEL="$model"

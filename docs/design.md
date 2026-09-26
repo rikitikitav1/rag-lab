@@ -1,6 +1,6 @@
 # Design notes
 
-Why the agent and the corpus are built the way they are. Every claim here was measured in an entry of the [experiment journal](experiments.md), and the numbers live in those entries, not here; values the stand uses are in `config.yaml`.
+Why the agent and the corpus are built the way they are. Every claim here was measured in an entry of the [experiment journal](experiments.md), and the numbers live in those entries, not here; values the stand uses are in `config.yaml` and `config/`.
 
 ## Corpus-first: when the agent is allowed to look outside
 

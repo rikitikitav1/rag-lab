@@ -116,12 +116,12 @@ on the criterion set. Both halves of that sentence are true at once.
 
 ## Where the role's model name actually lives
 
-`config.yaml` carries the inference options for each role, and the model name in it is what
+`config/roles.yaml` carries the inference options for each role, and the model name in it is what
 bootstrap assigns on an empty database. Once a role is assigned, the name is served from the
 database and bootstrap leaves it alone, because the door for changing it is `PUT /v1/role` and a
 restart must not undo a deliberate change.
 
-So editing `config.yaml` does not change an already assigned role. After bootstrap, the database
+So editing `config/roles.yaml` does not change an already assigned role. After bootstrap, the database
 value is authoritative, and the file holds the default for a role not yet seated. Run snapshots
 record what the database served, so they show the model that actually answered. Change the role
 through the route, and read the file as a declaration rather than as the current state.

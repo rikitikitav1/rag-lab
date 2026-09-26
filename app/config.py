@@ -21,6 +21,8 @@ class RoleCfg(_Strict):
     # unnamed means the seeded ollama, which is a default only while every config model is pulled
     engine: str | None = None
     options: dict = {}
+    # the prompt versions the seed activates on an empty database, by purpose
+    prompts: dict[str, int] = {}
 
     @field_validator("options")
     @classmethod
@@ -184,6 +186,8 @@ class MeasureRulesCfg(_Strict):
     boilerplate_file_share: float
     boilerplate_min_files: int
     min_breaching_chunks: int
+    soup_alnum_ratio: float
+    prose_word_letters: int
 
 
 class IngestQualityCfg(_Strict):
@@ -248,11 +252,19 @@ class EngineCfg(_Strict):
     placement: Literal["gpu", "cpu", "gpu+cpu", "remote"]
 
 
+class TokenEstimateCfg(_Strict):
+    latin_divisor: float
+    cyrillic_extra: float
+
+
 class LlmCfg(_Strict):
     base_url: str
     roles: dict[str, RoleCfg]
     context_length: int
     repetition_penalty: float
+    token_estimate: TokenEstimateCfg
+    # keyed by the ollama version the penalty was measured on
+    measured_repeat_penalty: dict[str, float]
 
     # a role on another engine is registered through `/v1/model`, not pulled through `/api/pull`
     @property
@@ -276,9 +288,54 @@ class McpIntegrationsCfg(_Strict):
         return os.getenv(name, "")
 
 
+class StatsCfg(_Strict):
+    bootstrap_n: int
+    alpha: float
+    seed: int
+
+
+class JudgeCorrelationCfg(_Strict):
+    rho_with_overlap: float
+    partial_gap: float
+    stratum_gap: float
+    min_rows: int
+    code_stratum: float
+
+
+class JudgeLanguageCfg(_Strict):
+    control_floor: float
+    moves_allowed: float
+
+
+class VetoCfg(_Strict):
+    quotas: dict[str, int]
+    min_heading: int
+
+
+class GradeCurveCfg(_Strict):
+    cuts: list[float | None]
+
+
+class RetrievalCompareCfg(_Strict):
+    candidates: int
+    depth: int
+    cutoffs: list[int]
+    rrf_k: int
+
+
+class EvalsCfg(_Strict):
+    stats: StatsCfg
+    judge_correlation: JudgeCorrelationCfg
+    judge_language: JudgeLanguageCfg
+    veto: VetoCfg
+    grade_curve: GradeCurveCfg
+    retrieval_compare: RetrievalCompareCfg
+
+
 class AppConfig(_Strict):
     retrieval: RetrievalCfg
     verdict: VerdictCfg
+    evals: EvalsCfg
     rerank: RerankCfg
     agent: AgentCfg
     ingestion: IngestionCfg
@@ -318,13 +375,66 @@ def _data(here: str, path: str):
         return yaml.safe_load(f)
 
 
+CONFIG_DIR = "config"
+ROLES_FILE = os.path.join(CONFIG_DIR, "roles.yaml")
+
+
+# the sections a process owns live in their own file under `config/`; the roles are read apart
+def _section_files(here: str) -> list[str]:
+    folder = os.path.join(here, CONFIG_DIR)
+    names = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+    return [os.path.join(folder, n) for n in names if n.endswith(".yaml") and not n.startswith("roles")]
+
+
+# a section named twice refuses to load
+def _sections(here: str, raw: dict) -> dict:
+    for file in _section_files(here):
+        with open(file) as f:
+            part = yaml.safe_load(f) or {}
+        twice = sorted(set(part) & set(raw))
+        if twice:
+            raise ValueError(f"{CONFIG_DIR}/{os.path.basename(file)}: {twice} already come from another file")
+        raw.update(part)
+    return raw
+
+
+def _source_files(path: str) -> list[str]:
+    with open(path) as f:
+        doc = yaml.safe_load(f)
+    sources = doc.get("sources") if isinstance(doc, dict) else None
+    here = os.path.dirname(os.path.abspath(path))
+    return [os.path.join(here, file) for file in sources.values()] if isinstance(sources, dict) else []
+
+
+# every file the loader reads, a source's data file included: the one answer to which files make the config
+def loaded_files(with_overlay: bool = True, with_data: bool = True) -> list[str]:
+    here = os.path.dirname(os.path.abspath(CONFIG_PATH))
+    overlay = [os.path.join(here, CONFIG_OVERLAY)] if CONFIG_OVERLAY and with_overlay else []
+    base = [os.path.abspath(CONFIG_PATH), *_section_files(here), os.path.join(here, ROLES_FILE), *overlay]
+    return base + _source_files(CONFIG_PATH) if with_data and os.path.exists(CONFIG_PATH) else base
+
+
+# the prompt versions a fresh database starts on belong to the stand, not to a layout: an overlay does not move them
+def declared_prompts() -> dict[str, int]:
+    here = os.path.dirname(os.path.abspath(CONFIG_PATH))
+    declared: dict[str, int] = {}
+    for name, role in _roles_of(os.path.join(here, ROLES_FILE)).items():
+        for purpose, version in ((role or {}).get("prompts") or {}).items():
+            if purpose in declared:
+                raise ValueError(f"{ROLES_FILE}: {purpose} is named by two roles, the second is {name}")
+            declared[purpose] = version
+    return declared
+
+
 def _load(path: str, overlay: str | None = None) -> AppConfig:
     with open(path) as f:
         raw = yaml.safe_load(f)
+    if "roles" in (raw.get("llm") or {}):
+        raise ValueError(f"{path}: the roles live in {ROLES_FILE}, not here")
     here = os.path.dirname(os.path.abspath(path))
-    # beside the config, as the sources are: from another directory the layer was not found
-    if overlay:
-        raw["llm"]["roles"] = _roles_of(os.path.join(here, overlay))
+    raw = _sections(here, raw)
+    # the roles are a layer of their own; an overlay replaces them whole, as `config/roles.cpu.yaml` does
+    raw["llm"]["roles"] = _roles_of(os.path.join(here, overlay or ROLES_FILE))
     if isinstance(raw.get("sources"), dict):
         raw["sources"] = {name: _data(here, file) for name, file in raw["sources"].items()}
     return AppConfig(**raw)

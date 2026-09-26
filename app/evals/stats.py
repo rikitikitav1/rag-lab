@@ -1,9 +1,12 @@
 import statistics
 
+import config
 import numpy as np
 from scipy.stats import wilcoxon
 
-BOOTSTRAP_N = 10_000
+BOOTSTRAP_N = config.settings.evals.stats.bootstrap_n
+ALPHA = config.settings.evals.stats.alpha
+SEED = config.settings.evals.stats.seed
 
 
 # both callers wrote this by hand, and this branch had to fix the rounding in both separately
@@ -12,7 +15,7 @@ def wilcoxon_p(deltas) -> float:
 
 
 # the one resampling of the stand: two of them drew a different number of times and read as one
-def bootstrap_ci(deltas, seed: int = 42, rng=None) -> tuple[float, float]:
+def bootstrap_ci(deltas, seed: int = SEED, rng=None) -> tuple[float, float]:
     # sorted: the draw is over the values, and the caller's order must not move the interval
     arr = np.sort(np.array(list(deltas), dtype=float))
     rng = rng if rng is not None else np.random.default_rng(seed)
@@ -34,7 +37,7 @@ def delta_stats(deltas: list, rng=None) -> dict:
 
 
 # reject while p(i) <= alpha/(m-i) and stop at the first failure, which holds the rest
-def holm(pvalues: list[float], alpha: float = 0.05) -> list[bool]:
+def holm(pvalues: list[float], alpha: float = ALPHA) -> list[bool]:
     order = sorted(range(len(pvalues)), key=lambda i: pvalues[i])
     kept = [False] * len(pvalues)
     for rank, i in enumerate(order):
@@ -45,7 +48,7 @@ def holm(pvalues: list[float], alpha: float = 0.05) -> list[bool]:
 
 
 # None past the break: a test the step-down never reached had no bar to fail
-def holm_thresholds(pvalues: list[float], alpha: float = 0.05) -> list[float | None]:
+def holm_thresholds(pvalues: list[float], alpha: float = ALPHA) -> list[float | None]:
     order = sorted(range(len(pvalues)), key=lambda i: pvalues[i])
     out: list[float | None] = [None] * len(pvalues)
     for rank, i in enumerate(order):
@@ -57,7 +60,7 @@ def holm_thresholds(pvalues: list[float], alpha: float = 0.05) -> list[float | N
 
 
 # both reports wrote the same three keys onto every test and returned the same four
-def annotate_holm(tests: list[dict], family: str, alpha: float = 0.05) -> dict:
+def annotate_holm(tests: list[dict], family: str, alpha: float = ALPHA) -> dict:
     pvalues = [t["p"] for t in tests]
     kept, thresholds = holm(pvalues, alpha), holm_thresholds(pvalues, alpha)
     for test, keep, threshold in zip(tests, kept, thresholds, strict=True):
@@ -86,11 +89,7 @@ def mean_of(values, digits: int = 2) -> float | None:
 
 # the ids come from the caller: their order is what a fixed seed drew indices into
 def deltas_over(before: dict, after: dict, ids) -> list[float]:
-    return [
-        after[i] - before[i]
-        for i in ids
-        if before.get(i) is not None and after.get(i) is not None
-    ]
+    return [after[i] - before[i] for i in ids if before.get(i) is not None and after.get(i) is not None]
 
 
 # better, worse and the rest, counted once: three modules counted the two directions by hand

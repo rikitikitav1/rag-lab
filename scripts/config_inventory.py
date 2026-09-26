@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from preflight_grid import TUNED
 
 ROOT = Path(__file__).resolve().parent.parent
 VERDICTS = ROOT / "docs" / "config_inventory.yaml"
@@ -19,8 +20,8 @@ FILES = {
 _ENV_IN_CODE = re.compile(r"""os\.(?:environ(?:\.get)?\(|environ\[|getenv\()\s*["']([A-Z][A-Z0-9_]+)""")
 _ENV_IN_COMPOSE = re.compile(r"\$\{([A-Z][A-Z0-9_]+)")
 _ENV_IN_EXAMPLE = re.compile(r"^#?\s*([A-Z][A-Z0-9_]+)=", re.M)
-# a directive is a comment that opens with it; the header that explains the directive does not count
-_TUNED = re.compile(r"^#\s*(tuned: file=\S+|not measured)")
+# the preflight's grammar is the one directive: a file and nothing after it
+_NOT_MEASURED = re.compile(r"^\s*#\s*not measured")
 # where the walk reads code: the app, the converter supervisor beside its image, and the scripts that measure
 WALKED = ("app", "converters/supervisor.py", "scripts")
 # default arguments that are a threshold or a seed: other defaults are sizes a caller passes anyway
@@ -32,10 +33,16 @@ def config_keys() -> dict[str, str]:
     import config
     from pydantic import BaseModel
 
-    raw = yaml.safe_load((ROOT / "config.yaml").read_text())
+    holders = {name: yaml.safe_load((ROOT / name).read_text()) or {} for name in _config_files()}
     keys: dict[str, str] = {}
 
     def where(path: list[str]) -> str:
+        holder = next(
+            (n for n, doc in holders.items() if _holds(doc, path[:2] if path[0] == "llm" else path[:1])), None
+        )
+        if holder is None:
+            return "app/config.py default"
+        raw = holders[holder]
         if path[0] == "sources" and len(path) > 1:
             return (raw.get("sources") or {}).get(path[1], "app/config.py default")
         node = raw
@@ -48,7 +55,7 @@ def config_keys() -> dict[str, str]:
                 return "app/config.py default"
             if node is None:
                 return "app/config.py default"
-        return "config.yaml"
+        return holder
 
     def walk(value, path):
         if isinstance(value, BaseModel):
@@ -63,34 +70,59 @@ def config_keys() -> dict[str, str]:
         else:
             keys[".".join(path)] = where(path)
 
-    walk(config.settings, [])
+    # the base layout, whatever overlay this process was started with: the table describes one config
+    walk(config._load(str(ROOT / "config.yaml")), [])
     return keys
+
+
+# the config's files as the loader reads them, without an overlay: it only replaces roles
+def _config_files() -> list[str]:
+    import config
+
+    return [str(Path(f).relative_to(ROOT)) for f in config.loaded_files(with_overlay=False, with_data=False)]
+
+
+def _directive(comment: str) -> str | None:
+    if m := TUNED.match(comment):
+        return f"tuned: file={m.group(1)}"
+    return "not measured" if _NOT_MEASURED.match(comment) else None
+
+
+def _holds(doc: dict, path: list[str]) -> bool:
+    for part in path:
+        if not isinstance(doc, dict) or part not in doc:
+            return False
+        doc = doc[part]
+    return True
 
 
 # how each config key was chosen: its own directive, or the nearest parent's, as the yaml nests them
 def config_annotations() -> dict[str, str]:
-    lines = (ROOT / "config.yaml").read_text().splitlines()
+    # a file's last directive belongs to no key of the next file
+    lines = [line for name in _config_files() for line in [*(ROOT / name).read_text().splitlines(), None]]
     path, bound, pending = [], {}, None
     for line in lines:
+        if line is None:
+            path, pending = [], None
+            continue
         stripped = line.strip()
         if stripped.startswith("#"):
-            m = _TUNED.match(stripped)
-            pending = m.group(1) if m else pending
+            pending = _directive(stripped) or pending
             continue
         m = re.match(r"^(\s*)([A-Za-z_][\w-]*):", line)
         if not m:
             continue
         depth = len(m.group(1)) // 2
         path = path[:depth] + [m.group(2)]
-        tail = _TUNED.match("#" + line.split(" #", 1)[1].strip()) if " #" in line else None
-        said = tail.group(1) if tail else pending
+        tail = _directive("#" + line.split(" #", 1)[1].strip()) if " #" in line else None
+        said = tail or pending
         if said:
             bound[".".join(path)] = said
         pending = None
     found = {}
     for key, where in config_keys().items():
         # a default the model holds was never read by the measurement its parent names
-        if where != "config.yaml":
+        if where == "app/config.py default" or where.startswith("datasets/"):
             continue
         parts = key.split(".")
         for n in range(len(parts), 0, -1):

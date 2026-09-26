@@ -103,7 +103,7 @@ The data model, the reranker's server and what bootstrap does on start: [docs/de
 
 Each kind of setting has one home:
 
-- `config.yaml` (mounted into the container): the pipeline, that is the roles and their models, retrieval, reranking, the agent, ingestion, text search, corpus variants and sources, and how a source is added (`intake`: the route by file, the report's bounds, each converter's engine and settings). A value chosen by measurement carries its reason and its measurement file beside it, and every run records the values it used in its snapshot.
+- `config.yaml` and the files under `config/` (mounted into the container), read as one config. `config.yaml` is the base: retrieval, reranking, the agent, ingestion, text search, corpus variants and sources, the engines. Each file under `config/` belongs to one process: `roles.yaml` the roles, their models and the prompt versions a fresh database starts on (`roles.cpu.yaml` replaces them for the stand without a GPU), `intake.yaml` how a source is added (the route by file, the report's bounds, each converter's engine and settings), `ingest_quality.yaml` the gates a cut passes, `evals.yaml` the verdict sets and the thresholds of the statistics. A section written in two files refuses to load. A value chosen by measurement carries its reason and its measurement file beside it, and every run records the values it used in its snapshot.
 - `.env`: what depends on the machine or must stay out of the repo (timeouts, shares of GPU memory, keys); [`.env.example`](.env.example) lists every variable with its default.
 - the database: which model serves a role, prompt versions and engine rows, switched at runtime through the API.
 - `datasets/`: the question banks, the corpus sources and the raw sources a conversion writes (`datasets/raw_sources/`, out of git). A pass writes its measurement and its frozen candidate pool here too, and those stay out of git: a number reaches a reader as the table in its journal entry, with the file name and the job id as its address.
@@ -121,7 +121,7 @@ curl -X POST localhost:8000/v1/chat/question \
 # Swagger: http://localhost:8000/docs
 ```
 
-`scripts/up.sh` rather than a bare `docker compose up -d`: on a host without a GPU it says why the stand would not start instead of Docker's "unresolvable CDI devices", it unloads ollama's models before `vllm` starts, and it hands `vllm` the judge `config.yaml` names. `scripts/up.sh --cpu` brings the stand up without a GPU, every role on the processor ollama: [docs/stand_modes.md](docs/stand_modes.md), mode 8.
+`scripts/up.sh` rather than a bare `docker compose up -d`: on a host without a GPU it says why the stand would not start instead of Docker's "unresolvable CDI devices", it unloads ollama's models before `vllm` starts, and it hands `vllm` the judge `config/roles.yaml` names. `scripts/up.sh --cpu` brings the stand up without a GPU, every role on the processor ollama: [docs/stand_modes.md](docs/stand_modes.md), mode 8.
 
 <details>
 <summary>Diagram: how the stand comes up</summary>

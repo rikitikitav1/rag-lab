@@ -6,11 +6,14 @@ def test_a_config_comment_and_its_provenance_lines_stay_within_three():
 
     root = Path(__file__).resolve().parent.parent
     run, worst, where = 0, 0, 0
-    for i, line in enumerate(root.joinpath("config.yaml").read_text().splitlines(), 1):
-        run = run + 1 if line.strip().startswith("#") else 0
-        if run > worst:
-            worst, where = run, i
-    assert worst <= 3, f"comment block of {worst} lines ending at config.yaml:{where}"
+    for source in [root / "config.yaml", *sorted((root / "config").glob("*.yaml"))]:
+        run = 0
+        for i, line in enumerate(source.read_text().splitlines(), 1):
+            run = run + 1 if line.strip().startswith("#") else 0
+            if run > worst:
+                worst, where = run, f"{source.relative_to(root)}:{i}"
+    assert worst <= 3, f"comment block of {worst} lines ending at {where}"
+
 
 # a comment longer than one line is a discussion, and its home is the project's log
 LONG_COMMENT_BLOCKS = 0
@@ -18,11 +21,20 @@ LONG_COMMENT_BLOCKS = 0
 
 # every file whose comments are written by hand: `db/schema.sql` is a pg_dump and is not
 COMMENTED = (
-    "app/**/*.py", "scripts/**/*.py", "tests/**/*.py", "scripts/**/*.sh",
-    "db/migrations/*.sql", ".github/workflows/*.yml",
+    "app/**/*.py",
+    "scripts/**/*.py",
+    "tests/**/*.py",
+    "scripts/**/*.sh",
+    "db/migrations/*.sql",
+    ".github/workflows/*.yml",
+    "config/*.yaml",
 )
 COMMENTED_FILES = (
-    "Dockerfile", "docker-compose.yml", "config.yaml", ".env.example", "pyproject.toml",
+    "Dockerfile",
+    "docker-compose.yml",
+    "config.yaml",
+    ".env.example",
+    "pyproject.toml",
 )
 # sql says it with two dashes, and a ratchet that looks for `#` there reads nothing at all
 MARKERS = {".sql": "--"}
@@ -38,7 +50,8 @@ def _comment_lines(source) -> set[int]:
             i
             for i, line in enumerate(source.read_text().splitlines(), 1)
             if line.strip().startswith(marker)
-            and not line.strip().startswith(DIRECTIVES) and "tuned: file=" not in line
+            and not line.strip().startswith(DIRECTIVES)
+            and "tuned: file=" not in line
         }
     import io
     import tokenize
@@ -92,8 +105,7 @@ def test_the_ratchet_reads_every_file_it_says_it_reads():
 def test_no_comment_block_runs_past_one_line():
     blocks = _long_comment_blocks()
     assert len(blocks) <= LONG_COMMENT_BLOCKS, (
-        f"{len(blocks)} comment blocks over one line against a ceiling of "
-        f"{LONG_COMMENT_BLOCKS}: {blocks[-5:]}"
+        f"{len(blocks)} comment blocks over one line against a ceiling of {LONG_COMMENT_BLOCKS}: {blocks[-5:]}"
     )
 
 
@@ -106,8 +118,7 @@ def _long_docstrings() -> list[str]:
         for source in sorted(root.glob(pattern)):
             tree = ast.parse(source.read_text())
             holders = [tree] + [
-                n for n in ast.walk(tree)
-                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+                n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
             ]
             for node in holders:
                 text = ast.get_docstring(node, clean=False)
@@ -140,13 +151,15 @@ def test_a_comment_says_what_the_code_does_and_not_how_it_came_to_be():
             continue
         for source in sorted(root.glob(pattern)):
             lines = source.read_text().splitlines()
-            found += [f"{source.relative_to(root)}:{i}" for i in sorted(_comment_lines(source))
-                      if history.search(lines[i - 1].split("#", 1)[-1])]
+            found += [
+                f"{source.relative_to(root)}:{i}"
+                for i in sorted(_comment_lines(source))
+                if history.search(lines[i - 1].split("#", 1)[-1])
+            ]
     for name in COMMENTED_FILES:
         source = root / name
         lines = source.read_text().splitlines()
-        found += [f"{name}:{i}" for i in sorted(_comment_lines(source))
-                  if history.search(lines[i - 1])]
+        found += [f"{name}:{i}" for i in sorted(_comment_lines(source)) if history.search(lines[i - 1])]
     assert found == [], found
 
 
@@ -178,8 +191,7 @@ def test_one_value_is_capped_the_same_at_every_door_that_names_it():
 
     def cap(model, field):
         return next(
-            (m.max_length for m in model.model_fields[field].metadata
-             if getattr(m, "max_length", None) is not None),
+            (m.max_length for m in model.model_fields[field].metadata if getattr(m, "max_length", None) is not None),
             None,
         )
 
@@ -210,3 +222,19 @@ def test_every_job_type_the_queue_knows_is_described_in_the_docs():
     text = (root / "docs" / "api.md").read_text()
     undescribed = [name for name in job_specs.SPECS if f"| `{name}` |" not in text]
     assert not undescribed, f"the queue takes {undescribed} and the docs do not say what they do"
+
+
+# an editor's trailing commas left a measurement file unreadable, and the preflight counted it missing
+def test_every_json_file_in_git_parses():
+    import json
+    import subprocess
+
+    root = Path(__file__).resolve().parent.parent
+    names = subprocess.run(["git", "ls-files", "*.json"], cwd=root, capture_output=True, text=True).stdout.split()
+    broken = []
+    for name in names:
+        try:
+            json.loads((root / name).read_text())
+        except ValueError:
+            broken.append(name)
+    assert not broken
