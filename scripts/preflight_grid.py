@@ -184,6 +184,57 @@ def source_files_verdict(seen: dict) -> tuple[bool, str]:
     return True, f"source files: none moved; {seen['unrecorded']} rows indexed before digests were kept"
 
 
+# a folder the host lacks cuts to nothing, and a file naming the PDFs beside a raw row's markdown cuts the wrong text
+def source_folders_are_there() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, pathlib; from orm.sync_db import Session; from models.corpus import DataSource;"
+        " from sources import files;"
+        " raw = {n: (r or {}).get('folder') for n, r in Session().query(DataSource.name, DataSource.raw).all()};"
+        " seen = {s.name: {'folders': [f for f in [s.folder, *(v.folder for v in s.versions.values())] if f],"
+        "   'raw': raw.get(s.name)} for s in files.source_files().values() if s.folder is not None};"
+        " print(json.dumps({n: {**v, 'there': [pathlib.Path(f).is_dir() for f in v['folders']]}"
+        "   for n, v in seen.items()}))"
+    )
+    if not out.startswith("{"):
+        return False, f"source folders: cannot read them ({out[:60] or 'no answer'})"
+    return source_folders_verdict(json.loads(out))
+
+
+def source_folders_verdict(seen: dict) -> tuple[bool, str]:
+    bad = []
+    for name, v in sorted(seen.items()):
+        paired = zip(v["folders"], v["there"], strict=True)
+        bad += [f"{name}: {f} is not on this host" for f, there in paired if not there]
+        if v["raw"] and not all(f.rstrip("/").startswith(v["raw"].rstrip("/")) for f in v["folders"]):
+            bad.append(f"{name}: names {v['folders']}, not its raw markdown under {v['raw']}")
+    if bad:
+        return False, "source folders: " + "; ".join(bad)
+    return True, f"source folders: {len(seen)} folder sources, each on this host and under its raw folder if it has one"
+
+
+# a question with no version reads the map's newest; a variant of older versions only answers it thinly, in silence
+def newest_versions_are_searchable() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, config; from orm.sync_db import engine; from sqlalchemy import text;"
+        " q = 'SELECT category, array_agg(DISTINCT v) FROM data_chunks, unnest(versions) v'"
+        " ' WHERE variant = :v GROUP BY 1';"
+        " rows = engine.connect().execute(text(q), {'v': config.settings.corpus.variant}).all();"
+        " newest = {k: r.versions[0] for k, r in config.settings.categories.items() if r.versions};"
+        " print(json.dumps({'held': {c: list(vs) for c, vs in rows}, 'newest': newest}))"
+    )
+    if not out.startswith("{"):
+        return False, f"versions: cannot read them ({out[:60] or 'no answer'})"
+    return newest_versions_verdict(json.loads(out))
+
+
+def newest_versions_verdict(seen: dict) -> tuple[bool, str]:
+    held, newest = seen["held"], seen["newest"]
+    bad = [f"{c} holds {sorted(held[c])}, not its newest {v}" for c, v in newest.items() if v not in held.get(c, [v])]
+    if bad:
+        return False, "a question with no version would read a missing newest: " + "; ".join(bad)
+    return True, f"versions: {len(held)} versioned categories in the variant, each holds its newest"
+
+
 def prompt_drift(declared: dict, active: dict) -> list[str]:
     return [
         f"{purpose}: config says v{version}, the stand serves v{active.get(purpose, 'none')}"
@@ -547,6 +598,8 @@ CHECKS = (
     roles_match_the_config,
     prompts_match_the_config,
     sources_match_their_files,
+    source_folders_are_there,
+    newest_versions_are_searchable,
     role_engines_answer,
     queue_is_idle,
     corpus_variant_is_usable,

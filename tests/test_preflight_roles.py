@@ -73,3 +73,25 @@ def test_the_window_check_does_not_compare_another_model(preflight, monkeypatch)
     assert ok and "the generator is not resident, qwen2.5:7b-w16384 is" in said
     seen.update(asked="llama3.1:8b", served=4096)
     assert preflight.window_matches_config()[0] is False
+
+
+def test_a_versioned_category_without_its_newest_in_the_variant_is_refused(preflight):
+    ok, said = preflight.newest_versions_verdict({"held": {"postgresql": ["17"]}, "newest": {"postgresql": "18"}})
+    assert not ok and "not its newest 18" in said
+    ok, _ = preflight.newest_versions_verdict({"held": {"postgresql": ["18", "17"]}, "newest": {"postgresql": "18"}})
+    assert ok
+    assert preflight.newest_versions_verdict({"held": {}, "newest": {"postgresql": "18"}})[0]
+    assert preflight.newest_versions_are_searchable in preflight.CHECKS
+
+
+def test_a_folder_source_missing_on_the_host_or_off_its_raw_folder_is_refused(preflight):
+    here = {"folders": ["datasets/raw_sources/ostep_0b6a96c6/files"], "raw": "datasets/raw_sources/ostep_0b6a96c6",
+            "there": [True]}
+    assert preflight.source_folders_verdict({"ostep": here})[0]
+    gone = {"folders": ["/notes"], "raw": None, "there": [False]}
+    ok, said = preflight.source_folders_verdict({"notes": gone})
+    assert not ok and "/notes is not on this host" in said
+    pdfs = {"folders": ["datasets/inbox/books/ostep"], "raw": "datasets/raw_sources/ostep_0b6a96c6", "there": [True]}
+    ok, said = preflight.source_folders_verdict({"ostep": pdfs})
+    assert not ok and "not its raw markdown" in said
+    assert preflight.source_folders_are_there in preflight.CHECKS

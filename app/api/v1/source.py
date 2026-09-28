@@ -1,17 +1,24 @@
 from datetime import datetime
 from typing import Literal
 
+import config
 import job_queue
 from crud import get_or_404
+from errors import Final
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import Path as PathParam
+from job_handlers.converting import ROOT
+from job_handlers.onboard import RAW
 from models.corpus import DataChunk, DataSource, Stage
 from orm.async_db import commit_and_refresh, get_session
-from pydantic import BaseModel
-from sources.declaration import Declaration
+from pydantic import BaseModel, Field
+from sources.declaration import Declaration, IntakeOverride
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 from use_cases import source_intake
+from use_cases.index import VARIANT_RE
 from use_cases.source_intake import declared_row
 
 from api.v1.eval import JobEnqueuedResponse
@@ -143,9 +150,45 @@ async def set_source_active(
     session: AsyncSession = Depends(get_session),
 ):
     source = await get_or_404(DataSource, id, session)
+    if refusal := source_intake.active_refusal(source, request.active):
+        raise HTTPException(status_code=409, detail=refusal)
     source.active = request.active
     await session.commit()
     return _response(source, *await _counts(session, source))
+
+
+# a source's own intake knobs over the stand's, read by its next onboarding; an empty body clears them
+@router.put("/{id}/intake", response_model=SourceDetail)
+async def set_source_intake(
+    id: int, request: IntakeOverride, session: AsyncSession = Depends(get_session)
+) -> SourceDetail:
+    source = await get_or_404(DataSource, id, session)
+    queued = job_queue.pending_of_type("onboard_source", source=source.name)
+    if refusal := source_intake.intake_refusal(source, queued):
+        raise HTTPException(status_code=409, detail=refusal)
+    block = request.model_dump(exclude_none=True, exclude_defaults=True)
+    source.origin = source_intake.with_intake(source.origin, block)
+    await commit_and_refresh(session, source)
+    return _detail(source, *await _counts(session, source))
+
+
+# a variant's chunks in every source, as a smoke leaves them; the variant the stand searches is refused
+@router.delete("/variant/{variant}")
+async def remove_variant(variant: str = PathParam(pattern=VARIANT_RE.pattern)) -> dict:
+    try:
+        return await run_in_threadpool(source_intake.remove_variant, variant, config.settings.corpus.variant)
+    except Final as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+
+# a source with its chunks and the stand's own files of it; inactive is `PUT /{id}`, this is gone
+@router.delete("/{id}")
+async def remove_source(id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    source = await get_or_404(DataSource, id, session)
+    try:
+        return await run_in_threadpool(source_intake.remove_source, source, RAW)
+    except Final as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 # declared before `/{id}` so a literal path is not read as an id
@@ -214,6 +257,8 @@ async def analyze_source(
 async def declare_source(request: Declaration, session: AsyncSession = Depends(get_session)) -> SourceDetail:
     if await session.scalar(select(DataSource.id).where(DataSource.name == request.name)):
         raise HTTPException(status_code=409, detail=source_intake.name_taken(request.name))
+    if refusal := source_intake.declaration_refusal(request, ROOT):
+        raise HTTPException(status_code=422, detail=refusal)
     source = declared_row(request)
     session.add(source)
     # two declarations of one name at once: the second meets the unique name at commit
@@ -230,13 +275,34 @@ class SourceOnboardRequest(BaseModel):
     settings: dict[str, str] | None = None
 
 
+class SourceAcceptRequest(BaseModel):
+    # said when the raw verdict is bad; it stays on the row beside the verdict
+    reason: str | None = Field(default=None, min_length=3, max_length=500)
+
+
+# raw to accepted: the conversion is fit to index, and the index reads it once a source file names it
+@router.post("/{id}/accept", response_model=SourceDetail)
+async def accept_source(
+    id: int, request: SourceAcceptRequest, session: AsyncSession = Depends(get_session)
+) -> SourceDetail:
+    source = await get_or_404(DataSource, id, session)
+    queued = job_queue.pending_of_type("onboard_source", source=source.name)
+    if refusal := source_intake.accept_refusal(source, request.reason, queued):
+        raise HTTPException(status_code=409, detail=refusal)
+    source.raw = source_intake.accepted_raw(source, request.reason)
+    source.stage = Stage.accepted
+    await commit_and_refresh(session, source)
+    return _detail(source, *await _counts(session, source))
+
+
 # a declared source to a raw folder: the job routes each file to its engine and reports without a gold
 @router.post("/{id}/onboard", response_model=JobEnqueuedResponse)
 async def onboard_source(
     id: int, request: SourceOnboardRequest, session: AsyncSession = Depends(get_session)
 ) -> JobEnqueuedResponse:
     source = await get_or_404(DataSource, id, session)
-    if refusal := source_intake.onboard_refusal(source):
+    queued = job_queue.pending_of_type("onboard_source", source=source.name)
+    if refusal := source_intake.onboard_refusal(source, queued):
         raise HTTPException(status_code=409, detail=refusal)
     job = job_queue.add_job(session, "onboard_source", source_intake.onboard_options(source.name, request.settings))
     await commit_and_refresh(session, job)

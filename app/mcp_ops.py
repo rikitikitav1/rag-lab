@@ -594,6 +594,10 @@ def add_source(
         )
     except ValidationError as e:
         raise ToolError(str(e)) from e
+    from job_handlers.converting import ROOT
+
+    if refusal := source_intake.declaration_refusal(declaration, ROOT):
+        raise ToolError(refusal)
     with Session() as session:
         if session.scalar(select(DataSource.id).where(DataSource.name == name)):
             raise ToolError(source_intake.name_taken(name))
@@ -667,9 +671,154 @@ def onboard_source(
         found = session.scalar(select(DataSource).where(DataSource.name == name))
         if found is None:
             raise ToolError(f"no source named {name}")
-        if refusal := source_intake.onboard_refusal(found):
+        queued = job_queue.pending_of_type("onboard_source", source=name)
+        if refusal := source_intake.onboard_refusal(found, queued):
             raise ToolError(refusal)
     return {"job_id": job_queue.enqueue("onboard_source", source_intake.onboard_options(name, settings))}
+
+
+def _source_named(session, name: str):
+    from models.corpus import DataSource
+
+    found = session.scalar(select(DataSource).where(DataSource.name == name))
+    if found is None:
+        raise ToolError(f"no source named {name}")
+    return found
+
+
+@mcp_ops.tool(
+    name="set_source_active",
+    description="Put a source in search or take it out, by name; its chunks and files stay. `remove_source` deletes.",
+    annotations={"idempotentHint": True},
+)
+def set_source_active(
+    name: Annotated[str, Field(description="The source's name.")],
+    active: Annotated[bool, Field(description="True puts it in search, false takes it out.")],
+) -> dict:
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = _source_named(session, name)
+        if refusal := source_intake.active_refusal(found, active):
+            raise ToolError(refusal)
+        found.active = active
+        session.commit()
+        return {"source": name, "active": active}
+
+
+@mcp_ops.tool(
+    name="accept_source",
+    description=(
+        "Accept a raw source for indexing: the owner's word that its conversion is fit. A bad raw verdict needs "
+        "a `reason`, kept on the row. The index then reads it once a source file names it; it stays out of search "
+        "until set_source_active turns it on."
+    ),
+)
+def accept_source(
+    name: Annotated[str, Field(description="The raw source's name.")],
+    reason: Annotated[str | None, Field(description="Why a bad verdict is accepted anyway.")] = None,
+) -> dict:
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = _source_named(session, name)
+        queued = job_queue.pending_of_type("onboard_source", source=name)
+        if refusal := source_intake.accept_refusal(found, reason, queued):
+            raise ToolError(refusal)
+        found.raw = source_intake.accepted_raw(found, reason)
+        found.stage = Stage.accepted
+        session.commit()
+        return {"source": name, "stage": "accepted"}
+
+
+@mcp_ops.tool(
+    name="set_source_intake",
+    description=(
+        "Set a source's own intake knobs over the stand's defaults in config/intake.yaml, read by its next "
+        "onboarding: `settings` per tool (as {\"docling\": \"docling/pypdfium2\"}), `mono_faces`, `mono_spread`, "
+        "`reread_below_layer_f1`, `reread_settings`, `reread_cells_slack`, `seam_window`, `seam_margin`, "
+        "`epub_skip`, `headings_by_number`, "
+        "`listing_callouts`, `mono_by_step`, `code_row_rules`, `outline_levels`, `html_one_title`, "
+        "`epub_chapters`, `numbered_levels`, `decode_entities`, `drop_lone_pipes`, `join_layer_hyphens`, "
+        "`restore_dashes`, `join_broken_words`, "
+        "`unescape_bullets`, `unescape_underscores`, `picture_addresses`, `join_split_words`. "
+        "An empty object clears them. Refused while a job reads the source or a source file speaks for it."
+    ),
+)
+def set_source_intake(
+    name: Annotated[str, Field(description="The source's name.")],
+    intake: Annotated[dict, Field(description="The knobs; a key left out keeps the stand's own.")],
+) -> dict:
+    from sources.declaration import IntakeOverride
+    from use_cases import source_intake
+
+    try:
+        block = IntakeOverride(**intake).model_dump(exclude_none=True, exclude_defaults=True)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+    with Session() as session:
+        found = _source_named(session, name)
+        queued = job_queue.pending_of_type("onboard_source", source=name)
+        if refusal := source_intake.intake_refusal(found, queued):
+            raise ToolError(refusal)
+        found.origin = source_intake.with_intake(found.origin, block)
+        session.commit()
+        return {"source": name, "intake": block}
+
+
+@mcp_ops.tool(
+    name="remove_source",
+    description=(
+        "Delete a source by name: its row, its chunks in every variant, and the stand's own folders of it (raw "
+        "conversions, what its job fetched); a folder origin the owner placed stays, and its gate history goes with "
+        "the row. Refused while a job reads it or questions have their gold in it."
+    ),
+    annotations={"destructiveHint": True},
+)
+def remove_source(name: Annotated[str, Field(description="The source's name.")]) -> dict:
+    from errors import Final
+    from job_handlers.onboard import RAW
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = _source_named(session, name)
+    try:
+        return source_intake.remove_source(found, RAW)
+    except Final as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="remove_variant",
+    description="Delete a corpus variant's chunks in every source; the variant the stand searches is refused.",
+    annotations={"destructiveHint": True},
+)
+def remove_variant(variant: Annotated[str, Field(description="The variant's name.")]) -> dict:
+    from errors import Final
+    from use_cases import source_intake
+
+    try:
+        return source_intake.remove_variant(variant, config.settings.corpus.variant)
+    except Final as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="remove_question_set",
+    description=(
+        "Delete a question set by name with its questions. Refused while the verdict names it, a job reads it, answer "
+        "logs hold its questions, or questions of another set are drawn from it."
+    ),
+    annotations={"destructiveHint": True},
+)
+def remove_question_set(set_name: Annotated[str, Field(description="The set's name.", max_length=200)]) -> dict:
+    from errors import Final
+    from evals import question_sets
+
+    try:
+        return question_sets.remove(set_name)
+    except Final as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp_ops.tool(
