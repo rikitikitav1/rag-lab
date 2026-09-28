@@ -29,19 +29,33 @@ def source_files() -> dict[str, SourceFile]:
     return found
 
 
-# a technology no row of the map names would become a value of the field nobody can ask for
+# a category no row of the map names would become a value of the field nobody can ask for
 def _refuse_unmapped(found: dict[str, SourceFile]) -> None:
-    mapped = set(config.settings.technologies)
+    mapped = set(config.settings.categories)
     for source in found.values():
-        named = {*source.technologies, *source.technology_by_path.values()}
+        named = {*source.categories, *source.category_by_path.values()}
         if unknown := sorted(named - mapped):
-            raise ValueError(f"{source.name}: {unknown} are not rows of config/technologies.yaml")
+            raise ValueError(f"{source.name}: {unknown} are not rows of config/categories.yaml")
+        if source.versions:
+            _refuse_unlisted_versions(source)
+
+
+# a source's versions are one category's, in the order the map lists them, so «newest» means the same everywhere
+def _refuse_unlisted_versions(source: SourceFile) -> None:
+    if len(source.categories) != 1 or source.category_by_path:
+        raise ValueError(f"{source.name}: a source with versions names exactly one category")
+    listed = config.settings.categories[source.categories[0]].versions
+    named = list(source.versions)
+    if unknown := [v for v in named if v not in listed]:
+        raise ValueError(f"{source.name}: versions {unknown} are not listed for {source.categories[0]}")
+    if named != [v for v in listed if v in named]:
+        raise ValueError(f"{source.name}: versions must go newest first as the map lists them, {listed}")
 
 
 # the map's rows no source covers yet: the coverage map's empty cells
 def empty_rows(found: dict | None = None) -> list[str]:
-    covered = {t for s in (found or source_files()).values() for t in (*s.technologies, *s.technology_by_path.values())}
-    return sorted(set(config.settings.technologies) - covered)
+    covered = {c for s in (found or source_files()).values() for c in (*s.categories, *s.category_by_path.values())}
+    return sorted(set(config.settings.categories) - covered)
 
 
 # the file a code source's reader parses; two files naming one reader would make the class ambiguous
@@ -62,7 +76,19 @@ def veto_families(found: dict | None = None) -> dict[str, str]:
 
 
 # the fields that decide the cut; the licence, the veto families, the drift flag and a skip's reason do not
-CUT_RULES = ("name", "language", "folder", "git", "git_family", "reader", "categories", "skip", "drop_docs_containing")
+CUT_RULES = (
+    "name",
+    "language",
+    "folder",
+    "git",
+    "git_family",
+    "reader",
+    "categories",
+    "category_by_path",
+    "versions",
+    "skip",
+    "drop_docs_containing",
+)
 
 
 # over the cut's rules in the loaded file, not its bytes: a comment or metadata beside the rules moves no row

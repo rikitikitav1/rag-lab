@@ -13,8 +13,9 @@ def test_every_reader_class_has_exactly_one_file(found):
     from sources import factory  # noqa: F401
     from sources.base import Base
 
-    for reader in Base._registry:
-        assert files.of_reader(reader).reader == reader
+    for reader, cls in Base._registry.items():
+        if cls.one_file:
+            assert files.of_reader(reader).reader == reader
     assert {s.reader for s in found.values()} <= set(Base._registry)
 
 
@@ -60,7 +61,7 @@ def test_the_seed_rows_unroll_a_family_and_keep_a_folder(found):
 
 
 def test_a_source_file_refuses_a_ref_the_index_would_not_read():
-    with pytest.raises(ValueError, match="clones the default branch whole"):
+    with pytest.raises(ValueError, match="clones a branch whole; a ref is named per version"):
         SourceFile(name="x", language="en", licence="MIT", git={"repo": "https://a/b", "ref": "v1"})
 
 
@@ -137,13 +138,13 @@ def test_a_family_that_drifts_drifts_by_its_rows(found):
 
 
 def test_the_map_names_the_rows_a_source_may_cover(found):
-    assert config.settings.technologies["postgresql"].versions == ["18", "17"]
-    assert found["redis-doc"].technologies == ["redis"]
+    assert config.settings.categories["postgresql"].versions == ["18", "17"]
+    assert found["redis-doc"].categories == ["redis"]
     empty = files.empty_rows(found)
     assert "redis" not in empty and "system-design" not in empty and "kafka" in empty
 
 
-def test_a_technology_outside_the_map_refuses(found):
-    bad = found["redis-doc"].model_copy(update={"technologies": ["cobol"]})
-    with pytest.raises(ValueError, match="not rows of config/technologies.yaml"):
+def test_a_category_outside_the_map_refuses(found):
+    bad = found["redis-doc"].model_copy(update={"categories": ["cobol"]})
+    with pytest.raises(ValueError, match="not rows of config/categories.yaml"):
         files._refuse_unmapped({"redis-doc": bad})

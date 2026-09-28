@@ -52,7 +52,7 @@ def build_veto_set(options: dict) -> None:
             seed=options.get("seed", ""),
             set_name=options.get("set_name", "veto_v1"),
             variants=options.get("variants"),
-            cut_from=options.get("cut_from", "clean_1024"),
+            cut_from=options.get("cut_from", build_veto.CUT_FROM),
             quotas=options.get("quotas"),
         )
     log.info("build_veto_set.done", **counted)

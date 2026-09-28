@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import NamedTuple
 
@@ -106,17 +107,105 @@ def live_rows(alias: str = "") -> str:
     return f"{col}variant = :variant AND {col}source_id IN (SELECT id FROM data_sources WHERE active)"
 
 
+def _drop_variant(conn, variant) -> int:
+    from use_cases.index import vector_index_name
+
+    dropped = conn.execute(text("DELETE FROM data_chunks WHERE variant = :variant"), {"variant": variant}).rowcount
+    # an empty partial index left behind makes the next index of the name insert row by row
+    conn.execute(text(f"DROP INDEX IF EXISTS {vector_index_name(variant)}"))
+    # a row kept by another variant must not say this one was cut by some file
+    conn.execute(text("UPDATE data_sources SET indexed_with = indexed_with - :variant"), {"variant": variant})
+    return dropped
+
+
 def cleanup(*, variant):
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM data_chunks WHERE variant = :variant"), {"variant": variant})
-        # a row kept by another variant must not say this one was cut by some file
-        conn.execute(text("UPDATE data_sources SET indexed_with = indexed_with - :variant"), {"variant": variant})
+        _drop_variant(conn, variant)
+        # only a row the code's source files made and no chunk holds goes; an added source keeps its origin and report
         conn.execute(
             text("""
                 DELETE FROM data_sources ds
-                WHERE NOT EXISTS (SELECT 1 FROM data_chunks dc WHERE dc.source_id = ds.id)
+                WHERE ds.origin IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM data_chunks dc WHERE dc.source_id = ds.id)
             """)
         )
+
+
+def remove_variant(variant) -> int:
+    with engine.begin() as conn:
+        return _drop_variant(conn, variant)
+
+
+# the row and its chunks in every variant; the chunks go by the foreign key's cascade
+def remove_source(source_id: int) -> int:
+    with engine.begin() as conn:
+        chunks = conn.execute(
+            text("SELECT count(*) FROM data_chunks WHERE source_id = :id"), {"id": source_id}
+        ).scalar()
+        conn.execute(text("DELETE FROM data_sources WHERE id = :id"), {"id": source_id})
+    return chunks
+
+
+# a set's size, its questions that answer logs hold, and questions of other sets drawn from it
+def question_set_holds(set_name: str) -> dict:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT count(*), "
+                "(SELECT count(*) FROM question_logs l JOIN questions q ON q.id = l.question_id "
+                "WHERE q.set_name = :s), "
+                "(SELECT count(*) FROM questions c JOIN questions o ON o.id = c.source_question_id "
+                "WHERE o.set_name = :s AND c.set_name <> :s) "
+                "FROM questions WHERE set_name = :s"
+            ),
+            {"s": set_name},
+        ).one()
+    return {"questions": row[0], "answered": row[1], "drawn_from": row[2]}
+
+
+def remove_question_set(set_name: str) -> int:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE questions SET source_question_id = NULL WHERE set_name = :s AND source_question_id IN "
+                "(SELECT id FROM questions WHERE set_name = :s)"
+            ),
+            {"s": set_name},
+        )
+        return conn.execute(text("DELETE FROM questions WHERE set_name = :s"), {"s": set_name}).rowcount
+
+
+# questions whose gold lies in the source, by the stand's own predicate: a mark is a file or a folder prefix
+def questions_marking(source_id: int) -> int:
+    with engine.connect() as conn:
+        files = (
+            conn.execute(text("SELECT DISTINCT source FROM data_chunks WHERE source_id = :id"), {"id": source_id})
+            .scalars()
+            .all()
+        )
+        if not files:
+            return 0
+        marks = conn.execute(
+            text("SELECT marked_sources FROM questions WHERE cardinality(marked_sources) > 0")
+        ).scalars()
+        return count_marking(files, marks)
+
+
+# marks no searched chunk holds, by the stand's gold predicate (a file or a folder prefix), as the preflight reads them
+def unreachable_marks(marks: list[str], *, variant: str) -> list[str]:
+    if not marks:
+        return []
+    query = f"""SELECT m FROM unnest(CAST(:marks AS text[])) m
+                WHERE NOT EXISTS (SELECT 1 FROM data_chunks dc WHERE {live_rows("dc")} AND position(m in dc.source) > 0)
+                ORDER BY m"""
+    with engine.connect() as conn:
+        return list(conn.execute(text(query), {"marks": sorted(set(marks)), "variant": variant}).scalars())
+
+
+def count_marking(files: list[str], marks) -> int:
+    from evals.retrieval_metrics import is_gold
+
+    return sum(1 for marked in marks if any(is_gold(f, marked) for f in files))
 
 
 def is_empty(*, variant):
@@ -226,8 +315,8 @@ def nearest_distance(embedding, *, variant, embedded_by: str) -> float | None:
     return float(row) if row is not None else None
 
 
-# one rule for both doors: an lquery metacharacter here changes what the filter matches
-CATEGORY_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
+# one rule for both doors: a literal label; the old dotted path refuses rather than finds nothing
+CATEGORY_RE = re.compile(r"^[\w-]+$")
 
 
 def refuse_bad_category(category: str | None) -> None:
@@ -235,24 +324,137 @@ def refuse_bad_category(category: str | None) -> None:
         raise ValueError(f"invalid category filter: {category[:60]!r}")
 
 
-def list_categories(category=None, only_top=None, *, variant):
-    cat_filter = "AND category ~ (:category)::lquery" if category else ""
-    cat_select = "subpath(category, 0, 1)::text" if only_top else "category"
-    params = {"variant": variant}
-    if category:
-        params["category"] = f"*.{category}.*"
-    query = f"""SELECT {cat_select} AS cat, COUNT(*) FROM data_chunks
-                WHERE {live_rows()} {cat_filter}
-                GROUP BY cat ORDER BY {cat_select}"""
+# a label is a category of the map, a group of them, or a tag; the filter takes any of the three
+def categories_of(label: str) -> list[str]:
+    cats = config.settings.categories
+    return [key for key, row in cats.items() if key == label or row.group == label]
 
+
+class ScopeRefused(ValueError):
+    pass
+
+
+# what a search may read: a label (a category, a group or a tag), sources by name, one version of one category
+@dataclass(frozen=True)
+class Scope:
+    label: str | None = None
+    sources: tuple[str, ...] = ()
+    version: str | None = None
+
+    # tags are stored lowercased, so a label asked as «Redis» reads what the index wrote as «redis»
+    def __post_init__(self):
+        if self.label:
+            object.__setattr__(self, "label", self.label.lower())
+
+    @property
+    def narrowed(self) -> bool:
+        return bool(self.label or self.sources or self.version)
+
+
+def as_scope(scope) -> Scope:
+    if scope is None:
+        return Scope()
+    return scope if isinstance(scope, Scope) else Scope(label=scope)
+
+
+# a version is a category's, so it needs one; a category without versions or a version it lacks is said, not emptied
+def refuse_bad_scope(scope: Scope) -> None:
+    refuse_bad_category(scope.label)
+    if scope.sources:
+        _refuse_sources_out_of_search(scope.sources)
+    if scope.version is None:
+        return
+    if not scope.label:
+        raise ScopeRefused(f"version {scope.version} names no category; add the category it belongs to")
+    cats = categories_of(scope.label)
+    if len(cats) != 1:
+        raise ScopeRefused(f"a version belongs to one category, and {scope.label} names {len(cats)}")
+    listed = config.settings.categories[cats[0]].versions
+    if not listed:
+        raise ScopeRefused(f"{cats[0]} has no versions declared")
+    if scope.version not in listed:
+        raise ScopeRefused(f"{cats[0]} has no version {scope.version}; listed: {listed}")
+
+
+def _newest() -> tuple[list[str], list[str]]:
+    rows = [(key, row.versions[0]) for key, row in config.settings.categories.items() if row.versions]
+    return [k for k, _ in rows], [v for _, v in rows]
+
+
+# without a version a versioned category answers from its newest released one; a rolling source has no versions
+def _scope_filter(scope: Scope) -> tuple[str, dict]:
+    cats, newest = _newest()
+    params = {"newest_categories": cats, "newest_versions": newest}
+    sql = ""
+    if scope.label:
+        sql += " AND (category = ANY(:categories) OR :label = ANY(tags))"
+        params |= {"categories": categories_of(scope.label), "label": scope.label}
+    if scope.sources:
+        sql += " AND source_id IN (SELECT id FROM data_sources WHERE name = ANY(:scope_sources))"
+        params["scope_sources"] = list(scope.sources)
+    if scope.version:
+        # a book or a sheet of the category holds for every version, so it stays beside the version's own docs
+        sql += " AND (:scope_version = ANY(versions) OR cardinality(versions) = 0)"
+        params["scope_version"] = scope.version
+    else:
+        sql += (
+            " AND (cardinality(versions) = 0 OR EXISTS (SELECT 1 FROM unnest("
+            "CAST(:newest_categories AS text[]), CAST(:newest_versions AS text[])) AS n(c, v)"
+            " WHERE n.c = category AND n.v = ANY(versions)))"
+        )
+    return sql, params
+
+
+# rows of (label, group, chunks); a chunk of no category counts under "none", so the unmapped mass stays in view
+def list_categories(category=None, only_top=None, *, variant):
+    params = {"variant": variant}
+    cat_filter = ""
+    if category:
+        cat_filter = "AND category = ANY(:categories)"
+        params["categories"] = categories_of(category)
+    query = f"""SELECT category, COUNT(*) FROM data_chunks
+                WHERE {live_rows()} {cat_filter}
+                GROUP BY category"""
     with engine.connect() as conn:
-        return conn.execute(text(query), params).fetchall()
+        rows = conn.execute(text(query), params).fetchall()
+    groups = {key: row.group for key, row in config.settings.categories.items()}
+    named = [(c or "none", groups.get(c, "none"), n) for c, n in rows]
+    if only_top:
+        totals: dict[str, int] = {}
+        for _, group, n in named:
+            totals[group] = totals.get(group, 0) + n
+        named = [(group, group, n) for group, n in totals.items()]
+    return sorted(named)
+
+
+# the tags the filter also takes, most used first, so a client can discover them as it does the categories
+def list_tags(limit: int, *, variant):
+    query = f"""SELECT tag, COUNT(*) AS n FROM data_chunks, unnest(tags) AS tag
+                WHERE {live_rows()}
+                GROUP BY tag ORDER BY n DESC, tag LIMIT :limit"""
+    with engine.connect() as conn:
+        return conn.execute(text(query), {"variant": variant, "limit": limit}).fetchall()
+
+
+# a name the base lacks or the search cannot read (declared, raw, inactive) refuses before the embed is paid
+def _refuse_sources_out_of_search(names) -> None:
+    with engine.connect() as conn:
+        rows = dict(
+            conn.execute(
+                text("SELECT name, active AND stage = 'accepted' FROM data_sources WHERE name = ANY(:n)"),
+                {"n": list(names)},
+            ).all()
+        )
+    if missing := sorted(set(names) - set(rows)):
+        raise ScopeRefused(f"no source named {missing}")
+    if outside := sorted(n for n, searched in rows.items() if not searched):
+        raise ScopeRefused(f"{outside} are not in search: not accepted or not active")
 
 
 def hybrid_search(
     question,
     embedding,
-    category=None,
+    scope=None,
     limit_vector=config.settings.retrieval.limit_vector,
     limit_keyword=config.settings.retrieval.limit_keywords,
     limit=None,
@@ -271,7 +473,9 @@ def hybrid_search(
     if rank_fn not in RANK_FUNCTIONS:
         raise ValueError(f"keyword_rank must be one of {sorted(RANK_FUNCTIONS)}")
     keyword_query = _keyword_query_sql(retrieval.keyword.query)
-    cat_filter = "AND category ~ (:category)::lquery" if category else ""
+    scope = as_scope(scope)
+    refuse_bad_scope(scope)
+    cat_filter, cat_params = _scope_filter(scope)
     src_filter = f"AND {live_rows()}"
     query = f"""WITH vector_search AS (
                     SELECT id,
@@ -321,8 +525,7 @@ def hybrid_search(
         "ts_config": _ts_config(question),
         "keyword_norm": retrieval.keyword.norm,
     }
-    if category:
-        params["category"] = f"*.{category}.*"
+    params |= cat_params
     # on this connection: the depth is per request and a pooled connection outlives it
     from use_cases import search_depth
 
@@ -334,6 +537,9 @@ def hybrid_search(
             conn.execute(text("SET LOCAL enable_indexscan = off"))
         else:
             conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
+            # the default version clause filters every search once a versioned source is in, asked or not
+            if retrieval.filtered_scan != "off":
+                conn.execute(text(f"SET LOCAL hnsw.iterative_scan = {retrieval.filtered_scan}"))
         rows = conn.execute(text(query), params).mappings().all()
     return [Hit(**row) for row in rows]
 

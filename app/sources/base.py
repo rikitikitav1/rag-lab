@@ -1,7 +1,7 @@
 import fnmatch
 import re
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import ingest
@@ -67,11 +67,16 @@ def cuts_of(content: str, root: str | None, policy: dict, file: str):
         yield cut.prefix + cut.body, cut.body, cut.section, root, cut.cut_by
 
 
+# a tag in the label alphabet the filter takes: «Java & JVM» as written would be stored and never asked for
+def labels(tags) -> list[str]:
+    return list(dict.fromkeys(re.sub(r"[^\w-]", "_", str(t).strip().lower()) for t in tags if str(t).strip()))
+
+
 @dataclass
 class Doc:
     content: str
     source: str
-    category: str
+    category: str | None
     language: str
     chunk_index: int
     title: str
@@ -82,19 +87,17 @@ class Doc:
     section: str | None = None
     root: str | None = None
     cut_by: str | None = None
+    # the released versions this text stands for; one reader writes its own, the merge of versions unions them
+    versions: list[str] = field(default_factory=list)
 
 
 @dataclass
 class Parsed:
     content: str
-    category: str
+    category: str | None
     title: str | None
     links: list[str]
     tags: list[str]
-
-
-# the chunk rows and the text-search trigger still spell the language in three letters
-_CHUNK_LANGUAGE = {"en": "eng", "ru": "rus"}
 
 
 class Base(ABC):
@@ -102,6 +105,8 @@ class Base(ABC):
     root: Path
     # the key a source file names in `reader`; the class parses what its file cannot say
     reader: str | None = None
+    # a reader of code-defined rules has one source file; a shared one reads any source that names it
+    one_file: bool = True
     _registry: dict[str | None, type["Base"]] = {}
 
     def __init_subclass__(cls, **kwargs):
@@ -109,16 +114,17 @@ class Base(ABC):
         if getattr(cls, "reader", None):
             Base._registry[cls.reader] = cls
 
-    def __init__(self, root: Path, settings=None, name: str | None = None):
+    def __init__(self, root: Path, settings=None, name: str | None = None, version: str | None = None):
         from sources import files
 
         self.root = root
         self.settings = settings or files.of_reader(self.reader)
         self.name = name or self.settings.name
+        self.version = version
 
     @property
     def language(self) -> str:
-        return _CHUNK_LANGUAGE[self.settings.language]
+        return self.settings.language
 
     def _include(self) -> list[str]:
         origin = self.settings.git or self.settings.git_family
@@ -149,8 +155,24 @@ class Base(ABC):
             return False
         return True
 
-    def category_for(self, rel_path: Path):
-        return (self.settings.categories.prefix or "") + ingest.path_to_category(rel_path)
+    # what marks, veto prefixes and the model's [source] read: a version's checkout is named «<name>@<v>» on disk only
+    @property
+    def spelled_as(self) -> str:
+        return self.name if self.version else self.root.name
+
+    # a key of the map: the longest path prefix the file names, else the source's one category, else none declared
+    def category_for(self, rel_path) -> str | None:
+        rel = str(rel_path)
+        by_path = [p for p in self.settings.category_by_path if rel.startswith(p)]
+        if by_path:
+            return self.settings.category_by_path[max(by_path, key=len)]
+        if len(self.settings.categories) > 1:
+            raise ValueError(f"{self.name}: {rel} is under no category_by_path and the source names several categories")
+        return self.settings.categories[0] if self.settings.categories else None
+
+    # the file's folders and stem, the labels the old category path carried
+    def tags_for(self, rel_path) -> list[str]:
+        return list(Path(rel_path).with_suffix("").parts)
 
     # a byte order mark hides the frontmatter fence and the first heading: one redis page had one
     def text_of(self, file) -> str:
@@ -159,7 +181,7 @@ class Base(ABC):
     def read(self, file, rel, policy=None):
         content = self.text_of(file) if hygienic(policy) else self.legacy_text_of(file)
         title = self.title_from(content) if hygienic(policy) else self.legacy_title_from(content)
-        return Parsed(content, self.category_for(rel), title, [], [])
+        return Parsed(content, self.category_for(rel), title, [], self.tags_for(rel))
 
     def title_from(self, content):
         return first_heading(content)
@@ -184,12 +206,27 @@ class Base(ABC):
     # the one door onto a source's files, for the index, the quality report and the digest
     def documents(self, policy=None):
         policy = policy or {}
-        docs = [doc for file in self.discover(policy) for doc in self.to_documents(file, policy)]
+        found = list(self.discover(policy))
+        self._refuse_uncategorised(found)
+        docs = [doc for file in found for doc in self.to_documents(file, policy)]
         return drop_wide_boilerplate(docs, policy)
+
+    # every file without a category named at once, before the first cut, not the first of them halfway through
+    def _refuse_uncategorised(self, found) -> None:
+        if len(self.settings.categories) < 2:
+            return
+        prefixes = tuple(self.settings.category_by_path)
+        loose = [rel for f in found if not (rel := self.rel_of(f)).startswith(prefixes)]
+        if loose:
+            raise ValueError(f"{self.name}: {len(loose)} files under no category_by_path, e.g. {loose[:5]}")
+
+    # the path a document names its file by, in the source as a reader would find it
+    def rel_of(self, file) -> str:
+        return str(file.relative_to(self.root))
 
     def to_documents(self, file, policy=None):
         policy = policy or {}
-        rel = str(file.relative_to(self.root))
+        rel = self.rel_of(file)
         parsed = self.read(file, rel, policy)
         if parsed is None:
             return []
@@ -204,14 +241,15 @@ class Base(ABC):
                 body=body,
                 root=root,
                 cut_by=cut_by,
-                source=f"{self.root.name}/{rel}",
+                source=f"{self.spelled_as}/{rel}",
                 category=parsed.category,
                 language=self.language,
                 title=parsed.title,
                 links=parsed.links,
-                tags=parsed.tags,
+                tags=labels(parsed.tags),
                 chunk_index=i,
                 section=section,
+                versions=[self.version] if self.version else [],
             )
 
     def _cuts(self, file, parsed, policy):

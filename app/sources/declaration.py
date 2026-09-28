@@ -1,6 +1,7 @@
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from tool_names import settings_refusal
 
 Language = Literal["en", "ru"]
 
@@ -28,6 +29,53 @@ class SiteSettings(_Strict):
     generated: list[str] = []
 
 
+# the intake's knobs one source sets for itself; each left out keeps the stand's own in `config/intake.yaml`
+class IntakeOverride(_Strict):
+    # a tool's settings file for this source, as `docling/pypdfium2`
+    settings: dict[Literal["docling", "mineru"], str] = {}
+    mono_faces: list[str] | None = Field(default=None, min_length=1)
+    mono_spread: float | None = Field(default=None, gt=0)
+    reread_below_layer_f1: float | None = Field(default=None, ge=0, le=1)
+    reread_settings: str | None = None
+    reread_cells_slack: float | None = Field(default=None, ge=0, le=1)
+    seam_window: int | None = Field(default=None, ge=0)
+    seam_margin: float | None = Field(default=None, ge=0, lt=0.5)
+    epub_skip: list[str] | None = None
+    headings_by_number: bool | None = None
+    listing_callouts: bool | None = None
+    mono_by_step: bool | None = None
+    code_row_rules: list[Literal["run_on", "once", "numbers"]] | None = None
+    outline_levels: bool | None = None
+    html_one_title: bool | None = None
+    numbered_levels: bool | None = None
+    decode_entities: bool | None = None
+    drop_lone_pipes: bool | None = None
+    join_layer_hyphens: bool | None = None
+    restore_dashes: bool | None = None
+    join_broken_words: bool | None = None
+    unescape_bullets: bool | None = None
+    unescape_underscores: bool | None = None
+    picture_addresses: bool | None = None
+    join_split_words: bool | None = None
+    epub_chapters: bool | None = None
+
+    # a misspelt settings file is refused at the door, not found missing inside a job hours later
+    @field_validator("settings")
+    @classmethod
+    def _settings_files(cls, settings):
+        for tool, name in settings.items():
+            if refusal := settings_refusal(tool, name):
+                raise ValueError(refusal)
+        return settings
+
+    @field_validator("reread_settings")
+    @classmethod
+    def _reread_file(cls, name):
+        if name is not None and (refusal := settings_refusal("docling", name)):
+            raise ValueError(refusal)
+        return name
+
+
 # an added source as its owner declares it: what, where from, what language and licence; never which engine
 class Declaration(_Strict):
     ORIGINS: ClassVar[tuple[str, ...]] = ("urls", "folder", "git", "pages")
@@ -39,6 +87,7 @@ class Declaration(_Strict):
     git: GitOrigin | None = None
     pages: list[str] | None = None
     site: SiteSettings | None = None
+    intake: IntakeOverride | None = None
 
     @model_validator(mode="after")
     def _one_origin(self):
@@ -57,11 +106,16 @@ class GitFamily(_Strict):
     include: list[str] = DEFAULT_INCLUDE
 
 
-# a category from the front matter's field, else from the file's stem, under a prefix the source owns
-class Categories(_Strict):
-    prefix: str | None = None
-    by_front_matter: dict[str, str] = {}
-    by_file: dict[str, str] = {}
+# where one version of a source lives: a branch or tag of its repository, or a folder of its own
+class VersionOrigin(_Strict):
+    ref: str | None = None
+    folder: str | None = None
+
+    @model_validator(mode="after")
+    def _one_place(self):
+        if (self.ref is None) == (self.folder is None):
+            raise ValueError("a version lives at a ref or in a folder, exactly one")
+        return self
 
 
 # the veto build joins families over every source file; a family is a path prefix, not the whole source
@@ -76,7 +130,6 @@ class SourceFile(Declaration):
     git_family: GitFamily | None = None
     # the class that parses what the rules cannot say; none reads plain markdown
     reader: str | None = None
-    categories: Categories = Categories()
     # stems skipped always, and by the hygienic cut only with a reason; `fnmatch` patterns, so `[` and `?` match
     skip: list[str] = []
     skip_when_hygienic: dict[str, str] = {}
@@ -84,9 +137,11 @@ class SourceFile(Declaration):
     veto_families: list[VetoFamily] = []
     # a folder that moves on its own, so its fingerprint drifting is not a fault
     drifts: bool = False
-    # rows of `config/technologies.yaml` the source covers; a path prefix narrows one where a source covers several
-    technologies: list[str] = []
-    technology_by_path: dict[str, str] = {}
+    # rows of `config/categories.yaml` the source covers; a path prefix picks one where a source covers several
+    categories: list[str] = []
+    category_by_path: dict[str, str] = {}
+    # released versions side by side, newest first as the map lists them; empty is one rolling version
+    versions: dict[str, VersionOrigin] = {}
 
     # the index reads a folder, a whole repository or a family; the rest is onboarded by hand first, so refused at load
     @model_validator(mode="after")
@@ -94,5 +149,18 @@ class SourceFile(Declaration):
         if self.urls or self.pages or self.site:
             raise ValueError(f"{self.name}: urls, pages and site are onboarded through the door, not read by the index")
         if self.git is not None and (self.git.ref or self.git.path):
-            raise ValueError(f"{self.name}: a source file clones the default branch whole; ref and path are not read")
+            raise ValueError(
+                f"{self.name}: a source file clones a branch whole; a ref is named per version, a path never"
+            )
+        wrong = "ref" if self.folder is not None else "folder"
+        if self.git_family is not None and self.versions:
+            raise ValueError(
+                f"{self.name}: a family's repositories are rows of their own, versions belong to one source"
+            )
+        if self.folder is not None and self.versions and self.folder != next(iter(self.versions.values())).folder:
+            raise ValueError(f"{self.name}: a folder source with versions names its newest version's folder as its own")
+        if any(getattr(v, wrong) is not None for v in self.versions.values()):
+            raise ValueError(
+                f"{self.name}: a {'folder' if wrong == 'ref' else 'git'} source's versions name no {wrong}"
+            )
         return self

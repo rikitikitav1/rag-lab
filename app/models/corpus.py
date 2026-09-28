@@ -3,10 +3,9 @@ from enum import StrEnum
 
 from orm import Base
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Enum, ForeignKey, String
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy_utils import LtreeType
 
 
 # the model is the one place that decides what a value may be; this column was plain text
@@ -70,7 +69,9 @@ class DataChunk(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
     embedded_by: Mapped[str | None]
     chunk_index: Mapped[int]
-    category: Mapped[str] = mapped_column(LtreeType)
+    category: Mapped[str | None]
+    tags: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
+    versions: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
     language: Mapped[str]
     content_tsv: Mapped[str | None] = mapped_column(TSVECTOR)
     data_source: Mapped["DataSource"] = relationship(back_populates="chunks")

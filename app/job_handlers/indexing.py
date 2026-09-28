@@ -7,7 +7,7 @@ from orm.sync_db import Session
 from sqlalchemy import select
 from use_cases.index import question_needs_embedding
 
-from .base import register, require_embedder_ready
+from .base import Final, register, require_embedder_ready
 from .card import clear_the_engine_for
 
 log = logging_setup.get_logger(__name__)
@@ -30,9 +30,11 @@ def index_data(options: dict) -> None:
             raise ValueError(f"no such source: {wanted!r}; known: {known}")
     # resolved once: the call below took it bare and requeued itself with an unmatchable null
     variant = options.get("variant") or config.settings.corpus.variant
-    use_cases.index.collect_data(built, variant=variant, build_index=False)
-    # the report reads rows, not the index, so a failing build must not take it down
-    for source in built:
+    result = use_cases.index.collect_data(built, variant=variant, build_index=False)
+    if wanted != "all" and result.refused:
+        raise Final(f"{wanted} was not cut: {result.refused[wanted]}")
+    # the report reads rows, not the index; a refused source has none of this cut, so it gets no «indexed» report
+    for source in (s for s in built if s.name not in result.refused):
         job_queue.enqueue(
             "analyze_source",
             {"source": source.name, "variant": variant, "mode": "indexed"},
@@ -52,9 +54,7 @@ def index_data(options: dict) -> None:
 def build_vector_index(options: dict) -> None:
     import use_cases.index
 
-    use_cases.index.ensure_vector_index(
-        options.get("variant") or config.settings.corpus.variant
-    )
+    use_cases.index.ensure_vector_index(options.get("variant") or config.settings.corpus.variant)
     _report_depth()
 
 

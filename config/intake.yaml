@@ -8,13 +8,62 @@ intake:
     min_raster_run: 3
     # not measured: a page with fewer words gives no share worth reading for the suspect-layer signals
     suspect_min_words: 50
+    # tuned: file=datasets/converter_gold/reread_rule.json
+    reread_below_layer_f1: 0.95
+    reread_settings: docling/pypdfium2_cells
+    # the share of table cells the second reading may lose and still be taken; a source knob, 0 for the stand
+    reread_cells_slack: 0
+    # a piece's end moves this many pages at most to leave a code block whole; 0 is off, never measured on its own
+    seam_window: 0
+    # not measured: rows in this share of the page at top and bottom are running heads and feet, not code
+    seam_margin: 0.08
+    # EPUB page types to skip as furniture; seen on one EPUB, so a source knob until a second, empty by default
+    epub_skip: []
+    # read on two pages (Postgres Pro, Algorithms Notes): monospace rows spread 0-0.002 of the median width, proportional 0.35 and up
+    mono_spread: 0.1
+    # substrings of a face's name that mark it monospace, case aside; `monl` is NimbusMonL, `iosevka` a Russian book's
+    mono_faces: [mono, monl, courier, cmtt, lmtt, consol, menlo, inconsolata, iosevka, typewriter, sftt, txtt]
+    # a heading's section number over the outline, for a manual whose outline flattens it (FreePascal); off by default
+    headings_by_number: false
+    # callouts in a text face inside a code box go after the fence as a line (Redis in Action); off by default
+    listing_callouts: false
+    # spaces by glyph origins, for a code face whose boxes are wider than its step (Object Pascal); off by default
+    mono_by_step: false
+    # which code row rules run: on to the line's end, once a page, line numbers dropped; the last not needed by any book
+    code_row_rules: [run_on, once]
+    # heading levels from the PDF's outline, the shallowest on ##; the remedy for levels restarting per piece
+    outline_levels: true
+    # HTML chapter headings one level down under the page title; seen on one book, so off
+    html_one_title: false
+    # a numbered heading («2.1.3») takes its level from its number where a file has no outline; off: 6 gold losers
+    numbered_levels: false
+    # Docling's `&lt;`, `&gt;`, `&amp;` decoded before the rules; entities were in prose on 24 of 25 books
+    decode_entities: true
+    # a paragraph that is only `|` (a running foot's rule) dropped, so a listing it cuts can be joined
+    drop_lone_pipes: true
+    # the layer's word broken by a hyphen mark (U+FFFE) joined for the word rules; the reread's F1 reads the raw layer
+    join_layer_hyphens: true
+    # a dash the converter dropped at a line end, gluing two words, put back from the layer; 13 of 29 sources
+    restore_dashes: true
+    # a word the converter left broken at its hyphenation joined when the layer has it whole
+    join_broken_words: true
+    # a list marker MinerU escapes (`\- item`) unescaped, so the list stays a list; every scan page with bullets
+    unescape_bullets: true
+    # an underscore escaped outside code (`AT\_STATX`) unescaped, so the identifier is found; 541 in the chapter set
+    unescape_underscores: true
+    # a picture's placeholder becomes its address, page and place on the page, with its caption as the alt text
+    picture_addresses: true
+    # a word split by a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole; 14 sources
+    join_split_words: true
+    # an EPUB read as its chapters; one EPUB seen so far, so off and the file is skipped with its reason
+    epub_chapters: false
   # tuned: file=datasets/converter_gold/raw_band.json
-  # read on the gold's section cuts (Docling vs own layer: f1 0.78-1.0, share 0.68-1.15) and applied to each piece; a piece is longer, so its signals sit tighter
+  # read on the gold's cuts as the corpus reads them (Docling 7.20, code from the layer, the reread): f1 0.81-1.0, share 0.68-1.15
   quality:
     output_share_min: 0.6
     output_share_max: 1.25
-    # the ru floor is Docling gluing words on TeX books: without a hand repair of glued words such a book reads dirty
-    layer_f1_min: 0.75
+    # just under the lowest cut after the reread, Baldin's prose at 0.81
+    layer_f1_min: 0.8
     mixed_script_max: 0.02
     # the engines the layer band was read on; the others' layer signals are recorded and not gated
     layer_band_engines: [docling]

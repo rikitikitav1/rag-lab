@@ -1,6 +1,5 @@
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 import config
 import logging_setup
@@ -332,8 +331,3 @@ def heading_path(chunk: str) -> str | None:
     if len(lines) < 2 or not lines[0].startswith("# ") or not lines[1].startswith("## "):
         return None
     return " > ".join(re.sub(r"^#+\s*", "", line) for line in lines[:2])
-
-
-def path_to_category(rel_path):
-    parts = Path(rel_path).with_suffix("").parts
-    return ".".join(re.sub(r"[^\w-]", "_", p) for p in parts)

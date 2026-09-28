@@ -47,6 +47,8 @@ class RetrievalCfg(_Strict):
     keyword: KeywordCfg
     # "auto" asks the planner for the deepest rung still walking the index, which moves
     ef_search: int | Literal["auto"]
+    # a filtered hnsw walk stops at ef_search and returns fewer rows; relaxed_order walks on until the filter is met
+    filtered_scan: Literal["off", "relaxed_order"] = "off"
 
 
 class SearchDepthCfg(_Strict):
@@ -93,7 +95,7 @@ class AgentCfg(_Strict):
     def topic_threshold_is_measured(self, language: str | None) -> bool:
         if not isinstance(self.topic_threshold, dict) or not self.topic_threshold:
             return True
-        return language in self.topic_threshold or (language or "")[:2] in self.topic_threshold
+        return language in self.topic_threshold
 
     def topic_threshold_for(self, language: str | None) -> float | None:
         if not isinstance(self.topic_threshold, dict):
@@ -103,9 +105,6 @@ class AgentCfg(_Strict):
         # membership, not truthiness: zero switches the axis off, and `or` made it permissive
         if language in self.topic_threshold:
             return self.topic_threshold[language]
-        # a three-letter code is the corpus spelling; the gate is keyed by what the detector returns
-        if len(language or "") > 2 and (language or "")[:2] in self.topic_threshold:
-            return self.topic_threshold[language[:2]]
         # a language nobody measured gets the most permissive of the measured thresholds
         return max(self.topic_threshold.values())
 
@@ -204,6 +203,31 @@ class RouteCfg(_Strict):
     min_layer_chars: int
     min_raster_run: int
     suspect_min_words: int
+    reread_below_layer_f1: float = Field(ge=0, le=1)
+    reread_settings: str
+    reread_cells_slack: float = Field(ge=0, le=1)
+    seam_window: int = Field(ge=0)
+    seam_margin: float = Field(ge=0, lt=0.5)
+    epub_skip: list[str]
+    mono_spread: float = Field(gt=0)
+    mono_faces: list[str] = Field(min_length=1)
+    headings_by_number: bool
+    listing_callouts: bool
+    mono_by_step: bool
+    code_row_rules: list[Literal["run_on", "once", "numbers"]]
+    outline_levels: bool
+    html_one_title: bool
+    numbered_levels: bool
+    decode_entities: bool
+    drop_lone_pipes: bool
+    join_layer_hyphens: bool
+    restore_dashes: bool
+    join_broken_words: bool
+    unescape_bullets: bool
+    unescape_underscores: bool
+    picture_addresses: bool
+    join_split_words: bool
+    epub_chapters: bool
 
 
 class RawQualityCfg(_Strict):
@@ -322,13 +346,10 @@ class EvalsCfg(_Strict):
     retrieval_compare: RetrievalCompareCfg
 
 
-# a row of the coverage map: the only values a source may name as its technology
-class TechnologyCfg(_Strict):
+# a row of the coverage map: the only values a source may name as a chunk's category, whatever the domain
+class CategoryCfg(_Strict):
     name: str
-    group: Literal[
-        "databases", "brokers", "languages", "frameworks", "orm", "tools", "infrastructure", "security", "search", "ml",
-        "general",
-    ]
+    group: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     # the majors kept side by side; empty is one rolling version
     versions: list[str] = []
 
@@ -350,7 +371,7 @@ class AppConfig(_Strict):
     llm: LlmCfg
     postgres: PostgresCfg
     mcp_integrations: McpIntegrationsCfg
-    technologies: dict[str, TechnologyCfg]
+    categories: dict[str, CategoryCfg]
 
 
 # the roles a stand cannot answer without: a layer dropping one fails at load; the rest are optional

@@ -120,7 +120,7 @@ def plan(seed: str, variants: list[str], cut_from: str, quotas: dict | None = No
 
 
 def _ask(row: dict) -> str:
-    language = "Russian" if row["language"] == "rus" else "English"
+    language = "Russian" if row["language"] == "ru" else "English"
     return llm.ask(
         system=prompt_repo.active_template(Purpose.question_from_heading),
         user=f"File: {row['source']}\nHeading: {row['heading']}\nTarget language: {language}",
@@ -164,11 +164,15 @@ def _already_asked(session, set_name: str) -> set[int]:
     )
 
 
+# the variant a veto build cuts its headings from when a job names none; with no variants it reads baseline too
+CUT_FROM = "clean_1024"
+
+
 def build(
     seed: str,
     set_name: str = "veto_v1",
     variants: list[str] | None = None,
-    cut_from: str = "clean_1024",
+    cut_from: str = CUT_FROM,
     quotas: dict | None = None,
 ) -> dict:
     if not seed:

@@ -147,3 +147,9 @@ def test_a_run_that_died_between_the_pair_adds_only_the_missing_half(monkeypatch
     assert (1, "s") not in inserted, "the english half of question 1 was already there"
     assert (1, "s_ru") in inserted, "its translation was not, and must be added"
     assert sorted(inserted) == [(1, "s_ru"), (2, "s"), (2, "s_ru")]
+
+
+# a paraphrase that returned its own original and one that hit another question of the bank are counted apart
+def test_a_dropped_paraphrase_names_why():
+    assert build_paraphrased.dropped_why(7, 7) == "unchanged"
+    assert build_paraphrased.dropped_why(9, 7) == "collided"

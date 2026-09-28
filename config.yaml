@@ -27,6 +27,8 @@ retrieval:
   # tuned: file=datasets/measurements/index_cost_clean_1024.json
   # tuned: file=datasets/measurements/recall_ladder_clean_1024.json
   ef_search: 100
+  # not measured: off until recall@10 against exact is read on a wide, a middle and a narrow filter
+  filtered_scan: "off"
 rerank:
   # off: worth +0.0454 of section MRR, and the 8b the agent needs takes its card room
   # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md

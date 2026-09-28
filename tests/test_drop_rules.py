@@ -27,7 +27,7 @@ def doc(content, i=0, body=None):
         content=content,
         source="s/f.md",
         category="c",
-        language="eng",
+        language="en",
         chunk_index=i,
         title="t",
         links=[],

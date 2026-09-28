@@ -12,7 +12,7 @@ class RedisDocsSource(Base):
             return super().read(file, rel, policy)
         post = frontmatter.loads(self.text_of(file))
         title = post.metadata.get("title") or self.title_from(post.content)
-        return Parsed(post.content, self.category_for(rel), title, [], [])
+        return Parsed(post.content, self.category_for(rel), title, [], self.tags_for(rel))
 
     # a command page carries no heading at all: the command name lives in the file name
     def section_root_for(self, file, parsed):

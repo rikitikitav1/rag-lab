@@ -24,7 +24,7 @@ def test_the_stored_heading_is_the_one_the_matcher_will_look_for():
 
 def test_a_plan_is_the_same_list_twice_and_a_different_one_under_another_seed(monkeypatch):
     rows = [
-        {"family": "notes", "source": f"notes/{i}.md", "heading": f"Heading number {i}", "language": "rus"}
+        {"family": "notes", "source": f"notes/{i}.md", "heading": f"Heading number {i}", "language": "ru"}
         for i in range(40)
     ]
     monkeypatch.setattr(build_veto, "candidates", lambda *_: rows)
@@ -35,7 +35,7 @@ def test_a_plan_is_the_same_list_twice_and_a_different_one_under_another_seed(mo
 
 
 def test_a_quota_larger_than_the_family_takes_what_there_is(monkeypatch):
-    rows = [{"family": "notes", "source": "notes/a.md", "heading": "Heading number one", "language": "rus"}]
+    rows = [{"family": "notes", "source": "notes/a.md", "heading": "Heading number one", "language": "ru"}]
     monkeypatch.setattr(build_veto, "candidates", lambda *_: rows)
     assert len(build_veto.plan("seed", [], "", {"notes": 5})) == 1
 

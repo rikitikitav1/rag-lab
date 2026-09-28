@@ -75,7 +75,7 @@ def _interview_records(path="answers_interview.jsonl"):
         yield {
             "original_text": d["question"],
             "set_name": "interview",
-            "language": "eng",
+            "language": "en",
             "marked_sources": [source] if source else [],
             "reference_answer": d.get("reference_answer"),
             "kind": "in_corpus",

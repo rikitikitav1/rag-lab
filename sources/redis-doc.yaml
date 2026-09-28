@@ -8,10 +8,8 @@ git:
   - commands/*.md
   - docs/**/*.md
 reader: redis-doc
-categories:
-  prefix: databases.redis.
 veto_families:
 - name: redis-doc/docs
   prefix: redis-doc/docs/
-technologies:
+categories:
 - redis

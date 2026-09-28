@@ -30,8 +30,13 @@ def test_search_corpus_forwards_category(monkeypatch):
         return ("c", ["c"], [], 200, [])
 
     monkeypatch.setattr(mcp_server.chat, "search_chunks", fake)
-    mcp_server.search_corpus("redis", category="databases.redis")
-    assert seen["category"] == "databases.redis"
+    mcp_server.search_corpus("redis", category="redis")
+    assert seen["category"].label == "redis"
+
+
+def test_the_old_dotted_category_path_is_refused_rather_than_finding_nothing():
+    with pytest.raises(ToolError):
+        mcp_server.search_corpus("redis", category="databases.redis")
 
 
 def test_search_corpus_empty_query_raises():
@@ -110,8 +115,8 @@ def test_answer_question_returns_sources(monkeypatch):
 def test_answer_question_single_shot_forwards_category(monkeypatch):
     seen = {}
 
-    def fake_answer(text, category=None, run_name=None, language=None):
-        seen["category"] = category
+    def fake_answer(text, scope=None, run_name=None, language=None):
+        seen["category"] = scope.label
         return SimpleNamespace(text="a", success=True, sources=[])
 
     monkeypatch.setattr(mcp_server.chat, "answer", fake_answer)
@@ -165,9 +170,9 @@ def test_list_categories_maps_rows_with_counts(monkeypatch):
     monkeypatch.setattr(
         mcp_server.db,
         "list_categories",
-        lambda only_top, category, variant: [("databases", 5), ("llm", 3)],
+        lambda only_top, category, variant: [("none", "none", 3), ("redis", "databases", 5)],
     )
-    assert mcp_server.list_categories() == {"databases": 5, "llm": 3}
+    assert mcp_server.list_categories() == {"none": 3, "redis": 5}
 
 
 def test_list_categories_bad_category_raises():
@@ -194,3 +199,24 @@ def test_the_mcp_tools_wait_for_the_card_like_the_rest_chat(monkeypatch):
     with pytest.raises(ToolError, match="held by the judge"):
         mcp_server.answer_question("what is redis")
     assert asked == [("embedding",), ("embedding", "generation")]
+
+
+def test_a_version_needs_its_category_and_a_listed_version():
+    with pytest.raises(ToolError, match="names no category"):
+        mcp_server.search_corpus("x", version="17")
+    with pytest.raises(ToolError, match="no versions declared"):
+        mcp_server.search_corpus("x", category="redis", version="7")
+    with pytest.raises(ToolError, match="has no version 9"):
+        mcp_server.search_corpus("x", category="postgresql", version="9")
+    with pytest.raises(ToolError, match="one category"):
+        mcp_server.search_corpus("x", category="databases", version="17")
+
+
+def test_without_a_version_a_versioned_category_reads_its_newest_and_a_rolling_source_reads_all():
+    import db
+
+    sql, params = db._scope_filter(db.Scope())
+    assert "cardinality(versions) = 0" in sql
+    assert "18" in params["newest_versions"] and "17" not in params["newest_versions"]
+    sql, params = db._scope_filter(db.Scope(label="postgresql", version="17"))
+    assert ":scope_version = ANY(versions) OR cardinality(versions) = 0" in sql and params["scope_version"] == "17"

@@ -40,6 +40,22 @@ def _safe_category(category: str | None) -> str | None:
     return category
 
 
+def _safe_scope(category: str | None, sources: list[str] | None, version: str | None) -> db.Scope:
+    scope = db.Scope(label=category, sources=tuple(sources or ()), version=version)
+    try:
+        db.refuse_bad_scope(scope)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+    return scope
+
+
+_SOURCES = Field(description="Optional source names; the search reads only them. The `sources` ops tool lists them.")
+_VERSION = Field(
+    description="Optional released version of the category named in `category` (e.g. '17' with 'postgresql'): its "
+    "docs plus the category's sources of no version, such as books; without it a versioned category reads its newest."
+)
+
+
 _TOOL_DESC = {
     "search_corpus": (
         f"Search the technical knowledge corpus ({', '.join(files.source_files())}) "
@@ -57,10 +73,14 @@ _TOOL_DESC = {
         "over multiple hops (better recall); 'single_shot' does one pass (faster)."
     ),
     "list_categories": (
-        "List category paths present in the corpus with chunk counts. With "
-        "only_top=true the counts are subtree totals per top-level category "
-        "(cannot be combined with a category filter); otherwise they are exact "
-        "per-path counts. Use to discover valid category values before filtering."
+        "List the corpus's categories by name with chunk counts; chunks of no "
+        "category count under 'none'. With only_top=true the keys are groups and the counts their totals "
+        "(cannot be combined with a category filter). The filter also takes a tag: list_tags shows them. "
+        "Counts cover every version, while a search with no version reads the newest."
+    ),
+    "list_tags": (
+        "List the corpus's tags (file paths' folders, a sheet's own category, a bank's topic) with chunk counts, "
+        "most used first. Any of them is a label the category filter takes."
     ),
 }
 
@@ -83,20 +103,21 @@ def search_corpus(
     category: Annotated[
         str | None,
         Field(
-            description="Optional category filter, a literal label matched anywhere in "
-            "the ltree path (e.g. 'redis' or 'databases.redis'). Call list_categories "
-            "to discover valid labels."
+            description="Optional filter, a literal label: a category (e.g. 'redis'), a group "
+            "of them (e.g. 'databases') or a tag. Call list_categories to discover valid labels."
         ),
     ] = None,
+    sources: Annotated[list[str] | None, _SOURCES] = None,
+    version: Annotated[str | None, _VERSION] = None,
 ) -> str:
     _check_text(query, "query")
-    category = _safe_category(category)
+    scope = _safe_scope(category, sources, version)
     _wait_for_the_card(*card_wait.retrieving_roles())
     try:
         content, _texts, _sources, _depth, _chunks = chat.search_chunks(
-            query, category, variant=config.settings.corpus.variant
+            query, scope, variant=config.settings.corpus.variant
         )
-    except db.ForeignVectors as e:
+    except (db.ForeignVectors, db.ScopeRefused) as e:
         raise ToolError(str(e)) from e
     return content
 
@@ -116,22 +137,24 @@ def answer_question(
         str | None,
         Field(description="Optional literal category label; only with pipeline=single_shot."),
     ] = None,
+    sources: Annotated[list[str] | None, _SOURCES] = None,
+    version: Annotated[str | None, _VERSION] = None,
     language: Annotated[
         Literal["ru", "en"] | None,
         Field(description="Force answer language: 'ru' or 'en'."),
     ] = None,
 ) -> AnswerResult:
     _check_text(text, "text")
-    category = _safe_category(category)
-    if pipeline == Pipeline.agent and category:
-        raise ToolError("category filter is only supported with pipeline=single_shot")
+    scope = _safe_scope(category, sources, version)
+    if pipeline == Pipeline.agent and scope.narrowed:
+        raise ToolError("a category, source or version filter is only supported with pipeline=single_shot")
     _wait_for_the_card(*card_wait.answering_roles(agent=pipeline == Pipeline.agent))
     try:
         if pipeline == Pipeline.agent:
             res = agent.run(text, run_name="mcp", language=language)
         else:
-            res = chat.answer(text, category=category, run_name="mcp", language=language)
-    except db.ForeignVectors as e:
+            res = chat.answer(text, scope=scope, run_name="mcp", language=language)
+    except (db.ForeignVectors, db.ScopeRefused) as e:
         raise ToolError(str(e)) from e
     except Exception as e:
         log.error("mcp.answer_failed", error=str(e))
@@ -149,8 +172,8 @@ def answer_question(
     annotations={"readOnlyHint": True},
 )
 def list_categories(
-    category: Annotated[str | None, Field(description="Optional literal label to list paths under.")] = None,
-    only_top: Annotated[bool, Field(description="If true, top-level categories with subtree totals.")] = False,
+    category: Annotated[str | None, Field(description="Optional category or group to list under.")] = None,
+    only_top: Annotated[bool, Field(description="If true, totals per group.")] = False,
 ) -> dict[str, int]:
     category = _safe_category(category)
     if only_top and category:
@@ -160,4 +183,15 @@ def list_categories(
     except SQLAlchemyError as e:
         log.error("mcp.list_categories_failed", error=str(e))
         raise
-    return {row[0]: row[1] for row in rows}
+    return {name: n for name, _, n in rows}
+
+
+@mcp.tool(
+    name="list_tags",
+    description=_TOOL_DESC["list_tags"],
+    annotations={"readOnlyHint": True},
+)
+def list_tags(
+    limit: Annotated[int, Field(ge=1, le=1000, description="How many tags, most used first.")] = 50,
+) -> dict[str, int]:
+    return {name: n for name, n in db.list_tags(limit, variant=config.settings.corpus.variant)}

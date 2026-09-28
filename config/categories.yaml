@@ -1,5 +1,5 @@
-# the rows a source may name, no others; two majors where their docs differ by 5% of lines or more
-technologies:
+# the categories a source may name, no others, each under a group; two majors where their docs differ by 5% of lines or more
+categories:
   postgresql: { name: PostgreSQL, group: databases, versions: ["18", "17"] }
   mssql: { name: Microsoft SQL Server, group: databases }
   clickhouse: { name: ClickHouse, group: databases }

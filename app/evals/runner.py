@@ -73,6 +73,7 @@ class RunSpec:
     orchestrator: str | None = None
     # carried onto every row: whether the sweep may ever judge what this run wrote
     judge_wanted: bool = True
+    scope: object = None
 
 
 # answered is a row that answered: the agent writes a row for a hop that failed and returns normally
@@ -100,6 +101,7 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
     if spec.pipeline == Pipeline.single_shot:
         chat.answer(
             text,
+            spec.scope,
             add_context=True,
             run_name=run_name,
             use_rerank=spec.use_rerank,
@@ -184,7 +186,7 @@ def _phase_retrieve(texts: list[str], spec: RunSpec) -> tuple[list, int]:
             retrieved.append(
                 (
                     text,
-                    db.hybrid_search(text, vector, None, limit=limit, variant=spec.variant,
+                    db.hybrid_search(text, vector, spec.scope, limit=limit, variant=spec.variant,
                                      ef_search=depth, embedded_by=label),
                     None,
                 )
@@ -243,6 +245,7 @@ def _phase_generate(
                 placed_during=placed_during,
                 grade_chunks=spec.grade_chunks,
                 judge_wanted=spec.judge_wanted,
+                scope=spec.scope,
             )
             answered += 1
         except StandFault:
@@ -424,6 +427,7 @@ def run(
     resume: bool = False,
     generation_sampler: dict | None = None,
     judge: bool = True,
+    scope=None,
 ) -> int:
     pipeline = Pipeline(pipeline)
     variant = variant or config.settings.corpus.variant
@@ -466,6 +470,7 @@ def run(
         topic_threshold=topic_threshold,
         orchestrator=orchestrator,
         judge_wanted=judge,
+        scope=scope,
     )
 
     try:

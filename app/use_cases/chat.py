@@ -152,14 +152,14 @@ def _hidden_by_cut(source: str, variant: str) -> bool:
 
 
 # resolving a second time is a second answer, so the depth comes back with the rows
-def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, variant: str,
+def _retrieve_rows(question: str, scope, k: int, rerank_enabled: bool, variant: str,
                    ef_search: int | None = None):
     depth = search_depth.resolve(variant, ef_search)
     label, vector = llm.embed_with_label(question)
     if not rerank_enabled:
         return (
             db.hybrid_search(
-                question, vector, category, limit=k, variant=variant,
+                question, vector, scope, limit=k, variant=variant,
                 ef_search=depth, embedded_by=label,
             ),
             None,
@@ -171,7 +171,7 @@ def _retrieve_rows(question: str, category, k: int, rerank_enabled: bool, varian
     candidates = db.hybrid_search(
         question,
         vector,
-        category,
+        scope,
         limit=config.settings.rerank.candidates,
         variant=variant,
         ef_search=depth,
@@ -220,7 +220,7 @@ def _gate_scores(query: str, rows, top: int) -> list:
 
 def search_chunks(
     query: str,
-    category: str | None = None,
+    scope=None,
     k: int | None = None,
     use_rerank: bool | None = None,
     gate_top: int | None = None,
@@ -229,7 +229,7 @@ def search_chunks(
 ) -> tuple[str, list[str], list[Source], int, list[dict]]:
     k = k or config.settings.retrieval.results_limit
     use_rerank = resolve_rerank(use_rerank)
-    rows, rerank_scores, depth = _retrieve_rows(query, category, k, use_rerank, variant)
+    rows, rerank_scores, depth = _retrieve_rows(query, scope, k, use_rerank, variant)
     if not rows:
         return NO_RESULTS, [], [], depth, []
     if rerank_scores is None and gate_top:
@@ -247,7 +247,7 @@ def search_chunks(
 @measure_elapsed
 def retrieve(
     question: str,
-    category: str | None = None,
+    scope=None,
     k: int | None = None,
     *,
     variant: str,
@@ -257,14 +257,14 @@ def retrieve(
     k = k or config.settings.retrieval.results_limit
     # the door waits for the card the request asked for, and search took the config's answer instead
     rows, rerank_scores, _depth = _retrieve_rows(
-        question, category, k, resolve_rerank(use_rerank), variant, ef_search
+        question, scope, k, resolve_rerank(use_rerank), variant, ef_search
     )
     return Retrieval(sources=take_sources(rows, rerank_scores, variant))
 
 
 def answer(
     question: str,
-    category: str | None = None,
+    scope=None,
     k: int | None = None,
     add_context=False,
     run_name: str | None = None,
@@ -281,7 +281,7 @@ def answer(
     k = k or config.settings.retrieval.results_limit
     variant = variant or config.settings.corpus.variant
     rows, rerank_scores, depth = _retrieve_rows(
-        question, category, k, use_rerank, variant, ef_search
+        question, scope, k, use_rerank, variant, ef_search
     )
     return answer_from_rows(
         question,
@@ -298,6 +298,7 @@ def answer(
         ef_search=depth,
         grade_chunks=grade_chunks,
         judge_wanted=judge_wanted,
+        scope=scope,
     )
 
 
@@ -320,6 +321,7 @@ def answer_from_rows(
     *,
     variant: str,
     placed_during: dict | None = None,
+    scope=None,
 ) -> Answer:
     start = started_at if started_at is not None else time.perf_counter()
     lang = resolve_language(question, language)
@@ -381,7 +383,7 @@ def answer_from_rows(
             question, ans, lang, context, run_name, use_rerank, k, phased, rerank_device,
             _retrieval_snapshot(rows, ans.sources), variant=variant, ef_search=ef_search,
             contexts=texts or None, chunks=chunks or None, placed_during=placed_during,
-            graded=graded, asks=asks, judge_wanted=judge_wanted,
+            graded=graded, asks=asks, judge_wanted=judge_wanted, scope=scope,
         )
     except SQLAlchemyError as e:
         log.error("question_log.insert_failed", reason=str(e))
@@ -434,7 +436,7 @@ def _retrieval_snapshot(rows, sources) -> dict:
 def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, variant: str,
                      ef_search: int | None = None, model: str | None = None,
                      language: str | None = None, placed_during: dict | None = None,
-                     generated: bool = True, grade_chunks: bool = False) -> dict:
+                     generated: bool = True, grade_chunks: bool = False, scope=None) -> dict:
     return run_snapshot.of_run(
         generated=generated,
         language=language,
@@ -449,6 +451,7 @@ def _config_snapshot(use_rerank, k, phased, distance_threshold, rerank_device, v
         # the agent has no phase and single_shot has no hops: each records None for the other
         phased=phased,
         grade_chunks=grade_chunks or None,
+        scope=run_snapshot.scope_of(scope),
     )
 
 
@@ -457,7 +460,7 @@ def _log_answer(
     use_rerank=False, k=None, phased=False, rerank_device=None, retrieval=None,
     *, variant: str, ef_search: int | None = None, contexts=None, chunks=None,
     placed_during: dict | None = None, graded: dict | None = None, asks: list | None = None,
-    judge_wanted: bool = True,
+    judge_wanted: bool = True, scope=None,
 ) -> None:
     # no call, no generator on the row: an answer refused over the window has a context and no call
     generated = ans.success
@@ -493,7 +496,7 @@ def _log_answer(
                     use_rerank, k, phased, ans.metrics.distance_threshold,
                     rerank_device, variant, ef_search, ans.metrics.model, lang,
                     placed_during=placed_during, generated=generated,
-                    grade_chunks=bool(graded),
+                    grade_chunks=bool(graded), scope=scope,
                 ),
                 "retrieval": retrieval,
                 # what the ceiling grid is gated on, as a number rather than arithmetic done by hand

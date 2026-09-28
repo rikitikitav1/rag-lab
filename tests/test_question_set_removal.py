@@ -1,0 +1,33 @@
+from evals import question_sets
+
+
+def _holds(questions=3, answered=0, drawn_from=0):
+    return {"questions": questions, "answered": answered, "drawn_from": drawn_from}
+
+
+# a set goes only when nothing reads it: the verdict, a job, an answer log, a set drawn from it
+def test_a_set_is_refused_while_anything_reads_it():
+    assert question_sets.removal_refusal("smoke", _holds(), False, None) is None
+    assert "no question set" in question_sets.removal_refusal("smoke", _holds(questions=0), False, None)
+    assert "config/evals.yaml" in question_sets.removal_refusal("paraphrased_v2", _holds(), True, None)
+    assert "job 7" in question_sets.removal_refusal("smoke", _holds(), False, 7)
+    assert "2 answer logs" in question_sets.removal_refusal("smoke", _holds(answered=2), False, None)
+    assert "4 questions of other sets" in question_sets.removal_refusal("smoke", _holds(drawn_from=4), False, None)
+
+
+# a paraphrase job that names no set still reads one, so any job that reads sets holds the door
+def test_any_job_that_reads_sets_holds_the_door(monkeypatch):
+    import config
+    import job_queue
+    import pytest
+    from errors import Final
+
+    import db
+
+    monkeypatch.setattr(db, "question_set_holds", lambda name: _holds())
+    monkeypatch.setattr(job_queue, "pending_of_type", lambda t, **options: 12 if t == "paraphrase_questions" else None)
+    monkeypatch.setattr(config.settings.verdict, "criterion_sets", [])
+    monkeypatch.setattr(config.settings.verdict, "veto_sets", [])
+
+    with pytest.raises(Final, match="job 12"):
+        question_sets.remove("smoke")

@@ -16,20 +16,6 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: ltree; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS ltree WITH SCHEMA public;
-
-
---
--- Name: EXTENSION ltree; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION ltree IS 'data type for hierarchical tree-like structures';
-
-
---
 -- Name: vector; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -53,8 +39,8 @@ CREATE FUNCTION public.data_chunks_content_tsv() RETURNS trigger
 BEGIN
   NEW.content_tsv := to_tsvector(
     CASE NEW.language
-      WHEN 'rus' THEN 'russian'
-      WHEN 'eng' THEN 'english'
+      WHEN 'ru' THEN 'russian'
+      WHEN 'en' THEN 'english'
       ELSE 'simple'
     END::regconfig,
     NEW.content
@@ -79,14 +65,16 @@ CREATE TABLE public.data_chunks (
     content text NOT NULL,
     embedding public.vector(1024),
     chunk_index integer NOT NULL,
-    category public.ltree NOT NULL,
     language text NOT NULL,
     content_tsv tsvector,
     variant text NOT NULL,
     section text,
     content_hash text,
     prefix_len integer,
-    embedded_by text
+    embedded_by text,
+    tags text[] DEFAULT '{}'::text[] NOT NULL,
+    category text,
+    versions text[] DEFAULT '{}'::text[] NOT NULL
 );
 
 
@@ -840,7 +828,7 @@ ALTER TABLE ONLY public.weights
 -- Name: data_chunks_category_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX data_chunks_category_idx ON public.data_chunks USING gist (category);
+CREATE INDEX data_chunks_category_idx ON public.data_chunks USING btree (category);
 
 
 --
@@ -869,11 +857,19 @@ CREATE INDEX data_chunks_content_tsv_idx ON public.data_chunks USING gin (conten
 
 
 
+
 --
 -- Name: data_chunks_source_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX data_chunks_source_id_idx ON public.data_chunks USING btree (source_id);
+
+
+--
+-- Name: data_chunks_tags_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_tags_idx ON public.data_chunks USING gin (tags);
 
 
 --
@@ -888,6 +884,13 @@ CREATE INDEX data_chunks_variant_embedded_by_idx ON public.data_chunks USING btr
 --
 
 CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (variant, source_id);
+
+
+--
+-- Name: data_chunks_versions_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_versions_idx ON public.data_chunks USING gin (versions);
 
 
 --
@@ -1039,4 +1042,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260923000002'),
     ('20260925000001'),
     ('20260925000002'),
-    ('20260926000001');
+    ('20260926000001'),
+    ('20260927000001'),
+    ('20260927000002'),
+    ('20260927000003');

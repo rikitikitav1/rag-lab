@@ -50,7 +50,18 @@ def _insert(session, text, set_name, language, original) -> bool:
         .on_conflict_do_nothing(index_elements=["text_hash"])
         .returning(Question.id)
     )
+    if inserted is None:
+        # a text the bank holds already: its own original returned unchanged, or another question it collided with
+        held = session.scalar(select(Question.id).where(Question.text_hash == row["text_hash"]))
+        why = dropped_why(held, original.id)
+        session.info.setdefault("dropped", {}).setdefault(why, 0)
+        session.info["dropped"][why] += 1
+        log.info("paraphrase.dropped", why=why, text_hash=row["text_hash"], original=original.id, matched=held)
     return inserted is not None
+
+
+def dropped_why(held: int | None, original: int) -> str:
+    return "unchanged" if held == original else "collided"
 
 
 # md5 over id and seed: reproducible, and unlike random() it survives a rebuild of the set
@@ -186,21 +197,22 @@ def build(
             if not rephrased:
                 continue
             if original.id not in done_en and _insert(
-                session, rephrased, set_name, "eng", original
+                session, rephrased, set_name, "en", original
             ):
                 made[set_name] += 1
 
             if original.id in done_ru:
                 continue
             translated = _translate_ru(rephrased)
-            if translated and _insert(session, translated, ru_set, "rus", original):
+            if translated and _insert(session, translated, ru_set, "ru", original):
                 made[ru_set] += 1
 
             if i % 20 == 0:
                 session.commit()
                 log.info("paraphrase.progress", done=i, made=made)
         session.commit()
-    log.info("paraphrase.done", requested=limit, made=made)
+        dropped = dict(getattr(session, "info", {}).get("dropped", {}))
+    log.info("paraphrase.done", requested=limit, made=made, dropped=dropped)
     return made
 
 

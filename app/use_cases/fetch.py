@@ -1,8 +1,10 @@
 import hashlib
 import os
+import re
 import subprocess
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from xml.etree import ElementTree
 
 import requests
 
@@ -11,6 +13,14 @@ TIMEOUT = 120
 
 def short_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:8]
+
+
+_SLUG = re.compile(r"[^\w.-]+")
+
+
+# a file or piece key as a flat file name, readable and unique: two keys that slug alike differ by the hash
+def file_stem(key: str) -> str:
+    return f"{_SLUG.sub('_', key)[:120]}-{short_hash(key)}"
 
 
 # a url to a file, whole or not at all: it lands in a .part and moves into place; False when it was there already
@@ -35,6 +45,44 @@ def unzip(archive: Path) -> list[Path]:
         with zipfile.ZipFile(archive) as opened:
             opened.extractall(folder)
     return sorted(p for p in folder.rglob("*") if p.is_file())
+
+
+def _local(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+_PAGE_TYPE = re.compile(r"<(?:body|section|div|nav|figure|header)\b[^>]*?(?:epub:type|data-type)=[\"']([^\"']+)[\"']")
+# the publisher types its page near the top; deeper in, a chapter holds figures and notes typed on their own
+_TYPE_HEAD = 4096
+
+
+# the publisher's types of a page (cover, index, chapter), from every element near its top that names one
+def page_types(html: str) -> set[str]:
+    return {kind for found in _PAGE_TYPE.findall(html[:_TYPE_HEAD]) for kind in found.split()}
+
+
+# an EPUB's chapters in reading order and its skipped pages; the package file stays out, it names a copy's buyer
+def epub_chapters(epub: Path, folder: Path, skip: frozenset[str] = frozenset()) -> tuple[list[Path], dict[str, str]]:
+    # a book of the owner's own store, and expat 2.6+ caps entity growth while ElementTree loads no external entity
+    with zipfile.ZipFile(epub) as opened:
+        container = ElementTree.fromstring(opened.read("META-INF/container.xml"))  # nosec B314
+        package = next(e.get("full-path") for e in container.iter() if _local(e.tag) == "rootfile")
+        opf = ElementTree.fromstring(opened.read(package))  # nosec B314
+        base = PurePosixPath(package).parent
+        manifest = {e.get("id"): e for e in opf.iter() if _local(e.tag) == "item"}
+        spine = [manifest[e.get("idref")] for e in opf.iter() if _local(e.tag) == "itemref"]
+        chapters = [str(base / e.get("href")) for e in spine if "html" in (e.get("media-type") or "")]
+        folder.mkdir(parents=True, exist_ok=True)
+        out, skipped = [], {}
+        for n, member in enumerate(chapters, start=1):
+            target = folder / f"{n:03d}_{PurePosixPath(member).stem}.html"
+            page = opened.read(member)
+            if kinds := page_types(page.decode(errors="ignore")) & skip:
+                skipped[target.name] = f"epub page type {' '.join(sorted(kinds))}"
+                continue
+            target.write_bytes(page)
+            out.append(target)
+    return out, skipped
 
 
 def _git(*args, cwd=None) -> str:

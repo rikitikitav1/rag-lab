@@ -7,6 +7,8 @@ from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from sqlalchemy import func, select, update
 
+import db
+
 from .base import Final, register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
@@ -67,6 +69,11 @@ def eval_run(options: dict) -> None:
             resume=resume,
             generation_sampler=options.get("generation_sampler"),
             judge=options.get("judge", True),
+            scope=db.Scope(
+                label=options.get("category"),
+                sources=tuple(options.get("sources") or ()),
+                version=options.get("version"),
+            ),
         )
     # the worker's retry would answer every question again beside the rows already written
     except StandFault as e:

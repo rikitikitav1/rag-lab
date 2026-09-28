@@ -128,7 +128,7 @@ def test_the_run_snapshot_says_a_cloud_role_was_keyed_by_the_run(monkeypatch):
     monkeypatch.setattr(run_snapshot.card, "model_on_card", lambda spec, name: None)
     *_, cache_keys, _ = run_snapshot._by_role(engines.Resolved("m", CLOUD))
     assert cache_keys == {Role.generation: "user=job"}
-    assert "cache_keys" in run_snapshot.KEYS and run_snapshot.SCHEMA == 19
+    assert "cache_keys" in run_snapshot.KEYS and run_snapshot.SCHEMA == 20
 
 
 def test_a_finished_job_has_its_count_before_it_reads_done(monkeypatch):
@@ -177,3 +177,18 @@ def test_a_turn_without_token_counts_does_not_fail_the_row(monkeypatch):
                               {"configurable": {"run": ctx}})
     assert update["prompt_tokens"] == 0 and update["max_prompt_tokens"] == 0
     assert update["completion_tokens"] == 0 and update["text"] == "an answer"
+
+
+# a filtered arm says what it was narrowed to and how the filtered scan walked; a whole-corpus arm says no scope
+def test_the_run_snapshot_says_its_scope_and_filtered_scan():
+    from use_cases import run_snapshot
+
+    import db
+
+    assert {"scope", "filtered_scan"} <= set(run_snapshot.KEYS)
+    assert run_snapshot.scope_of(None) is None
+    assert run_snapshot.scope_of(db.Scope(label="redis", sources=("redis-doc",))) == {
+        "label": "redis",
+        "sources": ["redis-doc"],
+        "version": None,
+    }
