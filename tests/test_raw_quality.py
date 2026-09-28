@@ -81,3 +81,33 @@ def test_the_raw_gates_cut_with_the_variants_chunker(monkeypatch):
     raw_quality.chunker_gates("## A\n\ntext", "a.md")
 
     assert seen == [config.settings.corpus.policy(config.settings.corpus.variant)]
+
+
+# code with angle brackets is text: only a real tag is markup, so a Rails template keeps its words
+def test_angle_brackets_in_code_are_not_markup():
+    from use_cases import raw_quality
+
+    text = raw_quality.plain("```\n<%= link_to 'Home', root_path %>\nif a < b and c > d:\n```\n<b>bold</b>")
+    assert "link" in text and "root" in text and "a < b" in text and "bold" in text and "<b>" not in text
+
+
+# a file read against itself: outline titles found as headings, an open fence and one-line code counted
+def test_a_file_is_checked_against_its_own_outline_and_fences():
+    markdown = "# Chapter 2 Getting Started\n\n## 2.1 Installing\n\ntext\n\n```\nls\n```\n\n```\na\nb\n```\n"
+    markdown += "\n```\nopen\n"
+    check = raw_quality.self_check(markdown, ["Getting Started", "2.1 Installing", "2.2 Running", "3"])
+    assert check == {
+        "outline": 3,
+        "outline_found": 2,
+        "fences_unbalanced": 1,
+        "code_blocks": 2,
+        "code_one_line": 1,
+    }
+
+
+def test_a_second_reading_losing_cells_is_taken_only_within_the_source_s_slack():
+    first, second = {"layer_f1": 0.69, "table_cells": 44}, {"layer_f1": 0.97, "table_cells": 42}
+
+    assert not raw_quality.better_reading(first, second)
+    assert raw_quality.better_reading(first, second, 0.05)
+    assert not raw_quality.better_reading(first, {**second, "table_cells": 40}, 0.05)

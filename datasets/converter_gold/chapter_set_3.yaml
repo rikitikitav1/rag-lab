@@ -1,0 +1,416 @@
+# chapter 3 of every PDF document in the store, whole; drawn by scripts/chapter_set.py, read by convert_source with intake and root inbox
+documents:
+- source: ostep
+  file: books/ostep/cpu-intro.pdf
+  language: en
+  file_pages: 13
+  pages:
+  - 1
+  - 13
+  chapter: cpu-intro
+  by: chapter file
+- source: goalkicker
+  file: books/goalkicker/AlgorithmsNotesForProfessionals.pdf
+  language: en
+  file_pages: 257
+  pages:
+  - 13
+  - 19
+  chapter: 'Chapter 3: Big-O Notation'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/BashNotesForProfessionals.pdf
+  language: en
+  file_pages: 204
+  pages:
+  - 19
+  - 21
+  chapter: 'Chapter 3: Navigating directories'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/GitNotesForProfessionals.pdf
+  language: en
+  file_pages: 195
+  pages:
+  - 26
+  - 30
+  chapter: 'Chapter 3: Working with Remotes'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/JavaScriptNotesForProfessionals.pdf
+  language: en
+  file_pages: 490
+  pages:
+  - 28
+  - 33
+  chapter: 'Chapter 3: Built-in Constants'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/LinuxNotesForProfessionals.pdf
+  language: en
+  file_pages: 65
+  pages:
+  - 19
+  - 20
+  chapter: 'Chapter 3: Getting information on a running Linux kernel'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/MicrosoftSQLServerNotesForProfessionals.pdf
+  language: en
+  file_pages: 286
+  pages:
+  - 28
+  - 31
+  chapter: 'Chapter 3: Converting data types'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/MongoDBNotesForProfessionals.pdf
+  language: en
+  file_pages: 73
+  pages:
+  - 15
+  - 16
+  chapter: 'Chapter 3: Getting database information'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/NodeJSNotesForProfessionals.pdf
+  language: en
+  file_pages: 334
+  pages:
+  - 41
+  - 56
+  chapter: 'Chapter 3: Web Apps With Express'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/PostgreSQLNotesForProfessionals.pdf
+  language: en
+  file_pages: 74
+  pages:
+  - 15
+  - 16
+  chapter: 'Chapter 3: Dates, Timestamps, and Intervals'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/PythonNotesForProfessionals.pdf
+  language: en
+  file_pages: 856
+  pages:
+  - 60
+  - 62
+  chapter: 'Chapter 3: Indentation'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/ReactJSNotesForProfessionals.pdf
+  language: en
+  file_pages: 110
+  pages:
+  - 26
+  - 29
+  chapter: 'Chapter 3: Using ReactJS with TypeScript'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/RubyNotesForProfessionals.pdf
+  language: en
+  file_pages: 235
+  pages:
+  - 17
+  - 22
+  chapter: 'Chapter 3: Operators'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/RubyOnRailsNotesForProfessionals.pdf
+  language: en
+  file_pages: 231
+  pages:
+  - 30
+  - 35
+  chapter: 'Chapter 3: ActiveRecord'
+  by: numbered outline
+- source: goalkicker
+  file: books/goalkicker/SQLNotesForProfessionals.pdf
+  language: en
+  file_pages: 166
+  pages:
+  - 11
+  - 13
+  chapter: 'Chapter 3: Data Types'
+  by: numbered outline
+- source: open-data-structures-python
+  file: books/open-data-structures-python/open-data-structures-python.pdf
+  language: en
+  file_pages: 326
+  pages:
+  - 43
+  - 73
+  chapter: Array-Based Lists
+  by: outline
+- source: erickson-algorithms
+  file: books/erickson-algorithms/erickson-algorithms.pdf
+  language: en
+  file_pages: 472
+  pages:
+  - 89
+  - 115
+  chapter: Backtracking
+  by: outline
+- source: think-python-2e
+  file: books/think-python-2e/think-python-2e.pdf
+  language: en
+  file_pages: 244
+  pages:
+  - 39
+  - 51
+  chapter: Functions
+  by: outline
+- source: eloquent-javascript
+  file: books/eloquent-javascript/eloquent-javascript.pdf
+  language: en
+  file_pages: 463
+  pages:
+  - 34
+  - 52
+  chapter: Program Structure
+  by: outline
+- source: van-steen-distributed-systems-4e
+  file: books/van-steen-distributed-systems-4e/van-steen-distributed-systems-4e-personal.pdf
+  language: en
+  file_pages: 685
+  pages:
+  - 127
+  - 197
+  chapter: Processes
+  by: outline
+- source: van-steen-graph-theory
+  file: books/van-steen-graph-theory/van-steen-graph-theory-complex-networks.pdf
+  language: en
+  file_pages: 299
+  pages:
+  - 69
+  - 93
+  chapter: Extensions
+  by: outline
+- source: van-steen-computer-network-organization
+  file: books/van-steen-computer-network-organization/van-steen-computer-network-organization.pdf
+  language: en
+  file_pages: 560
+  pages:
+  - 120
+  - 130
+  chapter: null
+  by: no outline
+- source: coulouris-distributed-systems-5e
+  file: books/coulouris-distributed-systems-5e/coulouris-distributed-systems-5e.pdf
+  language: en
+  file_pages: 1067
+  pages:
+  - 99
+  - 163
+  chapter: 3 NETWORKING AND INTERNETWORKING
+  by: numbered outline
+- source: security-engineering-3e
+  file: books/security-engineering-3e/SE-03.pdf
+  language: en
+  file_pages: 16
+  pages:
+  - 1
+  - 16
+  chapter: SE-03
+  by: chapter file
+- source: the-linux-command-line
+  file: books/the-linux-command-line/adventures-with-the-linux-command-line.pdf
+  language: en
+  file_pages: 263
+  pages:
+  - 59
+  - 67
+  chapter: 3 Less Typing
+  by: numbered outline
+- source: the-linux-command-line
+  file: books/the-linux-command-line/the-linux-command-line-25.12.pdf
+  language: en
+  file_pages: 597
+  pages:
+  - 37
+  - 50
+  chapter: 3 – Exploring the System
+  by: numbered outline
+- source: readings-in-database-systems-5e
+  file: books/readings-in-database-systems-5e/readings-in-database-systems-5e.pdf
+  language: en
+  file_pages: 54
+  pages:
+  - 9
+  - 13
+  chapter: Techniques Everyone Should Know Introduced by Peter Bailis
+  by: outline
+- source: data-oriented-design
+  file: books/data-oriented-design/data-oriented-design.pdf
+  language: en
+  file_pages: 217
+  pages:
+  - 120
+  - 130
+  chapter: null
+  by: no outline
+- source: postgresql-internals-18
+  file: books/postgresql-internals-18/postgresql_internals-18.pdf
+  language: ru
+  file_pages: 683
+  pages:
+  - 76
+  - 98
+  chapter: Глава 3. Страницы и версии строк
+  by: numbered outline
+- source: kafka-the-definitive-guide-2e
+  file: books/kafka-the-definitive-guide-2e/kafka-the-definitive-guide-2e.pdf
+  language: en
+  file_pages: 793
+  pages:
+  - 91
+  - 135
+  chapter: '3. Kafka Producers: Writing Messages to Kafka'
+  by: numbered outline
+- source: designing-event-driven-systems
+  file: books/designing-event-driven-systems/designing-event-driven-systems.pdf
+  language: en
+  file_pages: 166
+  pages:
+  - 28
+  - 32
+  chapter: Chapter 3. Is Kafka What You Think It Is?
+  by: numbered outline
+- source: redis-in-action
+  file: books/redis-in-action/redis-in-action.pdf
+  language: en
+  file_pages: 322
+  pages:
+  - 66
+  - 90
+  chapter: 'Chapter 3: Commands in Redis'
+  by: numbered outline
+- source: nginx-cookbook
+  file: books/nginx-cookbook/nginx-cookbook.pdf
+  language: en
+  file_pages: 207
+  pages:
+  - 43
+  - 55
+  chapter: Chapter 3. Traffic Management
+  by: numbered outline
+- source: designing-distributed-systems
+  file: books/designing-distributed-systems/designing-distributed-systems.pdf
+  language: en
+  file_pages: 164
+  pages:
+  - 35
+  - 45
+  chapter: Chapter 3. Ambassadors
+  by: numbered outline
+- source: object-pascal-handbook
+  file: books/object-pascal-handbook/object-pascal-handbook-alexandria.pdf
+  language: en
+  file_pages: 550
+  pages:
+  - 86
+  - 101
+  chapter: '03: Language Statements'
+  by: numbered outline
+- source: freepascal
+  file: books/freepascal/fcl.pdf
+  language: en
+  file_pages: 953
+  pages:
+  - 97
+  - 119
+  chapter: Reference for unit 'AVL_Tree'
+  by: outline
+- source: freepascal
+  file: books/freepascal/prog.pdf
+  language: en
+  file_pages: 187
+  pages:
+  - 69
+  - 76
+  chapter: Using Assembly language
+  by: outline
+- source: freepascal
+  file: books/freepascal/ref.pdf
+  language: en
+  file_pages: 268
+  pages:
+  - 26
+  - 67
+  chapter: Types
+  by: outline
+- source: freepascal
+  file: books/freepascal/rtl.pdf
+  language: en
+  file_pages: 2191
+  pages:
+  - 241
+  - 259
+  chapter: Reference for unit 'Character'
+  by: outline
+- source: freepascal
+  file: books/freepascal/user.pdf
+  language: en
+  file_pages: 217
+  pages:
+  - 17
+  - 24
+  chapter: Compiler usage
+  by: outline
+- source: unix-4-3bsd-reference
+  file: books/unix-4-3bsd-reference/unix-4.3bsd-reference-guide-scan.pdf
+  language: en
+  file_pages: 510
+  pages:
+  - 120
+  - 130
+  chapter: null
+  by: no outline
+- source: cloud-native-docker-k8s
+  file: books/cloud-native-docker-k8s/cloud.native.docker.k8s.pdf
+  language: ru
+  file_pages: 233
+  pages:
+  - 48
+  - 62
+  chapter: 3. Контейнеры и Docker
+  by: numbered outline
+- source: analiz-dannyh-genai-python
+  file: books/analiz-dannyh-genai-python/analiz-dannyh-s-pomoshyu-genai-i-python.pdf
+  language: ru
+  file_pages: 400
+  pages:
+  - 120
+  - 130
+  chapter: null
+  by: no outline
+- source: cloud-native-docker-k8s-scan
+  file: books/cloud-native-docker-k8s-scan/cloud-native-docker-k8s-scan.pdf
+  language: ru
+  file_pages: 233
+  pages:
+  - 120
+  - 130
+  chapter: null
+  by: no outline
+- source: analiz-dannyh-genai-python-scan
+  file: books/analiz-dannyh-genai-python-scan/analiz-dannyh-genai-python-scan.pdf
+  language: ru
+  file_pages: 400
+  pages:
+  - 120
+  - 130
+  chapter: null
+  by: no outline
+- source: papers
+  file: papers/2311.09476.pdf
+  language: en
+  file_pages: 17
+  pages:
+  - 3
+  - 5
+  chapter: ARES
+  by: outline

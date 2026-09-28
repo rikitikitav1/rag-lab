@@ -10,10 +10,12 @@ from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sources.declaration import Language
-from tool_names import SETTINGS_NAME
+from tool_names import SETTINGS_NAME, settings_refusal
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.index import VARIANT_RE
+
+from db import CATEGORY_RE
 
 # the only folder a graded pass reads: a path of its own would let a job open any file
 FROZEN_POOL_RE = re.compile(r"(/app/)?datasets/candidates/[\w.-]+\.json")
@@ -65,11 +67,31 @@ class EvalRunFields(Spec):
     purpose: Purpose = Purpose.smoke
     # the preregistration this run was made under, by name
     prereg: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
+    # the search's scope, as the chat doors take it: a book's questions asked of that book alone
+    category: str | None = Field(default=None, pattern=CATEGORY_RE.pattern)
+    sources: list[str] | None = Field(default=None, max_length=100)
+    version: str | None = Field(default=None, pattern=r"^[\w.-]{1,32}$")
 
     @field_validator("generation_sampler")
     @classmethod
     def _sampler_keys(cls, value):
         return samplers.check(value) if value else value
+
+    def scope(self):
+        import db
+
+        return db.Scope(label=self.category, sources=tuple(self.sources or ()), version=self.version)
+
+    # the agent searches with its own queries and no filter; a scope it would drop is refused, as at the MCP door
+    @model_validator(mode="after")
+    def _a_scope_the_pipeline_can_read(self):
+        import db
+
+        scope = self.scope()
+        if scope.narrowed and self.pipeline == Pipeline.agent:
+            raise ValueError("a category, source or version scope is only supported with pipeline=single_shot")
+        db.refuse_bad_scope(scope)
+        return self
 
     # the gate lives here and not on a route, so the REST door and the queue get it from one place
     @model_validator(mode="after")
@@ -238,6 +260,18 @@ class ConvertSource(Spec):
     # paths under the gold's files; a path of its own would let a job read any file
     inputs: list[str] = Field(min_length=1, max_length=5000)
     out: str = Field(pattern=r"^[\w.-]{1,80}$")
+    # read as the corpus reads a file (route, seams, reread, join), not by the one settings file alone
+    intake: bool = False
+    # where the inputs lie: the gold's files, or the store of sources, read and never written
+    root: Literal["gold", "inbox"] = "gold"
+    # an input read over a page range of its own file, first and last inclusive, as onboarding hands a piece
+    pages: dict[str, tuple[int, int]] | None = None
+    # a run's own piece size in place of the settings', stamped in its record
+    pages_per_chunk: int | None = Field(default=None, ge=1)
+    # an input's source by name, so it is read with that source's own intake knobs
+    sources: dict[str, str] | None = None
+    # intake knobs of the run itself, over every input's own: an arm is its settings plus these
+    knobs: dict | None = None
 
     @field_validator("inputs")
     @classmethod
@@ -246,6 +280,20 @@ class ConvertSource(Spec):
             if path.startswith("/") or ".." in path.split("/"):
                 raise ValueError(f"{path}: a path relative to the gold's files, without ..")
         return inputs
+
+    @model_validator(mode="after")
+    def _ranges_name_inputs(self):
+        as_corpus = (self.pages, self.root != "gold", self.pages_per_chunk, self.sources, self.knobs)
+        if not self.intake and any(as_corpus):
+            raise ValueError("pages, root and pages_per_chunk read a file as the corpus does, so they need intake")
+        if self.knobs is not None:
+            from sources.declaration import IntakeOverride
+
+            IntakeOverride(**self.knobs)
+        for path, (first, last) in (self.pages or {}).items():
+            if path not in self.inputs or not 1 <= first <= last:
+                raise ValueError(f"pages {path}: an input of the job with 1 <= first <= last")
+        return self
 
 
 class OnboardSource(Spec):
@@ -257,8 +305,8 @@ class OnboardSource(Spec):
     @classmethod
     def _settings_files(cls, settings):
         for tool, name in (settings or {}).items():
-            if not SETTINGS_NAME.fullmatch(name) or not name.startswith(f"{tool}/"):
-                raise ValueError(f"{tool}: {name} is not a settings file of that tool")
+            if refusal := settings_refusal(tool, name):
+                raise ValueError(refusal)
         return settings
 
 

@@ -158,6 +158,8 @@ services:
     build:
       dockerfile: Dockerfile
     command: ["python", "app/worker.py"]
+    # a native crash in the PDF library killed the queue for an hour; a restart requeues the job it held
+    restart: unless-stopped
     # the worker writes pulled weights into the host's cache, and as root they were not the host's
     user: *host-user
     env_file:

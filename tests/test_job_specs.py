@@ -179,3 +179,28 @@ def test_a_graded_pass_names_a_frozen_pool_and_not_any_path():
     for bad in ("/etc/passwd", "/app/datasets/candidates/../../.env", "pool.json"):
         with pytest.raises(job_specs.Refused):
             job_specs.check("grade_candidates", {"candidates": bad})
+
+
+def test_a_run_takes_the_chat_doors_scope_and_refuses_what_they_refuse():
+    job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "17"})
+    with pytest.raises(job_specs.Refused, match="names no category"):
+        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "version": "17"})
+    with pytest.raises(job_specs.Refused, match="only supported with pipeline=single_shot"):
+        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "redis", "pipeline": "agent"})
+    with pytest.raises(job_specs.Refused):
+        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "databases.redis"})
+
+
+def test_the_phased_run_searches_within_its_scope(monkeypatch):
+    from evals import runner
+
+    import db
+
+    seen = []
+    monkeypatch.setattr(runner, "_embed_in_batches", lambda texts: [("bge-m3@ollama", [0.1])] * len(texts))
+    monkeypatch.setattr(runner.search_depth, "resolve", lambda variant: 40)
+    monkeypatch.setattr(runner.db, "hybrid_search", lambda text, vector, scope, **kw: seen.append(scope) or [])
+    scope = db.Scope(label="redis", sources=("redis-doc",))
+    runner._phase_retrieve(["q"], runner.RunSpec(variant="clean_1024", k=5, scope=scope))
+
+    assert seen == [scope]

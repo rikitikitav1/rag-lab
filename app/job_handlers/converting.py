@@ -35,7 +35,51 @@ def load_settings(name: str) -> tuple[dict, str]:
 def fields(settings: dict, language: str) -> list[tuple[str, str]]:
     found = list(settings["fields"].items())
     found += [("ocr_lang", lang) for lang in settings.get("ocr_lang", {}).get(language, [])]
+    # Docling's own structure rides along: the code items' boxes for the rebuild, and the pieces keep it
+    if settings["tool"] == Tool.docling and ("to_formats", "json") not in found:
+        found.append(("to_formats", "json"))
     return found
+
+
+# the markdown with its code blocks' lines from the PDF's layer when the settings ask for it, and what was rebuilt
+def code_lines_of(settings: dict, path: Path, result: dict, rule=None) -> tuple[str, dict | None]:
+    from use_cases import code_lines, route
+
+    rule = route.rule_of(rule)
+    spread = rule.mono_spread
+
+    markdown = result.get("markdown") or ""
+    if not settings.get("code_from_layer") or path.suffix.lower() != ".pdf" or not result.get("structure"):
+        return markdown, None
+    from use_cases import piece_join
+
+    markdown, entities = piece_join.decode_entities(markdown) if rule.decode_entities else (markdown, 0)
+    markdown, pipes = piece_join.drop_lone_pipes(markdown) if rule.drop_lone_pipes else (markdown, 0)
+    rows_by = frozenset(rule.code_row_rules)
+    callouts = route.mono_names(rule) if rule.listing_callouts else None
+    markdown, counts = code_lines.rebuild(
+        markdown, result["structure"], path, spread, callouts, rule.mono_by_step, rows_by
+    )
+    counts.update(entities_decoded=entities, pipes_dropped=pipes)
+    goes_on = code_lines.continued(result["structure"])["table"]
+    markdown, counts["tables_joined"] = piece_join.join_tables(markdown, goes_on)
+    outline = route.outline(path)
+    titles = [title for _, title, _ in outline]
+    markdown, counts["fenced"] = code_lines.fence_mono(
+        markdown, result["structure"], path, route.mono_names(rule), titles, spread, rows_by
+    )
+    counts["relevelled"] = counts["numbered_levels"] = 0
+    if outline and rule.outline_levels:
+        markdown, counts["relevelled"] = piece_join.relevel(
+            markdown, result["structure"], outline, rule.headings_by_number
+        )
+    elif not outline and rule.numbered_levels:
+        markdown, counts["numbered_levels"] = piece_join.relevel(markdown, result["structure"], [], by_number=True)
+    markdown, counts["paragraphs_joined"] = piece_join.join_paragraphs(markdown, result["structure"])
+    counts["pictures_addressed"] = 0
+    if rule.picture_addresses:
+        markdown, counts["pictures_addressed"] = code_lines.picture_addresses(markdown, result["structure"])
+    return markdown, counts
 
 
 def ceiling(settings: dict) -> float:

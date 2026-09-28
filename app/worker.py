@@ -1,3 +1,4 @@
+import faulthandler
 import os
 import threading
 import time
@@ -196,6 +197,8 @@ def _loop(queues: list[str]) -> None:
 
 def main() -> None:
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
+    # a crash in native code (PDFium, glibc) kills the process with no trace: print every thread's stack first
+    faulthandler.enable(all_threads=True)
     if not QUEUES:
         raise SystemExit("WORKER_QUEUES is empty")
     version.say_loaded()

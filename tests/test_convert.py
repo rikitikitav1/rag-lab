@@ -29,6 +29,7 @@ def test_a_cancelled_conversion_stops_before_its_next_piece(tmp_path, monkeypatc
     monkeypatch.setattr(convert, "tool_version", lambda spec, tool: {"docling-serve": "test"})
     monkeypatch.setattr(convert, "_pages", lambda path: 120)
     monkeypatch.setattr(convert.job_queue, "is_cancelled", lambda job_id: True)
+    monkeypatch.setattr(convert.reading, "route_sha", lambda rule=None: "live-rules")
     called = []
     monkeypatch.setattr(convert, "convert", lambda *args: called.append(args))
 
@@ -37,7 +38,10 @@ def test_a_cancelled_conversion_stops_before_its_next_piece(tmp_path, monkeypatc
     )
 
     assert called == []
-    assert json.loads((gold / "runs" / "run" / "record.json").read_text())["cancelled_before"] == "books/a.pdf 1-50"
+    record = json.loads((gold / "runs" / "run" / "record.json").read_text())
+    assert record["cancelled_before"] == "books/a.pdf 1-50"
+    # the plain arm is fingerprinted by the live rules, so a rule moved before it resumes sends it to a new out
+    assert record["route_sha256"] == "live-rules" and record["word_rules"] is False
 
 
 # a tool without an adapter is refused by name, not sent Docling's API
@@ -120,3 +124,155 @@ def test_a_resume_under_another_language_is_refused():
         convert._refuse_another_configuration(
             record, {"tool": "docling", "settings_sha256": "s", "build": None, "language": "ru"}
         )
+
+
+# an intake arm reads the gold as the corpus does: the shared plan, the reread, and the join of its pieces
+def test_an_intake_arm_reads_through_the_corpus_path_and_joins_its_pieces(tmp_path, monkeypatch):
+    from job_handlers import reading
+    from use_cases import route
+
+    gold = tmp_path / "files"
+    (gold / "books").mkdir(parents=True)
+    (gold / "books" / "a.pdf").write_bytes(b"%PDF")
+    monkeypatch.setattr(convert, "GOLD", gold)
+    monkeypatch.setattr(convert, "RUNS", gold / "runs")
+    monkeypatch.setattr(convert, "converter_for", lambda tool: object())
+    monkeypatch.setattr(convert, "take", lambda spec: None)
+    monkeypatch.setattr(convert.converter, "reading", lambda spec: (None, {"tool": "docling", "build": None}))
+    monkeypatch.setattr(convert, "tool_version", lambda spec, tool: {"docling-serve": "test"})
+    monkeypatch.setattr(convert, "_pages", lambda path: 2)
+    monkeypatch.setattr(convert.route, "layer_texts", lambda path, rule=None: ["one", "two"])
+    monkeypatch.setattr(route, "route", lambda path, rule=None: [route.Run("docling", (1, 2), "text layer")])
+    monkeypatch.setattr(route, "seamless_pieces", lambda path, pages, size, rule=None: [(1, 1), (2, 2)])
+    texts = {(1, 1): "## A\n\n| a | b |\n|---|---|\n| 1 | 2 |", (2, 2): "| a | b |\n|---|---|\n| 3 | 4 |"}
+
+    def fake_piece(file, engine, piece, settings, language, rule=None):
+        structure = {"piece": list(piece)}
+        return {"markdown": texts[piece], "structure": structure, "seconds": 1.0, "status": None, "code": None}
+
+    monkeypatch.setattr(reading, "convert_piece", fake_piece)
+
+    convert.convert_source(
+        {"settings": "docling/default", "language": "en", "inputs": ["books/a.pdf"], "out": "run", "intake": True}
+    )
+
+    run = gold / "runs" / "run"
+    assert (run / "books__a.pdf.md").read_text() == "## A\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
+    entry = json.loads((run / "record.json").read_text())["converted"]["books/a.pdf"]
+    assert sorted(entry["chunks"]) == ["1-1", "2-2"] and entry["joins_healed"]["tables"] == 1
+    assert entry["chunks"]["1-1"]["settings"] == "docling/default"
+    assert json.loads((run / "books__a.pdf.parts" / "2-2.docling.json").read_text()) == {"piece": [2, 2]}
+
+
+# a store's file read over its own page range, in pieces of the run's size, as onboarding reads a piece of a book
+def test_an_intake_arm_reads_a_page_range_of_a_store_file(tmp_path, monkeypatch):
+    from job_handlers import reading
+    from use_cases import route
+
+    inbox = tmp_path / "inbox"
+    (inbox / "books").mkdir(parents=True)
+    (inbox / "books" / "b.pdf").write_bytes(b"%PDF")
+    monkeypatch.setattr(convert, "INBOX", inbox)
+    monkeypatch.setattr(convert, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(convert, "converter_for", lambda tool: object())
+    monkeypatch.setattr(convert, "take", lambda spec: None)
+    monkeypatch.setattr(convert.converter, "reading", lambda spec: (None, {"tool": "docling", "build": None}))
+    monkeypatch.setattr(convert, "tool_version", lambda spec, tool: {"docling-serve": "test"})
+    monkeypatch.setattr(convert, "_pages", lambda path: 300)
+    monkeypatch.setattr(convert.route, "layer_texts", lambda path, rule=None: [f"page {n}" for n in range(1, 301)])
+    monkeypatch.setattr(route, "route", lambda path, rule=None: [route.Run("docling", (1, 300), "text layer")])
+    monkeypatch.setattr(route, "seamless_pieces", lambda path, pages, size, rule=None: convert.pieces(*pages, size))
+    read = []
+
+    def fake_piece(file, engine, piece, settings, language, rule=None):
+        read.append(piece)
+        text = " ".join(f"page {n}" for n in range(piece[0], piece[1] + 1))
+        return {"markdown": text, "structure": None, "seconds": 1.0, "status": None, "code": None}
+
+    monkeypatch.setattr(reading, "convert_piece", fake_piece)
+    options = {"settings": "docling/default", "language": "en", "inputs": ["books/b.pdf"], "out": "slice"}
+    options |= {"intake": True, "root": "inbox", "pages": {"books/b.pdf": (100, 110)}, "pages_per_chunk": 5}
+
+    convert.convert_source(options)
+
+    assert read == [(100, 104), (105, 109), (110, 110)]
+    record = json.loads((tmp_path / "runs" / "slice" / "record.json").read_text())
+    assert record["pages_per_chunk"] == 5 and record["converted"]["books/b.pdf"]["range"] == [100, 110]
+
+
+def test_a_range_without_intake_is_refused():
+    from job_specs import ConvertSource
+
+    with pytest.raises(ValueError, match="need intake"):
+        ConvertSource(settings="docling/default", language="en", inputs=["a.pdf"], out="x", pages={"a.pdf": (1, 2)})
+
+
+def test_a_run_s_knobs_are_checked_and_need_intake():
+    from job_specs import ConvertSource
+
+    base = {"settings": "docling/default", "language": "en", "inputs": ["a.pdf"], "out": "x"}
+    assert ConvertSource(**base, intake=True, knobs={"reread_settings": "docling/pypdfium2"}).knobs
+    with pytest.raises(ValueError):
+        ConvertSource(**base, intake=True, knobs={"seam_margin": 0.9})
+    with pytest.raises(ValueError, match="need intake"):
+        ConvertSource(**base, knobs={"seam_window": 1})
+
+
+# an intake arm's route stamp moves when an input's own source moves a knob, not only when the stand's rule does
+def test_an_arm_s_route_stamp_moves_with_a_source_s_knob(monkeypatch):
+    from job_handlers import reading
+
+    monkeypatch.setattr(reading, "load_settings", lambda name: ({}, name))
+    origin = {"intake": {}}
+    monkeypatch.setattr(convert, "_origin", lambda name: origin)
+    options = {"inputs": ["books/a.pdf"], "settings": "docling/default", "sources": {"books/a.pdf": "a"}}
+    before = convert._arm_route_sha(options, "docling")
+    origin["intake"] = {"seam_window": 5}
+    assert convert._arm_route_sha(options, "docling") != before
+    origin["intake"] = {"settings": {"docling": "docling/pypdfium2"}}
+    assert convert._arm_route_sha(options, "docling") != before
+
+
+# the reread's floor was set on the layer as PDFium gives it; only the word rules read the layer with its hyphens joined
+def test_the_word_rules_read_the_joined_layer_and_the_reread_floor_the_raw_one(monkeypatch):
+    from job_handlers import reading
+
+    layer = "a sep￾\r\narate word"
+    seen = []
+    monkeypatch.setattr(
+        reading,
+        "convert_piece",
+        lambda *a, **k: {"markdown": "a sep- arate word", "structure": None, "seconds": 0.0, "status": None},
+    )
+    monkeypatch.setattr(
+        reading.raw_quality, "conversion_signals", lambda markdown, text: seen.append(text) or {"layer_f1": 1.0}
+    )
+
+    done, _, reread = reading.read_piece("a.pdf", "docling", (1, 1), "docling/default", {}, "en", layer)
+
+    assert done["markdown"] == "a separate word" and done["code"]["words_joined"] == 1
+    assert seen == [layer] and reread is None
+
+
+# a reading no code rule ran on, as MinerU's, gets its entities decoded; a Docling reading is not decoded twice
+def test_entities_are_decoded_on_a_reading_the_code_rules_did_not_touch(monkeypatch):
+    from job_handlers import reading
+
+    monkeypatch.setattr(reading.raw_quality, "conversion_signals", lambda markdown, text: {"layer_f1": None})
+    for code, expected, count in ((None, "#include <signal.h>", 2), ({"rebuilt": 0}, "a &amp;lt; b", None)):
+        piece = {"markdown": "#include &lt;signal.h&gt;" if code is None else "a &amp;lt; b", "code": code}
+        monkeypatch.setattr(reading, "convert_piece", lambda *a, piece=piece, **k: {**piece, "structure": None})
+        done, _, _ = reading.read_piece("a.pdf", "mineru", (1, 1), None, {}, "en", None)
+        assert done["markdown"] == expected and (done["code"] or {}).get("entities_decoded") == count
+
+
+# a markdown file read as it is keeps its author's escapes and entities: no word rule touches it
+def test_a_file_read_without_an_engine_is_left_as_its_author_wrote_it(tmp_path):
+    from job_handlers import reading
+
+    page = tmp_path / "a.md"
+    page.write_text("\\- item &lt;div&gt; and\\_that")
+
+    done, _, reread = reading.read_piece(page, None, None, None, {}, "en", None)
+
+    assert done["markdown"] == "\\- item &lt;div&gt; and\\_that" and not done.get("code") and reread is None
