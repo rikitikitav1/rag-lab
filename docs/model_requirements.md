@@ -1,13 +1,13 @@
 # What each role requires of a model
 
-Seven roles point at models, five of our own and two for the RAGAS guest, and each one imposes a
-requirement that is invisible in the model's name and its benchmark scores. A model that lacks a
-required capability may make the run fail or produce misleading results. Often nothing looks broken,
-so the run reads as a bad result rather than a failed one. This page lists each role's requirements
-and the incidents that exposed them.
+Seven roles are assigned to models: five project roles and two for the RAGAS guest. Each role needs
+capabilities that are not obvious from a model's name or benchmark scores. A model without a required
+capability can fail or produce misleading results. Often the run still completes, so the problem
+looks like poor quality rather than a broken setup. This page describes the requirements and the
+incidents that revealed them.
 
-The list of models we actually run, with sizes and licences, is not here on purpose: models come
-and go, requirements do not.
+The models currently in use, with their sizes and licences, are not listed here on purpose. Models
+change; the requirements for each role are more stable.
 
 ## generation: tool calling, if the agent pipeline is to work at all
 
@@ -92,8 +92,9 @@ server may not take generation.
 
 ## ragas and ragas_embedding: room for the standard's prompts
 
-The guest judges with the standard's own prompts, which are long and ask for long answers: lists of
-claims, each one checked. Its model needs a window for them and an output budget to finish them. At
+The guest judge uses the standard's own prompts. They are long and ask for detailed output: a list of
+claims, each checked individually. Its model needs a sufficiently large context window and output
+budget to finish the task. At
 `max_tokens` 1024 the guest cut 36 of 338 calls, at 4096 none; a window of 16384 holds the inputs
 that 8192 cut, and still fits the GPU. A model that drifts into another language inside its JSON
 breaks the parse, and the guest gives up on that row rather than scoring it.
@@ -109,10 +110,10 @@ judge, the reranker) holds the share it was started with until the GPU is handed
 server is put to sleep. This is why a role change is an arithmetic problem before it is a quality problem: the
 model, the embedder, and the reranker if it is on, against GPU memory.
 
-The choice that follows from that arithmetic is a decision, not a fact, and it belongs in the
-record with its price attached. Reranking is off by default here because the generator the agent
-needs does not leave room for it, and reranking is worth +0.0454 [+0.0250, +0.0670] of section MRR
-on the criterion set. Both halves of that sentence are true at once.
+The resulting configuration is a decision, not a universal rule, so record it together with its
+cost. Reranking is off by default because the agent's generator leaves too little GPU memory for it.
+On the criterion set, reranking improved section MRR by +0.0454 [+0.0250, +0.0670]. Both facts
+matter when choosing a setup.
 
 ## Where the role's model name actually lives
 

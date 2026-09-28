@@ -10,6 +10,13 @@ A lab journal of RAG-quality experiments: question → setup → result → deci
 - **Reproducibility**: the generator's sampler is recorded with the run; the default is `temperature: 0.1`, and a run pins another with `generation_sampler`. Even at temperature 0 two runs of one generator differ, so a change is read against the generator's own floor (README, "Why the numbers hold"), not against zero.
 - Each run is one `eval_run` job (answers, bulk) → one `judge_answers` job (verdicts, bulk).
 - **Where a number's file lives**: a pass writes it under `datasets/measurements/` beside the stand and not into git, so an entry carries the table itself and names the file and the job id as its address.
+- **Tuning across a series whose members differ** (books through a converter, sources through the intake, prompts over question sets):
+  0. run the whole series, or a declared sample, on the current defaults; list every defect with the members and places it shows on; group the defects by how many members share them and by mechanism; write the fix plan before fixing anything;
+  1. try each change on a small probe and measure it alone: before and after, which members moved, which way;
+  2. a fix seen on one or two members becomes a knob of those members, off for the rest;
+  3. a default changes only after a run over the whole series or its gate set shows no member worse. The gate is declared before the run (columns, tolerance, members the rule must not touch). On a stage that repeats byte for byte, "no harm" is a list of every member that got worse, each with its reason, not a noise band. A run that carries several changes names, for each loser, the change that fired on it. The gate set must be able to fire the rule, and a column the rule writes cannot judge it.
+
+  A knob set on two or three members for one reason is a candidate for the default and goes through step 3. The intake's gate sets are in [intake.md](intake.md#how-a-default-is-chosen).
 
 ## How an entry is written
 
@@ -113,3 +120,5 @@ Each entry also follows these rules:
 - [2026-09-23 - Schema-guided reasoning instead of the model's own tool calling](experiments/2026-09-23_a-schema-that-makes-the-loop-worse.md)
 - [2026-09-23 - Stripping the noise inside the chunks the grader kept](experiments/2026-09-23_a-strip-that-does-not-buy-the-answer.md)
 - [2026-09-25 - Which converter turns each kind of document into markdown](experiments/2026-09-25_two-converters-one-per-regime.md)
+- [2026-09-27 - Question generators side by side](experiments/2026-09-27_question-generators-side-by-side.md)
+- [2026-09-28 - Intake defects per book: the step 0 baseline](experiments/2026-09-28_intake-defects-per-book-step-0.md)

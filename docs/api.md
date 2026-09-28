@@ -2,13 +2,13 @@
 
 Full interactive reference in Swagger at `/docs`.
 
-`POST /v1/chat/question` and `POST /v1/job` refuse a field they do not know with a 422 rather than dropping it.
+`POST /v1/chat/question` and `POST /v1/job` return 422 if a request includes an unknown field. They do not silently ignore it.
 
 List endpoints (`/v1/model`, `/v1/prompt`, `/v1/job`, `/v1/question-log`) share pagination: `limit` (default 100, max 1000), `offset`, `sort_by`, `sort_order` (`asc`/`desc`, default `desc`).
 
 Health:
 - `GET /liveness`, `GET /readiness` (names each role whose engine does not answer)
-- `GET /v1/health/stand` shows the live state of the API, worker, GPU, models, queue and corpus configuration. It stays readable while a run competes with it, so you can diagnose a slow run without stopping it. The main fields:
+- `GET /v1/health/stand` shows the current state of the API, worker, GPU, models, queue and corpus configuration. It remains available during a run, so you can investigate delays without stopping the run. Main fields:
   - `code`: the code each process loaded, compared with the code on disk
   - `card`: free and total GPU memory
   - `residency`, `engines`: which models are resident and how much VRAM each holds
@@ -19,10 +19,10 @@ Health:
 
 Chat and search:
 - `POST /v1/chat/question` (full RAG answer; optional `rerank` flag; optional `language` override `ru`/`en`)
-- `POST /v1/chat/fast_question` (retrieval only, no generation)
+- `POST /v1/chat/fast_question` (retrieval only, no generation). Both take `filter: {category?, sources?, version?}`: a label (category, group or tag), source names, a released version of the named category (its docs plus the category's sources of no version, such as books); without a version a versioned category answers from its newest, and a version with no category, a category without versions or an unlisted version is a 422 before the search
 - `POST /v1/agent/question` (agent answer; optional `max_hops`, `language`, `fallback_policy`, and `debug` for the full message trace)
-- The answering endpoints never hand over the GPU themselves. While another engine holds it, they queue the handover and answer 503 with `Retry-After`. An answer that would need two GPU engines is a 409. One such case is the chat with `rerank: true` in the default layout, where the generator sits on ollama and the reranker on `vllm-rerank`.
-- `GET /v1/categories` (category tree with chunk counts)
+- The answering endpoints do not hand over the GPU themselves. If another engine holds it, they queue a handover and return 503 with `Retry-After`. A request that needs two GPU engines returns 409. For example, chat with `rerank: true` returns 409 in the default layout, where the generator uses ollama and the reranker uses `vllm-rerank`.
+- `GET /v1/categories` (the categories of `config/categories.yaml` with their group and chunk counts, `none` for chunks of no category, `only_top` for totals per group), `GET /v1/categories/tags` (tags with chunk counts, most used first; the filter takes a category, a group or a tag)
 
 <details>
 <summary>Diagram: Single-shot flow: hybrid retrieval, threshold, optional rerank</summary>
@@ -36,18 +36,19 @@ Engines and models:
 - `GET /v1/model`, `GET /v1/model/{id}`, `POST /v1/model` (`engine` by name or `engine_id`; required on the default stand, where the seed registers two ollama engines, `ollama` and `ollama-cpu`; an engine that pulls gets a pull job, one that does not is asked whether it already serves the name: `ready`, 422 if it serves another, 503 if it does not answer), `PATCH /v1/model/{id}` (`quant` and the hub key of the `weights` when the server cannot say them, the `answer_parser`, and `options` of its own over the role's), `POST /v1/model/{id}/load` (202 with the queued `hand_card` job, and a load already waiting answers a second ask with its job; 422 when a vLLM serves another model, 409 for a vLLM on the processor), `DELETE /v1/model/{id}` (501 on a remote engine; 409 if the model is assigned to a role, shares its weights with another row, or is served by a running vLLM). One name may live on two engines, so the list and the response name the engine, along with `quant`, `size_bytes` and the weights row, all read off the server on the pull rather than typed.
 - `GET /v1/role`, `PUT /v1/role/{role}` (assign a model to a role; the model is asked whether it can do the job first, and a 400 says what it lacks. An asleep vLLM with no tool-call probe recorded answers 202 with a `hand_card` job that wakes it, probes it and then seats the role; an engine that does not answer is a 503. `anyway: true` insists, which is how a model the server describes wrongly is still seated)
 - `GET /v1/source?stage=`, `PUT /v1/source/{id}` (enable/disable a corpus source; disabled sources are excluded from retrieval at runtime, no re-index - ablation / source-of-truth scoping; `stage` filters by declared, raw, accepted)
-- `POST /v1/source` (declare a source to add: name, language, licence and one origin, `urls`, `folder`, `git` or `pages` with the site's `main`/`drop`/`generated`; never an engine; it starts declared and inactive), `GET /v1/source/{id}` (one source with its stage, origin, licence and what its raw conversion said), `POST /v1/source/{id}/onboard` (queue `onboard_source` for a declared or raw source; `settings` per engine, optional)
+- `POST /v1/source` (declare a source to add: name, language, licence and one origin, `urls`, `folder`, `git` or `pages` with the site's `main`/`drop`/`generated`; never an engine; it starts declared and inactive; a `folder` outside the stand, missing or empty is refused here, not in the queue), `GET /v1/source/{id}` (one source with its stage, origin, licence and what its raw conversion said), `POST /v1/source/{id}/accept` (raw to accepted, `reason` required when the raw verdict is bad and kept on the row, refused while an onboard of it waits or runs; the source stays out of search until `PUT /v1/source/{id}` turns it on; the index refuses a row a source file names that is not accepted, and `PUT /v1/source/{id}` refuses `active: true` below accepted), `DELETE /v1/source/{id}` (the source, its chunks in every variant and the stand's own folders of it; refused while a job reads it or questions have their gold in it), `DELETE /v1/source/variant/{variant}` (a variant's chunks in every source; the searched variant refused), `POST /v1/source/{id}/onboard` (queue `onboard_source` for a declared or raw source; `settings` per engine, optional; refused while that source's job waits or runs), `PUT /v1/source/{id}/intake` (the source's own intake knobs over `config/intake.yaml`: `settings` per tool, `mono_faces`, `mono_spread`, `reread_below_layer_f1`, `reread_settings`, `reread_cells_slack`, `seam_window`, `seam_margin`, `epub_skip`, `headings_by_number`, `listing_callouts`, `mono_by_step`, `code_row_rules`, `outline_levels`, `html_one_title`, `epub_chapters`, `numbered_levels`, `decode_entities`, `drop_lone_pipes`, `join_layer_hyphens`, `restore_dashes`, `join_broken_words`, `unescape_bullets`, `unescape_underscores`, `picture_addresses`, `join_split_words`; read by its next onboarding; an empty body clears them; refused while its job waits or runs, or when a source file speaks for it, where the knobs go in the file's `intake:` block)
 
 Prompts:
 - `GET /v1/prompt`, `GET /v1/prompt/{id}`, `POST /v1/prompt`, `POST /v1/prompt/{id}/activate`, `DELETE /v1/prompt/{id}`
 
 Eval platform:
-- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops`, `fallback_policy`, `gate_signal`, `weak_distance`, `topic_threshold`, `orchestrator`, `variant` (which cut of the corpus the run reads) and `model` (generator) overrides, `judge: false` for a run whose number is read by a rule rather than by a score (a retrieval delta, a string match): no judge job follows it, and its rows carry `judge_wanted: false`, so the sweep leaves them alone while `judge_answers` named on that run still judges them, plus `allow_cpu` for a run that means to measure the processor; config only sets the defaults)
+- `POST /v1/eval/paraphrase` (generate a paraphrase set), `POST /v1/eval/run` (run a set → judge; `category`, `sources` and `version` scope the search as the chat doors do, single_shot only; `pipeline: single_shot|agent`, per-run `rerank`, `k` retrieval-width, `max_hops`, `fallback_policy`, `gate_signal`, `weak_distance`, `topic_threshold`, `orchestrator`, `variant` (which cut of the corpus the run reads) and `model` (generator) overrides, `judge: false` for a run whose number is read by a rule rather than by a score (a retrieval delta, a string match): no judge job follows it, and its rows carry `judge_wanted: false`, so the sweep leaves them alone while `judge_answers` named on that run still judges them, plus `allow_cpu` for a run that means to measure the processor; config only sets the defaults)
 - `POST /v1/eval/experiment` (batch a parameter series: `param` (`k`, `max_hops`, `model`, `variant`, `orchestrator`, `fallback_policy`, `gate_signal`, `weak_distance` or `topic_threshold`) swept over `values`, one auto-named run per value, each judged; set/pipeline/language stay fixed for a clean single-variable comparison; a `model` value absent from the registry is created and pulled, the run waits for it)
 - `GET /v1/eval/misses?run_name=X` (retrieval misses for a run: in-corpus questions where the expected source was not retrieved, with expected vs retrieved)
 - `GET /v1/eval/compare?runs=A&runs=B` (arms side by side split by pool: in-corpus, out-of-corpus, off-domain, rejected; per arm the judged axes, how often the answer came from a remote tool against the corpus, how often the coverage gate fired, latency avg/p50 and the outcome histogram; per pair of arms a paired Wilcoxon plus a bootstrap interval over the same questions, so a difference is reported with its size and its uncertainty instead of two averages; and the code each arm's rows were written by, with a flag when the arms did not share one)
 - `POST /v1/questions/import` (upload a questions file, ≤5 MB; optional chained run)
 - `GET /v1/questions?set_name=&language=&pool=&limit=&offset=` (the questions themselves, one row each: id, pool, text, reference and marked sources; where a run's `question_ids` come from)
+- `DELETE /v1/questions/set/{set_name}` (a set with its questions; 409 while the verdict names it, a job reads it, answer logs hold its questions, or another set is drawn from it)
 
 <details>
 <summary>Diagram: Eval pipeline</summary>
@@ -56,7 +57,7 @@ Eval platform:
 
 </details>
 
-A single run does not loop per question: it goes through phases so each stage owns the GPU alone, which is what makes reranking affordable in bulk. Per question the loop needed the embedder, then the reranker, then the generator, and the three do not fit in 8 GB together, so ollama evicted and reloaded a model on every single question. Phases cost a few model swaps per run instead of two per question, and the run gives the GPU back when it ends, so a queue of runs on different generators does not end up holding two of them at once. The reranker finally gets a real batch: 31 s for 100 questions on the GPU against about 16 min on CPU. That 310 ms a question is the whole phase, model load and retrieval included; the reranking itself is the 86 ms measured in `datasets/measurements/rerank_latency.json`.
+A run processes questions in phases rather than completing one question at a time. Each phase uses the GPU exclusively, which makes bulk reranking practical. Processing a question end to end requires the embedder, reranker and generator, which do not all fit in 8 GB of VRAM. Previously, ollama evicted and reloaded a model for every question. Phased processing needs only a few model swaps per run, and releases the GPU when the run ends. This also prevents queued runs with different generators from holding two models on the GPU at once. The reranker can process a batch: 100 questions took 31 seconds on the GPU, compared with about 16 minutes on the CPU. That is 310 ms per question for the entire phase, including model loading and retrieval. Reranking itself took 86 ms, as measured in `datasets/measurements/rerank_latency.json`.
 
 <details>
 <summary>Diagram: Phases inside one eval run</summary>
@@ -181,7 +182,7 @@ Every type the queue knows, what it does and what it takes:
 | `index_data` | cuts a corpus variant and embeds it | `variant`, `source` | embedding | `data_chunks` of that variant |
 | `build_vector_index` | builds the hnsw index of a variant | `variant` | none | the index |
 | `analyze_source` | reads one source and reports its ingest quality | `source`, `variant`, `mode` | none | `data_sources.ingest_quality` |
-| `convert_source` | turns PDF, image or HTML files of the converter bench into markdown through one converter tool | `settings`, `language`, `inputs`, `out` | none; it takes the GPU for the engine that runs the settings' tool | `datasets/converter_gold/files/runs/<out>/`, with `record.json` |
+| `convert_source` | turns PDF, image or HTML files of the converter bench into markdown through one converter tool, or with `intake` through the corpus's own reading path (route, seams, reread, join), over page ranges of store files and with each input's source knobs | `settings`, `language`, `inputs`, `out`, `intake`, `root`, `pages`, `pages_per_chunk`, `sources` | none; it takes the GPU for the engine that runs the settings' tool | `datasets/converter_gold/files/runs/<out>/`, with `record.json` |
 | `onboard_source` | turns a declared source into a raw one: each file through the engine its route picks (markdown as it is, a page without a text layer to MinerU, the rest to Docling), a suitability report without a gold (the conversion's signals a piece, the chunker's gates a chapter of each file whole; bad when the breaching share of text passes `intake.quality.bad_share`), the source marked `raw` with its verdict and reasons; nothing is indexed | `source`, `settings`? (per engine, defaults in `intake.settings`) | none; it takes the GPU for each converter it needs | `datasets/raw_sources/<source>_<settings hash>/` (markdown, Docling JSON, `record.json`, `provenance.json`) and a `raw_source` measurement |
 | `embed_questions` | embeds a question set | `set_name` | embedding | `questions.embedding` |
 | `paraphrase_questions` | writes paraphrases of a set | `set_name`, `limit` | paraphrasing | new questions of the paraphrased set |
@@ -236,7 +237,7 @@ anything: an edited tree, a worker running yesterday's code, a model that spille
 corpus that no longer cuts into the rows it holds, a search depth the planner has quietly stopped
 walking the index at. `--verify` checks a finished run instead. Every one of those failures produces
 a completed run with plausible numbers and no error anywhere, which is why the check exists rather
-than a test. What each of the twenty refuses and which incident put it there:
+than a test. What each of the twenty-two refuses and which incident put it there:
 [docs/preflight.md](preflight.md).
 
 Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment becomes a self-contained artifact: what was varied, on what data, the numbers, the verdict.

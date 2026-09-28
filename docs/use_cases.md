@@ -1,6 +1,6 @@
 # Use cases
 
-Ten hands-on scenarios for rag-lab, each copy-paste ready. This walkthrough shows the order of API calls for each task, from an empty stand to numbers. It does not list every route. For the complete reference, generated from the code, open Swagger at `http://localhost:8000/docs`.
+This guide walks through ten practical rag-lab scenarios. Each includes commands you can copy and run. It shows the API call sequence for each task, from starting with an empty stand to reading the results, but does not cover every route. For the full reference, open Swagger at `http://localhost:8000/docs`.
 
 ## Prerequisites
 
@@ -14,11 +14,11 @@ Ten hands-on scenarios for rag-lab, each copy-paste ready. This walkthrough show
 curl -sX POST localhost:8000/v1/chat/question -H 'Content-Type: application/json' \
   -d '{"text":"What is a hash table?"}' | python3 -m json.tool
 ```
-Returns the answer, the retrieved sources (with vector/keyword ranks and score), and token/time metrics. Reranking is off by default, because the generator the agent needs takes its room on the GPU. In the default layout the chat answers 409 to `"rerank": true`: the reranker and the generator are two separate GPU engines. A run can rerank once the `rerank` profile is up ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)). Scoring costs 86 ms a question on the GPU.
+The response includes the answer, retrieved sources with vector and keyword ranks and scores, and token and timing metrics. Reranking is off by default because the agent's generator already uses the available GPU memory. In the default layout, a chat request with `"rerank": true` returns 409 because the reranker and generator use separate GPU engines. Eval runs can use reranking after the `rerank` profile is started ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)). On the GPU, scoring takes 86 ms per question.
 
 ## Scenario 2: mini-eval from scratch to numbers
 
-Retrieval on the raw interview questions is trivially high (they are near-verbatim to their source), so it hides quality differences. This generates a **non-circular** set by paraphrasing questions (and translating to Russian), which forces meaning-based retrieval.
+Retrieval scores on the original interview questions are trivially high because the questions closely match their source text. That makes quality differences hard to see. This scenario creates a **non-circular** set by paraphrasing the questions and translating them into Russian, so retrieval depends on meaning rather than matching wording.
 
 ```bash
 # 1. generate 20 paraphrased interview questions (+ ru translations) into set "demo"

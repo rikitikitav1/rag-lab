@@ -6,7 +6,7 @@ version the worker loaded. Those conditions decide whether the run's numbers des
 claim to describe.
 
 ```bash
-python scripts/preflight_grid.py                       # twenty checks, exit 1 on any failure
+python scripts/preflight_grid.py                       # twenty-two checks, exit 1 on any failure
 python scripts/preflight_grid.py --verify RUN [RUN..]  # a finished run instead of the stand
 ```
 
@@ -31,7 +31,7 @@ Most of these checks exist because the corresponding trap had already cost a gri
 true, the incident is named below, because a check whose reason is forgotten is a check somebody
 deletes.
 
-## The twenty checks
+## The twenty-two checks
 
 ### Is the code that runs the code we think runs
 
@@ -123,6 +123,14 @@ should. Nothing errors; recall just shrinks.
 to a corpus variant. A variant is a line in the config and its index is built at runtime, so an
 index in the dump means the dump has become a function of whichever variants happened to exist on
 the machine that produced it.
+
+**`source_folders_are_there`** refuses when a folder source file names a folder this host lacks, or,
+for a row that came through the raw door, a folder outside the row's raw markdown. The first cuts to
+nothing on this machine; the second cuts the PDFs of the inbox instead of their conversion.
+
+**`newest_versions_are_searchable`** refuses when a versioned category in the served variant does not
+hold the newest version the map lists. A question with no version reads the newest, so a variant that
+holds only older ones would answer it from the rolling sources alone, thinner and without a word.
 
 ### Is the depth the depth we recorded
 
