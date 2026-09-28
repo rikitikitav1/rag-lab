@@ -2,13 +2,14 @@
   "tool": "docling",
   "fields": {
     "to_formats": "md",
-    "do_ocr": "true",
     "do_pdf_heading_hierarchy": "true",
     "do_code_enrichment": "false",
     "do_formula_enrichment": "false",
     "code_formula_preset": "codeformulav2",
     "do_picture_classification": "false",
-    "ocr_preset": "tesseract"
+    "ocr_preset": "tesseract",
+    "pdf_backend": "pypdfium2",
+    "table_cell_matching": "false"
   },
   "ocr_lang": {
     "ru": [

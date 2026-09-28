@@ -3,7 +3,8 @@
 FROM vllm/vllm-openai:v0.21.0@sha256:a230095847e93bd4df9888b33dab956fa9504537b828a23657d2b26fed57b5c9
 
 RUN apt-get update && apt-get install -y libgl1 && apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN python3 -m pip install 'mineru[torch]==4.0.7' --break-system-packages && python3 -m pip cache purge
+COPY mineru/constraints.txt /opt/converter/constraints.txt
+RUN python3 -m pip install 'mineru[torch]==4.0.7' -c /opt/converter/constraints.txt --break-system-packages && python3 -m pip cache purge
 
 ENV MINERU_MODEL_SMALL_BACKEND=torch \
     MINERU_MODEL_VLM_ENGINE=vllm

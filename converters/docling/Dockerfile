@@ -20,6 +20,10 @@ RUN curl -sfL -o /usr/share/tesseract/tessdata/rus.traineddata "$TESS_RUS_URL" &
     echo "$TESS_RUS_SHA256  /usr/share/tesseract/tessdata/rus.traineddata" | sha256sum -c --quiet
 USER 1001
 
+# 7.21.0 drops spaces between words and glues code lines (docling-parse issue 355); 7.20.0 is what docling's own CI pins
+RUN pip install --no-cache-dir --no-deps "docling-parse==7.20.0" && \
+    python3 -c "import importlib.metadata as m; assert m.version('docling-parse') == '7.20.0'"
+
 COPY supervisor.py /opt/converter/supervisor.py
 COPY docling/required_models.txt /opt/converter/required_models.txt
 COPY docling/Dockerfile /opt/converter/Dockerfile
