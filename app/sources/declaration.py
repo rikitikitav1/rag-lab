@@ -35,6 +35,21 @@ class SiteSettings(_Strict):
     generated: list[str] = []
     # the product's release the pages document, the key of the site's version; the fetch date is only its label
     release: str | None = Field(default=None, min_length=1)
+    # the pages read from the site's sitemap instead of a written list; `fnmatch` patterns over the page's address
+    sitemap: str | None = Field(default=None, min_length=1)
+    include: list[str] = []
+    exclude: list[str] = []
+    # where the site writes its release, read before any page: the same release fetches nothing, a newer one enters
+    release_page: str | None = Field(default=None, min_length=1)
+    release_pattern: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _release_read_whole(self):
+        if (self.release_page is None) != (self.release_pattern is None):
+            raise ValueError("a release is read from a page by a pattern: name both or neither")
+        if self.release_pattern is not None and re.compile(self.release_pattern).groups != 1:
+            raise ValueError("release_pattern holds one group, the release")
+        return self
 
 
 # a row's site settings read through their model, so every reader sees the same validated fields
@@ -147,11 +162,13 @@ class Declaration(_Strict):
     def _one_origin(self):
         if self.reference_leaf is not None:
             re.compile(self.reference_leaf)
-        given = [k for k in self.ORIGINS if getattr(self, k)]
+        given = [k for k in self.ORIGINS if getattr(self, k) or (k == "pages" and self.site and self.site.sitemap)]
         if len(given) != 1:
             raise ValueError(f"a source comes from exactly one of {', '.join(self.ORIGINS)}; given {given or 'none'}")
-        if self.site is not None and not self.pages:
+        if self.site is not None and not (self.pages or self.site.sitemap):
             raise ValueError("site settings belong to pages of a site")
+        if self.pages and self.site is not None and self.site.sitemap:
+            raise ValueError("a site's pages come from its sitemap or from a list, not both")
         return self
 
 

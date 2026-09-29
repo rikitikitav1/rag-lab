@@ -10,7 +10,7 @@ from corpus_keys import SECTION_SEP
 from ingest import BOILERPLATE_MIN_FILES
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm.attributes import flag_modified
 
 log = logging_setup.get_logger(__name__)
@@ -328,6 +328,8 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         "policy": policy,
         # only a dry run cut anything, so only a dry run may name the parser that did it
         "parser": ingest.parser_version() if mode == "dry" else None,
+        # chunks whose text another source holds word for word; the index reads only rows, so a dry read has none
+        "dup_across_sources": dup_across_sources(source_name, variant) if mode == "indexed" else None,
         # sections the book matter rule took by their heading; an indexed read never saw them to count
         "left_out_as_matter": None if matter is None else [f"{f} # {s}" for f, s in matter],
         **asdict(metrics),
@@ -342,6 +344,31 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         breaches=entry["breaches"],
     )
     return entry
+
+
+# bodies held by more than one source of the same cut, by their exact text
+_SHARED = """
+    WITH bodies AS (
+        SELECT s.name, md5(substr(c.content, coalesce(c.prefix_len, 0) + 1)) AS h
+        FROM data_chunks c JOIN data_sources s ON s.id = c.source_id
+        WHERE c.variant = :variant
+    ), shared AS (SELECT h FROM bodies GROUP BY h HAVING count(DISTINCT name) > 1)
+"""
+
+
+# a source's chunks whose text another source holds word for word, and which sources hold them, by count
+def dup_across_sources(source_name: str, variant: str) -> dict:
+    asked = {"variant": variant, "source": source_name}
+    with Session() as session:
+        mine, shared = session.execute(text(_SHARED + """
+            SELECT count(*), count(*) FILTER (WHERE h IN (SELECT h FROM shared)) FROM bodies WHERE name = :source
+        """), asked).one()
+        held = session.execute(text(_SHARED + """
+            SELECT o.name, count(DISTINCT m.h) FROM bodies m JOIN shared USING (h) JOIN bodies o USING (h)
+            WHERE m.name = :source AND o.name <> :source GROUP BY o.name ORDER BY 2 DESC LIMIT 10
+        """), asked).all()
+    return {"chunks": mine, "shared": shared, "share": round(shared / mine, 4) if mine else None,
+            "with": dict(held)}
 
 
 def _persist(source_name: str, *, variant: str, entry: dict, mode: str) -> None:

@@ -879,3 +879,21 @@ def test_a_site_whose_release_moved_fetches_its_pages_anew(tmp_path, monkeypatch
     assert fetched == ["https://x/a.html"] * 3, "the first release declared over kept pages fetches them too"
     assert ["fetched_at" in state for state in states] == [True, True, False, True], "what the record calls refetched"
     assert (tmp_path / "inbox" / "release").read_text() == "1.1"
+
+
+# a fresh run reads every piece by its tool: the kept reading is passed over, and the flag is gone after the job
+def test_a_fresh_reading_passes_the_kept_one_over(monkeypatch, tmp_path):
+    from job_handlers import converting
+
+    monkeypatch.setattr(converting, "READINGS", tmp_path)
+    monkeypatch.setattr(converting, "reading_key", lambda *a: "ab" + "0" * 62)
+    kept = tmp_path / "ab" / ("ab" + "0" * 62 + ".json")
+    kept.parent.mkdir()
+    kept.write_text('{"markdown": "old", "status": "success", "errors": [], "seconds": 3}')
+    read = []
+    fresh = {"markdown": "new", "status": "success", "errors": [], "seconds": 1}
+    monkeypatch.setitem(converting.PIECE, converting.Tool("docling"), lambda *a: read.append(1) or fresh)
+    assert converting.convert(None, "docling", tmp_path / "f.pdf", [], None, 10)["markdown"] == "old"
+    with converting.reading_fresh(True):
+        assert converting.convert(None, "docling", tmp_path / "f.pdf", [], None, 10)["markdown"] == "new"
+    assert read == [1] and converting._FRESH.get() is False

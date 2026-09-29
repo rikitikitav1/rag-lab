@@ -675,18 +675,21 @@ def sources(
         "Convert a declared source to a raw one: the job routes every file to its engine (markdown as it is, a "
         "page without a text layer to MinerU, the rest to Docling), writes the markdown and a suitability report "
         "without a gold, and marks the source raw with its verdict and reasons. Nothing is indexed. `settings` "
-        "names a settings file per engine, e.g. {'docling': 'docling/default'}; another set is another raw folder."
+        "names a settings file per engine, e.g. {'docling': 'docling/default'}; another set is another raw folder. "
+        "`fresh` reads every piece by its tool again, no kept reading or piece, stamped in the record: for a measure "
+        "of the tool itself."
     ),
 )
 def onboard_source(
     name: Annotated[str, Field(description="The declared source's name.")],
     settings: Annotated[dict | None, Field(description="{engine: 'tool/settings'} overriding intake.settings.")] = None,
+    fresh: Annotated[bool, Field(description="Read every piece by its tool again, past every cache.")] = False,
 ) -> dict:
     from use_cases import source_intake
 
     with Session() as session:
         _transition(source_intake.check_onboard, _source_named(session, name))
-    return {"job_id": job_queue.enqueue("onboard_source", source_intake.onboard_options(name, settings))}
+    return {"job_id": job_queue.enqueue("onboard_source", source_intake.onboard_options(name, settings, fresh))}
 
 
 def _transition(step, source, *args):

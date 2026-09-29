@@ -111,3 +111,56 @@ def test_a_door_row_has_the_path_and_the_family_url_a_seeded_row_has():
         row = source_intake.declared_row(declaration)
         derived = files.row_of(declaration, declaration.name)
         assert (row.kind, row.path, row.git_url) == (derived["kind"], derived["path"], derived["git_url"])
+
+
+# a site's pages come from its sitemap or from a written list, never both, and the sitemap is filtered by address
+def test_a_site_reads_its_pages_from_its_sitemap():
+    from use_cases.site_page import sitemap_urls
+
+    site = {"main": "div#content", "sitemap": "https://nginx.org/sitemap.xml",
+            "include": ["https://nginx.org/en/docs/*"], "exclude": ["*/dirindex.html"]}
+    Declaration(name="n", licence="x", site=site)
+    with pytest.raises(ValidationError, match="not both"):
+        Declaration(name="n", licence="x", site=site, pages=["https://nginx.org/en/docs/a.html"])
+    xml = ("<urlset><url><loc>https://nginx.org/en/docs/b.html</loc></url>"
+           "<url><loc> https://nginx.org/en/docs/dirindex.html </loc></url>"
+           "<url><loc>https://nginx.org/ru/docs/b.html</loc></url>"
+           "<url><loc>https://nginx.org/en/docs/a.html</loc></url></urlset>")
+    assert sitemap_urls(xml, site["include"], site["exclude"]) == [
+        "https://nginx.org/en/docs/a.html", "https://nginx.org/en/docs/b.html"]
+
+
+# a site's release is read from its own page before any page is fetched; a release no category lists is refused
+def test_a_site_reads_its_release_first_and_refuses_one_its_category_does_not_list(monkeypatch, tmp_path):
+    from errors import Final
+    from models.corpus import DataSource
+    from use_cases import source_intake
+
+    with pytest.raises(ValidationError, match="both or neither"):
+        Declaration(name="n", licence="x", pages=["https://a/b"], site={"main": "m", "release_page": "https://a/d"})
+    site = {"main": "div#content", "release": "1.31.6", "release_page": "https://nginx.org/en/download.html",
+            "release_pattern": r"nginx-(\d+\.\d+\.\d+)"}
+    written = {"live": "1.31.6"}
+
+    def download(url, target):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"<a>nginx-{written['live']}</a>" if url.endswith("download.html") else "<p>page</p>")
+        return True
+
+    monkeypatch.setattr(source_intake.fetch, "download", download)
+    monkeypatch.setattr(source_intake.site_page, "prepared", lambda html, main, drop: None)
+    declared = Declaration(name="nginx-org-en", licence="x", pages=["https://nginx.org/en/docs/a.html"], site=site,
+                           categories=["nginx"]).model_dump(exclude_none=True)
+    source = DataSource(name="nginx-org-en", declaration=declared)
+
+    _, _, state = source_intake.gather(source, tmp_path, tmp_path)
+    assert "release" not in state
+    written["live"] = "9.9.9"
+    with pytest.raises(Final, match="documents 9.9.9 now"):
+        source_intake.gather(source, tmp_path, tmp_path)
+    import config
+
+    nginx = config.settings.categories["nginx"]
+    monkeypatch.setattr(nginx, "versions", ["9.9.9", *nginx.versions])
+    _, _, state = source_intake.gather(source, tmp_path, tmp_path)
+    assert state["release"] == "9.9.9" and (tmp_path / "release").read_text() == "9.9.9"

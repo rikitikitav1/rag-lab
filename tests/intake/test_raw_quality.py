@@ -118,3 +118,13 @@ def test_a_second_reading_losing_cells_is_taken_only_within_the_source_s_slack()
     assert not raw_quality.better_reading(first, second)
     assert raw_quality.better_reading(first, second, 0.05)
     assert not raw_quality.better_reading(first, {**second, "table_cells": 40}, 0.05)
+
+
+# a book's matter is left out of the report's sections, as the index and the questions leave it out
+def test_the_report_does_not_judge_a_books_matter():
+    from use_cases import raw_quality
+
+    body = " ".join(["word"] * 300)
+    markdown = f"# Book\n\n## Index\n\nalpha, 12\n\nbeta, 14\n\n## Locks\n\n{body}\n"
+    sections = {row["section"] for row in raw_quality.section_rows(markdown, "book.pdf")}
+    assert not any("Index" in (s or "") for s in sections) and any("Locks" in (s or "") for s in sections)

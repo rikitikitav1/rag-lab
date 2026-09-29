@@ -64,6 +64,12 @@ def test_the_index_cuts_no_row_that_is_not_accepted_and_empties_no_source_that_y
     with db.connect() as c:
         assert c.execute(text("SELECT count(*) FROM data_chunks WHERE source_id = 2")).scalar() == 1
 
+    # a cancel is read between sources: what is left is named, and nothing of it is touched
+    asked = iter([False, True])
+    result = index.collect_data([source("raw-book", None), source("gone", [])], variant="clean_1024",
+                                build_index=False, stop=lambda: next(asked))
+    assert list(result.refused) == ["raw-book"] and result.left == ["gone"] and result.sources == 0
+
 
 def test_a_mark_no_searched_chunk_holds_is_named_and_a_folder_mark_is_held(db, monkeypatch):
     import db as stand
@@ -215,3 +221,26 @@ def test_an_unheld_version_refuses_and_an_older_one_in_search_turns_the_scan_str
     assert stand.older_versions_held("v") is True
     assert stand.filtered_scan(stand.Scope(), "off", older_held=True) == "strict_order"
     assert stand.filtered_scan(stand.Scope(), "off") == "off"
+
+
+# a chunk whose text another source holds word for word is counted, past the prefix each source puts before it
+def test_a_body_another_source_holds_is_counted_across_sources(db, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+    from use_cases import ingest_quality
+
+    with db.connect() as c:
+        c.execute(text("TRUNCATE data_sources CASCADE"))
+        for sid, name in ((1, "a"), (2, "b")):
+            c.execute(text("INSERT INTO data_sources (id, name, kind, stage) VALUES (:i, :n, 'local', 'accepted')"),
+                      {"i": sid, "n": name})
+        rows = [(1, "a/x.md", "A > X\nshared body", 6, 0), (1, "a/y.md", "own body", 0, 1),
+                (2, "b/z.md", "B > Z\nshared body", 6, 0)]
+        for sid, src, content, prefix, idx in rows:
+            c.execute(text("INSERT INTO data_chunks (source_id, source, content, prefix_len, chunk_index, language,"
+                           " variant) VALUES (:s, :src, :c, :p, :i, 'en', 'clean_1024')"),
+                      {"s": sid, "src": src, "c": content, "p": prefix, "i": idx})
+        c.commit()
+    monkeypatch.setattr(ingest_quality, "Session", sessionmaker(bind=db))
+
+    assert ingest_quality.dup_across_sources("a", "clean_1024") == {
+        "chunks": 2, "shared": 1, "share": 0.5, "with": {"b": 1}}

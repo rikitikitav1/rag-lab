@@ -70,7 +70,8 @@ def test_the_engines_compose_addresses_are_the_engines_the_config_seeds():
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())["x-engine-env"]
     # a blank one keeps a host value out of the containers and addresses nothing
     addressed = {key.removesuffix("_BASE_URL") for key, value in compose.items() if key.endswith("_BASE_URL") and value}
-    seeded = {engine.env_prefix for engine in config._load(str(ROOT / "config.yaml")).engines}
+    # a cloud broker's address and key come from `.env`, never from compose
+    seeded = {e.env_prefix for e in config._load(str(ROOT / "config.yaml")).engines if e.placement != "remote"}
     # the seeded ollama is addressed by `llm.base_url`, every other engine by compose
     assert addressed == seeded - {"OLLAMA"}
 

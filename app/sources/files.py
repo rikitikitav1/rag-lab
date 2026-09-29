@@ -127,7 +127,7 @@ def row_of(source: Declaration, name: str) -> dict:
     common = {"name": name, "language": source.language, "licence": source.licence, "kind": kind}
     if source.folder is not None:
         return {**common, "git_url": None, "path": source.folder}
-    if source.urls or source.pages:
+    if source.urls or source.pages or source.site:
         return {**common, "git_url": None, "path": None}
     url = source.git.repo if source.git is not None else source.git_family.repo_of(name)
     return {**common, "git_url": url, "path": None}

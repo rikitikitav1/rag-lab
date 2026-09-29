@@ -285,6 +285,8 @@ async def declare_source(request: Declaration, session: AsyncSession = Depends(g
 class SourceOnboardRequest(BaseModel):
     # per engine, a settings file of that tool; the defaults live in `intake.settings`
     settings: dict[str, str] | None = None
+    # every piece read by its tool again, past every cache: a run that measures the tool itself
+    fresh: bool = False
 
 
 class SourceAcceptRequest(BaseModel):
@@ -313,7 +315,8 @@ async def onboard_source(
 ) -> JobEnqueuedResponse:
     source = await get_or_404(DataSource, id, session)
     _transition(source_intake.check_onboard, source)
-    job = job_queue.add_job(session, "onboard_source", source_intake.onboard_options(source.name, request.settings))
+    options = source_intake.onboard_options(source.name, request.settings, request.fresh)
+    job = job_queue.add_job(session, "onboard_source", options)
     await commit_and_refresh(session, job)
     return JobEnqueuedResponse.model_validate(job)
 

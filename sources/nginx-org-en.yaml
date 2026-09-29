@@ -1,4 +1,5 @@
 # the nginx documentation from nginx.org in English, pages listed from the site's sitemap
+# the indexes of directives and variables and the contents page are left out: links only, and a gold on them misleads search
 name: nginx-org-en
 language: en
 licence: BSD-2-Clause
@@ -9,7 +10,6 @@ pages:
 - https://nginx.org/en/docs/control.html
 - https://nginx.org/en/docs/debugging_log.html
 - https://nginx.org/en/docs/dev/development_guide.html
-- https://nginx.org/en/docs/dirindex.html
 - https://nginx.org/en/docs/events.html
 - https://nginx.org/en/docs/example.html
 - https://nginx.org/en/docs/faq.html
@@ -94,7 +94,6 @@ pages:
 - https://nginx.org/en/docs/http/request_processing.html
 - https://nginx.org/en/docs/http/server_names.html
 - https://nginx.org/en/docs/http/websocket.html
-- https://nginx.org/en/docs/index.html
 - https://nginx.org/en/docs/install.html
 - https://nginx.org/en/docs/mail/ngx_mail_auth_http_module.html
 - https://nginx.org/en/docs/mail/ngx_mail_core_module.html
@@ -150,7 +149,6 @@ pages:
 - https://nginx.org/en/docs/syntax.html
 - https://nginx.org/en/docs/sys_errlist.html
 - https://nginx.org/en/docs/syslog.html
-- https://nginx.org/en/docs/varindex.html
 - https://nginx.org/en/docs/welcome_nginx_facebook.html
 - https://nginx.org/en/docs/windows.html
 site:

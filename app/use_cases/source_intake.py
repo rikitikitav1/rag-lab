@@ -149,8 +149,8 @@ def check_onboard(source: DataSource) -> None:
         raise Final(refusal)
 
 
-def onboard_options(name: str, settings: dict | None) -> dict:
-    return {"source": name, "settings": settings}
+def onboard_options(name: str, settings: dict | None, fresh: bool = False) -> dict:
+    return {"source": name, "settings": settings, **({"fresh": True} if fresh else {})}
 
 
 # the queued work that reads a source by name: removing it under a running job leaves the job writing into nothing
@@ -383,9 +383,15 @@ def gather(source: DataSource, inbox: Path, stand: Path) -> tuple[Path, list[Pat
         return root, sorted(p for p in found if p.is_file() and root in p.parents), state
     site = site_of(origin)
     release = site.release if site else None
+    read = {}
+    if site and site.release_page:
+        live = _live_release(site, inbox)
+        if live != release:
+            _refuse_unlisted_release(origin, live)
+            release, read = live, {"release": live}
     _drop_pages_of_another_release(inbox, release)
     files, fresh = [], False
-    for url in origin["pages"]:
+    for url in origin.get("pages") or _sitemap_pages(site, inbox):
         page, new = _download(url, inbox / "pages")
         fresh |= new
         main = site_page.prepared(page.read_text(errors="ignore"), site.main, site.drop) if site else None
@@ -398,7 +404,39 @@ def gather(source: DataSource, inbox: Path, stand: Path) -> tuple[Path, list[Pat
         files.append(target)
     if release:
         (inbox / "release").write_text(release)
-    return inbox, files, _fetched(fresh)
+    return inbox, files, {**_fetched(fresh), **read}
+
+
+# the release the site documents now, read from its own page every intake
+def _live_release(site, inbox: Path) -> str:
+    target = inbox / "release_page.html"
+    target.unlink(missing_ok=True)
+    fetch.download(site.release_page, target)
+    found = re.search(site.release_pattern, target.read_text(errors="ignore"))
+    if found is None:
+        raise Final(f"{site.release_page}: no release matches {site.release_pattern}")
+    return found.group(1)
+
+
+# a newer release is a version of the source's category, so the category must list it before its pages are fetched
+def _refuse_unlisted_release(origin: dict, live: str) -> None:
+    import config
+
+    categories = origin.get("categories") or []
+    listed = config.settings.categories[categories[0]].versions if len(categories) == 1 else []
+    if live not in listed:
+        raise Final(f"{origin.get('name')}: the site documents {live} now; list it for {categories} and intake again")
+
+
+# the site's pages as its sitemap lists them now, filtered by the declaration; the sitemap is read anew every intake
+def _sitemap_pages(site, inbox: Path) -> list[str]:
+    target = inbox / "sitemap.xml"
+    target.unlink(missing_ok=True)
+    fetch.download(site.sitemap, target)
+    found = site_page.sitemap_urls(target.read_text(errors="ignore"), site.include, site.exclude)
+    if not found:
+        raise Final(f"{site.sitemap}: the sitemap lists no page the declaration keeps")
+    return found
 
 
 # pages kept from another release, or from before one was declared, would take its name unread: they are fetched anew

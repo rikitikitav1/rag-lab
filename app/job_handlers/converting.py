@@ -1,3 +1,5 @@
+import contextlib
+import contextvars
 import functools
 import hashlib
 import json
@@ -139,13 +141,26 @@ def reading_key(spec, tool: str, path: Path, fields: list[tuple[str, str]], chun
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
 
 
+# a run that measures the tool itself reads every piece again; a kept reading would measure the cache
+_FRESH: contextvars.ContextVar[bool] = contextvars.ContextVar("converting_fresh", default=False)
+
+
+@contextlib.contextmanager
+def reading_fresh(fresh: bool):
+    token = _FRESH.set(bool(fresh))
+    try:
+        yield
+    finally:
+        _FRESH.reset(token)
+
+
 # a piece through its tool's adapter, or its kept reading; a piece that hung restarts the child for the next one
 def convert(spec, tool: str, path: Path, fields: list[tuple[str, str]], chunk, ceiling: float, hold=None) -> dict:
     if tool not in PIECE:
         raise Final(f"no adapter for the converter {tool}")
     key = reading_key(spec, tool, path, fields, chunk)
     kept = READINGS / key[:2] / f"{key}.json" if key else None
-    if kept is not None and kept.is_file():
+    if kept is not None and kept.is_file() and not _FRESH.get():
         reading = json.loads(kept.read_text())
         # a kept reading spent no tool time now; its own time stays beside it for whoever prices the tool
         return {**reading, "seconds": 0.0, "read_seconds": reading.get("seconds"), "cached": True}

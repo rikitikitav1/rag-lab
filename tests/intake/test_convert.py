@@ -418,3 +418,26 @@ def test_no_step_of_the_reading_path_falls_back_to_the_stands_rules():
     )
     empty = inspect.Parameter.empty
     assert [s.__name__ for s in steps if inspect.signature(s).parameters["rule"].default is not empty] == []
+
+
+# a piece the tool read in part is read once more by the reread settings, and the whole reading is the one kept
+def test_a_partly_read_piece_is_read_once_more_and_the_whole_reading_kept(monkeypatch):
+    from job_handlers import reading
+
+    said = iter([("partial_success", "half"), ("success", "whole"), ("partial_success", "half"),
+                 ("partial_success", "still half")])
+
+    def convert_piece(*a, **k):
+        status, text = next(said)
+        return {"markdown": text, "structure": None, "seconds": 0.0, "status": {"status": status, "errors": []}}
+
+    monkeypatch.setattr(reading, "convert_piece", convert_piece)
+    monkeypatch.setattr(reading, "load_settings", lambda name: ({}, "sha"))
+    loaded = {"docling/default": ({}, "sha")}
+
+    done, name, reread = reading.read_piece("a.pdf", "docling", (1, 2), "docling/default", loaded, "en", None, STAND)
+    assert done["markdown"] == "whole" and name == STAND.reread_settings and reread["taken"] is True
+
+    done, name, reread = reading.read_piece("a.pdf", "docling", (1, 2), "docling/default", loaded, "en", None, STAND)
+    assert done["markdown"] == "half" and name == "docling/default" and reread == {
+        "settings": STAND.reread_settings, "for": "partial", "taken": False}

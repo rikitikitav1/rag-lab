@@ -1,4 +1,5 @@
 import re
+from fnmatch import fnmatch
 
 import formats
 
@@ -80,3 +81,14 @@ def prepared(page: str, main: str, drop: list[str]) -> str | None:
         return None
     body = flat_pre(dropped(found, drop))
     return f'<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>{body}</body></html>'
+
+
+_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+
+
+# a sitemap's page addresses kept by the include patterns and left by the exclude ones, sorted, each once
+def sitemap_urls(xml: str, include: list[str] = (), exclude: list[str] = ()) -> list[str]:
+    found = {url for url in _LOC.findall(xml)}
+    kept = {u for u in found if (not include or any(fnmatch(u, p) for p in include)) and
+            not any(fnmatch(u, p) for p in exclude)}
+    return sorted(kept)

@@ -27,6 +27,8 @@ class IndexResult:
     elapsed: float = 0.0
     # rows a source file names that were not cut: declared or raw ones wait for the accept door, empty ones for a folder
     refused: dict[str, str] = field(default_factory=dict)
+    # the sources a cancel left uncut, in the order they would have come
+    left: list[str] = field(default_factory=list)
     model: str = field(default_factory=lambda: llm.resolve_name("embedding"))
 
     def __str__(self) -> str:
@@ -92,7 +94,7 @@ def _chunk(source_id, doc, variant) -> DataChunk:
 
 
 @measure_elapsed
-def collect_data(sources, embed_size=None, variant=None, build_index=True) -> IndexResult:
+def collect_data(sources, embed_size=None, variant=None, build_index=True, stop=None) -> IndexResult:
     embed_size = embed_size or config.settings.ingestion.batch_size
     variant = check_variant(variant or config.settings.corpus.variant)
     policy = config.settings.corpus.policy(variant)
@@ -100,8 +102,13 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True) -> In
     total = 0
 
     with Session() as session:
-        refused = {}
-        for source in sources:
+        refused, left = {}, []
+        for n, source in enumerate(sources):
+            # a cancel is read between sources: one source is replaced whole or not at all
+            if stop is not None and stop():
+                left = [s.name for s in sources[n:]]
+                log.warning("index.cancelled", done=n, left=len(left))
+                break
             data_source = _provision_source(session, source, variant)
             if data_source.stage != Stage.accepted:
                 log.warning("index.refused_stage", source=source.name, stage=data_source.stage)
@@ -130,10 +137,10 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True) -> In
             merged = getattr(source, "merged", None)
             log.info("index.committed", source=source.name, chunks=len(buffer), total=total, merged=merged)
 
-    if build_index:
+    if build_index and not left:
         ensure_vector_index(variant)
     log.info("index.done", chunks=total, variant=variant)
-    return IndexResult(sources=len(sources) - len(refused), chunks=total, refused=refused)
+    return IndexResult(sources=len(sources) - len(refused) - len(left), chunks=total, refused=refused, left=left)
 
 
 # the one owner of the name, so the three readers ask here

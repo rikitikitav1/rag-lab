@@ -363,6 +363,8 @@ class OnboardSource(Spec):
     # a declared source by name; the route picks each file's engine, these name the settings each engine runs with
     source: str = Field(pattern=SOURCE_NAME)
     settings: dict[str, str] | None = None
+    # every piece read by its tool now, for a measure of the tool: no kept reading, no kept piece, stamped in the record
+    fresh: bool = False
 
     @field_validator("settings")
     @classmethod

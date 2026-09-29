@@ -388,6 +388,75 @@ config:
   engines.converter-mineru.placement:
     class: seed
     note: seeded into the engine rows
+  engines.ollama.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama-cpu.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-cpu.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-embed.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-rerank.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-docling.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-mineru.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.balance_reader:
+    class: seed
+    note: seeded into the engine rows
   llm.base_url:
     class: setting
     family: ollama_url
@@ -910,6 +979,8 @@ constant:
     class: code
   app/use_cases/fetch.py:TIMEOUT:
     class: cap
+  app/use_cases/fetch.py:TRIES:
+    class: cap
   app/corpus_keys.py:VARIANT_RE:
     class: code
   app/corpus_keys.py:CYRILLIC_SHARE:
@@ -1141,6 +1212,8 @@ constant:
   app/use_cases/site_page.py:_DIV:
     class: code
   app/use_cases/site_page.py:_CLASS:
+    class: code
+  app/use_cases/site_page.py:_LOC:
     class: code
   app/use_cases/site_page.py:_SELECTOR:
     class: code

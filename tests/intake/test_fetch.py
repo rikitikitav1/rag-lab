@@ -1,5 +1,6 @@
 import zipfile
 
+import pytest
 from use_cases import fetch
 
 
@@ -159,3 +160,40 @@ def test_a_kept_clone_takes_the_upstreams_new_tip_only_when_asked(tmp_path):
     fetch.clone(f"file://{other}", folder, update=True)
     assert (folder / "b.md").read_text() == "elsewhere", "a moved repo is cloned anew"
     assert not (folder / "a.md").exists()
+
+
+class _Got:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    def iter_content(self, size):
+        yield b"<html>page</html>"
+
+
+# a stalled request is asked again, and only the last stall of the tries fails the page
+def test_a_stalled_page_is_asked_again(monkeypatch, tmp_path):
+    import requests
+
+    calls = []
+
+    def get(url, stream, timeout):
+        calls.append(url)
+        if len(calls) < fetch.TRIES:
+            raise requests.ReadTimeout("stalled")
+        return _Got()
+
+    monkeypatch.setattr(fetch.requests, "get", get)
+    assert fetch.download("https://a/p.html", tmp_path / "p.html") is True
+    assert (tmp_path / "p.html").read_bytes() == b"<html>page</html>" and len(calls) == fetch.TRIES
+
+    monkeypatch.setattr(fetch.requests, "get", lambda url, stream, timeout: (_ for _ in ()).throw(
+        requests.ConnectTimeout("down")))
+    with pytest.raises(requests.ConnectTimeout):
+        fetch.download("https://a/q.html", tmp_path / "q.html")
+    assert not (tmp_path / "q.html").exists()

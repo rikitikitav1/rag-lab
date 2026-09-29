@@ -1,4 +1,5 @@
 # the nginx documentation from nginx.org in Russian, pages listed from the site's sitemap
+# the indexes of directives and variables and the contents page are left out: links only, and a gold on them misleads search
 name: nginx-org-ru
 language: ru
 licence: BSD-2-Clause
@@ -8,7 +9,6 @@ pages:
 - https://nginx.org/ru/docs/contributing_changes.html
 - https://nginx.org/ru/docs/control.html
 - https://nginx.org/ru/docs/debugging_log.html
-- https://nginx.org/ru/docs/dirindex.html
 - https://nginx.org/ru/docs/events.html
 - https://nginx.org/ru/docs/example.html
 - https://nginx.org/ru/docs/faq.html
@@ -77,7 +77,6 @@ pages:
 - https://nginx.org/ru/docs/http/request_processing.html
 - https://nginx.org/ru/docs/http/server_names.html
 - https://nginx.org/ru/docs/http/websocket.html
-- https://nginx.org/ru/docs/index.html
 - https://nginx.org/ru/docs/install.html
 - https://nginx.org/ru/docs/mail/ngx_mail_auth_http_module.html
 - https://nginx.org/ru/docs/mail/ngx_mail_core_module.html
@@ -124,7 +123,6 @@ pages:
 - https://nginx.org/ru/docs/syntax.html
 - https://nginx.org/ru/docs/sys_errlist.html
 - https://nginx.org/ru/docs/syslog.html
-- https://nginx.org/ru/docs/varindex.html
 - https://nginx.org/ru/docs/windows.html
 site:
   main: div#content

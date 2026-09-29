@@ -5,6 +5,7 @@ from pathlib import Path
 
 from config import SHAPE_NO_PIECE, RouteCfg
 from engines import converter
+from engines.converter_tools import KEPT_STATUSES
 from tool_names import Tool
 from use_cases import code_lines, piece_join, raw_quality, route
 
@@ -99,12 +100,30 @@ def _counted(done: dict, counts: dict) -> dict:
     return done
 
 
+def _partial(done: dict) -> bool:
+    return bool(done.get("status")) and done["status"]["status"] == "partial_success"
+
+
+# a piece the tool read in part is read once more by the reread settings; the whole reading is taken, else the first
+def _reread_partial(file, engine, piece, name, loaded, language, layer, rule, done):
+    if rule.reread_settings not in loaded:
+        loaded[rule.reread_settings] = load_settings(rule.reread_settings)
+    again = _dashes_back(
+        convert_piece(file, engine, piece, loaded[rule.reread_settings], language, rule), layer, rule, piece
+    )
+    taken = not _partial(again) and again["status"]["status"] in KEPT_STATUSES
+    reread = {"settings": rule.reread_settings, "for": "partial", "taken": taken}
+    return (again, rule.reread_settings, reread) if taken else (done, name, reread)
+
+
 # a piece read by its planned settings, and again by the reread settings when it agrees badly with its layer
 def read_piece(file: Path, engine: str | None, piece, name: str | None, loaded: dict, language: str, layer, rule):
     done = convert_piece(file, engine, piece, loaded.get(name), language, rule)
     # a file read as it is is its author's text: the word rules were measured on converters' output only
     if engine is not None:
         done = _dashes_back(done, layer, rule, piece)
+    if engine == Tool.docling and name != rule.reread_settings and _partial(done):
+        return _reread_partial(file, engine, piece, name, loaded, language, layer, rule, done)
     first = raw_quality.conversion_signals(done["markdown"], layer)["layer_f1"]
     if engine != Tool.docling or name == rule.reread_settings or first is None or first >= rule.reread_below_layer_f1:
         return done, name, None

@@ -277,6 +277,7 @@ class EngineCfg(_Strict):
     kind: Literal["ollama", "vllm", "openai_compatible", "converter"]
     env_prefix: str
     placement: Literal["gpu", "cpu", "gpu+cpu", "remote"]
+    balance_reader: str = "none"
 
 
 class TokenEstimateCfg(_Strict):

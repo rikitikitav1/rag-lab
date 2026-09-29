@@ -9,6 +9,7 @@ from pathlib import Path
 import config
 import engines
 import logging_setup
+from engines import balances
 from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
 from models.registry import Engine, EngineKind, Placement, Prompt, Purpose
@@ -251,7 +252,9 @@ def seed_engines() -> None:
                 raise ValueError(f"engine {declared.name}: {kind.value} cannot be placed {placement.value}")
             if session.scalar(select(exists().where(Engine.env_prefix == declared.env_prefix))):
                 raise ValueError(f"engine {declared.name}: prefix {declared.env_prefix} already names an engine")
-            session.add(Engine(name=declared.name, kind=kind, env_prefix=declared.env_prefix, placement=placement))
+            balances.refuse_unknown(declared.balance_reader)
+            session.add(Engine(name=declared.name, kind=kind, env_prefix=declared.env_prefix, placement=placement,
+                               balance_reader=declared.balance_reader))
             session.commit()
         log.info("seed.engine", name=declared.name)
 

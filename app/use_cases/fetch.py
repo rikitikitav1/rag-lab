@@ -8,7 +8,9 @@ from xml.etree import ElementTree
 
 import requests
 
-TIMEOUT = 120
+# connect and read: a site that stalls one request in several answers the next one at once
+TIMEOUT = (10, 30)
+TRIES = 3
 
 
 
@@ -19,11 +21,17 @@ def download(url: str, target: Path) -> bool:
         return False
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_name(target.name + ".part")
-    with requests.get(url, stream=True, timeout=TIMEOUT) as got:
-        got.raise_for_status()
-        with part.open("wb") as out:
-            for block in got.iter_content(1 << 20):
-                out.write(block)
+    for tried in range(1, TRIES + 1):
+        try:
+            with requests.get(url, stream=True, timeout=TIMEOUT) as got:
+                got.raise_for_status()
+                with part.open("wb") as out:
+                    for block in got.iter_content(1 << 20):
+                        out.write(block)
+            break
+        except (requests.ConnectionError, requests.Timeout):
+            if tried == TRIES:
+                raise
     os.replace(part, target)
     return True
 

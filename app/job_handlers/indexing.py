@@ -27,9 +27,13 @@ def index_data(options: dict) -> dict:
         raise Final(f"no accepted source named {wanted!r}; only accepted rows are indexed")
     # resolved once: the call below took it bare and requeued itself with an unmatchable null
     variant = options.get("variant") or config.settings.corpus.variant
-    result = use_cases.index.collect_data(built, variant=variant, build_index=False)
+    job_id = options.get("_job_id")
+    stop = (lambda: job_queue.is_cancelled(job_id)) if job_id is not None else None
+    result = use_cases.index.collect_data(built, variant=variant, build_index=False, stop=stop)
     if wanted != "all" and result.refused:
         raise Final(f"{wanted} was not cut: {result.refused[wanted]}")
+    if result.left:
+        return {"sources": result.sources, "refused": result.refused, "left_by_cancel": result.left}
     # the report reads rows, not the index; a refused source has none of this cut, so it gets no «indexed» report
     for source in (s for s in built if s.name not in result.refused):
         job_queue.enqueue(

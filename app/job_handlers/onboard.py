@@ -20,7 +20,7 @@ from sources.declaration import site_of
 from sqlalchemy import select
 from use_cases import raw_quality, route, source_intake
 
-from . import reading
+from . import converting, reading
 from .base import Final, register
 from .converting import load_settings, pieces
 
@@ -256,6 +256,11 @@ def _index_root(units: list, tree: Path, folder: Path) -> tuple[str, str]:
 # a declared source to a raw folder: every file through the engine its route names, a report row a run, no index
 @register("onboard_source")
 def onboard_source(options: dict) -> dict | None:
+    with converting.reading_fresh(bool(options.get("fresh"))):
+        return _onboard(options)
+
+
+def _onboard(options: dict) -> dict | None:
     with Session() as session:
         source = session.scalar(select(DataSource).where(DataSource.name == options["source"]))
         if source is None:
@@ -273,6 +278,10 @@ def onboard_source(options: dict) -> dict | None:
     route_sha = reading.route_sha(rule)
     origin = source.declaration or {}
     root, gathered, fetched = source_intake.gather(source, FETCHED / source.name, ROOT)
+    # a release read from the site moves the row's declaration with it, so the index keys its pages by it
+    if release_read := fetched.pop("release", None):
+        origin = {**origin, "site": {**origin["site"], "release": release_read}}
+        source.declaration = origin
     # what the gather says it fetched now, a folder read from the tree as it lies: unchanged speaks for that
     refetched = "folder" in origin or "fetched_at" in fetched
     epub_skip = frozenset(rule.epub_skip)
@@ -286,7 +295,8 @@ def onboard_source(options: dict) -> dict | None:
     fingerprint = _fingerprint(arm_hash, route_sha, {named[f]: sha for f, sha in shas.items()})
     accepted = source.stage == Stage.accepted
     # the files, settings and route of the accepted run: nothing to read again
-    if accepted and (source.raw or {}).get("fingerprint") == fingerprint:
+    fresh = bool(options.get("fresh"))
+    if accepted and (source.raw or {}).get("fingerprint") == fingerprint and not fresh:
         log.info("onboard.unchanged", source=source.name)
         return {"unchanged": True, "refetched": refetched}
     # a new run of an accepted source goes beside the accepted folder, which search keeps reading until it is accepted
@@ -304,6 +314,8 @@ def onboard_source(options: dict) -> dict | None:
             "settings_override": options.get("settings") or {},
             "settings_sha256": {t: s[1] for t, s in settings.items()},
             "route_sha256": route_sha,
+            # every piece read by its tool now, no kept reading and no kept piece: a run that measures the tool
+            "fresh": fresh,
         }
     )
     # a unit is a piece of a run, so a bad stretch of a long book is named by its pages, not hidden in the whole
@@ -320,7 +332,7 @@ def onboard_source(options: dict) -> dict | None:
         file, rel, _, piece, name = unit
         key = _key(rel, piece)
         # a piece whose markdown is gone from the folder, or was written under an older name, is converted again
-        kept = _kept(record["units"].get(key), shas[file], loaded[name][1] if name else None, same_route)
+        kept = not fresh and _kept(record["units"].get(key), shas[file], loaded[name][1] if name else None, same_route)
         if kept and (folder / "pieces" / f"{_stem(key)}.md").exists():
             continue
         # a cancel is read between pieces: a long book otherwise holds the queue and the card after it was called off
@@ -338,8 +350,12 @@ def onboard_source(options: dict) -> dict | None:
     verdict, reasons, shares = _verdict(rows, sections)
     pages_by_engine, pages_by_settings = Counter(), Counter()
     builds: dict[str, set] = {}
+    # pages of pieces the tool still read only in part after their reread: the coverage report names the loss
+    partial_pages = []
     for r in rows:
         pages = (r["pages"][1] - r["pages"][0] + 1) if r["pages"] else 1
+        if "conversion.partial" in r["breached"]:
+            partial_pages.append({"file": r["file"], "pages": r["pages"]})
         pages_by_engine[r["engine"] or "none"] += pages
         pages_by_settings[r.get("settings") or "none"] += pages
         if r["engine"]:
@@ -391,6 +407,7 @@ def onboard_source(options: dict) -> dict | None:
         # the knobs this source set for itself over the stand's
         "intake": source_intake.intake_block(source.declaration),
         "version": {"release": release, "fetched_at": fetched.get("fetched_at")} if release else None,
+        "partial_pages": partial_pages,
         "signals": {k: {"better": v.better, "source": v.source} for k, v in raw_quality.SIGNALS.items()},
     }
     report = measurements.record(
@@ -408,6 +425,8 @@ def onboard_source(options: dict) -> dict | None:
             "finished_at": datetime.now(UTC).isoformat(),
         }
         gone = source_intake.take_run(row, run)
+        if release_read:
+            row.declaration = origin
         session.commit()
     for folder in gone:
         source_intake.drop_folder(folder, source.name)
