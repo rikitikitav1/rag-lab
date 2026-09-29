@@ -14,9 +14,9 @@ log = logging_setup.get_logger(__name__)
 
 def main():
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
-    parser = argparse.ArgumentParser(description="RAG over notes")
+    parser = argparse.ArgumentParser(description="RAG over the corpus")
     parser.add_argument(
-        "--index", action="store_true", help="reindex vault (resets the configured corpus variant, then builds it)"
+        "--index", action="store_true", help="reindex the corpus (resets the configured corpus variant, then builds it)"
     )
     parser.add_argument(
         "--ensure-index", action="store_true", help="build index only if empty"
@@ -30,11 +30,11 @@ def main():
 
     if args.index:
         db.cleanup(variant=config.settings.corpus.variant)
-        print(use_cases.index.collect_data(list(sources.factory.all_sources())))
+        print(use_cases.index.collect_data(list(sources.factory.sources())))
 
     if args.ensure_index:
         if db.is_empty(variant=config.settings.corpus.variant):
-            print(use_cases.index.collect_data(list(sources.factory.all_sources())))
+            print(use_cases.index.collect_data(list(sources.factory.sources())))
         else:
             log.info("index.skip", reason="already_indexed")
 

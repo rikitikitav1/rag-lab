@@ -9,47 +9,104 @@ from sources import (  # noqa: F401
     converted,
     files,
     interview,
-    notes,
     redis_docs,
     system_design_primer,
 )
 from sources.base import Base
+from sources.declaration import Declaration
 
 log = logging_setup.get_logger(__name__)
 
 
-# every repository a source file names, one organisation's family unrolled, one checkout per released version
-def _git_specs(found) -> list[tuple[str, str, object, str | None]]:
+# every accepted repository row, one organisation's family unrolled, one checkout per released version
+def _git_specs(found, rows) -> list[tuple[str, str, object, str | None]]:
     specs = []
     for source in found:
-        if source.folder is not None:
+        if source.folder is not None or not (source.git or source.git_family):
             continue
         if source.versions:
             url = files.row_of(source, source.name)["git_url"]
             specs += [(f"{source.name}@{v}", url, source, origin.ref) for v, origin in source.versions.items()]
         else:
-            specs += [(name, files.row_of(source, name)["git_url"], source, None) for name in files.rows_of(source)]
+            named = [n for n in files.rows_of(source) if n in rows]
+            specs += [(name, files.row_of(source, name)["git_url"], source, None) for name in named]
     return specs
 
 
-# a reader named in a file and known to no class would parse nothing its file meant
-def _reader(source) -> type[Base]:
+# a reader named in a declaration and known to no class would parse nothing its declaration meant
+def reader_refusal(source) -> str | None:
     if source.reader is not None and source.reader not in Base._registry:
-        raise LookupError(f"{source.name}: reader {source.reader} is no class; known: {sorted(Base._registry)}")
+        return f"{source.name}: reader {source.reader} is no class; known: {sorted(Base._registry)}"
+    return None
+
+
+def _reader(source) -> type[Base]:
+    if refusal := reader_refusal(source):
+        raise LookupError(refusal)
     return Base._registry.get(source.reader, Base)
 
 
-# the sources the index reads, from their files: local folders first, then one repository each, then families
-def all_sources():
+# where onboarding said a row is read: its own tree, or the raw folder a converter wrote; an older row names its folder
+def _onboarded(rows: dict) -> dict[str, tuple[Path, bool]]:
+    out = {}
+    for name, info in rows.items():
+        raw = info["raw"]
+        if raw.get("root"):
+            out[name] = (Path(raw["root"]), raw.get("root_kind") == "converted")
+        elif raw.get("folder"):
+            out[name] = (Path(raw["folder"]), True)
+    return out
+
+
+# the accepted rows by name, a page of them or the ones named, each under the declaration it carries
+def _accepted(names=None, limit=None, offset=0) -> tuple[dict, dict]:
+    from models.corpus import DataSource, Stage
+    from orm.sync_db import Session
+    from sqlalchemy import select
+
+    stmt = select(DataSource).where(DataSource.stage == Stage.accepted).order_by(DataSource.name).offset(offset)
+    if names is not None:
+        stmt = stmt.where(DataSource.name.in_(names))
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    found, rows = {}, {}
+    with Session() as session:
+        for row in session.scalars(stmt):
+            # a row the seed has not declared yet reads as nothing, said, rather than as an empty source
+            if not row.declaration:
+                log.warning("sources.undeclared", row=row.name)
+                continue
+            declaration = found.setdefault(row.declaration["name"], Declaration.model_validate(row.declaration))
+            rows[row.name] = {"source": declaration.name, "raw": row.raw or {}}
+    return found, rows
+
+
+# the index's sources from the accepted rows, all, a page or the ones named: converted, local folders, repositories
+def sources(names=None, limit=None, offset=0):
     from sources.versioned import Versioned
 
-    found = list(files.source_files().values())
+    declared, rows = _accepted(names, limit, offset)
+    # a versioned source is read a version a folder, which one onboarded root cannot give; it is cloned as before
+    raw = {n: v for n, v in _onboarded(rows).items() if not declared[rows[n]["source"]].versions}
+    # an onboarded row is read where onboarding said; the rest of a family's rows are cloned as before
+    rest = {name: info for name, info in rows.items() if name not in raw}
+    found = [s for s in declared.values() if any(info["source"] == s.name for info in rest.values())]
+    for source in found:
+        if not (source.folder or source.git or source.git_family):
+            log.warning("sources.unreadable", source=source.name, why="no folder or repository and no converted folder")
+    found = [s for s in found if s.folder or s.git or s.git_family]
     local = [s for s in found if s.folder is not None]
-    specs = _git_specs(found)
+    specs = _git_specs(found, rest)
     readers = {s.name: _reader(s) for s in found}
-    log.info("sources.gather", local=len(local), git=len(specs))
+    log.info("sources.gather", onboarded=len(raw), local=len(local), git=len(specs))
     roots = provision([(name, url, ref) for name, url, _, ref in specs])
     built = 0
+    for name, (root, is_converted) in raw.items():
+        declaration = declared[rows[name]["source"]]
+        reader = Base._registry["converted"] if is_converted else _reader(declaration)
+        built += 1
+        release = declaration.site.release if declaration.site else None
+        yield reader(root, declaration, name=name, onboarded=True, version=release)
     for source in local:
         built += 1
         if source.versions:
@@ -110,8 +167,6 @@ def provision(specs, workers=8) -> dict:
 
 
 def one(name):
-    # provision skips a checkout that already exists, so filtering the full build is cheap
-    for source in all_sources():
-        if source.name == name:
-            return source
-    raise LookupError(f"no such source: {name}")
+    for source in sources([name]):
+        return source
+    raise LookupError(f"no accepted source named {name}")

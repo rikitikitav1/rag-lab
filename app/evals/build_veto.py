@@ -5,6 +5,7 @@ import config
 import llm
 import logging_setup
 import prompt_repo
+from corpus_keys import SECTION_SEP
 from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
@@ -59,7 +60,7 @@ def _headings(session, variant: str) -> list[tuple[str, str, str]]:
 
 # `rank_of_section` strips a numeric prefix on one side, so the stripped form is stored
 def _leaf(section: str) -> str:
-    written = (section or "").split(" > ")[-1].strip()
+    written = (section or "").split(SECTION_SEP)[-1].strip()
     return re.sub(r"^\d+\.\s*", "", written).strip()
 
 

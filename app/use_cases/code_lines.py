@@ -32,6 +32,11 @@ def uniform(widths: list[float], spread: float | None = None) -> bool:
     return sum(1 for w in widths if abs(w - middle) / middle <= spread) >= 0.9 * len(widths)
 
 
+# enough glyphs at one advance to call a face monospace though its name is not on the list; a short digit row is not
+def one_advance(widths: list[float], spread: float | None = None) -> bool:
+    return len(widths) >= 8 and uniform(widths, spread)
+
+
 # rows top to bottom, each its glyphs left to right
 def _rows(chars: list) -> list[list]:
     rows: list[list] = []
@@ -78,14 +83,8 @@ def layer_code(
     rows_by: frozenset = ROW_RULES,
     tally: dict | None = None,
 ) -> str | None:
-    height = page.get_height()
-    left, right = box["l"], box["r"]
-    t, b = (height - box["t"], height - box["b"]) if box.get("coord_origin") == "TOPLEFT" else (box["t"], box["b"])
-    top, bottom = max(t, b), min(t, b)
     chars = [c for c in _chars(page) if not c[4].isspace() and c[:4] not in drop]
-    visible = [
-        c for c in chars if left - 1 <= (c[0] + c[2]) / 2 <= right + 1 and bottom - 1 <= (c[1] + c[3]) / 2 <= top + 1
-    ]
+    visible = _inside(chars, _box_edges(page, box))
     if not visible:
         return None
     # a proportional face has no single advance to count spaces by, so its words would glue: Docling's text stays
@@ -146,12 +145,12 @@ def _step(visible: list, spread: float | None = None) -> float | None:
     return advance if whole >= 0.9 * len(steps) else None
 
 
-def _page(item: dict) -> int | None:
+def page_of(item: dict) -> int | None:
     return (item.get("prov") or [{}])[0].get("page_no")
 
 
 # the body in reading order, furniture (running heads and feet) left out
-def _reading_order(structure: dict) -> list[tuple[str, dict]]:
+def reading_order(structure: dict) -> list[tuple[str, dict]]:
     kinds = ("texts", "tables", "pictures", "groups")
     items = {f"#/{kind}/{i}": t for kind in kinds for i, t in enumerate(structure.get(kind, []))}
 
@@ -171,12 +170,17 @@ def _reading_order(structure: dict) -> list[tuple[str, dict]]:
 
 # for each code item and each table, whether the next one goes on from it over the page break, nothing between
 def continued(structure: dict | None) -> dict[str, list[bool]]:
-    order = [(ref, item) for ref, item in _reading_order(structure or {}) if item.get("text", "").strip() != "|"]
     out: dict[str, list[bool]] = {"code": [], "table": []}
+    # a lone pipe between two halves is a running foot's rule and is stepped over; a code block reading `|` still counts
+    order = [
+        (ref, item)
+        for ref, item in reading_order(structure or {})
+        if item.get("label") in out or item.get("text", "").strip() != "|"
+    ]
     for (_, item), (_, after) in zip(order, [*order[1:], ("", {})], strict=True):
         label = item.get("label")
         if label in out:
-            page, next_page = _page(item), _page(after)
+            page, next_page = page_of(item), page_of(after)
             same_kind = after.get("label") == label
             out[label].append(same_kind and page is not None and next_page == page + 1)
     return out
@@ -194,7 +198,7 @@ def rebuild(
 ) -> tuple[str, dict]:
     import pypdfium2 as pdfium
 
-    codes = [item for _, item in _reading_order(structure or {}) if item.get("label") == "code"]
+    codes = [item for _, item in reading_order(structure or {}) if item.get("label") == "code"]
     fences = list(FENCE.finditer(markdown))
     counts = {"rebuilt": 0, "kept": 0, "joined": 0, "duplicates_dropped": 0}
     tally: dict = {}
@@ -246,29 +250,16 @@ def rebuild(
 
 # a listing's callouts, set in a text face inside the code box: their glyphs to leave out and their words as one line
 def _callouts(page, box: dict, mono_name) -> tuple[frozenset, str]:
-    import ctypes
-
-    import pypdfium2.raw as pdfium_c
-
-    left, right, top, bottom = _box_edges(page, box)
-    with closing(page.get_textpage()) as text:
-        name, flags = ctypes.create_string_buffer(128), ctypes.c_int()
-        dropped, words = set(), []
-        for i in range(text.count_chars()):
-            ch = text.get_text_range(i, 1)
-            x0, y0, x1, y1 = text.get_charbox(i, loose=True)
-            if not (left - 1 <= (x0 + x1) / 2 <= right + 1 and bottom - 1 <= (y0 + y1) / 2 <= top + 1):
-                continue
-            pdfium_c.FPDFText_GetFontInfo(text.raw, i, name, 128, ctypes.byref(flags))
-            face = name.value.decode(errors="ignore")
-            if ch.isspace():
-                words.append(" ")
-            elif face and not mono_name.search(face):
-                dropped.add((x0, y0, x1, y1))
-                words.append(ch)
-            else:
-                words.append(" ")
-        return frozenset(dropped), " ".join("".join(words).split())
+    dropped, words = set(), []
+    for x0, y0, x1, y1, face, ch in _inside(page_glyphs(page, spaces=True), _box_edges(page, box)):
+        if ch.isspace():
+            words.append(" ")
+        elif face and not mono_name.search(face):
+            dropped.add((x0, y0, x1, y1))
+            words.append(ch)
+        else:
+            words.append(" ")
+    return frozenset(dropped), " ".join("".join(words).split())
 
 
 _MARKS = re.compile(r"^\s*(#{1,7}|[-*+•]|\d+[.)])\s+")
@@ -295,14 +286,13 @@ def mono_share(page, box: dict, mono_name, glyphs: list | None = None, spread: f
     inside = _inside(glyphs if glyphs is not None else _faces(page), _box_edges(page, box))
     if not inside:
         return 0.0
-    widths = [g[2] - g[0] for g in inside]
-    if len(widths) >= 8 and uniform(widths, spread):
+    if one_advance([g[2] - g[0] for g in inside], spread):
         return 1.0
     return sum(bool(mono_name.search(g[4])) for g in inside) / len(inside)
 
 
-# a page's visible glyphs with their face names, read once for all the items on it
-def _faces(page) -> list[tuple[float, float, float, float, str]]:
+# a page's glyphs as (left, bottom, right, top, face, char), spaces only when asked; the one reader of glyph faces
+def page_glyphs(page, spaces: bool = False) -> list[tuple[float, float, float, float, str, str]]:
     import ctypes
 
     import pypdfium2.raw as pdfium_c
@@ -311,11 +301,18 @@ def _faces(page) -> list[tuple[float, float, float, float, str]]:
         name, flags = ctypes.create_string_buffer(128), ctypes.c_int()
         out = []
         for i in range(text.count_chars()):
-            if text.get_text_range(i, 1).isspace():
+            ch = text.get_text_range(i, 1)
+            if ch.isspace() and not spaces:
                 continue
             pdfium_c.FPDFText_GetFontInfo(text.raw, i, name, 128, ctypes.byref(flags))
-            out.append((*text.get_charbox(i, loose=True), name.value.decode(errors="ignore")))
+            face = name.value.decode(errors="ignore")
+            out.append((*text.get_charbox(i, loose=True), face, _LINE_END_HYPHEN.get(ch, ch)))
         return out
+
+
+# a page's visible glyphs with their face names, read once for all the items on it
+def _faces(page) -> list[tuple[float, float, float, float, str, str]]:
+    return page_glyphs(page)
 
 
 def _flat(text: str) -> str:
@@ -350,9 +347,9 @@ def _one_line(pages: dict, document, prov: dict) -> bool:
 def _mono_runs(structure: dict, document, mono_name, outline: set[str], spread=None) -> list[list[dict]]:
     runs, last, pages = [], None, {}
     try:
-        for _, item in _reading_order(structure):
+        for _, item in reading_order(structure):
             prov = (item.get("prov") or [{}])[0]
-            goes_on = last is not None and _page(last) == _page(item)
+            goes_on = last is not None and page_of(last) == page_of(item)
             mono = (
                 item.get("label") in _PROSE_LABELS
                 and item.get("text", "").strip()
@@ -415,6 +412,9 @@ def fence_mono(
 
 
 _PLACEHOLDER = "<!-- image -->"
+_FORMULA = "<!-- formula-not-decoded -->"
+# private-use glyphs of a math font (brace pieces) and control marks carry nothing a reader or a search can use
+_FORMULA_NOISE = re.compile(r"[\ue000-\uf8ff\x00-\x08\x0b-\x1f\ufffe\uffff]")
 
 
 def _caption(structure: dict, picture: dict) -> str:
@@ -424,15 +424,42 @@ def _caption(structure: dict, picture: dict) -> str:
     return " ".join(" ".join(t.get("text", "").split()) for t in found).replace("[", "\\[").replace("]", "\\]")
 
 
+def formula_line(item: dict) -> str:
+    return " ".join(_FORMULA_NOISE.sub(" ", item.get("orig") or "").split())
+
+
+# a piece's formulas as their text lines, page by page in reading order
+def formulas_by_page(structure: dict) -> dict[int | None, list[str]]:
+    found: dict = {}
+    for _, item in reading_order(structure):
+        if item.get("label") == "formula":
+            found.setdefault(page_of(item), []).append(formula_line(item))
+    return found
+
+
+# each formula placeholder gets the text the layer holds under it, flattened; all left alone when the counts disagree
+def formula_text(markdown: str, structure: dict | None) -> tuple[str, int]:
+    formulas = [item for _, item in reading_order(structure or {}) if item.get("label") == "formula"]
+    if not formulas or markdown.count(_FORMULA) != len(formulas):
+        return markdown, 0
+    parts = markdown.split(_FORMULA)
+    out, filled = [parts[0]], 0
+    for formula, rest in zip(formulas, parts[1:], strict=True):
+        text = formula_line(formula)
+        filled += bool(text)
+        out += [text or _FORMULA, rest]
+    return "".join(out), filled
+
+
 # each placeholder gets its picture's page, place on the page and caption; all left alone when the counts disagree
 def picture_addresses(markdown: str, structure: dict | None) -> tuple[str, int]:
-    pictures = [item for ref, item in _reading_order(structure or {}) if ref.startswith("#/pictures/")]
+    pictures = [item for ref, item in reading_order(structure or {}) if ref.startswith("#/pictures/")]
     if not pictures or markdown.count(_PLACEHOLDER) != len(pictures):
         return markdown, 0
     seen: dict[int | None, int] = {}
     parts = markdown.split(_PLACEHOLDER)
     for n, picture in enumerate(pictures):
-        page = _page(picture)
+        page = page_of(picture)
         seen[page] = seen.get(page, 0) + 1
         parts[n] += f"![{_caption(structure, picture)}](picture:p{page}-{seen[page]})"
     return "".join(parts), len(pictures)

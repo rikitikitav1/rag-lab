@@ -8,6 +8,7 @@ from . import (  # noqa: F401  (populate HANDLERS)
     mcp,
     model_ops,
     onboard,
+    probe,
 )
 from .base import HANDLERS, Deferred, Final, register
 

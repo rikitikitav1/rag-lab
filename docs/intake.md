@@ -53,6 +53,9 @@ curl -X POST localhost:8000/v1/source/<id>/onboard -H 'content-type: application
 # read the report, then accept it into the corpus
 curl localhost:8000/v1/source/<id>
 curl -X POST localhost:8000/v1/source/<id>/accept -H 'content-type: application/json' -d '{}'
+# index it and turn it on
+curl -X POST localhost:8000/v1/job -H 'content-type: application/json' -d '{"type": "index_data", "options": {"source": "my-book"}}'
+curl -X PUT localhost:8000/v1/source/<id> -H 'content-type: application/json' -d '{"active": true}'
 ```
 
 For a shelf of books, `scripts/onboard_books.py` lays them out, declares them and queues their onboarding from one manifest.
@@ -71,7 +74,9 @@ The engine is chosen by the file, never declared:
 
 A PDF has a *text layer* when the words are stored as text in the file, not only drawn as pictures of letters. The layer also records each letter's font and position, and most of what follows reads it. A book that mixes both kinds of pages goes to Docling, which reads its few scanned pages with OCR, and the report counts them.
 
-The output goes to the source's raw folder. It contains one markdown file per input file, the intermediate pieces used to build it, and a report. The source is not searchable until it is accepted.
+The output goes to the source's raw folder. It contains one markdown file per input file, the intermediate pieces used to build it, and a report. The source is not searchable until it is accepted, indexed and turned on.
+
+![A source's stages, and a piece inside onboarding: converter status and quality are two separate checks](diagrams/source_states.drawio.svg)
 
 ## How a file is read
 
@@ -79,8 +84,10 @@ The output goes to the source's raw folder. It contains one markdown file per in
 2. Code from the text layer. Inside each code block Docling finds, the lines are rebuilt from the text layer: line breaks, indentation, and spaces counted by the width of the monospace font.
 3. Code with no box. Docling sometimes misses a listing and gives it as a paragraph or a heading (a root prompt `#` becomes a top-level heading). A run of text set wholly in a monospace font is fenced and rebuilt the same way. A one-line heading in a code font, such as an API signature, stays a heading.
 4. Joins over page breaks. A code block, a table or a paragraph that a page break cut in two is joined again, in Docling's reading order. Footnotes, running heads and margin notes between the halves are moved after the joined text; a figure, a heading or a list between them means the two are separate.
-5. Heading levels from the outline. Each piece is converted on its own, and the converter starts its heading levels afresh in every piece. Where the PDF has an outline (bookmarks), each heading found in it takes its depth from there, the shallowest level on `##`, the level where the chunker starts cutting.
+5. Heading levels from the outline. Each piece is converted on its own, and the converter starts its heading levels afresh in every piece. Where the PDF has an outline (bookmarks), each heading found in it takes its depth from there, the outline's shallowest level on `##`, the level where the chunker starts cutting. The top is the whole outline's, not the piece's, so a piece from the middle of a chapter puts its sections where the piece holding the chapter's title puts them.
 6. A second reading. A piece whose words agree badly with its own text layer (word F1 under 0.95) is converted again with another Docling backend, and the better reading is kept, but never one that loses table cells.
+
+The converter's reading of a piece is kept in `datasets/readings/`, out of git, keyed by the file's sha256, the pages, the settings' fields and the converter image's build stamp. A later run with the same key takes the kept reading and runs only the rules above, without the card; its record marks the piece `cached`, with `seconds: 0` and the reading's own time as `read_seconds`. Only a whole reading (`success`) is kept. A reading goes stale when the tool changes under the same build stamp, or when the stand's adapter (`app/engines/converter_tools.py`) changes what it keeps of the tool's answer; the key holds neither, so after such a change delete the folder. To read one piece again, delete its file there.
 
 ## How a file checks itself
 
@@ -89,17 +96,18 @@ The report of every source carries two records:
 - `rules_fired`: how many times each step above changed something (blocks rebuilt, blocks fenced, joins, headings relevelled, pieces read twice and kept). A book where a rule never fired reads apart from one where it fired a hundred times.
 - `self_check`: what the markdown says about itself: the share of the PDF's outline titles found as headings, fences left open, code blocks on one line, piece ends moved.
 
-Each piece is also compared with its own text layer. The report records word F1, the share of text retained, and words that mix writing systems. The chunker's quality checks run on every chapter. If the share of text that breaches a check exceeds the configured limit, the source is marked `bad` and the reasons are recorded. It can still be accepted, but the acceptance reason is saved with it.
+Each piece is also compared with its own text layer. The report records word F1, the share of text retained, and words that mix writing systems. The chunker's quality checks run on every chapter. A chapter that is a file's root alone has no heading under it, so the coverage gate is not read there; the report counts such chapters as `coverage_by_shape`. If the share of text that breaches a check exceeds the configured limit, the source is marked `bad` and the reasons are recorded. It can still be accepted, but the acceptance reason is saved with it.
 
 ## Knobs of a source
 
-A source can set its own values over the stand's in `config/intake.yaml`, by `PUT /v1/source/{id}/intake`, the MCP tool `set_source_intake`, or an `intake:` block in its source file. Each knob that is off by default exists because one or two books needed it.
+A source can set its own values over the stand's in `config/intake.yaml`, by `PUT /v1/source/{id}/intake`, the MCP tool `set_source_intake`, or an `intake:` block in its source file, which the seed writes onto its row (the door then refuses that row's knobs). Each knob that is off by default exists because one or two books needed it. A knob is tried first on a few pages with the MCP tool `probe_intake`, which reads them with and without it and gives the checker's counts of both.
 
 | knob | what it does | default | needed by |
 |---|---|---|---|
 | `settings` | a Docling or MinerU settings file of its own | the stand's | Erickson, PostgreSQL Internals |
 | `reread_settings`, `reread_below_layer_f1` | the second reading and its threshold | `docling/pypdfium2_cells`, 0.95 | |
 | `reread_cells_slack` | the share of table cells the second reading may lose and still be taken | 0 | Coulouris (third chapter: layer F1 0.69 against 0.97 at 42 of 44 cells) |
+| `splice_tables` | a second reading refused for table cells alone keeps its prose and takes back, matched by page, the first reading's tables where they keep more cells and its formulas where they keep more operators; a second reading taken whole takes back those formulas too, each on its own line in reading order | on | a source whose second reading loses on cells (Coulouris, goalkicker, van Steen); van Steen's computer networks turns it off |
 | `mono_faces`, `mono_spread` | what counts as a monospace font | a list of names, 0.1 | |
 | `mono_by_step` | spaces by glyph positions, for a code font whose boxes are wider than its advance | off | Object Pascal Handbook |
 | `listing_callouts` | callouts set in a text font inside a listing go after it | off | Redis in Action |
@@ -112,6 +120,9 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `unescape_bullets` | a list marker MinerU escapes (`\- item`) unescaped | on | |
 | `join_split_words` | a word the converter split with a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole and one half is no word of the layer | on | |
 | `picture_addresses` | a Docling picture's placeholder becomes `![caption](picture:p<page>-<n>)`, its page and place on the page, caption empty when it has none; a MinerU picture inlined as base64 becomes `![](picture:pages<a>-<b>-<n>)`, by the piece's pages, since MinerU does not give a picture's page | on | |
+| `formula_text` | a formula Docling could not decode (`<!-- formula-not-decoded -->`) gets the text the layer holds under it, flattened to one line, private-use glyphs of the math font dropped; searchable, not typeset | on | |
+| `demote_caption_headings` | a heading that is a figure, listing or table caption (`Figure 2.6`, `Listing 2.4`, `Таблица 8.4`) goes back to a line of text, outside code fences, so it does not cut a section in two | on | |
+| `drop_running_headings` | a running head Docling made a heading (`## 50 - 02: variables and data types`) is dropped from its second time on, in each piece and then over the file's whole markdown, where a head a later piece repeats first is seen too; a running head is a line standing first or last on three pages of the layer, so a scan with no layer keeps its own | on | |
 | `unescape_underscores` | an underscore the converter escapes outside code (`AT\_STATX`) unescaped, so the identifier is found as printed | on | |
 | `join_broken_words` | a word the converter left broken at its hyphenation joined when the layer has it whole | on | |
 | `restore_dashes` | a dash the converter dropped at a line end put back from the layer | on | |

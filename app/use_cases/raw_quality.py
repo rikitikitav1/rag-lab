@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 
 import config
+from corpus_keys import SECTION_SEP, chapter_of
 from sources.base import cuts_of, first_heading, hygienic
 from tool_names import Tool
 from use_cases import ingest_quality as quality
@@ -99,32 +100,28 @@ def chunker_gates(markdown: str, file: str) -> dict:
     return _gates(_samples(markdown, file, policy), policy)
 
 
-# the text before a file's first chapter has no heading below the root, so alone it breaches coverage by its shape
-def _with_lead(chapters: dict) -> dict:
-    keys = list(chapters)
-    if len(keys) > 1 and (keys[0] is None or (keys[1] or "").startswith(f"{keys[0]} > ")):
-        chapters = dict(chapters)
-        chapters[keys[1]] = chapters.pop(keys[0]) + chapters[keys[1]]
-    return chapters
-
-
 # the chunker's gates a chapter of a file, a chapter the second step of the section path; no chapters, one row
 def section_rows(markdown: str, file: str) -> list[dict]:
     policy = _policy()
     chapters: dict[str | None, list] = {}
     for sample in _samples(markdown, file, policy):
-        chapters.setdefault(" > ".join((sample.section or "").split(" > ")[:2]) or None, []).append(sample)
+        chapters.setdefault(chapter_of(sample.section), []).append(sample)
     rows = []
-    for chapter, samples in _with_lead(chapters).items():
+    for chapter, samples in chapters.items():
         gates = _gates(samples, policy)
+        # a chapter that is the file's root alone has no heading below it by shape, so coverage measures nothing there
+        root_only = chapter is None or SECTION_SEP not in chapter
+        hard = [g for g in gates["hard"] if not (root_only and g.startswith("section_coverage."))]
+        verdict = gates["verdict"] if hard == gates["hard"] else quality.verdict(hard, gates["soft"], judged=True)
         rows.append(
             {
                 "file": file,
                 "section": chapter,
                 "words": len(words(" ".join(s.body if s.body is not None else s.content for s in samples))),
                 **gates["metrics"],
-                "chunker_verdict": gates["verdict"],
-                "breached": gates["hard"] + gates["soft"],
+                "chunker_verdict": verdict,
+                "breached": hard + gates["soft"],
+                "coverage_by_shape": root_only,
             }
         )
     return rows

@@ -3,9 +3,10 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 
+from use_cases.piece_join import CAPTION, bare_line, running_heads, unfenced
 from use_cases.route import joined_hyphens, words
 
-VERSION = 3
+VERSION = 8
 CHECKS = (
     "glued",
     "split",
@@ -22,6 +23,8 @@ CHECKS = (
     "inline_pictures",
     "html_tags",
     "text_lost",
+    "caption_headings",
+    "running_headings",
 )
 # too noisy to be read as defects: a word the layer lacks altogether, a picture that carries no words
 NOT_DEFECTS = frozenset({"unknown", "images"})
@@ -30,7 +33,6 @@ TEXT_LOST_BELOW = 0.9
 TEXT_LOST_MIN_WORDS = 20
 
 _TOKEN = re.compile(r"\w+")
-_FENCE = re.compile(r"^```.*?^```[ \t]*$", re.M | re.S)
 _INLINE = re.compile(r"`[^`\n]+`")
 _PICTURE = re.compile(r"!\[(?:\\.|[^\]\\])*\]\([^)]*\)")
 _COMMENT = re.compile(r"<!--.*?-->", re.S)
@@ -44,7 +46,11 @@ _DASHED = re.compile(r"(\w+)\s*[-\u2013\u2014]\s*(\w+)")
 _BROKEN = re.compile(r"\b(\w+)(?: -|- | - )(\w+)\b")
 _LINE_END_HYPHEN = re.compile(r"(\w+)[-\u2010\u00ad]\r?\n\s*(\w+)")
 _LONE_PIPE = re.compile(r"^[ \t]*\|[ \t]*$", re.M)
+_TABLE_ROW = re.compile(r"^[ \t]*\|.*$", re.M)
 _LETTER_WORDS = frozenset("ивскуоая")
+_HEADING = re.compile(r"^#{1,6}[ \t]+(.+)$", re.M)
+_CAPTION = re.compile(CAPTION, re.I)
+
 
 
 def _norm(text: str) -> str:
@@ -99,7 +105,7 @@ def _masked(markdown: str) -> str:
     def blank(match):
         return re.sub(r"[^\n]", " ", match.group(0))
 
-    return _INLINE.sub(blank, _FENCE.sub(blank, markdown))
+    return _INLINE.sub(blank, unfenced(markdown))
 
 
 # the fewest layer words a token splits into, by prefix; a long glued token stays linear, not exponential
@@ -144,9 +150,25 @@ def _page_checks(raw: str, prose: str, ctx: dict | None) -> Counter:
     found["html_tags"] = len(_WRAPPER.findall(prose))
     prose = _TAG.sub(" ", prose)
     found["entities"] = len(_ENTITY.findall(prose))
-    found["escapes"] = len(_ESCAPE.findall(prose))
+    # a pipe inside a table cell is written `\|` or the row gains a column: that escape is the table's own
+    found["escapes"] = len(_ESCAPE.findall(_TABLE_ROW.sub(lambda m: m.group(0).replace("\\|", " "), prose)))
     if ctx is not None:
         _word_checks(prose, ctx, found)
+    return found
+
+
+# a caption made a heading, or a running head made one again after its first time, the chapter's own title
+def heading_defects(markdown: str, layers: list[str]) -> list[tuple[int, str]]:
+    running = running_heads(layers)
+    seen, found = set(), []
+    # a heading line inside a code block is code, by the fence rule the repairs read
+    for m in _HEADING.finditer(unfenced(markdown)):
+        text, bare = m.group(1), bare_line(m.group(1))
+        if _CAPTION.match(text.strip()):
+            found.append((m.start(), "caption_headings"))
+        elif bare in running and bare in seen:
+            found.append((m.start(), "running_headings"))
+        seen.add(bare)
     return found
 
 
@@ -158,9 +180,10 @@ def _lost(page_layer: str, near: str) -> bool:
 
 # a document's defects page by page against its own text layer; `trust_words` false skips the word checks
 def check_document(markdown: str, layers: list[str], first: int, trust_words: bool = True) -> list[tuple[int, Counter]]:
-    ctx = _vocabulary("\n".join(joined_hyphens(t) for t in layers)) if trust_words else None
+    ctx = _vocabulary(joined_hyphens("\f".join(layers))) if trust_words else None
     prose = _masked(markdown)
     pipes = [m.start() for m in _LONE_PIPE.finditer(markdown)]
+    suspects = heading_defects(markdown, layers)
     got = page_slices(markdown, layers, first)
     rows = []
     for n, page in enumerate(got):
@@ -168,6 +191,7 @@ def check_document(markdown: str, layers: list[str], first: int, trust_words: bo
         found = Counter() if start is None else _page_checks(markdown[start:end], prose[start:end], ctx)
         if start is not None:
             found["lone_pipes"] = sum(1 for at in pipes if start <= at < end)
+            found.update(kind for at, kind in suspects if start <= at < end)
         near = "".join(markdown[g["start"] : g["end"]] for g in got[max(0, n - 1) : n + 2] if g["start"] is not None)
         if _lost(page["layer"], near):
             found["text_lost"] += 1

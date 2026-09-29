@@ -32,7 +32,7 @@ categories:
   kubernetes: { name: Kubernetes, group: infrastructure }
   linux: { name: Linux, group: infrastructure }
   http: { name: HTTP and web protocols, group: infrastructure }
-  nginx: { name: nginx, group: infrastructure }
+  nginx: { name: nginx, group: infrastructure, versions: ["1.31.6"] }
   prometheus: { name: Prometheus, group: infrastructure }
   opentelemetry: { name: OpenTelemetry, group: infrastructure }
   grpc: { name: gRPC, group: infrastructure }

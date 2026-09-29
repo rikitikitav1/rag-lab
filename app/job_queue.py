@@ -159,10 +159,12 @@ def reclaimed(options: dict) -> dict:
     return {**options, "attempts": options.get("attempts", 0) + 1}
 
 
-def complete(id: int, elapsed: float | None = None) -> None:
+def complete(id: int, elapsed: float | None = None, result: dict | None = None) -> None:
     fields = {"status": JobStatus.done}
     if elapsed is not None:
         fields["elapsed"] = elapsed
+    if result:
+        fields["result"] = result
     _update(id, **fields)
 
 

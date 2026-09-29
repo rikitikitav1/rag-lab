@@ -1177,10 +1177,7 @@ def html(only):
             if all(taken[k] >= quota[k] for k in quota):
                 break
             relative = path.relative_to(source_dir)
-            generated = next(
-                (g for g in entry["html"].get("generated", []) if re.search(g, path.read_text(errors="ignore"), re.M)),
-                None,
-            )
+            generated = site_page.generated_by(path.read_text(errors="ignore"), entry["html"].get("generated", []))
             if generated:
                 ledger["skipped"].append(
                     {
@@ -1738,6 +1735,7 @@ def gates(only):
 
 # what a good text layer looks like page by page, the reading the intake's route thresholds are tuned on
 def layer_band(only):
+    import config
     from use_cases.route import page_signals
 
     band = {}
@@ -1747,7 +1745,7 @@ def layer_band(only):
         pdf = next((FILES / doc_id / lang / "pdf").rglob("*.pdf"), None)
         if pdf is None:
             continue
-        signals = page_signals(pdf)
+        signals = page_signals(pdf, config.settings.intake.route)
         chars = sorted(s["layer_chars"] for s in signals)
         band[f"{doc_id}/{lang}"] = {
             "pages": len(signals),

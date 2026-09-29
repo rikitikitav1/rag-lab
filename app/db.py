@@ -1,15 +1,24 @@
-import re
-from dataclasses import dataclass
 from functools import lru_cache
 from typing import NamedTuple
 
 import config
 import logging_setup
-from errors import StandFault
+import search_scope
+from corpus_keys import GOLD_SQL, HAS_GOLD_SQL, Gold, exact_gold_sql, language_by_alphabet, vector_index_name
+from errors import Final, StandFault
 from langdetect import DetectorFactory, LangDetectException, detect
 from orm.sync_db import engine
+from search_scope import (  # noqa: F401
+    CATEGORY_RE,
+    VERSION_RE,
+    Scope,
+    ScopeRefused,
+    as_scope,
+    categories_of,
+    refuse_bad_category,
+)
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 DetectorFactory.seed = 0
 log = logging_setup.get_logger(__name__)
@@ -28,6 +37,8 @@ class Hit(NamedTuple):
     distance: float | None
     score: float
     section: str | None
+    # the releases the chunk stands for, so a gold's version is read on the row the search returned
+    versions: tuple = ()
 
 
 # every config knows its own function words, so ask them instead of guessing the language
@@ -43,9 +54,7 @@ def _code_of(cfg: str, fts) -> str:
 
 
 def _by_alphabet(text_, fts) -> str:
-    letters = [c for c in text_ if c.isalpha()]
-    cyrillic = sum(1 for c in letters if "\u0400" <= c <= "\u04ff")
-    return "ru" if letters and cyrillic / len(letters) >= 0.3 else "en"
+    return language_by_alphabet(text_)
 
 
 def _by_function_words(text_, fts) -> str | None:
@@ -108,8 +117,6 @@ def live_rows(alias: str = "") -> str:
 
 
 def _drop_variant(conn, variant) -> int:
-    from use_cases.index import vector_index_name
-
     dropped = conn.execute(text("DELETE FROM data_chunks WHERE variant = :variant"), {"variant": variant}).rowcount
     # an empty partial index left behind makes the next index of the name insert row by row
     conn.execute(text(f"DROP INDEX IF EXISTS {vector_index_name(variant)}"))
@@ -120,15 +127,8 @@ def _drop_variant(conn, variant) -> int:
 
 def cleanup(*, variant):
     with engine.begin() as conn:
+        # a row is the source's declaration now, so emptying a variant never deletes one
         _drop_variant(conn, variant)
-        # only a row the code's source files made and no chunk holds goes; an added source keeps its origin and report
-        conn.execute(
-            text("""
-                DELETE FROM data_sources ds
-                WHERE ds.origin IS NULL
-                  AND NOT EXISTS (SELECT 1 FROM data_chunks dc WHERE dc.source_id = ds.id)
-            """)
-        )
 
 
 def remove_variant(variant) -> int:
@@ -138,11 +138,14 @@ def remove_variant(variant) -> int:
 
 # the row and its chunks in every variant; the chunks go by the foreign key's cascade
 def remove_source(source_id: int) -> int:
-    with engine.begin() as conn:
-        chunks = conn.execute(
-            text("SELECT count(*) FROM data_chunks WHERE source_id = :id"), {"id": source_id}
-        ).scalar()
-        conn.execute(text("DELETE FROM data_sources WHERE id = :id"), {"id": source_id})
+    try:
+        with engine.begin() as conn:
+            chunks = conn.execute(
+                text("SELECT count(*) FROM data_chunks WHERE source_id = :id"), {"id": source_id}
+            ).scalar()
+            conn.execute(text("DELETE FROM data_sources WHERE id = :id"), {"id": source_id})
+    except IntegrityError as e:
+        raise Final(f"source {source_id} was taken by another row while it was being removed; nothing removed") from e
     return chunks
 
 
@@ -163,16 +166,20 @@ def question_set_holds(set_name: str) -> dict:
     return {"questions": row[0], "answered": row[1], "drawn_from": row[2]}
 
 
+# the door checks the holds first; a log or a set that took a question since is a refusal, not a server error
 def remove_question_set(set_name: str) -> int:
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "UPDATE questions SET source_question_id = NULL WHERE set_name = :s AND source_question_id IN "
-                "(SELECT id FROM questions WHERE set_name = :s)"
-            ),
-            {"s": set_name},
-        )
-        return conn.execute(text("DELETE FROM questions WHERE set_name = :s"), {"s": set_name}).rowcount
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE questions SET source_question_id = NULL WHERE set_name = :s AND source_question_id IN "
+                    "(SELECT id FROM questions WHERE set_name = :s)"
+                ),
+                {"s": set_name},
+            )
+            return conn.execute(text("DELETE FROM questions WHERE set_name = :s"), {"s": set_name}).rowcount
+    except IntegrityError as e:
+        raise Final(f"questions of {set_name} were taken by a log or another set while it was being removed") from e
 
 
 # questions whose gold lies in the source, by the stand's own predicate: a mark is a file or a folder prefix
@@ -185,27 +192,47 @@ def questions_marking(source_id: int) -> int:
         )
         if not files:
             return 0
-        marks = conn.execute(
-            text("SELECT marked_sources FROM questions WHERE cardinality(marked_sources) > 0")
-        ).scalars()
-        return count_marking(files, marks)
+        rows = conn.execute(
+            text(f"SELECT marked_sources, gold FROM questions q WHERE {HAS_GOLD_SQL.format(q='q')}")
+        ).all()
+    return count_marking(files, [Gold.of(marks, gold) for marks, gold in rows])
 
 
 # marks no searched chunk holds, by the stand's gold predicate (a file or a folder prefix), as the preflight reads them
 def unreachable_marks(marks: list[str], *, variant: str) -> list[str]:
     if not marks:
         return []
+    gold = GOLD_SQL.format(mark="m", source="dc.source")
     query = f"""SELECT m FROM unnest(CAST(:marks AS text[])) m
-                WHERE NOT EXISTS (SELECT 1 FROM data_chunks dc WHERE {live_rows("dc")} AND position(m in dc.source) > 0)
+                WHERE NOT EXISTS (SELECT 1 FROM data_chunks dc WHERE {live_rows("dc")} AND {gold})
                 ORDER BY m"""
     with engine.connect() as conn:
         return list(conn.execute(text(query), {"marks": sorted(set(marks)), "variant": variant}).scalars())
 
 
-def count_marking(files: list[str], marks) -> int:
-    from evals.retrieval_metrics import is_gold
+# the exact gold of a questions row `q` against a chunk `dc`, inside one query
+_EXACT_GOLD_OF_Q = exact_gold_sql(
+    "q.gold->>'file'", "q.gold->>'section'", "q.gold->>'version'", "dc.source", "dc.section", "dc.versions"
+)
 
-    return sum(1 for marked in marks if any(is_gold(f, marked) for f in files))
+
+# questions per set whose gold no searched chunk holds, by the stand's one gold rule: a run on such a set misreads
+def unreachable_by_set(*, variant: str) -> list[tuple[str | None, int]]:
+    marked = GOLD_SQL.format(mark="m", source="dc.source")
+    # two branches apart: one OR over both made the planner scan the chunks per question and hit the timeout
+    query = f"""SELECT set_name, count(*) FROM (
+                  SELECT q.set_name FROM questions q WHERE cardinality(q.marked_sources) > 0 AND NOT EXISTS (
+                    SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m WHERE {live_rows("dc")} AND {marked})
+                  UNION ALL
+                  SELECT q.set_name FROM questions q WHERE q.gold IS NOT NULL AND NOT EXISTS (
+                    SELECT 1 FROM data_chunks dc WHERE {live_rows("dc")} AND {_EXACT_GOLD_OF_Q})
+                ) unreachable GROUP BY set_name ORDER BY 2 DESC, 1"""
+    with engine.connect() as conn:
+        return [(name, n) for name, n in conn.execute(text(query), {"variant": variant}).all()]
+
+
+def count_marking(files: list[str], golds) -> int:
+    return sum(1 for gold in golds if any(Gold.coerce(gold).holds_file(f) for f in files))
 
 
 def is_empty(*, variant):
@@ -315,76 +342,63 @@ def nearest_distance(embedding, *, variant, embedded_by: str) -> float | None:
     return float(row) if row is not None else None
 
 
-# one rule for both doors: a literal label; the old dotted path refuses rather than finds nothing
-CATEGORY_RE = re.compile(r"^[\w-]+$")
-
-
-def refuse_bad_category(category: str | None) -> None:
-    if category is not None and not CATEGORY_RE.fullmatch(category):
-        raise ValueError(f"invalid category filter: {category[:60]!r}")
-
-
-# a label is a category of the map, a group of them, or a tag; the filter takes any of the three
-def categories_of(label: str) -> list[str]:
-    cats = config.settings.categories
-    return [key for key, row in cats.items() if key == label or row.group == label]
-
-
-class ScopeRefused(ValueError):
-    pass
-
-
-# what a search may read: a label (a category, a group or a tag), sources by name, one version of one category
-@dataclass(frozen=True)
-class Scope:
-    label: str | None = None
-    sources: tuple[str, ...] = ()
-    version: str | None = None
-
-    # tags are stored lowercased, so a label asked as «Redis» reads what the index wrote as «redis»
-    def __post_init__(self):
-        if self.label:
-            object.__setattr__(self, "label", self.label.lower())
-
-    @property
-    def narrowed(self) -> bool:
-        return bool(self.label or self.sources or self.version)
-
-
-def as_scope(scope) -> Scope:
-    if scope is None:
-        return Scope()
-    return scope if isinstance(scope, Scope) else Scope(label=scope)
-
-
-# a version is a category's, so it needs one; a category without versions or a version it lacks is said, not emptied
-def refuse_bad_scope(scope: Scope) -> None:
-    refuse_bad_category(scope.label)
+# the search's own step past the scope's pure rules: the sources it names must be in search now, its version held
+def refuse_bad_scope(scope: Scope, variant: str | None = None) -> None:
+    search_scope.refuse_bad_scope(scope)
     if scope.sources:
-        _refuse_sources_out_of_search(scope.sources)
-    if scope.version is None:
-        return
-    if not scope.label:
-        raise ScopeRefused(f"version {scope.version} names no category; add the category it belongs to")
-    cats = categories_of(scope.label)
-    if len(cats) != 1:
-        raise ScopeRefused(f"a version belongs to one category, and {scope.label} names {len(cats)}")
-    listed = config.settings.categories[cats[0]].versions
-    if not listed:
-        raise ScopeRefused(f"{cats[0]} has no versions declared")
-    if scope.version not in listed:
-        raise ScopeRefused(f"{cats[0]} has no version {scope.version}; listed: {listed}")
+        refuse_sources_out_of_search(scope.sources)
+    if scope.version:
+        refuse_unheld_version(scope, variant or config.settings.corpus.variant)
 
 
-def _newest() -> tuple[list[str], list[str]]:
+# a version no searched source holds is refused, though a book for any version would answer: it is not that version's
+def refuse_unheld_version(scope: Scope, variant: str) -> None:
+    (category,) = search_scope.categories_of(scope.label)
+    query = f"""SELECT EXISTS (SELECT 1 FROM data_chunks
+                WHERE {live_rows()} AND category = :category AND :version = ANY(versions))"""
+    with engine.connect() as conn:
+        held = conn.execute(text(query), {"variant": variant, "category": category, "version": scope.version}).scalar()
+    if not held:
+        raise ScopeRefused(f"no source in search holds {category} {scope.version}")
+
+
+# a chunk holds its category's newest version, the one clause the default scope and the older-version check read
+_HOLDS_NEWEST = (
+    "EXISTS (SELECT 1 FROM unnest(CAST(:newest_categories AS text[]), CAST(:newest_versions AS text[])) AS n(c, v)"
+    " WHERE n.c = category AND n.v = ANY(versions))"
+)
+
+
+# the newest clause removes rows only once an older version is in search: then a scan cut at ef_search runs short
+def older_versions_held(variant: str, conn=None) -> bool:
+    cats, latest = newest()
+    # the partial index on versioned rows answers this on every search, so nothing is cached between searches
+    query = f"""SELECT EXISTS (SELECT 1 FROM data_chunks WHERE {live_rows()} AND cardinality(versions) > 0
+                AND NOT {_HOLDS_NEWEST})"""
+    params = {"variant": variant, "newest_categories": cats, "newest_versions": latest}
+    if conn is not None:
+        return bool(conn.execute(text(query), params).scalar())
+    with engine.connect() as own:
+        return bool(own.execute(text(query), params).scalar())
+
+
+def newest() -> tuple[list[str], list[str]]:
     rows = [(key, row.versions[0]) for key, row in config.settings.categories.items() if row.versions]
     return [k for k, _ in rows], [v for _, v in rows]
 
 
+# the versions each category holds where a search reads, so the preflight's newest check reads no inactive source
+def versions_held(variant: str) -> dict[str, list[str]]:
+    query = f"""SELECT category, array_agg(DISTINCT v) FROM data_chunks, unnest(versions) v
+                WHERE {live_rows()} GROUP BY category"""
+    with engine.connect() as conn:
+        return {c: sorted(vs) for c, vs in conn.execute(text(query), {"variant": variant}).all()}
+
+
 # without a version a versioned category answers from its newest released one; a rolling source has no versions
 def _scope_filter(scope: Scope) -> tuple[str, dict]:
-    cats, newest = _newest()
-    params = {"newest_categories": cats, "newest_versions": newest}
+    cats, latest = newest()
+    params = {"newest_categories": cats, "newest_versions": latest}
     sql = ""
     if scope.label:
         sql += " AND (category = ANY(:categories) OR :label = ANY(tags))"
@@ -397,11 +411,7 @@ def _scope_filter(scope: Scope) -> tuple[str, dict]:
         sql += " AND (:scope_version = ANY(versions) OR cardinality(versions) = 0)"
         params["scope_version"] = scope.version
     else:
-        sql += (
-            " AND (cardinality(versions) = 0 OR EXISTS (SELECT 1 FROM unnest("
-            "CAST(:newest_categories AS text[]), CAST(:newest_versions AS text[])) AS n(c, v)"
-            " WHERE n.c = category AND n.v = ANY(versions)))"
-        )
+        sql += f" AND (cardinality(versions) = 0 OR {_HOLDS_NEWEST})"
     return sql, params
 
 
@@ -437,7 +447,7 @@ def list_tags(limit: int, *, variant):
 
 
 # a name the base lacks or the search cannot read (declared, raw, inactive) refuses before the embed is paid
-def _refuse_sources_out_of_search(names) -> None:
+def refuse_sources_out_of_search(names) -> None:
     with engine.connect() as conn:
         rows = dict(
             conn.execute(
@@ -449,6 +459,14 @@ def _refuse_sources_out_of_search(names) -> None:
         raise ScopeRefused(f"no source named {missing}")
     if outside := sorted(n for n, searched in rows.items() if not searched):
         raise ScopeRefused(f"{outside} are not in search: not accepted or not active")
+
+
+# a scan cut at ef_search keeps few rows of a narrow scope, and the fusion quietly turns into keyword search alone
+def filtered_scan(scope: Scope, configured: str, older_held: bool = False) -> str:
+    if configured == "off" and (scope.sources or scope.version or older_held):
+        # strict: the vector leg numbers its rows in the order the index hands them
+        return "strict_order"
+    return configured
 
 
 def hybrid_search(
@@ -474,7 +492,7 @@ def hybrid_search(
         raise ValueError(f"keyword_rank must be one of {sorted(RANK_FUNCTIONS)}")
     keyword_query = _keyword_query_sql(retrieval.keyword.query)
     scope = as_scope(scope)
-    refuse_bad_scope(scope)
+    refuse_bad_scope(scope, variant)
     cat_filter, cat_params = _scope_filter(scope)
     src_filter = f"AND {live_rows()}"
     query = f"""WITH vector_search AS (
@@ -502,7 +520,7 @@ def hybrid_search(
                 SELECT d.content, d.source, d.category, d.chunk_index,
                        v.rank AS vector_rank, k.rank AS keyword_rank, v.distance AS distance,
                     COALESCE(1.0/(:rrf_k + v.rank), 0) + COALESCE(1.0/(:rrf_k + k.rank), 0) AS score,
-                       d.section
+                       d.section, d.versions
                 FROM data_chunks d
                 LEFT JOIN vector_search v ON d.id = v.id
                 LEFT JOIN keyword_search k ON d.id = k.id
@@ -538,10 +556,11 @@ def hybrid_search(
         else:
             conn.execute(text(f"SET LOCAL hnsw.ef_search = {int(depth)}"))
             # the default version clause filters every search once a versioned source is in, asked or not
-            if retrieval.filtered_scan != "off":
-                conn.execute(text(f"SET LOCAL hnsw.iterative_scan = {retrieval.filtered_scan}"))
+            older = not scope.version and older_versions_held(variant, conn)
+            if (scan := filtered_scan(scope, retrieval.filtered_scan, older)) != "off":
+                conn.execute(text(f"SET LOCAL hnsw.iterative_scan = {scan}"))
         rows = conn.execute(text(query), params).mappings().all()
-    return [Hit(**row) for row in rows]
+    return [Hit(**{**row, "versions": tuple(row["versions"] or ())}) for row in rows]
 
 
 # which language an answer belongs in: asked for, else the one the question is written in

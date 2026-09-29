@@ -8,8 +8,8 @@ import job_queue
 import job_specs
 import limits
 import logging_setup
+from corpus_keys import VARIANT_RE, Gold
 from evals import compare as compare_uc
-from evals import retrieval_metrics
 from evals.guest_axes import MESSAGE_FORMS
 from evals.pools import Ambiguous
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,7 +25,6 @@ from sqlalchemy.orm import selectinload
 from use_cases import agent_policy, rejudge, retrieval_compare
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 from use_cases.chat import resolve_rerank
-from use_cases.index import VARIANT_RE
 
 # a door that queues a job answers with the whole row, the same one `POST /v1/job` answers with
 from api.v1.job import JobResponse as JobEnqueuedResponse
@@ -179,17 +178,19 @@ async def eval_misses(
     items: list[MissItem] = []
     for ql in logs:
         q = ql.question
-        if not (q and q.marked_sources):
+        gold = Gold.of_question(q)
+        if not gold:
             continue
         in_corpus += 1
         got = [s["source"] for s in (ql.sources or [])]
-        hit = any(retrieval_metrics.is_gold(g, q.marked_sources) for g in got)
+        hit = any(gold.holds_file(g) for g in got)
         if not hit:
             items.append(
                 MissItem(
                     question_id=q.id,
                     question=q.original_text,
-                    expected=q.marked_sources,
+                    # an exact gold says its section too; the hit here is the file's, as hit@k reads it
+                    expected=[f"{gold.marks[0]}#{gold.section}"] if gold.exact else list(gold.marks),
                     retrieved=got,
                     faithfulness=ql.faithfulness,
                     relevance=ql.relevance,

@@ -9,7 +9,7 @@ families:
   converter_settings: 'which settings file each converter runs: named in `intake.settings`, held by the file under `converters/*/settings/`'
   piece_ceiling: 'the bound on one converter piece: `CHUNK_CEILING` in code, `piece_ceiling_seconds` in a settings file overrides
     it'
-  context_length: 'the ollama window: `llm.context_length` in config and `OLLAMA_CONTEXT_LENGTH` in compose, checked by tests/test_no_card_mode.py'
+  context_length: 'the ollama window: `llm.context_length` in config and `OLLAMA_CONTEXT_LENGTH` in compose, checked by tests/stand/test_no_card_mode.py'
   postgres_host: 'the database host: `postgres.host` in config, `POSTGRES_HOST` in the environment wins (`app/orm/dsn.py`)'
   ollama_url: 'the ollama address: `OLLAMA_BASE_URL` wins, `llm.base_url` is the fallback when compose leaves it empty (`app/engines/core.py`)'
   judge_model: 'the judge model: `llm.roles.judging.model` in config, `VLLM_MODEL` exported by scripts/up.sh, compose falls
@@ -183,6 +183,8 @@ config:
     class: setting
   intake.route.reread_cells_slack:
     class: setting
+  intake.route.splice_tables:
+    class: setting
   intake.route.seam_window:
     class: setting
   intake.route.seam_margin:
@@ -221,6 +223,12 @@ config:
     class: setting
   intake.route.picture_addresses:
     class: setting
+  intake.route.formula_text:
+    class: setting
+  intake.route.demote_caption_headings:
+    class: setting
+  intake.route.drop_running_headings:
+    class: setting
   intake.route.join_split_words:
     class: setting
   intake.route.mono_spread:
@@ -238,6 +246,8 @@ config:
   intake.quality.layer_band_engines:
     class: setting
   intake.quality.bad_share:
+    class: setting
+  intake.quality.auto_accept_ok:
     class: setting
   intake.engines.docling:
     class: setting
@@ -522,11 +532,13 @@ config:
     class: setting
   evals.veto.quotas.redis-doc/docs:
     class: setting
-  evals.veto.quotas.notes:
-    class: setting
   evals.veto.quotas.system-design-primer:
     class: setting
   evals.veto.min_heading:
+    class: setting
+  evals.question_set.per_source:
+    class: setting
+  evals.question_set.per_chapter:
     class: setting
   evals.grade_curve.cuts:
     class: setting
@@ -601,8 +613,6 @@ config:
 constant:
   app/api/v1/questions.py:_MAX_UPLOAD:
     class: cap
-  app/db.py:CATEGORY_RE:
-    class: code
   app/engines/answer_parsers.py:_DEEPSEEK_CALLS:
     class: code
   app/engines/answer_parsers.py:_MINIMAX_CALLS:
@@ -745,7 +755,7 @@ constant:
     class: cap
   app/job_handlers/judging.py:_ERROR_CHARS:
     class: cap
-  app/use_cases/fetch.py:_SLUG:
+  app/corpus_keys.py:_SLUG:
     class: code
     family: slug
   app/job_queue.py:LIVE_BATCH_SECONDS:
@@ -819,6 +829,12 @@ constant:
     class: code
   app/samplers.py:MAX_TOKENS:
     class: cap
+  app/search_scope.py:MAX_SOURCES:
+    class: cap
+  app/search_scope.py:CATEGORY_RE:
+    class: code
+  app/search_scope.py:VERSION_RE:
+    class: code
   app/seed.py:_PROMPT_RE:
     class: code
   app/server.py:MAX_BODY_BYTES:
@@ -839,6 +855,10 @@ constant:
     class: cap
   app/use_cases/code_lines.py:_NUMBER:
     class: code
+  app/use_cases/code_lines.py:_FORMULA_NOISE:
+    class: code
+  app/job_handlers/reading.py:_OPERATORS:
+    class: code
   app/use_cases/code_lines.py:FENCE:
     class: code
   app/use_cases/experiment.py:SCHEMA:
@@ -850,8 +870,11 @@ constant:
     class: code
   app/use_cases/fetch.py:TIMEOUT:
     class: cap
-  app/use_cases/index.py:VARIANT_RE:
+  app/corpus_keys.py:VARIANT_RE:
     class: code
+  app/corpus_keys.py:CYRILLIC_SHARE:
+    class: cap
+    why: "measured 29.09: 1876 questions change language at neither 0.2 nor 0.3; on three Russian books' raw chunks 0.2 misreads 47 as English, 0.3 misreads 88 (footnotes, SQL, unfenced code)"
   app/use_cases/ingest_quality.py:FENCE:
     class: code
   app/use_cases/ingest_quality.py:PROSE_WORD:
@@ -878,8 +901,6 @@ constant:
   app/use_cases/piece_join.py:_HEADING:
     class: code
   app/use_cases/layer_check.py:_TOKEN:
-    class: code
-  app/use_cases/layer_check.py:_FENCE:
     class: code
   app/use_cases/layer_check.py:_INLINE:
     class: code
@@ -916,6 +937,19 @@ constant:
     class: code
   app/use_cases/piece_join.py:_INLINE_PICTURE:
     class: code
+  app/use_cases/piece_join.py:_CAPTION_HEADING:
+    class: code
+  app/use_cases/layer_check.py:_HEADING:
+    class: code
+  app/use_cases/layer_check.py:_TABLE_ROW:
+    class: code
+  app/use_cases/layer_check.py:_CAPTION:
+    class: code
+  app/use_cases/piece_join.py:_EDGE_NUMBER:
+    class: code
+  app/use_cases/piece_join.py:RUNNING_MIN_PAGES:
+    class: cap
+    why: not measured; a line first or last on three pages is a running head, two could be a repeated title
   app/use_cases/piece_join.py:_ESCAPED_BULLET:
     class: code
   app/use_cases/piece_join.py:_INLINE_CODE:
@@ -962,6 +996,9 @@ constant:
     class: code
   app/use_cases/rejudge.py:PAIR_EVERY_UP_TO:
     class: cap
+  app/corpus_keys.py:CHAPTER_STEPS:
+    class: code
+    note: the chapter grain the coverage report reads too
   app/use_cases/retrieval_compare.py:SCHEMA:
     class: code
     note: the shape of a stored record
@@ -996,6 +1033,8 @@ constant:
     class: code
   app/use_cases/site_page.py:_TAG:
     class: code
+  app/use_cases/source_intake.py:REASON_CHARS:
+    class: cap
   app/use_cases/source_intake.py:_SLUG:
     class: code
     family: slug

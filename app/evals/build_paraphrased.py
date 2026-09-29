@@ -41,6 +41,8 @@ def _insert(session, text, set_name, language, original) -> bool:
         "language": language,
         "kind": original.kind,
         "marked_sources": original.marked_sources,
+        # a paraphrase asks what its original asks, so it keeps the original's gold of either kind
+        "gold": original.gold,
         "reference_answer": original.reference_answer,
         "source_question_id": original.id,
     }
@@ -93,7 +95,9 @@ def _pick(
         where.append(Question.id.not_in(used))
     if source:
         where.append(
-            func.array_to_string(Question.marked_sources, " ").ilike(f"%{source}%")
+            func.concat(
+                func.array_to_string(Question.marked_sources, " "), " ", Question.gold["file"].astext
+            ).ilike(f"%{source}%")
         )
     order = sampling.by_id_and_seed(Question.id, seed)
     if per_source is None:
@@ -105,7 +109,7 @@ def _pick(
         select(
             Question,
             func.row_number()
-            .over(partition_by=Question.marked_sources[1], order_by=order)
+            .over(partition_by=func.coalesce(Question.marked_sources[1], Question.gold["file"].astext), order_by=order)
             .label("rank"),
         )
         .where(*where)

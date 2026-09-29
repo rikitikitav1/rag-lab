@@ -105,7 +105,7 @@ ALTER SEQUENCE public.data_chunks_id_seq OWNED BY public.data_chunks.id;
 CREATE TABLE public.data_sources (
     id integer NOT NULL,
     name character varying(256) NOT NULL,
-    kind character varying(32) NOT NULL,
+    kind character varying(32),
     git_url text,
     path text,
     active boolean DEFAULT true NOT NULL,
@@ -113,12 +113,14 @@ CREATE TABLE public.data_sources (
     ingest_variant text,
     ingest_checked_at timestamp with time zone,
     ingest_reports jsonb DEFAULT '{}'::jsonb NOT NULL,
-    stage text DEFAULT 'accepted'::text NOT NULL,
+    stage text DEFAULT 'declared'::text NOT NULL,
     language text,
     licence text,
     origin jsonb,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
-    indexed_with jsonb DEFAULT '{}'::jsonb NOT NULL
+    indexed_with jsonb DEFAULT '{}'::jsonb NOT NULL,
+    declaration jsonb,
+    seeded boolean DEFAULT false NOT NULL
 );
 
 
@@ -245,7 +247,8 @@ CREATE TABLE public.jobs (
     tokens jsonb,
     balances jsonb,
     code jsonb,
-    prereg text
+    prereg text,
+    result jsonb
 );
 
 
@@ -499,7 +502,10 @@ CREATE TABLE public.questions (
     status text,
     embedding public.vector(1024),
     source_question_id integer,
-    embedded_by text
+    embedded_by text,
+    gold jsonb,
+    CONSTRAINT questions_gold_shape CHECK (((gold IS NULL) OR ((jsonb_typeof((gold -> 'file'::text)) = 'string'::text) AND (jsonb_typeof((gold -> 'section'::text)) = 'string'::text)))),
+    CONSTRAINT questions_one_kind_of_gold CHECK (((gold IS NULL) OR (cardinality(marked_sources) = 0)))
 );
 
 
@@ -887,6 +893,13 @@ CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (v
 
 
 --
+-- Name: data_chunks_versioned_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_versioned_idx ON public.data_chunks USING btree (variant, category) WHERE (cardinality(versions) > 0);
+
+
+--
 -- Name: data_chunks_versions_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1045,4 +1058,10 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260926000001'),
     ('20260927000001'),
     ('20260927000002'),
-    ('20260927000003');
+    ('20260927000003'),
+    ('20260929000001'),
+    ('20260929000002'),
+    ('20260929000003'),
+    ('20260929000004'),
+    ('20260929000005'),
+    ('20260929000006');

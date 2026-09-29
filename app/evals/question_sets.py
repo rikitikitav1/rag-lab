@@ -18,6 +18,8 @@ def _of(questions: list) -> dict:
         "languages": dict(sorted(languages.items())),
         # the corpus pool, and what every retrieval axis ranks against
         "with_marked_sources": sum(1 for q in questions if q.marked_sources),
+        # a question of the exact kind: a file, its section path and version
+        "with_exact_gold": sum(1 for q in questions if getattr(q, "gold", None)),
         # what the guest context axes need; without it they abstain and only faithfulness scores
         "with_reference_answer": sum(1 for q in questions if q.reference_answer),
         "paraphrases": sum(1 for q in questions if q.source_question_id),
@@ -65,6 +67,7 @@ def _row(q) -> dict:
         "text": q.original_text,
         "has_reference": bool(q.reference_answer),
         "marked_sources": len(q.marked_sources or []),
+        "gold": getattr(q, "gold", None),
         "embedded_by": q.embedded_by,
         "paraphrase_of": q.source_question_id,
     }

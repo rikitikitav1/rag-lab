@@ -2,6 +2,7 @@ import re
 from collections import Counter
 
 import config
+from corpus_keys import body_hash
 from sources.base import Base
 
 
@@ -16,8 +17,6 @@ def version_neutral(text: str | None, category: str, versions: list[str]) -> str
 
 # the k-th copy of a text in one version meets the k-th copy in another; copies inside a version stay rows, as today
 def merge_versions(per_version: list[tuple[str, list]], category: str) -> tuple[list, int]:
-    from use_cases.index import body_hash
-
     versions = [v for v, _ in per_version]
     kept, by_key, merged = [], {}, 0
     for version, docs in per_version:
@@ -36,7 +35,18 @@ def merge_versions(per_version: list[tuple[str, list]], category: str) -> tuple[
             doc.versions = [version]
             by_key[key] = doc
             kept.append(doc)
-    return kept, merged
+    return _one_address_each(kept), merged
+
+
+# an older version's own chunk numbers past the file's newest, or two texts would share `source#chunk_index`
+def _one_address_each(kept: list) -> list:
+    taken, top = set(), {}
+    for doc in kept:
+        if (doc.source, doc.chunk_index) in taken:
+            doc.chunk_index = top[doc.source] + 1
+        taken.add((doc.source, doc.chunk_index))
+        top[doc.source] = max(top.get(doc.source, -1), doc.chunk_index)
+    return kept
 
 
 # several released versions under one row: documents() reads them all, any other attribute is the newest's reader

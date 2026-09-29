@@ -68,6 +68,11 @@ def flat_pre(fragment: str) -> str:
     return _PRE.sub(lambda m: m.group(1) + "<code>" + _TAG.sub("", m.group(2)) + "</code>" + m.group(3), fragment)
 
 
+# the first of a site's `generated` patterns a page's text carries: the site builds that page, the file only names it
+def generated_by(text: str, patterns: list[str]) -> str | None:
+    return next((g for g in patterns if re.search(g, text, re.M)), None)
+
+
 # a page as its own text: the site's element, its furniture dropped, its highlighting flat; None when absent
 def prepared(page: str, main: str, drop: list[str]) -> str | None:
     found = element(page, main)

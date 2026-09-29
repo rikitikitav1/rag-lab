@@ -80,7 +80,7 @@ def one_title(markdown: str) -> tuple[str, int]:
 
 
 # a piece's tables as line ranges, fenced code left out
-def _tables(lines: list[str]) -> list[tuple[int, int]]:
+def table_spans(lines: list[str]) -> list[tuple[int, int]]:
     found, fenced, start = [], False, None
     for i, line in enumerate([*lines, ""]):
         if _FENCE_LINE.match(line):
@@ -97,7 +97,7 @@ def _tables(lines: list[str]) -> list[tuple[int, int]]:
 # tables the structure says go on over a page break, joined when only blank lines lie between them in the markdown
 def join_tables(markdown: str, goes_on: list[bool]) -> tuple[str, int]:
     lines = markdown.split("\n")
-    tables = _tables(lines)
+    tables = table_spans(lines)
     if len(tables) != len(goes_on):
         return markdown, 0
     joined = 0
@@ -153,12 +153,12 @@ def _in_margin(item: dict, paragraph: dict) -> bool:
 
 # text items a page break cut, as pairs in reading order with only feet, notes and margin notes between
 def _cut_paragraphs(structure: dict) -> list[tuple[str, str]]:
-    from use_cases.code_lines import _page, _reading_order
+    from use_cases.code_lines import page_of, reading_order
 
-    order = [item for _, item in _reading_order(structure)]
+    order = [item for _, item in reading_order(structure)]
     pairs = []
     for i, item in enumerate(order):
-        if item.get("label") != "text" or _page(item) is None:
+        if item.get("label") != "text" or page_of(item) is None:
             continue
         j = i + 1
         while j < len(order) and (order[j].get("label") in _PASSED or _in_margin(order[j], item)):
@@ -166,7 +166,7 @@ def _cut_paragraphs(structure: dict) -> list[tuple[str, str]]:
         after = order[j] if j < len(order) else {}
         if (
             after.get("label") == "text"
-            and _page(after) == _page(item) + 1
+            and page_of(after) == page_of(item) + 1
             and _one_column(item, after)
             and len(item["text"].split()) > _MARGIN_WORDS
             and _goes_on(item["text"], after["text"])
@@ -209,14 +209,14 @@ def _words(text: str) -> str:
 
 # the outline depth of each Docling heading that matches an entry by title and page
 def _depths(structure: dict, outline: list) -> list[tuple[str, int]]:
-    from use_cases.code_lines import _page, _reading_order
+    from use_cases.code_lines import page_of, reading_order
 
     entries = [(depth, _words(title), page) for depth, title, page in outline if page and _words(title)]
     found = []
-    for _, item in _reading_order(structure):
+    for _, item in reading_order(structure):
         if item.get("label") != "section_header" or not (title := _words(item.get("text", ""))):
             continue
-        page = _page(item)
+        page = page_of(item)
         near = sorted((abs(p - page), d, t) for d, t, p in entries if page and abs(p - page) <= _OUTLINE_PAGES)
         depth = next((d for _, d, t in near if t == title or t.endswith(title) or title.endswith(t)), None)
         if depth is not None:
@@ -224,11 +224,12 @@ def _depths(structure: dict, outline: list) -> list[tuple[str, int]]:
     return found
 
 
-# heading levels from the outline, the shallowest on `##` where the chunker starts cutting; past level six a bold line
+# heading levels from the outline, its shallowest on `##` where the chunker starts cutting; past level six a bold line
 def relevel(markdown: str, structure: dict | None, outline: list, by_number: bool = False) -> tuple[str, int]:
     matched = _depths(structure or {}, outline)
-    base = min((d for _, d in matched), default=0) - 1
-    lines, inside, changed, at = markdown.split("\n"), False, 0, 0
+    # the whole outline's top, not the piece's: a piece inside a chapter levels its sections as the chapter's piece does
+    base = min((d for d, title, page in outline if page and _words(title)), default=0) - 1
+    lines, inside, changed, at, shift = markdown.split("\n"), False, 0, 0, 0
     for n, line in enumerate(lines):
         if line.lstrip().startswith("```"):
             inside = not inside
@@ -242,11 +243,13 @@ def relevel(markdown: str, structure: dict | None, outline: list, by_number: boo
             level = min(number.group(1).count(".") + 1, 6)
         elif hit is not None:
             level = min(max(matched[hit][1] - base + 1, 1), 6)
+            shift = max(level - len(m.group(1)), 0)
         elif len(m.group(1)) > 6:
             lines[n], changed = f"**{m.group(2)}**", changed + 1
             continue
         else:
-            continue
+            # a heading the outline lacks goes down with the outline's heading above it, never up to a chapter's level
+            level = min(len(m.group(1)) + shift, 6)
         if level != len(m.group(1)):
             lines[n], changed = f"{'#' * level} {m.group(2)}", changed + 1
     return "\n".join(lines), changed
@@ -357,6 +360,72 @@ def unescape_underscores(markdown: str) -> tuple[str, int]:
             count += parts[k].count("\\_")
             parts[k] = parts[k].replace("\\_", "_")
         lines[n] = "".join(parts)
+    return "\n".join(lines), count
+
+
+_EDGE_NUMBER = re.compile(r"^\W*\d+\W*|\W*\d+\W*$")
+# a line standing first or last on this many pages of the layer is the book's running head, not a section
+RUNNING_MIN_PAGES = 3
+
+
+def bare_line(line: str) -> str:
+    return " ".join(_EDGE_NUMBER.sub("", line).lower().split())
+
+
+def running_heads(layers: list[str]) -> set[str]:
+    edges: dict[str, int] = {}
+    for layer in layers:
+        lines = [line for line in layer.splitlines() if line.strip()]
+        for line in {bare_line(line) for line in lines[:1] + lines[-1:]} - {""}:
+            edges[line] = edges.get(line, 0) + 1
+    # one word is a book's generic heading (Solution, Summary, a chapter label without its number), not its running head
+    return {line for line, pages in edges.items() if pages >= RUNNING_MIN_PAGES and len(line.split()) > 1}
+
+
+# the lines inside code fences blanked to spaces by the fence rule every repair reads, offsets kept for a checker
+def unfenced(markdown: str) -> str:
+    lines, inside = markdown.split("\n"), False
+    for n, line in enumerate(lines):
+        fence = bool(_FENCE_LINE.match(line))
+        if inside or fence:
+            lines[n] = " " * len(line)
+        if fence:
+            inside = not inside
+    return "\n".join(lines)
+
+
+# a running head Docling made a heading is dropped from its second time on; the first is the chapter's own title
+def drop_running_headings(markdown: str, layer: str) -> tuple[str, int]:
+    running = running_heads(layer.split("\f"))
+    lines, inside, seen, keep, count = markdown.split("\n"), False, set(), [], 0
+    for line in lines:
+        if _FENCE_LINE.match(line):
+            inside = not inside
+        found = None if inside else _MD_HEADING.match(line)
+        bare = bare_line(found.group(2)) if found else ""
+        if bare in running and bare in seen:
+            count += 1
+            continue
+        seen.add(bare)
+        keep.append(line)
+    return "\n".join(keep), count
+
+
+# a figure, listing or table caption by its label and number; the repair and the layer checker read the same one
+CAPTION = r"(?:Figure|Fig\.|Listing|Table|Рис\.|Рисунок|Листинг|Таблица)\s*\d"
+_CAPTION_HEADING = re.compile(rf"^#{{1,6}}[ \t]+({CAPTION}.*)$", re.IGNORECASE)
+
+
+# a figure, listing or table caption made a heading cuts a section in two for the chunker: it goes back to a line
+def demote_caption_headings(markdown: str) -> tuple[str, int]:
+    lines, inside, count = markdown.split("\n"), False, 0
+    for n, line in enumerate(lines):
+        if _FENCE_LINE.match(line):
+            inside = not inside
+            continue
+        found = None if inside else _CAPTION_HEADING.match(line)
+        if found:
+            lines[n], count = found.group(1), count + 1
     return "\n".join(lines), count
 
 

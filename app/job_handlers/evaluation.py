@@ -69,11 +69,7 @@ def eval_run(options: dict) -> None:
             resume=resume,
             generation_sampler=options.get("generation_sampler"),
             judge=options.get("judge", True),
-            scope=db.Scope(
-                label=options.get("category"),
-                sources=tuple(options.get("sources") or ()),
-                version=options.get("version"),
-            ),
+            scope=db.Scope.of(options.get("category"), options.get("sources"), options.get("version")),
         )
     # the worker's retry would answer every question again beside the rows already written
     except StandFault as e:

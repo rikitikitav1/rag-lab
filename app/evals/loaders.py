@@ -1,3 +1,6 @@
+from corpus_keys import Gold
+
+
 def load_logs(run_name=None, ids=None):
     from models.eval import QuestionLog
     from orm.sync_db import Session
@@ -24,7 +27,7 @@ def gold_questions(set_name: str, limit: int | None = None, ids=None) -> list[di
         query = select(Question).where(Question.set_name == set_name).order_by(Question.id)
         if ids:
             query = query.where(Question.id.in_(list(ids)))
-        rows = [q for q in session.scalars(query).all() if q.marked_sources]
+        rows = [q for q in session.scalars(query).all() if Gold.of_question(q)]
         rows = rows[:limit] if limit else rows
         sources = {q.source_question_id for q in rows if q.source_question_id}
         headings = dict(
@@ -38,6 +41,7 @@ def gold_questions(set_name: str, limit: int | None = None, ids=None) -> list[di
                 "text": q.original_text,
                 "language": q.language,
                 "marked_sources": list(q.marked_sources or []),
+                "gold": q.gold,
                 # the source question's own text, and its own when it is not a paraphrase
                 "gold_heading": headings.get(q.source_question_id) or q.original_text,
             }

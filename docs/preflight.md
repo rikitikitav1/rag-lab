@@ -6,7 +6,7 @@ version the worker loaded. Those conditions decide whether the run's numbers des
 claim to describe.
 
 ```bash
-python scripts/preflight_grid.py                       # twenty-two checks, exit 1 on any failure
+python scripts/preflight_grid.py                       # twenty-four checks, exit 1 on any failure
 python scripts/preflight_grid.py --verify RUN [RUN..]  # a finished run instead of the stand
 ```
 
@@ -31,7 +31,7 @@ Most of these checks exist because the corresponding trap had already cost a gri
 true, the incident is named below, because a check whose reason is forgotten is a check somebody
 deletes.
 
-## The twenty-two checks
+## The twenty-four checks
 
 ### Is the code that runs the code we think runs
 
@@ -79,11 +79,12 @@ against the one the database holds active. The file decides only what a fresh da
 an activation through `POST /v1/prompt/{id}/activate` outlives it the same way a seated model does.
 Activating the named version back or editing the file settles it.
 
-**`sources_match_their_files`** compares, for every source row, the digest of its file in `sources/` with the
-digest recorded when each variant was cut. The file is the declaration and wins over the row, and a skip list or a
-category tree edited after the cut leaves chunks that no longer follow it; re-indexing the source settles it. The
-digest is taken over the rules, so a comment or a skip's reason moves nothing. A row whose file is gone fails too;
-rows cut before digests were kept are counted, not failed.
+**`sources_match_their_files`** compares, for every source row, the digest of the declaration the row holds with
+the digest recorded when each variant was cut. The seed writes a source file's declaration onto its row, so a skip list
+or a category tree edited after the cut leaves chunks that no longer follow it; re-indexing the source settles it. The
+digest is taken over the rules, so a comment or a skip's reason moves nothing. Accepting a new run of an indexed source
+fails it the same way: the variants were cut from the run it replaced, and they read as moved until the source is
+indexed again. A row indexed with no declaration fails too; rows cut before digests were kept are counted, not failed.
 
 **`role_engines_answer`** asks each role's engine whether it answers, the same reading `/readiness`
 reports as `roles_down`, and whether an ollama model sits whole on the GPU. A role whose server is
@@ -108,8 +109,8 @@ the row count per source. The reason is exact: when the parser changed, fourteen
 sources that changed kept their row counts unchanged. A count-based check would have passed while
 the corpus underneath the numbers had moved.
 
-It asks every indexed variant rather than the served one. `notes` is expected to drift, because it
-is a live local directory the owner writes in, and that one family is allowed to differ.
+It asks every indexed variant rather than the served one. A declaration that says `drifts: true`
+is a live directory and is allowed to differ.
 
 **`corpus_variant_is_usable`** refuses when the served variant holds no chunks, and prints what the
 other variants hold. A variant named in the config but never indexed searches an empty set and
@@ -124,12 +125,24 @@ to a corpus variant. A variant is a line in the config and its index is built at
 index in the dump means the dump has become a function of whichever variants happened to exist on
 the machine that produced it.
 
-**`source_folders_are_there`** refuses when a folder source file names a folder this host lacks, or,
-for a row that came through the raw door, a folder outside the row's raw markdown. The first cuts to
-nothing on this machine; the second cuts the PDFs of the inbox instead of their conversion.
+**`source_folders_are_there`** refuses when a declaration names a folder this host lacks: onboarding would
+find nothing to read. Where the index reads a source, its own folder or the raw folder a converter wrote,
+onboarding writes on the row, so the declaration's folder is always the source's own.
+
+**`converted_sources_are_current`** refuses when an accepted source that a converter read was read under
+a settings file that has since been edited, another settings file than the stand or the onboarding's own `settings`
+would choose for it now,
+or another route (the reading rules with the source's own knobs). Its chunks then describe a reading the
+stand would no longer make; onboarding it again brings it level.
+
+**`seeded_rows_have_files`** refuses when a row the seed wrote has no source file any more. The seed never
+retires a row: an accepted one stays indexed and a declared one is queued for onboarding at every seed,
+while its knobs door points at a file that is gone.
+`DELETE /v1/source/{id}` removes it, or the file goes back.
 
 **`newest_versions_are_searchable`** refuses when a versioned category in the served variant does not
-hold the newest version the map lists. A question with no version reads the newest, so a variant that
+hold the newest version the map lists, counted over the rows a search reads (active sources only), so a newest
+version held only by a source switched off does not pass. A question with no version reads the newest, so a variant that
 holds only older ones would answer it from the rolling sources alone, thinner and without a word.
 
 ### Is the depth the depth we recorded

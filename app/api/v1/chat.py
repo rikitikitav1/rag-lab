@@ -1,6 +1,7 @@
 from typing import Literal
 
 import config
+import search_scope
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from use_cases import card_wait, chat
@@ -16,17 +17,18 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class QuestionFilter(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # the MCP door validated this and the REST doors did not; a label, never a pattern
-    category: str | None = Field(default=None, pattern=db.CATEGORY_RE.pattern)
-    sources: list[str] = Field(default=[], max_length=100)
-    version: str | None = Field(default=None, pattern=r"^[\w.-]{1,32}$")
+    category: str | None = Field(default=None, pattern=search_scope.CATEGORY_RE.pattern)
+    sources: list[str] = Field(default=[], max_length=search_scope.MAX_SOURCES)
+    version: str | None = Field(default=None, pattern=search_scope.VERSION_RE.pattern)
 
+    # the scope's own rules; whether its sources are in search is the search's step, said as a 422 by `_scoped`
     @model_validator(mode="after")
     def _a_scope_the_search_can_read(self):
-        db.refuse_bad_scope(self.scope())
+        search_scope.refuse_bad_scope(self.scope())
         return self
 
-    def scope(self) -> db.Scope:
-        return db.Scope(label=self.category, sources=tuple(self.sources), version=self.version)
+    def scope(self) -> search_scope.Scope:
+        return search_scope.Scope.of(self.category, self.sources, self.version)
 
 
 # a source named in the filter that the base does not hold is the asker's mistake, said before the answer is paid

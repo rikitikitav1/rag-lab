@@ -27,15 +27,6 @@ NO_OUTLINE = {2: (100, 110), 3: (120, 130)}
 WHOLE_UNDER = 40
 
 
-def _outline(pdf):
-    entries = []
-    for item in pdf.get_toc(max_depth=15):
-        dest = item.get_dest()
-        if dest is not None and dest.get_index() is not None:
-            entries.append((item.level, item.get_title().strip(), dest.get_index() + 1))
-    return entries
-
-
 # the chapters in reading order: top entries past the matter, a part's children standing for the part
 def _chapters(entries):
     top = min((level for level, _, _ in entries), default=0)
@@ -55,13 +46,10 @@ def _numbered(nth: int):
 
 
 def _nth_chapter(path: Path, pages: int, nth: int) -> dict:
-    import pypdfium2 as pdfium
+    from use_cases import route
 
-    pdf = pdfium.PdfDocument(str(path))
-    try:
-        entries = _outline(pdf)
-    finally:
-        pdf.close()
+    # the route's own reading of the outline, the entries that point at a page
+    entries = [entry for entry in route.outline(path) if entry[2]]
     if not entries and pages <= WHOLE_UNDER:
         return {"pages": [1, pages], "chapter": None, "by": "no outline, short: whole"}
     if not entries:

@@ -6,16 +6,15 @@ from typing import Literal
 
 import limits
 import samplers
+from corpus_keys import VARIANT_RE
 from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from sources.declaration import Language
+from search_scope import CATEGORY_RE, MAX_SOURCES, VERSION_RE, Scope, refuse_bad_scope
+from sources.declaration import SOURCE_NAME, IntakeOverride, Language
 from tool_names import SETTINGS_NAME, settings_refusal
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
-from use_cases.index import VARIANT_RE
-
-from db import CATEGORY_RE
 
 # the only folder a graded pass reads: a path of its own would let a job open any file
 FROZEN_POOL_RE = re.compile(r"(/app/)?datasets/candidates/[\w.-]+\.json")
@@ -69,28 +68,24 @@ class EvalRunFields(Spec):
     prereg: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
     # the search's scope, as the chat doors take it: a book's questions asked of that book alone
     category: str | None = Field(default=None, pattern=CATEGORY_RE.pattern)
-    sources: list[str] | None = Field(default=None, max_length=100)
-    version: str | None = Field(default=None, pattern=r"^[\w.-]{1,32}$")
+    sources: list[str] | None = Field(default=None, max_length=MAX_SOURCES)
+    version: str | None = Field(default=None, pattern=VERSION_RE.pattern)
 
     @field_validator("generation_sampler")
     @classmethod
     def _sampler_keys(cls, value):
         return samplers.check(value) if value else value
 
-    def scope(self):
-        import db
-
-        return db.Scope(label=self.category, sources=tuple(self.sources or ()), version=self.version)
+    def scope(self) -> Scope:
+        return Scope.of(self.category, self.sources, self.version)
 
     # the agent searches with its own queries and no filter; a scope it would drop is refused, as at the MCP door
     @model_validator(mode="after")
     def _a_scope_the_pipeline_can_read(self):
-        import db
-
         scope = self.scope()
         if scope.narrowed and self.pipeline == Pipeline.agent:
             raise ValueError("a category, source or version scope is only supported with pipeline=single_shot")
-        db.refuse_bad_scope(scope)
+        refuse_bad_scope(scope)
         return self
 
     # the gate lives here and not on a route, so the REST door and the queue get it from one place
@@ -298,7 +293,7 @@ class ConvertSource(Spec):
 
 class OnboardSource(Spec):
     # a declared source by name; the route picks each file's engine, these name the settings each engine runs with
-    source: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")
+    source: str = Field(pattern=SOURCE_NAME)
     settings: dict[str, str] | None = None
 
     @field_validator("settings")
@@ -308,6 +303,27 @@ class OnboardSource(Spec):
             if refusal := settings_refusal(tool, name):
                 raise ValueError(refusal)
         return settings
+
+
+class ProbeIntake(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    pages: tuple[int, int]
+    knobs: dict
+    # a source of several PDFs names the one to read
+    file: str | None = None
+
+    @field_validator("pages")
+    @classmethod
+    def _pages(cls, pages):
+        if not 1 <= pages[0] <= pages[1]:
+            raise ValueError("pages are [first, last], counted from 1")
+        return pages
+
+    @field_validator("knobs")
+    @classmethod
+    def _knobs(cls, knobs):
+        IntakeOverride.model_validate(knobs)
+        return knobs
 
 
 class BuildVectorIndex(Spec):
@@ -324,6 +340,7 @@ SPECS: dict[str, type[Spec]] = {
     "index_data": IndexData,
     "convert_source": ConvertSource,
     "onboard_source": OnboardSource,
+    "probe_intake": ProbeIntake,
     "build_vector_index": BuildVectorIndex,
     "embed_questions": EmbedQuestions,
     "eval_run": EvalRun,
@@ -357,6 +374,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "convert_source": (),
     # the converters are engines, not roles: the handler takes the card for each
     "onboard_source": (),
+    "probe_intake": (),
     "embed_questions": (Role.embedding,),
     "build_vector_index": (),
     "analyze_source": (),
@@ -408,8 +426,16 @@ def check(job_type: str, options: dict | None, *, from_the_worker: bool = False)
         return
     asked = {k: v for k, v in given.items() if k not in WORKER_KEYS}
     try:
-        spec.model_validate(asked)
+        checked = spec.model_validate(asked)
     except ValidationError as bad:
         first = bad.errors()[0]
         where = ".".join(str(part) for part in first["loc"]) or "options"
         raise Refused(f"{where}: {first['msg']}") from bad
+    # sources out of search are the queue's door's to refuse; one switched off after, the job's search says so
+    if not from_the_worker and hasattr(checked, "scope") and checked.scope().sources:
+        import db
+
+        try:
+            db.refuse_sources_out_of_search(checked.scope().sources)
+        except db.ScopeRefused as bad:
+            raise Refused(f"sources: {bad}") from bad

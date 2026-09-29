@@ -8,8 +8,9 @@ import re
 from datetime import date
 from pathlib import Path
 
+from paths import ROOT
+
 # a record names its file relative to the stand, so every reader resolves it from here
-ROOT = Path(__file__).resolve().parents[2]
 FOLDER = ROOT / "datasets" / "measurements"
 # inputs of an instrument, not artifacts of a run: they are read by the code and live in git
 PANELS = FOLDER.parent / "panels"

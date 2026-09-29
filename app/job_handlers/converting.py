@@ -1,4 +1,8 @@
+import functools
+import hashlib
 import json
+import os
+import uuid
 from pathlib import Path
 
 import config
@@ -7,6 +11,7 @@ import logging_setup
 from engines import converter
 from engines.converter_tools import PIECE, sha256
 from models.registry import EngineKind
+from paths import READINGS, ROOT
 from tool_names import Tool
 
 from .base import Final
@@ -14,7 +19,6 @@ from .card import restart_holder
 
 log = logging_setup.get_logger(__name__)
 
-ROOT = Path(__file__).resolve().parents[2]
 SETTINGS = ROOT / "converters"
 # a piece of fifty pages takes minutes; this long without a result is a hang, unless the settings bound it closer
 CHUNK_CEILING = 1800
@@ -42,10 +46,9 @@ def fields(settings: dict, language: str) -> list[tuple[str, str]]:
 
 
 # the markdown with its code blocks' lines from the PDF's layer when the settings ask for it, and what was rebuilt
-def code_lines_of(settings: dict, path: Path, result: dict, rule=None) -> tuple[str, dict | None]:
+def code_lines_of(settings: dict, path: Path, result: dict, rule) -> tuple[str, dict | None]:
     from use_cases import code_lines, route
 
-    rule = route.rule_of(rule)
     spread = rule.mono_spread
 
     markdown = result.get("markdown") or ""
@@ -79,6 +82,9 @@ def code_lines_of(settings: dict, path: Path, result: dict, rule=None) -> tuple[
     counts["pictures_addressed"] = 0
     if rule.picture_addresses:
         markdown, counts["pictures_addressed"] = code_lines.picture_addresses(markdown, result["structure"])
+    counts["formulas_from_layer"] = 0
+    if rule.formula_text:
+        markdown, counts["formulas_from_layer"] = code_lines.formula_text(markdown, result["structure"])
     return markdown, counts
 
 
@@ -108,12 +114,53 @@ def converter_for(tool: str):
     return spec
 
 
-# a piece through its tool's adapter; a piece that hung restarts the child, so the next one gets a fresh tool
-def convert(spec, tool: str, path: Path, fields: list[tuple[str, str]], chunk, ceiling: float) -> dict:
+@functools.lru_cache(maxsize=64)
+def _file_sha(path: str, mtime: int, size: int) -> str:
+    return sha256(Path(path))
+
+
+def _stat(path: str) -> tuple[int, int]:
+    stat = Path(path).stat()
+    return stat.st_mtime_ns, stat.st_size
+
+
+# the key of a piece's reading: the same file, pages, settings and converter build read the same; unstamped is no key
+def reading_key(spec, tool: str, path: Path, fields: list[tuple[str, str]], chunk) -> str | None:
+    build = converter.reading(spec)[1].get("build")
+    if not build:
+        return None
+    body = {
+        "tool": tool,
+        "file": _file_sha(str(path), *_stat(str(path))),
+        "chunk": list(chunk) if chunk else None,
+        "fields": sorted([list(f) for f in fields]),
+        "build": build,
+    }
+    return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+
+
+# a piece through its tool's adapter, or its kept reading; a piece that hung restarts the child for the next one
+def convert(spec, tool: str, path: Path, fields: list[tuple[str, str]], chunk, ceiling: float, hold=None) -> dict:
     if tool not in PIECE:
         raise Final(f"no adapter for the converter {tool}")
+    key = reading_key(spec, tool, path, fields, chunk)
+    kept = READINGS / key[:2] / f"{key}.json" if key else None
+    if kept is not None and kept.is_file():
+        reading = json.loads(kept.read_text())
+        # a kept reading spent no tool time now; its own time stays beside it for whoever prices the tool
+        return {**reading, "seconds": 0.0, "read_seconds": reading.get("seconds"), "cached": True}
+    # the card is taken only for a piece the tool must read: a rerun of the rules leaves the card to whoever holds it
+    if hold is not None:
+        hold()
     result = PIECE[Tool(tool)](spec, path, fields, chunk, ceiling)
     if result["status"] == "timeout":
         restart_holder(spec)
         result["errors"] = [*result["errors"], "child restarted"]
+    # only a whole reading is kept: a partial one is for the reread to replace, a timeout or failure is read again
+    if kept is not None and result["status"] == "success":
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        # a name of its own per writer: two jobs reading one piece must not write into one file
+        part = kept.with_name(f"{kept.stem}.{os.getpid()}.{uuid.uuid4().hex[:8]}.part")
+        part.write_text(json.dumps(result, ensure_ascii=False))
+        part.replace(kept)
     return result

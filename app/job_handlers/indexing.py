@@ -14,20 +14,17 @@ log = logging_setup.get_logger(__name__)
 
 
 @register("index_data")
-def index_data(options: dict) -> None:
+def index_data(options: dict) -> dict:
     import sources.factory
     import use_cases.index
 
     require_embedder_ready()
     clear_the_engine_for("embedding")
-    built = list(sources.factory.all_sources())
-    # written by the bootstrap and read by nobody: a job for one source re-indexed all 177
+    # a job for one source builds that one alone: the rest are not cloned, read or cut
     wanted = options.get("source") or "all"
-    if wanted != "all":
-        built = [s for s in built if s.name == wanted]
-        if not built:
-            known = sorted(s.name for s in sources.factory.all_sources())
-            raise ValueError(f"no such source: {wanted!r}; known: {known}")
+    built = list(sources.factory.sources(None if wanted == "all" else [wanted]))
+    if wanted != "all" and not built:
+        raise Final(f"no accepted source named {wanted!r}; only accepted rows are indexed")
     # resolved once: the call below took it bare and requeued itself with an unmatchable null
     variant = options.get("variant") or config.settings.corpus.variant
     result = use_cases.index.collect_data(built, variant=variant, build_index=False)
@@ -48,6 +45,8 @@ def index_data(options: dict) -> None:
         # the same dedup bootstrap does: three retries would queue three builds on one lane
         if not job_queue.pending_of_type("build_vector_index", variant=variant):
             job_queue.enqueue("build_vector_index", {"variant": variant})
+    # a full reindex goes on past a refused source; the refusals stay on the job's row, not only in the log
+    return {"sources": len(built), "refused": result.refused}
 
 
 @register("build_vector_index")

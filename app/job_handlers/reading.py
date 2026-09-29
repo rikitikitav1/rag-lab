@@ -1,49 +1,24 @@
 import hashlib
 import json
+import re
 from pathlib import Path
 
+from config import SHAPE_NO_PIECE, RouteCfg
 from engines import converter
 from tool_names import Tool
-from use_cases import piece_join, raw_quality, route
+from use_cases import code_lines, piece_join, raw_quality, route
 
 from .card import take
 from .converting import ceiling, code_lines_of, convert, converter_for, fields, load_settings, pieces
 
-# the route's keys that shape a piece or its reading; the rest (a file skipped, a signal's floor) moves no piece
-_SHAPES = (
-    "min_layer_chars",
-    "min_raster_run",
-    "reread_below_layer_f1",
-    "reread_settings",
-    "reread_cells_slack",
-    "seam_window",
-    "seam_margin",
-    "mono_spread",
-    "mono_faces",
-    "headings_by_number",
-    "listing_callouts",
-    "mono_by_step",
-    "code_row_rules",
-    "outline_levels",
-    "html_one_title",
-    "epub_chapters",
-    "numbered_levels",
-    "decode_entities",
-    "drop_lone_pipes",
-    "join_layer_hyphens",
-    "restore_dashes",
-    "join_broken_words",
-    "unescape_bullets",
-    "unescape_underscores",
-    "picture_addresses",
-    "join_split_words",
-)
+# the route's keys that shape a piece or its reading; a file skipped or a signal's floor moves no piece
+_SHAPES = tuple(name for name in RouteCfg.model_fields if name not in SHAPE_NO_PIECE)
 
 # the one path a file is read by, for the corpus and for the gold's intake arm alike: plan, read each piece, assemble
 
 
 # a file's pieces over a page range or all of it, each with its settings file; raises route.Unsupported or Unreadable
-def plan(file: Path, names: dict, loaded: dict, pages=None, size: int | None = None, rule=None) -> list:
+def plan(file: Path, names: dict, loaded: dict, rule, pages=None, size: int | None = None) -> list:
     units = []
     for run in route.route(file, rule):
         name = (run.settings or names[run.engine]) if run.engine else None
@@ -67,14 +42,13 @@ def plan(file: Path, names: dict, loaded: dict, pages=None, size: int | None = N
 
 
 # one piece through its engine: its markdown with code rebuilt from the layer, and Docling's structure when it gave one
-def convert_piece(file: Path, engine: str | None, piece, settings: tuple | None, language: str, rule=None) -> dict:
+def convert_piece(file: Path, engine: str | None, piece, settings: tuple | None, language: str, rule) -> dict:
     if engine is None:
         return {"markdown": file.read_text(errors="ignore"), "seconds": 0.0, "status": None, "structure": None}
     tool_settings, _ = settings
     spec = converter_for(engine)
-    take(spec)
     tool_fields = fields(tool_settings, language)
-    result = convert(spec, engine, file, tool_fields, piece, ceiling(tool_settings))
+    result = convert(spec, engine, file, tool_fields, piece, ceiling(tool_settings), hold=lambda: take(spec))
     reading = converter.reading(spec)[1]
     markdown, code = code_lines_of(tool_settings, file, result, rule)
     return {
@@ -83,6 +57,7 @@ def convert_piece(file: Path, engine: str | None, piece, settings: tuple | None,
         "structure": result.get("structure"),
         "seconds": result["seconds"],
         "status": {"status": result["status"], "errors": result["errors"][:3]},
+        "cached": result.get("cached", False),
         "build": (reading.get("build") or {}).get("built_at"),
         "residency_started_at": reading.get("started_at"),
     }
@@ -100,8 +75,12 @@ def _dashes_back(done: dict, layer, rule, piece=None) -> dict:
         done["markdown"], counts["bullets_unescaped"] = piece_join.unescape_bullets(done["markdown"])
     if rule.unescape_underscores:
         done["markdown"], counts["underscores_unescaped"] = piece_join.unescape_underscores(done["markdown"])
+    if rule.demote_caption_headings:
+        done["markdown"], counts["captions_demoted"] = piece_join.demote_caption_headings(done["markdown"])
     if not layer:
         return _counted(done, counts)
+    if rule.drop_running_headings:
+        done["markdown"], counts["running_heads_dropped"] = piece_join.drop_running_headings(done["markdown"], layer)
     # only the word rules read the joined layer; the reread's floor was set on the layer as PDFium gives it
     if rule.join_layer_hyphens:
         layer = route.joined_hyphens(layer)
@@ -121,8 +100,7 @@ def _counted(done: dict, counts: dict) -> dict:
 
 
 # a piece read by its planned settings, and again by the reread settings when it agrees badly with its layer
-def read_piece(file: Path, engine: str | None, piece, name: str | None, loaded: dict, language: str, layer, rule=None):
-    rule = route.rule_of(rule)
+def read_piece(file: Path, engine: str | None, piece, name: str | None, loaded: dict, language: str, layer, rule):
     done = convert_piece(file, engine, piece, loaded.get(name), language, rule)
     # a file read as it is is its author's text: the word rules were measured on converters' output only
     if engine is not None:
@@ -143,7 +121,76 @@ def read_piece(file: Path, engine: str | None, piece, name: str | None, loaded: 
         rule.reread_cells_slack,
     )
     reread = {"settings": rule.reread_settings, "layer_f1": [first, second], "table_cells": cells, "taken": taken}
-    return (again, rule.reread_settings, reread) if taken else (done, name, reread)
+    if taken:
+        # the prose reading taken whole may still have lost a formula's operators the first reading kept
+        if rule.splice_tables:
+            markdown, reread["formulas_spliced"] = splice_formulas(again, done)
+            again = {**again, "markdown": markdown}
+        return again, rule.reread_settings, reread
+    # lost on cells alone: the second reading's prose, and the first's tables and formulas where they read more
+    if rule.splice_tables and first is not None and second is not None and second > first and cells[1] < cells[0]:
+        markdown, spliced = splice_tables(again, done)
+        if spliced:
+            markdown, reread["formulas_spliced"] = splice_formulas({**again, "markdown": markdown}, done)
+            reread["tables_spliced"] = spliced
+            return {**again, "markdown": markdown}, rule.reread_settings, reread
+    return done, name, reread
+
+
+def _tables_by_page(done: dict) -> list[tuple[int, tuple[int, int]]] | None:
+    items = [item for _, item in code_lines.reading_order(done.get("structure") or {}) if item.get("label") == "table"]
+    spans = piece_join.table_spans(done["markdown"].split("\n"))
+    if len(items) != len(spans):
+        return None
+    return [(code_lines.page_of(item), span) for item, span in zip(items, spans, strict=True)]
+
+
+# a table of the prose reading swapped for the table reading's one on its page, when that one keeps more cells
+def splice_tables(prose: dict, tables: dict) -> tuple[str, int]:
+    ours, theirs = _tables_by_page(prose), _tables_by_page(tables)
+    if not ours or not theirs:
+        return prose["markdown"], 0
+    lines, other = prose["markdown"].split("\n"), tables["markdown"].split("\n")
+    by_page: dict = {}
+    for page, span in theirs:
+        by_page.setdefault(page, []).append(span)
+    out, at, seen, spliced = [], 0, {}, 0
+    for page, (start, end) in ours:
+        nth = seen[page] = seen.get(page, -1) + 1
+        mine, found = lines[start : end + 1], by_page.get(page, [])
+        if nth < len(found):
+            theirs_rows = other[found[nth][0] : found[nth][1] + 1]
+            if raw_quality.table_cells("\n".join(theirs_rows)) > raw_quality.table_cells("\n".join(mine)):
+                mine, spliced = theirs_rows, spliced + 1
+        out += lines[at:start] + mine
+        at = end + 1
+    return "\n".join(out + lines[at:]), spliced
+
+
+# operators a math font draws; the second reading's backend reads that font's glyphs as control marks and loses them
+_OPERATORS = re.compile(r"[=+<>≤≥≠×÷∑∫√±∧∨¬→←↔]")
+
+
+# a formula the prose reading lost operators in, taken back from the table reading at the same page and place
+def splice_formulas(prose: dict, tables: dict) -> tuple[str, int]:
+    ours = code_lines.formulas_by_page(prose.get("structure") or {})
+    theirs = code_lines.formulas_by_page(tables.get("structure") or {})
+    markdown, spliced, at = prose["markdown"], 0, 0
+    for page, texts in ours.items():
+        other = theirs.get(page, [])
+        if len(other) != len(texts):
+            continue
+        for mine, better in zip(texts, other, strict=True):
+            # the formula's own line after the one before it: a short one like `x = 1` also stands in prose
+            found = re.compile(rf"^[ \t$]*{re.escape(mine)}[ \t$]*$", re.M).search(markdown, at) if mine else None
+            if found is None:
+                continue
+            at = found.end()
+            if len(_OPERATORS.findall(better)) > len(_OPERATORS.findall(mine)):
+                line = found.group(0).replace(mine, better, 1)
+                markdown, at = markdown[: found.start()] + line + markdown[found.end() :], found.start() + len(line)
+                spliced += 1
+    return markdown, spliced
 
 
 # a file's pieces in page order as one markdown, with what the joins healed
@@ -155,13 +202,24 @@ def assemble(parts: list[str], html: bool, one_title: bool = False) -> tuple[str
     return whole, healed
 
 
+# one file whole for the corpus, the gold's intake arm and the probe alike; a running head is read over the whole file
+def whole_file(parts: list[str], routes: list[str], rule, layers: list[str] | None) -> tuple[str, dict]:
+    html = bool(routes) and all(why == "html" for why in routes)
+    whole, healed = assemble(parts, html, rule.html_one_title)
+    healed["running_heads"] = 0
+    # a piece drops the heads it repeats itself; the first of each in a later piece is only seen from the whole
+    if rule.drop_running_headings and layers:
+        whole, healed["running_heads"] = piece_join.drop_running_headings(whole, "\f".join(layers))
+    return whole, healed
+
+
 # the PDF's own text over a piece's pages, or None for a file with no layer
 def layer_of(layers: list[str] | None, piece) -> str | None:
-    return "\n".join(layers[piece[0] - 1 : piece[1]]) if layers is not None and piece else None
+    # pages apart by a form feed, whitespace to the word rules, so a rule can still find a page's first line
+    return "\f".join(layers[piece[0] - 1 : piece[1]]) if layers is not None and piece else None
 
 
 # the route's fingerprint for a resume: what shapes a piece, plus the reread file's own content under its name
-def route_sha(rule=None) -> str:
-    rule = route.rule_of(rule)
+def route_sha(rule) -> str:
     shaping = {key: getattr(rule, key) for key in _SHAPES} | {"reread_sha256": load_settings(rule.reread_settings)[1]}
     return hashlib.sha256(json.dumps(shaping, sort_keys=True).encode()).hexdigest()[:12]

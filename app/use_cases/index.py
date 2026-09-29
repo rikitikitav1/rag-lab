@@ -1,10 +1,9 @@
-import hashlib
-import re
 from dataclasses import dataclass, field
 
 import config
 import llm
 import logging_setup
+from corpus_keys import body_hash, check_variant, vector_index_name
 from models.corpus import DataChunk, DataSource, Stage
 from orm.sync_db import Session
 from sources import files
@@ -17,17 +16,8 @@ from timing_wrappers import measure_elapsed
 
 log = logging_setup.get_logger(__name__)
 
-# the name reaches DDL as a literal; 22 chars of prefix + 36 + 4 of suffix fit in 63
-VARIANT_RE = re.compile(r"^[a-z0-9_]{1,36}$")
 # the default 64MB is smaller than the vectors themselves, and pgvector then builds the slow way
 MAINTENANCE_WORK_MEM = "512MB"
-
-
-# fullmatch: `$` admits a trailing newline, and the name reaches DDL twice
-def check_variant(name: str) -> str:
-    if not VARIANT_RE.fullmatch(name or ""):
-        raise ValueError(f"corpus variant '{name}' must match {VARIANT_RE.pattern}")
-    return name
 
 
 @dataclass
@@ -45,15 +35,10 @@ class IndexResult:
 
 def _provision_source(session, source, variant) -> DataSource:
     values = files.row_of(source.settings, source.name)
-    stmt = (
-        pg_insert(DataSource)
-        .values(**values)
-        .on_conflict_do_update(
-            index_elements=["name"],
-            set_={k: v for k, v in values.items() if k != "name"},
-        )
-        .returning(DataSource)
-    )
+    insert = pg_insert(DataSource).values(**values)
+    stmt = insert.on_conflict_do_update(
+        index_elements=["name"], set_=files.upserted(insert, DataSource.__table__, list(values))
+    ).returning(DataSource)
     data_source = session.scalar(select(DataSource).from_statement(stmt))
     session.commit()
     return data_source
@@ -82,12 +67,6 @@ def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_s
 
 
 # whitespace must not decide whether two repositories hold the same answer
-def body_hash(body: str) -> str:
-    normalised = re.sub(r"\s+", " ", body).strip().encode()
-    # a content fingerprint for deduplication, never a credential
-    return hashlib.md5(normalised, usedforsecurity=False).hexdigest()
-
-
 def _prefix_len(doc) -> int | None:
     # only when the body really is the tail: a guessed length hands the metrics nothing real
     if doc.body is None or not doc.content.endswith(doc.body):
@@ -158,13 +137,6 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True) -> In
 
 
 # the one owner of the name, so the three readers ask here
-VECTOR_INDEX_PREFIX = "data_chunks_embedding_"
-
-
-def vector_index_name(variant: str) -> str:
-    return f"{VECTOR_INDEX_PREFIX}{check_variant(variant)}_idx"
-
-
 def has_vector_index(variant: str) -> bool:
     with Session() as session:
         return bool(

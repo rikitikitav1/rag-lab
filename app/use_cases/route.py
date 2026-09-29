@@ -5,7 +5,6 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import config
 from tool_names import Tool
 from use_cases import code_lines
 
@@ -14,7 +13,7 @@ IMAGE = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 HTML = {".html", ".htm", ".xhtml"}
 OFFICE = {".docx", ".pptx", ".xlsx", ".odt", ".rtf"}
 _WORD = re.compile(r"\w+")
-_BROKEN_WORD = re.compile("\ufffe(?:\r?\n)?")
+_BROKEN_WORD = re.compile("\ufffe(?:\r?\n)?\f?")
 
 
 @dataclass(frozen=True)
@@ -53,7 +52,7 @@ class Unsupported(Exception):
     pass
 
 
-# PDFium marks a hyphen that breaks a word at a line end with U+FFFE: the word is joined, as the converter prints it
+# PDFium marks a word-breaking hyphen at a line or page end with U+FFFE: the word is joined, as the converter prints it
 def joined_hyphens(text: str) -> str:
     return _BROKEN_WORD.sub("", text)
 
@@ -101,17 +100,12 @@ def outline_titles(path: Path) -> list[str]:
     return [title for _, title, _ in outline(path)]
 
 
-# the route's rules for a source: its own when it has them, the stand's otherwise
-def rule_of(rule=None):
-    return rule or config.settings.intake.route
-
-
 # what a PDF's own text layer says about each page, read before any converter touches it
-def page_signals(path: Path, rule=None) -> list[dict]:
+def page_signals(path: Path, rule) -> list[dict]:
     texts = layer_texts(path)
     per_page = [words(t) for t in texts]
     seen = Counter(w for page in per_page for w in page)
-    floor = rule_of(rule).suspect_min_words
+    floor = rule.suspect_min_words
     return [
         {
             "page": n,
@@ -125,8 +119,7 @@ def page_signals(path: Path, rule=None) -> list[dict]:
 
 
 # consecutive pages of one kind as runs; a short raster run inside text stays with its neighbours
-def _pdf_runs(signals: list[dict], rule=None) -> list[Run]:
-    rule = rule_of(rule)
+def _pdf_runs(signals: list[dict], rule) -> list[Run]:
     layered = [s["layer_chars"] >= rule.min_layer_chars for s in signals]
     runs: list[list] = []
     for page, has_layer in enumerate(layered, start=1):
@@ -164,42 +157,17 @@ def mono_names(rule):
 
 
 # the page's rows top to bottom, each with whether most of its glyphs are monospace; running heads and feet left out
-def mono_rows(page, rule=None) -> list[bool]:
-    import ctypes
-
-    import pypdfium2.raw as pdfium_c
-
-    rule = rule_of(rule)
+def mono_rows(page, rule) -> list[bool]:
     margin, mono_name = rule.seam_margin, mono_names(rule)
     height = page.get_height()
-    name = ctypes.create_string_buffer(128)
-    flags = ctypes.c_int()
-    glyphs = []
-    with closing(page.get_textpage()) as text:
-        for i in range(text.count_chars()):
-            if text.get_text_range(i, 1).isspace():
-                continue
-            _, bottom, _, top = text.get_charbox(i, loose=True)
-            middle = (bottom + top) / 2
-            if not margin * height < middle < (1 - margin) * height:
-                continue
-            pdfium_c.FPDFText_GetFontInfo(text.raw, i, name, 128, ctypes.byref(flags))
-            left, _, right, _ = text.get_charbox(i, loose=True)
-            mono = bool(mono_name.search(name.value.decode(errors="ignore")))
-            glyphs.append((middle, top - bottom, mono, right - left))
-    rows: list[list] = []
-    for middle, size, mono, width in sorted(glyphs, key=lambda g: -g[0]):
-        if rows and abs(rows[-1][0] - middle) < size * 0.5:
-            rows[-1][1].append((mono, width))
-        else:
-            rows.append([middle, [(mono, width)]])
+    glyphs = [g for g in code_lines.page_glyphs(page) if margin * height < (g[1] + g[3]) / 2 < (1 - margin) * height]
 
-    # a face with no name or a name outside the list still sets code at one advance; a short row of digits would too
-    def monospace(marks):
-        by_name = sum(m for m, _ in marks) * 2 > len(marks)
-        return by_name or (len(marks) >= 8 and code_lines.uniform([w for _, w in marks], rule.mono_spread))
+    # a face with no name or a name outside the list still sets code at one advance
+    def monospace(row):
+        by_name = sum(bool(mono_name.search(g[4])) for g in row) * 2 > len(row)
+        return by_name or code_lines.one_advance([g[2] - g[0] for g in row], rule.mono_spread)
 
-    return [monospace(marks) for _, marks in rows]
+    return [monospace(row) for _, row in code_lines._rows(glyphs)]
 
 
 # code runs over the page break when the last row of one page and the first of the next are both monospace
@@ -208,10 +176,9 @@ def code_crosses(before: list[bool], after: list[bool]) -> bool:
 
 
 # pieces of a run whose ends are moved, within the window, off a page break that code runs over
-def seamless_pieces(path: Path, pages: tuple[int, int], size: int, rule=None) -> list[tuple[int, int]]:
+def seamless_pieces(path: Path, pages: tuple[int, int], size: int, rule) -> list[tuple[int, int]]:
     import pypdfium2 as pdfium
 
-    rule = rule_of(rule)
     document = pdfium.PdfDocument(str(path))
     rows: dict[int, list[bool]] = {}
 
@@ -238,7 +205,7 @@ def seamless_pieces(path: Path, pages: tuple[int, int], size: int, rule=None) ->
 
 
 # which engine reads each part of a file: the kind is read from the file itself, never declared
-def route(path: Path, rule=None) -> list[Run]:
+def route(path: Path, rule) -> list[Run]:
     suffix = path.suffix.lower()
     if suffix in MARKDOWN:
         return [Run(None, None, "markdown")]

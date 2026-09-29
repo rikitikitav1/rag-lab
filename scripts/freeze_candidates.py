@@ -49,6 +49,7 @@ def freeze(set_name: str, variant: str, pool: int, limit: int | None) -> dict:
                     "address": f"{hit.source}#{hit.chunk_index}",
                     "source": hit.source,
                     "section": hit.section,
+                    "versions": list(hit.versions),
                     "chunk_index": hit.chunk_index,
                     "rank": rank,
                     "vector_rank": hit.vector_rank,

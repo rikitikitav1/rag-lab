@@ -5,7 +5,7 @@ This guide walks through ten practical rag-lab scenarios. Each includes commands
 ## Prerequisites
 
 - Docker + an NVIDIA GPU (8 GB is enough), given to containers through CDI: the host check is in the README [Quickstart](../README.md#quickstart).
-- The first `docker compose up -d` downloads and indexes for a while; what and how long is in the README [Quickstart](../README.md#quickstart). Wait until `curl localhost:8000/readiness` returns ok; watch progress with `docker compose logs -f worker`.
+- The first `docker compose up -d` downloads the models and onboards the seeded sources for a while; what it pulls and when the corpus gets indexed is in the README [Quickstart](../README.md#quickstart). Wait until `curl localhost:8000/readiness` returns ok; watch progress with `docker compose logs -f worker`.
 - The server answers before indexing finishes, so early requests may refuse until the corpus is populated.
 
 ## Scenario 1: ask a question (RAG live)
@@ -218,10 +218,10 @@ curl -s -X POST localhost:8000/v1/source/2510/onboard -H 'Content-Type: applicat
 
 # when the job is done: the stage, the verdict with its reasons and the share of text behind it
 curl -s localhost:8000/v1/source/2510
-# -> {"stage": "raw", "raw_verdict": "dirty", "raw": {"reasons": {...}, "bad_share": {"pieces": 0.0, "sections": 0.08}, "folder": "datasets/raw_sources/ctex-ru_0b6a96c6", ...}}
+# -> {"stage": "raw", "raw_verdict": "dirty", "raw": {"reasons": {...}, "bad_share": {"pieces": 0.0, "sections": 0.08}, "folder": "datasets/raw_sources/ctex-ru@0b6a96c6", ...}}
 ```
 
-A `bad` verdict marks the source and does not stop it. The rows behind the verdict are read with the MCP tool `raw_rows`: `kind: pieces` for the conversion a page range at a time, `kind: sections` for the chunker's gates a chapter at a time. The raw folder holds each file's markdown whole, the pieces with Docling's own structure beside them, `record.json` (what a rerun resumes from) and `provenance.json`. Nothing is indexed: a raw source is accepted by hand after its flagged parts are dealt with.
+A `bad` verdict marks the source and does not stop it. The rows behind the verdict are read with the MCP tool `raw_rows`: `kind: pieces` for the conversion a page range at a time, `kind: sections` for the chunker's gates a chapter at a time. The raw folder holds each file's markdown whole, the pieces with Docling's own structure beside them, `record.json` (what a rerun resumes from) and `provenance.json`. Nothing is indexed: a raw source is accepted by hand after its flagged parts are dealt with, or by onboarding itself for an `ok` verdict when `intake.quality.auto_accept_ok` is on, and an `index_data` job then reads it.
 
 ## Command reference
 
@@ -256,6 +256,6 @@ docker compose exec ollama ollama list
 # Stop (WITHOUT -v! the -v flag drops volumes, including pulled Ollama models)
 docker compose down
 
-# Full reset (drop everything, including models): re-pulls and re-indexes itself
+# Full reset (drop everything, including models): re-pulls and onboards the seeded sources again; they are indexed once accepted
 docker compose down -v && docker compose up -d
 ```

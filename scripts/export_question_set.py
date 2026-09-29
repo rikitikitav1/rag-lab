@@ -9,11 +9,11 @@ OUT_DIR = ROOT / "datasets" / "questions"
 
 # reference_answer is markdown with newlines: it stays derivable from the original, not flattened
 COLUMNS = (
-    "set_name", "language", "kind", "marked_sources", "original_text", "source_question_text",
+    "set_name", "language", "kind", "marked_sources", "gold", "original_text", "source_question_text",
 )
 
 QUERY = """
-SELECT q.set_name, q.language, q.kind, q.marked_sources, q.original_text,
+SELECT q.set_name, q.language, q.kind, q.marked_sources, q.gold::text AS gold, q.original_text,
        o.original_text AS source_question_text
 FROM questions q
 LEFT JOIN questions o ON o.id = q.source_question_id
@@ -42,6 +42,7 @@ def export(set_name: str) -> Path:
                 row["language"] or "",
                 row["kind"] or "",
                 ",".join(row["marked_sources"] or []),
+                row["gold"] or "",
                 row["original_text"].replace("\t", " ").replace("\n", " "),
                 (row["source_question_text"] or "").replace("\t", " ").replace("\n", " "),
             ])

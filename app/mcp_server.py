@@ -6,7 +6,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models.registry import Pipeline
 from pydantic import BaseModel, Field
-from sources import files
+from search_scope import MAX_SOURCES
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import agent, card_wait, chat
 
@@ -41,7 +41,7 @@ def _safe_category(category: str | None) -> str | None:
 
 
 def _safe_scope(category: str | None, sources: list[str] | None, version: str | None) -> db.Scope:
-    scope = db.Scope(label=category, sources=tuple(sources or ()), version=version)
+    scope = db.Scope.of(category, sources, version)
     try:
         db.refuse_bad_scope(scope)
     except ValueError as e:
@@ -49,7 +49,10 @@ def _safe_scope(category: str | None, sources: list[str] | None, version: str | 
     return scope
 
 
-_SOURCES = Field(description="Optional source names; the search reads only them. The `sources` ops tool lists them.")
+_SOURCES = Field(
+    description="Optional source names; the search reads only them. The `sources` ops tool lists them.",
+    max_length=MAX_SOURCES,
+)
 _VERSION = Field(
     description="Optional released version of the category named in `category` (e.g. '17' with 'postgresql'): its "
     "docs plus the category's sources of no version, such as books; without it a versioned category reads its newest."
@@ -58,7 +61,7 @@ _VERSION = Field(
 
 _TOOL_DESC = {
     "search_corpus": (
-        f"Search the technical knowledge corpus ({', '.join(files.source_files())}) "
+        "Search the technical knowledge corpus (its sources: the ops tool `sources`, stage accepted) "
         "and return the most relevant chunks "
         "with their [source] markers. Optionally filter by category."
     ),

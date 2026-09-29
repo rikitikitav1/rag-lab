@@ -213,8 +213,8 @@ def main() -> int:
                 print(json.dumps(compare_half(before["rows"], after["rows"], level, which)))
         return 0
 
+    from corpus_keys import check_variant
     from orm.sync_db import engine
-    from use_cases.index import check_variant
 
     import db
 

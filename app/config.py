@@ -206,6 +206,7 @@ class RouteCfg(_Strict):
     reread_below_layer_f1: float = Field(ge=0, le=1)
     reread_settings: str
     reread_cells_slack: float = Field(ge=0, le=1)
+    splice_tables: bool
     seam_window: int = Field(ge=0)
     seam_margin: float = Field(ge=0, lt=0.5)
     epub_skip: list[str]
@@ -226,8 +227,19 @@ class RouteCfg(_Strict):
     unescape_bullets: bool
     unescape_underscores: bool
     picture_addresses: bool
+    formula_text: bool
+    demote_caption_headings: bool
+    drop_running_headings: bool
     join_split_words: bool
     epub_chapters: bool
+
+
+# what only the stand sets: the floors that decide a file's route, not how a source is read
+STAND_ONLY = ("min_layer_chars", "min_raster_run", "suspect_min_words")
+# route keys that move no piece: a signal's floor and a file skipped, so the route's fingerprint leaves them out
+SHAPE_NO_PIECE = ("suspect_min_words", "epub_skip")
+# the knobs a source may set over the stand's route, each a field of RouteCfg
+SOURCE_KNOBS = tuple(name for name in RouteCfg.model_fields if name not in STAND_ONLY)
 
 
 class RawQualityCfg(_Strict):
@@ -237,6 +249,7 @@ class RawQualityCfg(_Strict):
     mixed_script_max: float
     layer_band_engines: list[Tool]
     bad_share: float
+    auto_accept_ok: bool
 
 
 class IntakeCfg(_Strict):
@@ -337,6 +350,12 @@ class RetrievalCompareCfg(_Strict):
     rrf_k: int
 
 
+# how many questions a source's set is drawn to, and how they spread over its chapters
+class QuestionSetCfg(_Strict):
+    per_source: int
+    per_chapter: int
+
+
 class EvalsCfg(_Strict):
     stats: StatsCfg
     judge_correlation: JudgeCorrelationCfg
@@ -344,6 +363,7 @@ class EvalsCfg(_Strict):
     veto: VetoCfg
     grade_curve: GradeCurveCfg
     retrieval_compare: RetrievalCompareCfg
+    question_set: QuestionSetCfg
 
 
 # a row of the coverage map: the only values a source may name as a chunk's category, whatever the domain

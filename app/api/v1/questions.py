@@ -49,6 +49,8 @@ class QuestionRow(BaseModel):
     text: str
     has_reference: bool
     marked_sources: int
+    # the exact gold, when the question has one instead of marks
+    gold: dict | None = None
     embedded_by: str | None
     paraphrase_of: int | None
 

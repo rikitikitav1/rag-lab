@@ -6,6 +6,7 @@ from pathlib import Path
 
 import ingest
 import logging_setup
+from corpus_keys import language_by_alphabet
 from sources.declaration import DEFAULT_INCLUDE
 
 log = logging_setup.get_logger(__name__)
@@ -114,13 +115,16 @@ class Base(ABC):
         if getattr(cls, "reader", None):
             Base._registry[cls.reader] = cls
 
-    def __init__(self, root: Path, settings=None, name: str | None = None, version: str | None = None):
+    def __init__(
+        self, root: Path, settings=None, name: str | None = None, version: str | None = None, onboarded: bool = False
+    ):
         from sources import files
 
         self.root = root
         self.settings = settings or files.of_reader(self.reader)
         self.name = name or self.settings.name
         self.version = version
+        self.onboarded = onboarded
 
     @property
     def language(self) -> str:
@@ -155,10 +159,10 @@ class Base(ABC):
             return False
         return True
 
-    # what marks, veto prefixes and the model's [source] read: a version's checkout is named «<name>@<v>» on disk only
+    # what marks, veto prefixes and the model's [source] read: a checkout or an onboarded tree is named by its row
     @property
     def spelled_as(self) -> str:
-        return self.name if self.version else self.root.name
+        return self.name if self.version or self.onboarded else self.root.name
 
     # a key of the map: the longest path prefix the file names, else the source's one category, else none declared
     def category_for(self, rel_path) -> str | None:
@@ -243,7 +247,8 @@ class Base(ABC):
                 cut_by=cut_by,
                 source=f"{self.spelled_as}/{rel}",
                 category=parsed.category,
-                language=self.language,
+                # a chunk's own alphabet: an English footnote or SQL in a Russian book is searched as English
+                language=language_by_alphabet(body or content),
                 title=parsed.title,
                 links=parsed.links,
                 tags=labels(parsed.tags),

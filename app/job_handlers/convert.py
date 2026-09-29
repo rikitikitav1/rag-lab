@@ -2,22 +2,29 @@ import hashlib
 import json
 from pathlib import Path
 
+import config
 import job_queue
 import logging_setup
 from engines import converter
 from engines.converter_tools import KEPT_STATUSES, sha256, tool_version
+from paths import ROOT
 from use_cases import route, source_intake
 
 from . import reading
 from .base import Final, register
 from .card import take
-from .converting import ROOT, SETTINGS, ceiling, code_lines_of, convert, converter_for, fields, load_settings, pieces
+from .converting import SETTINGS, ceiling, code_lines_of, convert, converter_for, fields, load_settings, pieces
 
 log = logging_setup.get_logger(__name__)
 
 GOLD = ROOT / "datasets" / "converter_gold" / "files"
 INBOX = ROOT / "datasets" / "inbox"
 RUNS = GOLD / "runs"
+
+
+# the plain gold arm measures a converter with no source behind it, so it reads by the stand's own rules, said here
+def _stand_rules():
+    return config.settings.intake.route
 
 
 # the image stamps what it copied in; the tree may have moved on since, as it did once unseen
@@ -57,19 +64,19 @@ def _chunk_key(chunk: tuple[int, int] | None) -> str:
     return "all" if chunk is None else f"{chunk[0]}-{chunk[1]}"
 
 
-def _origin(name: str) -> dict | None:
+def _declaration(name: str) -> dict | None:
     from models.corpus import DataSource
     from orm.sync_db import Session
     from sqlalchemy import select
 
     with Session() as session:
-        return session.scalar(select(DataSource.origin).where(DataSource.name == name))
+        return session.scalar(select(DataSource.declaration).where(DataSource.name == name))
 
 
 # a source's knobs as its onboarding reads them, the run's `knobs` over them; `settings` is the arm's base, a default
 def _input_rule(key: str, options: dict, tool: str) -> tuple[dict, object, dict]:
     sources = options.get("sources") or {}
-    block = source_intake.intake_block(sources[key], _origin(sources[key])) if key in sources else {}
+    block = source_intake.intake_block(_declaration(sources[key])) if key in sources else {}
     block = {**block, **(options.get("knobs") or {})}
     rule, names = source_intake.intake_rule(block)
     return block, rule, {**names, tool: block.get("settings", {}).get(tool, options["settings"])}
@@ -100,14 +107,12 @@ def _read_as_intake(options: dict, settings: dict, record: dict, record_path: Pa
         block, rule, names = _input_rule(key, options, settings["tool"])
         layers = route.layer_texts(path) if path.suffix.lower() == ".pdf" else None
         entry["intake"] = block
-        units = reading.plan(path, names, loaded, span, options.get("pages_per_chunk"), rule)
+        units = reading.plan(path, names, loaded, rule, span, options.get("pages_per_chunk"))
         for run, piece, name in units:
             chunk = _chunk_key(piece)
-            if (parts / f"{chunk}.md").exists() and entry["chunks"].get(chunk, {}).get("status") in KEPT_STATUSES:
+            if _kept(parts, entry, chunk):
                 continue
-            if options.get("_job_id") is not None and job_queue.is_cancelled(options["_job_id"]):
-                record["cancelled_before"] = f"{key} {chunk}"
-                record_path.write_text(json.dumps(record, indent=2, ensure_ascii=False))
+            if _stopped(options, record, record_path, key, chunk):
                 return
             layer = reading.layer_of(layers, piece)
             done, taken, reread = reading.read_piece(
@@ -126,17 +131,33 @@ def _read_as_intake(options: dict, settings: dict, record: dict, record_path: Pa
                 "settings": taken,
                 "reread": reread,
                 "code_from_layer": done.get("code"),
+                "cached": done.get("cached", False),
             }
             record_path.write_text(json.dumps(record, indent=2, ensure_ascii=False))
         texts = [(parts / f"{_chunk_key(piece)}.md") for _, piece, _ in units]
         if all(p.exists() for p in texts):
-            html = all(run.why == "html" for run, _, _ in units)
-            whole, healed = reading.assemble([p.read_text() for p in texts], html, rule.html_one_title)
+            routes = [run.why for run, _, _ in units]
+            whole, healed = reading.whole_file([p.read_text() for p in texts], routes, rule, layers)
             entry["joins_healed"] = healed
             (out / (key.replace("/", "__") + ".md")).write_text(whole)
     record_path.write_text(json.dumps(record, indent=2, ensure_ascii=False))
     if failed:
         raise Final(f"{len(failed)} pieces failed, first: {failed[:3]}")
+
+
+# a piece a resumed run already wrote and kept is not read again, in either arm
+def _kept(parts: Path, entry: dict, chunk: str) -> bool:
+    return (parts / f"{chunk}.md").exists() and entry["chunks"].get(chunk, {}).get("status") in KEPT_STATUSES
+
+
+# a cancel is read between pieces: a book of hours otherwise holds the queue after it was called off
+def _stopped(options: dict, record: dict, record_path: Path, key: str, chunk: str) -> bool:
+    if options.get("_job_id") is None or not job_queue.is_cancelled(options["_job_id"]):
+        return False
+    record["cancelled_before"] = f"{key} {chunk}"
+    record_path.write_text(json.dumps(record, indent=2, ensure_ascii=False))
+    log.info("convert.cancelled", input=key, chunk=chunk)
+    return True
 
 
 # resumable for free: an input whose markdown is already written is not converted again
@@ -149,7 +170,7 @@ def convert_source(options: dict) -> None:
     if absent:
         raise Final(f"inputs not under {base.relative_to(ROOT)}: {absent[:3]}")
     spec = converter_for(settings["tool"])
-    take(spec)
+    # the card is taken per piece its tool must read; a rerun from kept readings never wakes the tool
     state, supervisor = converter.reading(spec)
     if supervisor.get("tool") != settings["tool"]:
         raise Final(f"the converter runs {supervisor.get('tool')}, the settings are for {settings['tool']}")
@@ -163,7 +184,9 @@ def convert_source(options: dict) -> None:
         "build": supervisor.get("build"),
         "language": options["language"],
         # the plain arm runs the stand's code chain under the live rules too, so a rule moved between resumes is seen
-        "route_sha256": _arm_route_sha(options, settings["tool"]) if options.get("intake") else reading.route_sha(),
+        "route_sha256": (
+            _arm_route_sha(options, settings["tool"]) if options.get("intake") else reading.route_sha(_stand_rules())
+        ),
         "pages_per_chunk": options.get("pages_per_chunk"),
         "knobs": options.get("knobs"),
     }
@@ -196,16 +219,14 @@ def convert_source(options: dict) -> None:
         for chunk in chunks:
             name = _chunk_key(chunk)
             part = parts / f"{name}.md"
-            if part.exists() and entry["chunks"].get(name, {}).get("status") in KEPT_STATUSES:
+            if _kept(parts, entry, name):
                 continue
-            # a cancel is read between pieces: a book of hours otherwise holds the queue after it was called off
-            if options.get("_job_id") is not None and job_queue.is_cancelled(options["_job_id"]):
-                record["cancelled_before"] = f"{key} {name}"
-                record_path.write_text(json.dumps(record, indent=2, ensure_ascii=False))
-                log.info("convert.cancelled", input=key, chunk=name)
+            if _stopped(options, record, record_path, key, name):
                 return
-            result = convert(spec, settings["tool"], path, tool_fields, chunk, bound)
-            markdown, code = code_lines_of(settings, path, result) if result["markdown"] is not None else (None, None)
+            result = convert(spec, settings["tool"], path, tool_fields, chunk, bound, hold=lambda: take(spec))
+            markdown, code = (None, None)
+            if result["markdown"] is not None:
+                markdown, code = code_lines_of(settings, path, result, _stand_rules())
             result.pop("markdown")
             result.pop("structure", None)
             if code:

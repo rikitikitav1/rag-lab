@@ -32,7 +32,7 @@ def stored(variant: str) -> dict[tuple[str, str, int], str]:
 def freshly_cut(variant: str) -> dict[tuple[str, str, int], str]:
     policy = config.settings.corpus.policy(variant)
     out = {}
-    for source in sources.factory.all_sources():
+    for source in sources.factory.sources():
         # the same method the indexer walks, or the variant reads as changed for its whole life
         for doc in source.documents(policy):
             out[(source.name, doc.source, doc.chunk_index)] = digest(doc.content)

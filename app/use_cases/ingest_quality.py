@@ -6,6 +6,7 @@ import config
 import ingest
 import logging_setup
 import sources.base
+from corpus_keys import SECTION_SEP
 from ingest import BOILERPLATE_MIN_FILES
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
@@ -85,7 +86,7 @@ def _prefix_of(sample: Sample) -> str | None:
 
 # the gate is about structure under the root, the two-level path both cutters write
 def _under_a_heading(sample: Sample) -> bool:
-    return bool(sample.section) and " > " in sample.section
+    return bool(sample.section) and SECTION_SEP in sample.section
 
 
 def _repeats(groups: dict[object, int]) -> int:
@@ -285,7 +286,7 @@ def gates_of(metrics, cfg) -> tuple[list[str], list[str], list[str], str]:
 
 
 def analyze(source_name: str, *, variant: str, mode: str) -> dict:
-    from use_cases.index import check_variant
+    from corpus_keys import check_variant
 
     if mode not in MODES:
         raise ValueError(f"unknown mode: {mode}")

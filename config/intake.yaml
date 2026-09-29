@@ -13,6 +13,8 @@ intake:
     reread_settings: docling/pypdfium2_cells
     # the share of table cells the second reading may lose and still be taken; a source knob, 0 for the stand
     reread_cells_slack: 0
+    # a second reading takes back the first's formulas; refused for table cells alone it keeps its prose, takes its tables
+    splice_tables: true
     # a piece's end moves this many pages at most to leave a code block whole; 0 is off, never measured on its own
     seam_window: 0
     # not measured: rows in this share of the page at top and bottom are running heads and feet, not code
@@ -31,7 +33,7 @@ intake:
     mono_by_step: false
     # which code row rules run: on to the line's end, once a page, line numbers dropped; the last not needed by any book
     code_row_rules: [run_on, once]
-    # heading levels from the PDF's outline, the shallowest on ##; the remedy for levels restarting per piece
+    # heading levels from the PDF's outline, the outline's shallowest on ##; the remedy for levels restarting per piece
     outline_levels: true
     # HTML chapter headings one level down under the page title; seen on one book, so off
     html_one_title: false
@@ -53,6 +55,12 @@ intake:
     unescape_underscores: true
     # a picture's placeholder becomes its address, page and place on the page, with its caption as the alt text
     picture_addresses: true
+    # a formula Docling could not decode gets the layer's own text under it, flattened; 137 in the chapter set
+    formula_text: true
+    # a heading that is a figure, listing or table caption goes back to a line; Coulouris, Redis, Postgres Pro tables
+    demote_caption_headings: true
+    # a running head made a heading is dropped from its second time on, known by the layer's page edges; 4 sources
+    drop_running_headings: true
     # a word split by a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole; 14 sources
     join_split_words: true
     # an EPUB read as its chapters; one EPUB seen so far, so off and the file is skipped with its reason
@@ -69,6 +77,8 @@ intake:
     layer_band_engines: [docling]
     # not measured: over this share of breaching units the raw source is bad; coarse below about five units, read the reasons
     bad_share: 0.2
+    # an ok raw source becomes accepted with no person; dirty and bad wait for one
+    auto_accept_ok: true
   # the engine each tool runs on; its supervisor is asked only whether it is up
   engines: { docling: converter-docling, mineru: converter-mineru }
   # each engine's settings file when a run names none; a loop passes its own as options

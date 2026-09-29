@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import config
 import logging_setup
+from corpus_keys import SECTION_SEP
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 log = logging_setup.get_logger(__name__)
@@ -249,7 +250,7 @@ def _prefix_and_path(root: str, heading: str) -> tuple[str, str]:
     if not heading:
         return prefix, root[:SECTION_CAP]
     prefix += f"## {_one_line(heading)}\n"
-    path = f"{root} > {heading}" if root else heading
+    path = f"{root}{SECTION_SEP}{heading}" if root else heading
     return prefix, path[:SECTION_CAP]
 
 
@@ -330,4 +331,4 @@ def heading_path(chunk: str) -> str | None:
     lines = chunk.split("\n", 2)
     if len(lines) < 2 or not lines[0].startswith("# ") or not lines[1].startswith("## "):
         return None
-    return " > ".join(re.sub(r"^#+\s*", "", line) for line in lines[:2])
+    return SECTION_SEP.join(re.sub(r"^#+\s*", "", line) for line in lines[:2])

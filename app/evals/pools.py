@@ -1,4 +1,5 @@
 import outcomes
+from corpus_keys import Gold
 from evals.stats import score_of
 from outcomes import Outcome
 
@@ -15,7 +16,7 @@ def kind_of_question(question) -> str:
     declared = question.kind if question else None
     if declared in POOLS:
         return declared
-    return "in_corpus" if (question.marked_sources if question else None) else "out_of_corpus"
+    return "in_corpus" if Gold.of_question(question) else "out_of_corpus"
 
 
 def kind(ql) -> str:
@@ -86,7 +87,7 @@ IN_CORPUS_AND_ANSWERED = "the corpus pool, answered: marked sources, and our own
 
 
 def in_corpus(ql) -> bool:
-    return bool(ql.question and ql.question.marked_sources)
+    return bool(ql.question and Gold.of_question(ql.question))
 
 
 def in_corpus_and_answered(ql) -> bool:
@@ -102,7 +103,7 @@ def split(logs) -> dict[str, list]:
     pools: dict[str, list] = {name: [] for name in POOLS}
     for ql in logs:
         name = kind(ql)
-        if name == "in_corpus" and not (ql.question and ql.question.marked_sources):
+        if name == "in_corpus" and not (ql.question and Gold.of_question(ql.question)):
             name = "out_of_corpus"
         pools[name].append(ql)
     return pools

@@ -73,11 +73,11 @@ def run_once(queues: list[str]) -> bool:
     before = _balances(clouds)
     try:
         with llm.accounting(tally), llm.cache_keyed(f"job-{claimed.id}"):
-            handler(claimed.options | {"_job_id": claimed.id})
+            returned = handler(claimed.options | {"_job_id": claimed.id})
         # written before the status: a reader of a finished job found it done and its count still empty
         _record_spend(claimed.id, tally, clouds, before)
         elapsed = round(time.perf_counter() - start, 3)
-        job_queue.complete(claimed.id, elapsed=elapsed)
+        job_queue.complete(claimed.id, elapsed=elapsed, result=returned if isinstance(returned, dict) else None)
         log.info("worker.done", id=claimed.id, type=claimed.type, elapsed=elapsed)
     except Deferred as d:
         _record_spend(claimed.id, tally, clouds, before)

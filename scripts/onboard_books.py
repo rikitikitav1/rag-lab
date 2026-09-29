@@ -54,11 +54,17 @@ def layout(books: list[dict]) -> None:
         print(book["name"], len(files), "files")
 
 
+# the door answers a page at a time, so the whole list is read page by page
 def _ids() -> dict[str, int]:
-    status, sources = _call("GET", "/source")
-    if status != 200:
-        sys.exit(f"GET /source: {status} {sources}")
-    return {s["name"]: s["id"] for s in sources}
+    ids, offset = {}, 0
+    while True:
+        status, page = _call("GET", f"/source?limit=1000&offset={offset}")
+        if status != 200:
+            sys.exit(f"GET /source: {status} {page}")
+        ids |= {s["name"]: s["id"] for s in page}
+        if len(page) < 1000:
+            return ids
+        offset += len(page)
 
 
 # declared through the stand's own door; a name already there is left as it is

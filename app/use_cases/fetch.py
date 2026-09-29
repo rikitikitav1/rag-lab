@@ -1,6 +1,6 @@
-import hashlib
 import os
 import re
+import shutil
 import subprocess
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -11,16 +11,6 @@ import requests
 TIMEOUT = 120
 
 
-def short_hash(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()[:8]
-
-
-_SLUG = re.compile(r"[^\w.-]+")
-
-
-# a file or piece key as a flat file name, readable and unique: two keys that slug alike differ by the hash
-def file_stem(key: str) -> str:
-    return f"{_SLUG.sub('_', key)[:120]}-{short_hash(key)}"
 
 
 # a url to a file, whole or not at all: it lands in a .part and moves into place; False when it was there already
@@ -90,7 +80,15 @@ def _git(*args, cwd=None) -> str:
 
 
 # blobless and sparse, so a docs folder of a large repository costs its own size only; `--` keeps the url a url
-def clone(repo: str, folder: Path, ref: str | None = None, path: str | None = None, also=()) -> dict:
+def clone(repo: str, folder: Path, ref: str | None = None, path: str | None = None, also=(), update=False) -> dict:
+    if update and (folder / ".git").exists():
+        # a clone of another repository than the one declared now is dropped and made again, never fetched into
+        if _git("remote", "get-url", "origin", cwd=folder) != repo:
+            shutil.rmtree(folder)
+        else:
+            # the upstream's tip of the branch replaces the kept one; the folder is the stand's copy, never a person's
+            _git("fetch", "--filter=blob:none", "--depth", "1", "origin", ref or "HEAD", cwd=folder)
+            _git("reset", "--hard", "FETCH_HEAD", cwd=folder)
     if not (folder / ".git").exists():
         folder.parent.mkdir(parents=True, exist_ok=True)
         branch = ["--branch", ref] if ref else []

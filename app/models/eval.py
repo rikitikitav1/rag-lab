@@ -24,6 +24,8 @@ class Question(Base):
     normalized_text: Mapped[str | None]
     reference_answer: Mapped[str | None]
     marked_sources: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # {"file", "section", "version"}: the exact gold a new question carries instead of marks
+    gold: Mapped[dict | None] = mapped_column(JSONB)
     set_name: Mapped[str | None]
     language: Mapped[str | None]
     kind: Mapped[str | None]
