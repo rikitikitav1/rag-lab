@@ -143,7 +143,7 @@ def _question(**over):
     from types import SimpleNamespace
 
     base = dict(kind=None, marked_sources=[], reference_answer=None, language="en",
-                source_question_id=None, set_name="s")
+                source_question_id=None, set_name="s", status="accepted")
     return SimpleNamespace(**{**base, **over})
 
 

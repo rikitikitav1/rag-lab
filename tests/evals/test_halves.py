@@ -70,3 +70,18 @@ def test_growth_does_not_excuse_a_changed_procedure(rr):
     after = report([1, 2, 3], "b")
     differ = [("questions_hash", "a", "b"), ("search", "exact", "hnsw")]
     assert rr.set_grew(before, after, differ) is False
+
+
+# the two languages of one fact fall in one half by their pair; a question with no pair keeps its old half by id
+def test_a_pairs_two_questions_fall_in_one_half_and_an_old_question_keeps_its_half():
+    from use_cases import retrieval_compare as rc
+
+    before_ids = {qid: rc.half_of(qid) for qid in range(1, 200)}
+    assert {qid: rc.half_of(qid, None) for qid in range(1, 200)} == before_ids
+
+    pairs = {n: f"pair{n // 2}" for n in range(1, 200)}
+    rows = [{"id": n, "pair_id": pairs[n]} for n in range(1, 200)]
+    for which in ("A", "B"):
+        kept = rc.half_ids(rows, rows, which)
+        assert all((n in kept) == (m in kept) for n in kept for m in range(1, 200) if pairs[m] == pairs[n])
+    assert rc.half_ids(rows, rows, "A") | rc.half_ids(rows, rows, "B") == set(range(1, 200))

@@ -684,3 +684,39 @@ def test_a_run_s_sampler_is_held_to_the_same_rule_as_a_role_s():
         job_specs.EvalRun(run_name="r", set_name="s", generation_sampler={"repetition_penalty": 3})
     ok = job_specs.EvalRun(run_name="r", set_name="s", generation_sampler={"repetition_penalty": 1.1})
     assert ok.generation_sampler == {"repetition_penalty": 1.1}
+
+
+# a run that declares a version leaves out a question whose gold names another, and counts it; no version, no count
+def test_a_question_of_another_version_is_left_out_and_counted(monkeypatch):
+    from evals import runner
+
+    rows = [("q 3.12", {"file": "a.md", "section": "A", "version": "3.12"}),
+            ("q 3.11", {"file": "a.md", "section": "A", "version": "3.11"}),
+            ("q any", {"file": "a.md", "section": "A", "version": None}), ("q marked", None)]
+    monkeypatch.setattr(runner, "_target_questions", lambda set_name, question_ids: rows)
+    assert runner._target_texts("s", None, "3.12") == ["q 3.12", "q any", "q marked"]
+    assert runner.mismatched("s", None, "3.12") == 1 and runner.mismatched("s", None, None) == 0
+
+
+# a fixed list reads what its set would: a question settled out since the list was drawn is left out and counted
+def test_a_fixed_list_asks_only_its_accepted_questions(monkeypatch):
+    from types import SimpleNamespace
+
+    from evals import runner
+    from models.eval import ACCEPTED, REFUSED
+
+    found = [SimpleNamespace(id=1, original_text="kept", gold=None, status=ACCEPTED),
+             SimpleNamespace(id=2, original_text="refused since", gold=None, status=REFUSED)]
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, stmt):
+            return SimpleNamespace(all=lambda: found)
+
+    monkeypatch.setattr(runner, "Session", _Session)
+    assert runner._target_texts(None, [1, 2]) == ["kept"]

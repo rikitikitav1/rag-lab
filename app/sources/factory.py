@@ -5,6 +5,7 @@ from pathlib import Path
 import config
 import logging_setup
 from sources import (  # noqa: F401
+    arangodb_docs,
     cheatsheets,
     converted,
     files,

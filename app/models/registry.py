@@ -20,10 +20,16 @@ class Role(StrEnum):
     ragas = "ragas"
     # the one guest that measures with vectors, off the card so the guest's model has it whole
     ragas_embedding = "ragas_embedding"
+    # the writer of a source's question pairs from its sections, a cloud model outside the judge's family
+    questioning = "questioning"
+    # the reader that answers a generated question from its section: the grader's model with room to quote
+    accepting = "accepting"
 
 
 # the roles whose model writes tokens: an embedder or a cross-encoder scores and samples nothing
-SAMPLING_ROLES = frozenset({Role.generation, Role.judging, Role.paraphrasing, Role.ragas, Role.grading})
+SAMPLING_ROLES = frozenset(
+    {Role.generation, Role.judging, Role.paraphrasing, Role.ragas, Role.grading, Role.questioning, Role.accepting}
+)
 
 
 # shared by every door that takes a model name; `fullmatch` because `$` matches before a newline
@@ -66,6 +72,9 @@ class Purpose(StrEnum):
     agent_tool_match = "agent.tool_match"
     agent_no_evidence = "agent.no_evidence"
     grade_chunk = "grade.chunk"
+    questions_from_section = "questions.from_section"
+    answer_from_section = "answer.from_section"
+    judge_pair = "judge.pair"
 
 
 class Status(StrEnum):

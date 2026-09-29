@@ -1,4 +1,5 @@
 import copy
+import re
 from typing import ClassVar, Literal
 
 from config import SOURCE_KNOBS, RouteCfg
@@ -139,9 +140,13 @@ class Declaration(_Strict):
     # released versions side by side, newest first as the map lists them; empty is one rolling version
     versions: dict[str, VersionOrigin] = {}
     questions: list[DeclaredQuestion] = []
+    # a leaf pattern that names this source's reference pages where the leaf has no code shape (a command in capitals)
+    reference_leaf: str | None = None
 
     @model_validator(mode="after")
     def _one_origin(self):
+        if self.reference_leaf is not None:
+            re.compile(self.reference_leaf)
         given = [k for k in self.ORIGINS if getattr(self, k)]
         if len(given) != 1:
             raise ValueError(f"a source comes from exactly one of {', '.join(self.ORIGINS)}; given {given or 'none'}")

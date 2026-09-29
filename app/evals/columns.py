@@ -1,9 +1,27 @@
+import functools
 import json
 from dataclasses import dataclass
 
 import outcomes
+from corpus_keys import reference_by, shares_heading_word
 from evals import gold_classes, grade_curve, measurements, pools
 from evals.stats import score_of
+
+
+# a source's own reference pattern, by the first step of a gold's file path, which is the source's name
+@functools.cache
+def _reference_leaf(file: str | None) -> str | None:
+    from sources import files
+
+    found = files.source_files().get((file or "").split("/", 1)[0])
+    return found.reference_leaf if found else None
+
+
+def _reference_page(gold: dict | None) -> float | None:
+    if gold is None:
+        return None
+    return float(reference_by(gold.get("section"), _reference_leaf(gold.get("file"))) is not None)
+
 
 # a column named in a preregistration and nowhere else is a column nobody can compute
 SCHEMA = 3
@@ -16,6 +34,14 @@ SHARE, SCORE = "share", "score"
 CANDIDATES = measurements.FOLDER.parent / "candidates"
 # the serving path: the top of the fusion, the arm every grader number of the stand is read on
 ARM, TOP = "A", 5
+
+
+# an identifier this rare in its source is what search finds by its token alone; the threshold is read here, not stored
+ANCHOR_RARE = 2
+
+
+def anchored(anchors: dict | None) -> bool:
+    return any(held <= ANCHOR_RARE for held in (anchors or {}).values())
 
 
 # which way is worse belongs to the declaration that uses a column, not to the column
@@ -93,6 +119,31 @@ REGISTRY: dict[str, Column] = {
         says=f"the share of characters the strip removed inside the {short} chunks the grader kept,"
              " a row's own share, averaged over rows rather than pooled over characters")
        for short in ("gold", "neighbour", "stranger")},
+    "reader_answered": Column(
+        reads="acceptance", source=MEASUREMENT,
+        says="the reader quoted the section rather than saying the answer is not in it; an empty or cut reply is no",
+    ),
+    "evidence_held": Column(
+        reads="acceptance", source=MEASUREMENT,
+        says="the reader's quote holds the evidence's words to the sieve's share; rows it did not answer have none",
+    ),
+    "anchored_by_identifier": Column(
+        reads="question",
+        says="the question names an identifier its gold section holds, and at most ANCHOR_RARE sections of its source",
+    ),
+    "shares_heading_word": Column(
+        reads="question",
+        says="the question repeats a word of its gold section's heading, five letters or longer, by a five-letter stem",
+    ),
+    "reference_page": Column(
+        reads="question",
+        says="the question's gold section is a reference page: its leaf names one identifier, or matches its source's"
+             " own `reference_leaf`",
+    ),
+    "left_for_judge": Column(
+        reads="acceptance", source=MEASUREMENT,
+        says="the question's pair was neither accepted nor refused by the reader and waits for the judge",
+    ),
 }
 
 _CLASS_OF = {"gold": gold_classes.GOLD, "neighbour": gold_classes.NEIGHBOUR,
@@ -106,6 +157,18 @@ _READERS = {
     "gold_retained": _grader("gold_any"),
     "strangers_dropped": _grader("strangers_dropped"),
     **{f"chars_removed_{short}": _chars_removed(cls) for short, cls in _CLASS_OF.items()},
+    "reader_answered": lambda row: 1.0 if row["answerable"] else 0.0,
+    "evidence_held": lambda row: None if not row["answerable"] else float(row["why"] is None),
+    "left_for_judge": lambda row: float(row["outcome"] == "undecided"),
+    "shares_heading_word": lambda ql: (
+        None if getattr(ql.question, "gold", None) is None
+        else float(shares_heading_word(ql.question.original_text, ql.question.gold.get("section")))
+    ),
+    "reference_page": lambda ql: _reference_page(getattr(ql.question, "gold", None)),
+    # a question whose anchors were never read has no value, not a zero
+    "anchored_by_identifier": lambda ql: (
+        None if getattr(ql.question, "anchors", None) is None else float(anchored(ql.question.anchors))
+    ),
 }
 
 
@@ -150,6 +213,9 @@ def measurement_rows(name: str) -> list[dict]:
     if "/" in name or not name.endswith(".json") or not path.exists():
         raise FileNotFoundError(f"no measurement named {name!r} in {measurements.FOLDER.name}")
     payload = json.loads(path.read_text())
+    # an acceptance pass keys its rows by question already, with no arm to narrow to
+    if "evidence_held" in payload:
+        return measurements.rows_of(path)
     if "candidates_file" not in payload:
         raise FileNotFoundError(f"{name!r} is not a grader measurement: it names no candidates file")
     frozen = json.loads((CANDIDATES / payload["candidates_file"]).read_text())

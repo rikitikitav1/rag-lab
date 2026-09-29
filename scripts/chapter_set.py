@@ -14,7 +14,7 @@ CHAPTER_FILES = {
     2: {"ostep": "intro.pdf", "security-engineering-3e": "SE-02.pdf"},
     3: {"ostep": "cpu-intro.pdf", "security-engineering-3e": "SE-03.pdf"},
 }
-# outline entries that are not chapters: front and back matter, and a part that only holds chapters
+# outline entries that are not chapters; wider than `book_matter.BOOK_MATTER`, which keeps an appendix or a glossary
 MATTER = re.compile(
     r"^(cover|title|copyright|contents|content list|table of contents|preface|foreword|about|acknowledg|dedication|"
     r"index|bibliography|references|glossary|appendix|colophon|summary|begin$|"

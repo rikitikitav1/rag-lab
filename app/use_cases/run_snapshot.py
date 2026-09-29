@@ -90,6 +90,7 @@ def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict, dict, dic
             placed[role] = card.model_on_card(spec, chosen.name)
             added[role] = {key: value for key, value in engines.added_by(spec, chosen.name).items()
                            if role in SAMPLING_ROLES or key != "repetition_penalty"}
+            added[role] |= llm.thinking_added(spec, samplers[role].sent)
             if key := llm.cache_key_of(spec):
                 cache_keys[role] = key
             parsers[role] = answer_parsers.label(getattr(chosen, "parser", answer_parsers.NONE))

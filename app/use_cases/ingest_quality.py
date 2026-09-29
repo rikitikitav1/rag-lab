@@ -236,13 +236,14 @@ def score(metrics: Metrics, weights) -> int | None:
     return round(100 * earned / total)
 
 
-def collect_dry(source_name: str, *, variant: str) -> list[Sample]:
+# the samples and the sections the book matter rule left out of them, which only a dry read can name
+def collect_dry(source_name: str, *, variant: str) -> tuple[list[Sample], list]:
     import sources.factory
 
     source = sources.factory.one(source_name)
     policy = config.settings.corpus.policy(variant)
     # the same door the indexer and the digest walk
-    return [
+    samples = [
         Sample(
             file=doc.source,
             content=doc.content,
@@ -254,6 +255,7 @@ def collect_dry(source_name: str, *, variant: str) -> list[Sample]:
         )
         for doc in source.documents(policy)
     ]
+    return samples, getattr(source, "left_out_as_matter", [])
 
 
 def collect_indexed(source_name: str, *, variant: str) -> list[Sample]:
@@ -295,8 +297,9 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
     cfg = config.settings.ingest_quality
     # refused before the rows are loaded: an undeclared variant is not a shape question
     policy = config.settings.corpus.policy(variant)
-    samples = (
-        collect_dry(source_name, variant=variant) if mode == "dry" else collect_indexed(source_name, variant=variant)
+    samples, matter = (
+        collect_dry(source_name, variant=variant) if mode == "dry"
+        else (collect_indexed(source_name, variant=variant), None)
     )
     # the legacy cut records a section only where the file opens H1 then H2
     metrics = measure(
@@ -325,6 +328,8 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         "policy": policy,
         # only a dry run cut anything, so only a dry run may name the parser that did it
         "parser": ingest.parser_version() if mode == "dry" else None,
+        # sections the book matter rule took by their heading; an indexed read never saw them to count
+        "left_out_as_matter": None if matter is None else [f"{f} # {s}" for f, s in matter],
         **asdict(metrics),
     }
     _persist(source_name, variant=variant, entry=entry, mode=mode)

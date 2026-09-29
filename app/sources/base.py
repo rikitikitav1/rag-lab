@@ -6,6 +6,7 @@ from pathlib import Path
 
 import ingest
 import logging_setup
+from book_matter import is_book_matter, is_title_page
 from corpus_keys import language_by_alphabet
 from sources.declaration import DEFAULT_INCLUDE
 
@@ -121,6 +122,7 @@ class Base(ABC):
         from sources import files
 
         self.root = root
+        self.left_out_as_matter: list[tuple] = []
         self.settings = settings or files.of_reader(self.reader)
         self.name = name or self.settings.name
         self.version = version
@@ -212,7 +214,18 @@ class Base(ABC):
         policy = policy or {}
         found = list(self.discover(policy))
         self._refuse_uncategorised(found)
-        docs = [doc for file in found for doc in self.to_documents(file, policy)]
+        docs, matter = [], set()
+        for file in found:
+            for doc in self.to_documents(file, policy):
+                if is_book_matter(doc.section) or is_title_page(doc.source, doc.section):
+                    matter.add((doc.source, doc.section))
+                else:
+                    docs.append(doc)
+        # a section left out by its heading alone is named, so a report can show what the rule took
+        self.left_out_as_matter = sorted(matter)
+        if matter:
+            log.info("source.book_matter_left_out", source=self.name, sections=len(matter),
+                     first=[f"{f} # {s}" for f, s in self.left_out_as_matter[:5]])
         return drop_wide_boilerplate(docs, policy)
 
     # every file without a category named at once, before the first cut, not the first of them halfway through

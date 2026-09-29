@@ -39,7 +39,8 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
     description=(
         "Aggregated eval metrics for one run_name: generation quality "
         "(faithfulness/relevance/completeness on a 0-10 numeric judge, plus 0-1 "
-        "normalized and refusal_accuracy) and retrieval (hit_at_k, mrr). Numbers "
+        "normalized and refusal_accuracy) and retrieval (hit_at_k, mrr; by_anchor reads the same run on "
+        "questions that name a rare identifier of their section and on the rest, each with its n). Numbers "
         "are averages over the run's judged logs. n_scored counts the in-corpus rows "
         "our judge scored, so a run holding no corpus question reads 0 there however "
         "well it was judged; debts says what the run still owes and why the rest of "
@@ -79,8 +80,10 @@ def run_metrics(
         "every retrieval axis ranks against; a set with none of it cannot be scored on hit@k "
         "or mrr. with_reference_answer is what the two guest context axes need "
         "(LLMContextPrecisionWithReference, LLMContextRecall); a set with none of it can only "
-        "be scored on faithfulness, and the guest pass will abstain on the rest. Read this "
-        "before spending a judge or a guest pass on a set."
+        "be scored on faithfulness, and the guest pass will abstain on the rest. A generated set "
+        "also carries stages: pairs asked and lost by the generator, pairs read again, and by "
+        "language who settled what (accepted, refused by the sieve or the judge, candidates) "
+        "and under_the_floor. Read this before spending a judge or a guest pass on a set."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -472,17 +475,19 @@ def preregister(
         dict,
         Field(
             description=(
-                "{'sets': [question set names], 'question_ids': [ids]?}; named ids narrow the sets to a declared draw."
+                "{'sets': [question set names], 'question_ids': [ids]?, 'language': 'en' | 'ru'?}; named ids"
+                " narrow the sets to a declared draw, a language to its half."
             )
         ),
     ],
-    arms: Annotated[dict, Field(description="{'control': ..., 'arm': ...}.")],
+    arms: Annotated[dict, Field(description="{'control': ..., 'arm': ...}; `arm` alone under a one-arm `bar`.")],
     closing: Annotated[
         dict,
         Field(
             description=(
                 "{'columns': [names], 'arm_should': 'lower' | 'raise', 'floor_value': x?}; shares join into a"
                 " union, a judge score closes alone; the bar is the floor run's upper edge or `floor_value`."
+                " One arm against a level: {'bar': x, 'read_on': 'point' | 'edge'} instead of a floor."
             )
         ),
     ],

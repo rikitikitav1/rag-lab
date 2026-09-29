@@ -209,3 +209,33 @@ def test_an_exact_gold_ranks_its_file_and_section_path():
     older = Gold(("pg/locks.md",), "Locks > Summary", "17")
     assert rank_of_gold_section([{**chunks[2], "versions": ["18"]}], older) is None, "another release is no hit"
     assert gold_classes.classify({**chunks[2], "versions": ["18"]}, older, None) == gold_classes.NEIGHBOUR
+
+
+# one run read on two pools by the question's anchors; a question never anchored is counted apart
+def test_a_run_is_read_by_its_anchor_stratum(monkeypatch):
+    from types import SimpleNamespace
+
+    from evals import retrieval_metrics as rm
+
+    def row(anchors, found):
+        return (SimpleNamespace(question=SimpleNamespace(anchors=anchors)), 1 if found else None, False)
+
+    out = rm._by_anchor([row({"proxy_pass": 1}, True), row({"proxy_pass": 1}, False), row({"list": 40}, True),
+                         row(None, True)])
+    assert out["anchored"]["n"] == 2 and out["anchored"]["hit_at_k"] == 0.5
+    assert out["not_anchored"]["n"] == 1 and out["not_anchored"]["hit_at_k"] == 1.0 and out["unread"] == 1
+
+
+# the heading-word pools read the question's own gold heading
+def test_a_run_is_read_by_the_heading_word_stratum():
+    from types import SimpleNamespace
+
+    from evals import retrieval_metrics as rm
+
+    def row(text, found):
+        question = SimpleNamespace(original_text=text, gold={"file": "a.md", "section": "Module > Proxy buffering"})
+        return (SimpleNamespace(question=question), 1 if found else None, False)
+
+    out = rm._by_column([row("How big is proxy buffering?", True), row("How big is it?", False)],
+                        "shares_heading_word", ("shares", "does_not"))
+    assert out["shares"]["hit_at_k"] == 1.0 and out["does_not"]["hit_at_k"] == 0.0 and out["unread"] == 0

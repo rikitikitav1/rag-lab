@@ -217,3 +217,21 @@ def test_a_pause_that_is_not_a_number_of_seconds_is_no_pause():
             "slow down", response=httpx.Response(429, headers={"retry-after": header}, request=request), body=None
         )
         assert llm._retry_after(throttled) is None, header
+
+
+# a 400 refuses this one request, the next row may pass: a failed row, not a stopped run
+def test_a_refused_request_fails_its_row_and_not_the_run(monkeypatch):
+    import llm
+
+    request = httpx.Request("POST", "https://b.example/v1/chat/completions")
+    refusal = openai.APIStatusError("no", response=httpx.Response(400, request=request), body=None)
+
+    def create(**kw):
+        raise refusal
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": type("Co", (), {"create": staticmethod(create)})})})
+    monkeypatch.setattr(llm.engines, "client_for", lambda spec: client)
+    monkeypatch.setattr(llm, "_card_for", lambda spec, name: __import__("contextlib").nullcontext())
+    with pytest.raises(llm.RequestRefused, match="http 400") as caught:
+        llm._complete(CLOUD, "gemma-4-31b", [], {})
+    assert isinstance(caught.value, RuntimeError) and not isinstance(caught.value, StandFault)

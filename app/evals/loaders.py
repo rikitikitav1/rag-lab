@@ -19,12 +19,12 @@ def load_logs(run_name=None, ids=None):
 
 # the population every gold door shares: a question without a marked source has no gold to keep
 def gold_questions(set_name: str, limit: int | None = None, ids=None) -> list[dict]:
-    from models.eval import Question
+    from models.eval import ACCEPTED, Question
     from orm.sync_db import Session
     from sqlalchemy import select
 
     with Session() as session:
-        query = select(Question).where(Question.set_name == set_name).order_by(Question.id)
+        query = select(Question).where(Question.set_name == set_name, Question.status == ACCEPTED).order_by(Question.id)
         if ids:
             query = query.where(Question.id.in_(list(ids)))
         rows = [q for q in session.scalars(query).all() if Gold.of_question(q)]

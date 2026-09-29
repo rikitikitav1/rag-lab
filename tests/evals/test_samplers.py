@@ -65,3 +65,34 @@ def test_the_stand_shows_each_ollama_role_s_penalty_against_the_declared_one(mon
     seen = stand_health.repetition_penalty()
     assert seen["served"] == {"llama3.1:8b@ollama": 1.1, "qwen2.5:7b-w16384@ollama": "unknown"}
     assert seen["drift"] == ["qwen2.5:7b-w16384@ollama"], "the embedder takes no penalty and is not read"
+
+
+# thinking is off on every engine whose template reads the switch, beside the penalty and not over it
+def test_thinking_is_off_in_the_body_of_every_chat_but_ollama_s():
+    import llm
+
+    vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    cloud = engines.EngineSpec(8, "neuraldeep", EngineKind.openai_compatible, "NEURALDEEP", Placement.remote)
+    off = {"enable_thinking": False}
+    judged = llm._thinking_off(vllm, {"temperature": 0, "extra_body": {"repetition_penalty": 1.05}})
+    assert judged["extra_body"] == {"repetition_penalty": 1.05, "chat_template_kwargs": off}
+    assert llm._thinking_off(cloud, {"max_tokens": 9})["extra_body"] == {"chat_template_kwargs": off}
+    assert llm._thinking_off(local, {"max_tokens": 9}) == {"max_tokens": 9}
+    # the record says what the stand added, so a run with the thinking off does not read like one with it on
+    assert llm.thinking_added(vllm, {"temperature": 0}) == {"enable_thinking": False}
+    assert llm.thinking_added(local, {"temperature": 0}) == {}
+
+
+# a model that names its reasoning effort sends it and no template switch; an effort outside the four is refused
+def test_a_named_effort_replaces_the_template_switch():
+    import llm
+
+    cloud = engines.EngineSpec(12, "groq", EngineKind.openai_compatible, "GROQ", Placement.remote)
+    local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
+    assert engines.translate(cloud, {"reasoning_effort": "low"}).sent == {"reasoning_effort": "low"}
+    assert engines.translate(local, {"reasoning_effort": "low"}).dropped == {"reasoning_effort": "low"}
+    assert llm._thinking_off(cloud, {"reasoning_effort": "none"}) == {"reasoning_effort": "none"}
+    assert llm.thinking_added(cloud, {"reasoning_effort": "none"}) == {}
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        samplers.check({"reasoning_effort": "max"})

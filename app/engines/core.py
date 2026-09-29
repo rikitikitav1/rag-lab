@@ -19,8 +19,8 @@ SAMPLER_KEYS = samplers.KEYS
 # ollama's OpenAI door drops the penalty (measured), so it lives in the model; the OpenAI spec has no such field
 _NOT_PER_CALL = frozenset({"repetition_penalty"})
 ACCEPTS = {
-    EngineKind.ollama: frozenset(SAMPLER_KEYS) - _NOT_PER_CALL,
-    EngineKind.vllm: frozenset(SAMPLER_KEYS),
+    EngineKind.ollama: frozenset(SAMPLER_KEYS) - _NOT_PER_CALL - {"reasoning_effort"},
+    EngineKind.vllm: frozenset(SAMPLER_KEYS) - {"reasoning_effort"},
     EngineKind.openai_compatible: frozenset(SAMPLER_KEYS) - _NOT_PER_CALL,
     EngineKind.converter: frozenset(),
 }

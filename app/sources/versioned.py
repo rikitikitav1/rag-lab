@@ -62,4 +62,5 @@ class Versioned:
     def documents(self, policy=None):
         per_version = [(reader.version, reader.documents(policy)) for reader in self.readers]
         docs, self.merged = merge_versions(per_version, self.newest.settings.categories[0])
+        self.left_out_as_matter = sorted({left for reader in self.readers for left in reader.left_out_as_matter})
         return docs

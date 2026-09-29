@@ -1,0 +1,11 @@
+# the ArangoDB manual from the arangodb/docs-hugo repository, two released versions side by side
+name: arangodb-docs
+language: en
+licence: Apache-2.0
+folder: datasets/inbox/arangodb-docs-hugo/site/content/arangodb/3.12
+reader: arangodb-docs
+versions:
+  "3.12": { folder: datasets/inbox/arangodb-docs-hugo/site/content/arangodb/3.12 }
+  "3.11": { folder: datasets/inbox/arangodb-docs-hugo/site/content/arangodb/3.11 }
+categories:
+- arangodb

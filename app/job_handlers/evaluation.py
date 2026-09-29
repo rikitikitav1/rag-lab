@@ -74,7 +74,12 @@ def eval_run(options: dict) -> None:
     # the worker's retry would answer every question again beside the rows already written
     except StandFault as e:
         raise Final(str(e)) from e
-    log.info("eval_run.done", run_name=options["run_name"], answered=answered)
+    # the questions the run left out for naming another version, beside the answered: a smaller run says why
+    skipped = runner.mismatched(options.get("set_name"), options.get("question_ids"), options.get("version"))
+    unread = runner.not_accepted(options.get("question_ids"))
+    log.info("eval_run.done", run_name=options["run_name"], answered=answered, version_mismatch=skipped,
+             not_accepted=unread)
+    return {"answered": answered, "version_mismatch": skipped, "not_accepted": unread}
 
 
 @register("compare_retrieval")

@@ -482,6 +482,33 @@ config:
   llm.roles.paraphrasing.options.temperature:
     class: setting
     note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.questioning.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.questioning.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.questioning.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.questioning.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.accepting.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.accepting.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.accepting.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.accepting.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.accepting.options.seed:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
   llm.roles.reranking.model:
     class: seed
     note: the role seat is a row in the base; the row wins after bootstrap
@@ -540,6 +567,10 @@ config:
     class: setting
   evals.question_set.per_chapter:
     class: setting
+  evals.question_set.min_pairs:
+    class: setting
+  evals.question_set.languages:
+    class: setting
   evals.grade_curve.cuts:
     class: setting
   evals.retrieval_compare.candidates:
@@ -583,6 +614,9 @@ config:
   llm.roles.judging.prompts.judge_completeness:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.judging.prompts.judge_pair:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
   llm.roles.grading.prompts.grade_chunk:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
@@ -599,6 +633,12 @@ config:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
   llm.roles.paraphrasing.prompts.question_from_heading:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.questioning.prompts.questions_from_section:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.accepting.prompts.answer_from_section:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
   llm.roles.reranking.prompts:
@@ -999,6 +1039,83 @@ constant:
   app/corpus_keys.py:CHAPTER_STEPS:
     class: code
     note: the chapter grain the coverage report reads too
+  app/corpus_keys.py:_LINK:
+    class: code
+  app/corpus_keys.py:_LAYOUT:
+    class: code
+  app/corpus_keys.py:_BACKTICKED:
+    class: code
+  app/corpus_keys.py:_TOKEN:
+    class: code
+  app/corpus_keys.py:_WORDS:
+    class: code
+  app/evals/columns.py:ANCHOR_RARE:
+    class: setting
+    note: not measured; the auditor's reading of a rare token (round 159), read at this threshold and stored as counts
+  app/evals/pair_judge.py:AROUND_WORDS:
+    class: setting
+    note: not measured; enough of a passage to read a fact in context and short of any window
+  app/evals/pair_judge.py:_LEADING_WORDS:
+    class: code
+  app/evals/pair_judge.py:_WORD:
+    class: code
+  app/evals/section_questions.py:MIN_WORDS:
+    class: setting
+    note: a stub section gets no pairs; the probe of the generators set it
+  app/evals/section_questions.py:MAX_EVIDENCE_WORDS:
+    class: cap
+  app/evals/section_questions.py:PAIRS_PER_CALL:
+    class: setting
+    note: a thinking generator spends about 3000 tokens a pair; the probe's six-pair ask was cut at 4096
+  app/evals/section_questions.py:_JSON:
+    class: code
+  app/evals/section_questions.py:_WORD:
+    class: code
+  app/evals/section_questions.py:_MARKUP:
+    class: code
+  app/evals/section_questions.py:_LEANS_ON_THE_PAGE:
+    class: code
+  app/sources/arangodb_docs.py:_COMMENT:
+    class: code
+  app/sources/arangodb_docs.py:_SHORTCODE:
+    class: code
+  app/sources/arangodb_docs.py:_QUOTED:
+    class: code
+  app/evals/question_acceptance.py:EVIDENCE_HELD:
+    class: setting
+    note: a quote holding this share of the evidence's words names its place; preregistered before a set is read
+  app/evals/question_acceptance.py:WINDOW_WORDS:
+    class: setting
+    note: the reader's window over a long section; 800, 1500 and 2500 tried on think-python, whole chapters lost most facts
+  app/evals/question_acceptance.py:WINDOW_OVERLAP:
+    class: setting
+    note: a fact cut by a window's edge is whole in the next
+  app/evals/question_acceptance.py:_WORD:
+    class: code
+  app/evals/question_acceptance.py:WINDOW_CHARS:
+    class: setting
+    note: not measured; about 1500 words of ordinary text at eight characters, so only link or code runs are cut again
+  app/evals/question_acceptance.py:_SHORTEST:
+    class: code
+  app/book_matter.py:BOOK_MATTER:
+    class: setting
+    note: the headings neither the index nor a generator reads; every accepted source before and after, each leaf that went read
+  app/book_matter.py:_CONTENTS_LINE:
+    class: code
+  app/book_matter.py:_BOOK_FILE:
+    class: code
+  app/book_matter.py:_LEADING_NUMBER:
+    class: code
+  app/book_matter.py:_NOT_A_WORD:
+    class: code
+  app/use_cases/section_export.py:BLOCK_CHARS:
+    class: setting
+    note: not measured; the index's chunks joined to about 1300 words, one window of acceptance (1500 words)
+  app/use_cases/section_export.py:BLOCK_BREAK_SHARE:
+    class: setting
+    note: not measured; a subsection starts a block once half of it is held, so small ones join a neighbour
+  app/use_cases/section_export.py:_SUBHEADING:
+    class: code
   app/use_cases/retrieval_compare.py:SCHEMA:
     class: code
     note: the shape of a stored record
@@ -1254,6 +1371,12 @@ env:
     class: setting
     note: a host fact, not a knob; stays in the environment
   GONKA_API_KEY:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  GROQ_API_KEY:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  GROQ_BASE_URL:
     class: setting
     note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
   NEURALDEEP_API_KEY:

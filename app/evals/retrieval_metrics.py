@@ -129,10 +129,12 @@ def evaluate(run_name=None):
     section_hits, section_rr, section_scored = 0, 0.0, 0
     golds = _gold_headings(in_corpus)
     scorable = _scorable_sections(in_corpus, golds)
+    per_row = []
     for ql in in_corpus:
         expected = _gold(ql)
         # the section axes see what the gate left; the file axes see what search found, gate aside
         gold_heading = golds.get(ql.question_id)
+        section_rank = None
         if id(ql) in scorable:
             section_scored += 1
             section_rank = rank_of_gold_section(ql.chunks, expected, gold_heading)
@@ -144,6 +146,7 @@ def evaluate(run_name=None):
         if precision is not None:
             precisions.append(precision)
         rank = rank_of_gold(got, expected)
+        per_row.append((ql, rank, section_rank if id(ql) in scorable else False))
         if rank:
             hits += 1
             rr_sum += 1 / rank
@@ -180,6 +183,10 @@ def evaluate(run_name=None):
         "n_section_scored": section_scored,
         # the two pairs differ by grain and by gate, and only the grain is in their names
         "section_axes_see_the_kept_chunks": True,
+        # the same run read on two pools by a property of the question: a rare identifier it names, or none
+        "by_anchor": _by_anchor(per_row),
+        "by_heading_word": _by_column(per_row, "shares_heading_word", ("shares", "does_not")),
+        "by_reference": _by_column(per_row, "reference_page", ("reference", "not_reference")),
         # a rank across a concatenation of retrievals is not a rank
         "mrr_in_hop": round(rr_in_hop / in_hop_n, 3) if in_hop_n else None,
         "found_at_hop": {str(k): v for k, v in sorted(found_at_hop.items())},
@@ -222,3 +229,34 @@ if __name__ == "__main__":
     print(f"hit@k: {r['hits']}/{r['n']} = {r['hit_at_k']:.0%}")
     print(f"MRR:   {r['mrr']:.3f}")
     print("misses:", r["misses"])
+
+
+def _pool(rows) -> dict:
+    n = len(rows)
+    scored = [section for _, _, section in rows if section is not False]
+    return {
+        "n": n,
+        "hit_at_k": round(sum(1 for _, rank, _ in rows if rank) / n, 3) if n else None,
+        "mrr": round(sum(1 / rank for _, rank, _ in rows if rank) / n, 3) if n else None,
+        "n_section_scored": len(scored),
+        "section_hit_at_k": round(sum(1 for r in scored if r) / len(scored), 3) if scored else None,
+    }
+
+
+def _by_anchor(per_row) -> dict:
+    from evals import columns
+
+    out = _by_column(per_row, "anchored_by_identifier", ("anchored", "not_anchored"))
+    return {**out, "rare_at_most_sections": columns.ANCHOR_RARE}
+
+
+# the same run on two pools of one column of the question; a row the column cannot read is counted apart
+def _by_column(per_row, column: str, names: tuple[str, str]) -> dict:
+    from evals import columns
+
+    said = [(columns.read(column, ql), (ql, rank, section)) for ql, rank, section in per_row]
+    return {
+        names[0]: _pool([row for value, row in said if value == 1.0]),
+        names[1]: _pool([row for value, row in said if value == 0.0]),
+        "unread": sum(1 for value, _ in said if value is None),
+    }

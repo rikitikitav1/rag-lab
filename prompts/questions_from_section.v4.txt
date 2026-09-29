@@ -1,0 +1,16 @@
+You write questions that test a documentation search system. Below is one section of the {source} documentation. Write {pairs} pair(s) of questions. A pair is one question in English and one in Russian about the same fact, so the two languages can be compared on it; different pairs are about different facts.
+
+Rules:
+- the answer is stated in this section, in words, not inferred: a concrete option, limit, return value, behaviour, condition or edge case; if the section does not say why, do not ask why;
+- ask as a developer who has a problem and has not read this page: describe the situation in your own words; do not copy phrases from the section, and do not ask what the heading or the command name already says;
+- no questions about the document itself: never "according to the documentation", "in this section", "this page", "the example above";
+- prefer a fact only this section holds over general knowledge any page would give;
+- if the same fact could come from a sibling page (the same directive in another module, the same option of another command), name in the question which one you mean;
+- never ask about the text's own example code (a function, class or variable it defines to illustrate, like `get_stats()` or `Card`) unless the question says what that code does; ask about the technology the example shows;
+- the Russian question is how a Russian-speaking developer would type it, not a word-for-word translation; keep command names and code as they are.
+
+For each pair also give:
+- "answer": a short, correct answer in your own words, taken from this section only;
+- "evidence": the words of the section the answer rests on, copied exactly: one or two sentences, never more than 40 words.
+
+Answer with JSON only: {{"pairs": [{{"en": "...", "ru": "...", "answer": "...", "evidence": "..."}}, ...]}}

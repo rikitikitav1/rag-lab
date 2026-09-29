@@ -45,6 +45,8 @@ def body_hash(body: str) -> str:
 GOLD_SQL = "position({mark} in {source}) > 0"
 # a questions row carries a gold of either kind
 HAS_GOLD_SQL = "(cardinality({q}.marked_sources) > 0 OR {q}.gold IS NOT NULL)"
+# a run reads a question once it is accepted; `Question.status == ACCEPTED` is the same test in the orm
+READ_BY_RUNS_SQL = "{q}.status = 'accepted'"
 
 SECTION_SEP = " > "
 # a chapter is a section path's first two steps, the grain the coverage report reads and a question set is spread over
@@ -136,3 +138,82 @@ def language_by_alphabet(text: str) -> str:
     letters = [c for c in text if c.isalpha()]
     cyrillic = sum(1 for c in letters if "\u0400" <= c <= "\u04ff")
     return "ru" if letters and cyrillic / len(letters) >= CYRILLIC_SHARE else "en"
+
+
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+
+
+# a link read by its words, without the address: how a model quotes it
+def unlinked(text: str) -> str:
+    return _LINK.sub(r"\1", text)
+
+
+# a section path's last step, the one that names the section itself
+def leaf_of(section: str | None) -> str:
+    return (section or "").split(SECTION_SEP)[-1]
+
+
+# a quote is a text's words in their order: a table's cells, list dashes, escapes and emphasis around them are layout
+_LAYOUT = re.compile(r"[\s*_`|\\-]")
+
+
+def spaceless_key(text: str) -> str:
+    return _LAYOUT.sub("", unlinked(text)).casefold()
+
+
+_BACKTICKED = re.compile(r"`([^`\n]+)`")
+_TOKEN = re.compile(r"[\w.()\-]+")
+# snake_case, module.name, call(), --option, a digit among letters, a case change inside
+_SHAPES = (
+    re.compile(r"[A-Za-z0-9]_[A-Za-z0-9]"),
+    re.compile(r"[A-Za-z]\.[A-Za-z]"),
+    re.compile(r"\w\(\)$"),
+    re.compile(r"^--[A-Za-z]"),
+    re.compile(r"[A-Za-z]\d|\d[A-Za-z]"),
+    re.compile(r"[a-z][A-Z]"),
+)
+
+
+# a token that names a thing of code by its shape; backticks are the generator's habit and the Russian half drops them
+_CODE_SHAPES = tuple(shape for shape in _SHAPES if shape.pattern != r"[a-z][A-Z]")
+
+
+def identifiers(question: str) -> list[str]:
+    found = [t.strip() for t in _BACKTICKED.findall(question)]
+    for token in _TOKEN.findall(_BACKTICKED.sub(" ", question)):
+        token = token.rstrip(".-").lstrip(".")
+        if any(shape.search(token) for shape in _SHAPES):
+            found.append(token)
+    return list(dict.fromkeys(t for t in found if t))
+
+
+# the identifiers of a question its gold section holds, each with the number of the source's sections that hold it
+def anchors(question: str, gold_key: str, section_keys: list[str]) -> dict[str, int]:
+    out = {}
+    for token in identifiers(question):
+        key = spaceless_key(token)
+        if len(key) > 1 and key in gold_key:
+            out[token] = sum(1 for k in section_keys if key in k)
+    return out
+
+
+_WORDS = re.compile(r"[^\W\d_]{5,}")
+
+
+# a reference page: its leaf names one identifier by a code shape, or matches the source's own pattern
+def reference_by(section: str | None, knob: str | None = None) -> str | None:
+    leaf = leaf_of(section).strip().strip("`").rstrip(":")
+    words = leaf.split()
+    if words and len(words) <= 3 and any(shape.search(words[0].strip("`")) for shape in _CODE_SHAPES):
+        return "heading"
+    if knob and re.search(knob, leaf):
+        return "knob"
+    return None
+
+
+# a question that repeats a word of its section's heading is found by the heading; five letters and a five-letter stem
+def shares_heading_word(question: str, section: str | None) -> bool:
+    if not section:
+        return False
+    stems = {w.casefold()[:5] for w in _WORDS.findall(leaf_of(section))}
+    return any(w.casefold()[:5] in stems for w in _WORDS.findall(question))

@@ -1,4 +1,12 @@
+import re
+
 from corpus_keys import chapter_of
+
+# what the generator reads in one call: the index's own chunks joined, about 1300 words, one window of acceptance
+BLOCK_CHARS = 8000
+# a subsection starts a new block once the block holds this share of its ceiling; smaller ones join their neighbour
+BLOCK_BREAK_SHARE = 0.5
+_SUBHEADING = re.compile(r"#{3,6} ")
 
 
 # a source's sections as the index cuts them, keyed as its chunks are: what a question generator reads and marks
@@ -19,7 +27,8 @@ def export(docs) -> dict:
             runs[key] = runs.get(key, 0) + 1
         last[stream] = key
         row = sections.setdefault(
-            key, {"file": doc.source, "section": doc.section, "chapter": chapter_of(doc.section), "versions": []}
+            key, {"file": doc.source, "section": doc.section, "stream": stream, "chapter": chapter_of(doc.section),
+                  "versions": []},
         )
         row.setdefault("text", [])
         row["text"].append(doc.body if doc.body is not None else doc.content)
@@ -30,12 +39,29 @@ def export(docs) -> dict:
             sections.pop(key)
     rows = []
     for row in sections.values():
-        text = "\n\n".join(row.pop("text"))
-        rows.append({**row, "words": len(text.split()), "text": text})
+        bodies = row.pop("text")
+        text = "\n\n".join(bodies)
+        rows.append({**row, "words": len(text.split()), "text": text, "blocks": blocks(bodies)})
     return {
         "sections": rows,
         "refused": [{"file": f, "section": s, "version": v, "why": why} for (f, s, v), why in refused.items()],
     }
+
+
+# a section's chunks joined in order into the generator's blocks, broken at a subheading or at the ceiling
+def blocks(bodies: list[str]) -> list[str]:
+    out, held, size = [], [], 0
+    for body in bodies:
+        starts_a_subsection = bool(_SUBHEADING.match(body.lstrip()))
+        full = size + len(body) > BLOCK_CHARS
+        if held and (full or (starts_a_subsection and size >= BLOCK_CHARS * BLOCK_BREAK_SHARE)):
+            out.append("\n\n".join(held))
+            held, size = [], 0
+        held.append(body)
+        size += len(body) + 2
+    if held:
+        out.append("\n\n".join(held))
+    return out
 
 
 # the questions each chapter is drawn to: the source's ceiling spread by words, no chapter above its own ceiling

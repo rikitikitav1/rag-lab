@@ -51,7 +51,10 @@ evals:
     cutoffs: [1, 3, 5, 10]
     # fuses the arms' ranks into the report's one ranking, not the search legs: those read `retrieval.rrf_k`
     rrf_k: 60
-  # a source's question pairs, spread by words over its chapters
+  # a source's question pairs, spread by words over its chapters; one kept under min_pairs is named in its report
   question_set:
     per_source: 100
     per_chapter: 10
+    min_pairs: 20
+    # a pair is one question per language, the same fact in each; a set may ask in one of them only
+    languages: [en, ru]

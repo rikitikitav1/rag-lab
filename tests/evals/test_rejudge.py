@@ -252,6 +252,7 @@ def test_folded_axes_keep_the_order_they_were_named_in():
 
 def _fake_reads(monkeypatch, scored: dict[str, dict]):
     monkeypatch.setattr(rejudge, "_scored", lambda name: scored.get(name, {}))
+    monkeypatch.setattr(rejudge, "_pair_ids", lambda ids: {})
     monkeypatch.setattr(rejudge, "answers_digest", lambda name, ids=None: "sha256:same:2")
     monkeypatch.setattr(rejudge, "_judged_by", lambda name: {"model": ["stub"], "prompts": None})
 

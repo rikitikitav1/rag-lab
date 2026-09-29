@@ -6,7 +6,7 @@ import job_specs
 import prompt_repo
 from evals import guest_axes, sampling
 from evals.stats import ALPHA, annotate_holm, bootstrap_ci, deltas_over, mean_of, tally, wilcoxon_p
-from models.eval import QuestionLog
+from models.eval import Question, QuestionLog
 from models.registry import (
     MAX_MODEL_NAME,
     MODEL_NAME_RE,
@@ -378,6 +378,17 @@ def answers_digest(run_name: str, question_ids=None) -> str:
     return f"sha256:{digest.hexdigest()[:16]}:{len(rows)}"
 
 
+# the pair a question belongs to, so its two languages fall in one half
+def _pair_ids(ids) -> dict[int, str]:
+    if not ids:
+        return {}
+    with Session() as session:
+        rows = session.execute(
+            select(Question.id, Question.pair_id).where(Question.id.in_(list(ids)), Question.pair_id.isnot(None))
+        ).all()
+    return dict(rows)
+
+
 def _scored(run_name: str) -> dict[int, dict]:
     with Session() as session:
         rows = session.execute(
@@ -396,8 +407,9 @@ def _scored(run_name: str) -> dict[int, dict]:
     }
 
 
-def _paired(before: dict, after: dict, axis: str, which: str | None = None) -> dict | None:
-    ids = [qid for qid in sorted(set(before) & set(after)) if not which or half_of(qid) == which]
+def _paired(before: dict, after: dict, axis: str, which: str | None = None, pairs: dict | None = None) -> dict | None:
+    pairs = pairs or {}
+    ids = [qid for qid in sorted(set(before) & set(after)) if not which or half_of(qid, pairs.get(qid)) == which]
     deltas = deltas_over(
         {qid: before[qid].get(axis) for qid in ids},
         {qid: after[qid].get(axis) for qid in ids},
@@ -508,10 +520,12 @@ def compute_results(source_run: str, param: str, pairs: list[tuple[dict, str]]) 
         order.insert(0, source_run)
 
     couples, pairing = _couples(order)
+    pairs = _pair_ids({qid for scored in loaded.values() for qid in scored})
     deltas = {}
     for before, after in couples:
-        deltas[f"{before}_vs_{after}"] = {axis: _paired(loaded[before], loaded[after], axis) for axis in AXES} | {
-            "halves": {axis: {w: _paired(loaded[before], loaded[after], axis, w) for w in ("A", "B")} for axis in AXES},
+        b, a = loaded[before], loaded[after]
+        deltas[f"{before}_vs_{after}"] = {axis: _paired(b, a, axis) for axis in AXES} | {
+            "halves": {axis: {w: _paired(b, a, axis, w, pairs) for w in ("A", "B")} for axis in AXES},
             # over the rows the pair shares: an arm judged on fewer rows differs by size alone
             "same_answers": _same_answers(before, after, source_run, loaded),
         }

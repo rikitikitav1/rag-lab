@@ -76,3 +76,16 @@ def test_the_seed_keeps_a_language_its_file_leaves_unsaid(db, monkeypatch):
         row = c.execute(text("SELECT language, path FROM data_sources WHERE name = 'book'")).one()
     assert tuple(row) == ("ru", "inbox/book")
 
+
+
+# a marked question with no gold is SQL NULL, not a JSON null the one-kind-of-gold check refuses
+def test_a_marked_question_without_gold_is_stored_with_a_null_gold(db):
+    from models.eval import Question
+    from sqlalchemy import insert
+
+    with db.begin() as c:
+        c.execute(
+            insert(Question),
+            [{"text_hash": "h", "original_text": "What is ADO.NET?", "marked_sources": ["a.md"], "gold": None}],
+        )
+        assert c.execute(text("SELECT gold IS NULL FROM questions WHERE text_hash = 'h'")).scalar() is True

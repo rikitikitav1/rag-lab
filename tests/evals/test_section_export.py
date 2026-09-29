@@ -60,3 +60,12 @@ def test_an_older_versions_text_is_its_own_section_not_a_repeat():
         ("AQL > Functions", ("3.12", "3.11")): "shared",
         ("AQL > Operators", ("3.11",)): "old text",
     }
+
+
+# the index's own chunks joined into blocks: a subsection starts one once the block is half full, the ceiling always
+def test_blocks_join_chunks_and_break_at_a_subheading_or_the_ceiling(monkeypatch):
+    monkeypatch.setattr(section_export, "BLOCK_CHARS", 100)
+    small, half = "a" * 20, "b" * 55
+    assert section_export.blocks([small, "### Sub\n" + small]) == [small + "\n\n### Sub\n" + small]
+    assert section_export.blocks([half, "### Sub\n" + small]) == [half, "### Sub\n" + small]
+    assert section_export.blocks([half, half]) == [half, half]

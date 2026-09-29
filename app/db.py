@@ -4,7 +4,15 @@ from typing import NamedTuple
 import config
 import logging_setup
 import search_scope
-from corpus_keys import GOLD_SQL, HAS_GOLD_SQL, Gold, exact_gold_sql, language_by_alphabet, vector_index_name
+from corpus_keys import (
+    GOLD_SQL,
+    HAS_GOLD_SQL,
+    READ_BY_RUNS_SQL,
+    Gold,
+    exact_gold_sql,
+    language_by_alphabet,
+    vector_index_name,
+)
 from errors import Final, StandFault
 from langdetect import DetectorFactory, LangDetectException, detect
 from orm.sync_db import engine
@@ -219,12 +227,14 @@ _EXACT_GOLD_OF_Q = exact_gold_sql(
 # questions per set whose gold no searched chunk holds, by the stand's one gold rule: a run on such a set misreads
 def unreachable_by_set(*, variant: str) -> list[tuple[str | None, int]]:
     marked = GOLD_SQL.format(mark="m", source="dc.source")
+    accepted = READ_BY_RUNS_SQL.format(q="q")
     # two branches apart: one OR over both made the planner scan the chunks per question and hit the timeout
     query = f"""SELECT set_name, count(*) FROM (
-                  SELECT q.set_name FROM questions q WHERE cardinality(q.marked_sources) > 0 AND NOT EXISTS (
+                  SELECT q.set_name FROM questions q
+                  WHERE {accepted} AND cardinality(q.marked_sources) > 0 AND NOT EXISTS (
                     SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m WHERE {live_rows("dc")} AND {marked})
                   UNION ALL
-                  SELECT q.set_name FROM questions q WHERE q.gold IS NOT NULL AND NOT EXISTS (
+                  SELECT q.set_name FROM questions q WHERE {accepted} AND q.gold IS NOT NULL AND NOT EXISTS (
                     SELECT 1 FROM data_chunks dc WHERE {live_rows("dc")} AND {_EXACT_GOLD_OF_Q})
                 ) unreachable GROUP BY set_name ORDER BY 2 DESC, 1"""
     with engine.connect() as conn:

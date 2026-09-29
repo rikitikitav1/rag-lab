@@ -176,7 +176,7 @@ def test_the_run_snapshot_names_the_parser_of_each_answering_role(monkeypatch):
     local = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
     monkeypatch.setattr(run_snapshot, "model_of", lambda role: engines.Resolved("bge-m3", local))
     monkeypatch.setattr(run_snapshot.card, "model_on_card", lambda spec, name: None)
-    monkeypatch.setattr(run_snapshot.llm, "sampler", lambda role, spec: SimpleNamespace(dropped={}))
+    monkeypatch.setattr(run_snapshot.llm, "sampler", lambda role, spec: SimpleNamespace(dropped={}, sent={}))
     *_, parsers = run_snapshot._by_role(engines.Resolved("MiniMaxAI/MiniMax-M2.7", CLOUD, "think_tags+minimax_tools"))
     assert parsers == {Role.generation: "minimax_tools@1+think_tags@1", Role.embedding: "none@1"}
 

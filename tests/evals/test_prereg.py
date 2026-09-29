@@ -265,7 +265,7 @@ def test_a_declared_floor_value_is_the_bar_when_no_floor_run_is_named(monkeypatc
     control = {q: _row(faithfulness="6") for q in range(50)}
     arm = {q: _row(faithfulness="7" if q % 2 else "6") for q in range(50)}
     monkeypatch.setattr(prereg, "read", lambda name: promise)
-    monkeypatch.setattr(prereg, "_question_ids", lambda sets: set(range(50)))
+    monkeypatch.setattr(prereg, "_question_ids", lambda sets, language=None: set(range(50)))
     monkeypatch.setattr(prereg, "_rows", {"c": control, "a": arm}.get)
     monkeypatch.setattr(prereg, "_closed_with", lambda name, runs, result: None)
     out = prereg.close("p", runs={"control": "c", "arm": "a"})
@@ -287,7 +287,7 @@ def test_a_declared_draw_narrows_the_population_to_its_questions(monkeypatch):
     control = {q: _row(faithfulness="6") for q in range(5)}
     arm = {q: _row(faithfulness="7") for q in range(5)}
     monkeypatch.setattr(prereg, "read", lambda name: promise)
-    monkeypatch.setattr(prereg, "_question_ids", lambda sets: set(range(5)))
+    monkeypatch.setattr(prereg, "_question_ids", lambda sets, language=None: set(range(5)))
     monkeypatch.setattr(prereg, "_rows", {"c": control, "a": arm}.get)
     monkeypatch.setattr(prereg, "_closed_with", lambda name, runs, result: None)
     assert prereg.close("p", runs={"control": "c", "arm": "a"})["n"] == 2
@@ -300,3 +300,86 @@ def test_a_closing_recorded_under_the_nested_key_still_reads_as_what_it_named():
     assert prereg._named(named | {"cleared": False}) == named
     assert prereg._named({"runs": {"control": "c", "arm": "a"}}) == {"runs": {"control": "c", "arm": "a"},
                                                                      "measurements": {}}
+
+
+def _accepted(answerable, why=None, outcome="accepted"):
+    return {"answerable": answerable, "why": why, "outcome": outcome}
+
+
+# the acceptance columns read the reader's word, the sieve on answered rows only, and the pair's wait
+def test_the_acceptance_columns_read_the_readers_rows():
+    answered, elsewhere, none = _accepted(True), _accepted(True, "x", "undecided"), _accepted(False, "y", "refused")
+    assert [columns.read("reader_answered", r) for r in (answered, elsewhere, none)] == [1.0, 1.0, 0.0]
+    assert [columns.read("evidence_held", r) for r in (answered, elsewhere, none)] == [1.0, 0.0, None]
+    assert [columns.read("left_for_judge", r) for r in (answered, elsewhere, none)] == [0.0, 1.0, 0.0]
+
+
+# one arm is read against its own bar: the point, or the edge its promise leans on
+def test_a_one_arm_bar_is_read_on_the_point_or_on_the_edge():
+    arm = {q: _accepted(q < 92) for q in range(100)}
+    closing = {"columns": ["reader_answered"], "arm_should": "raise", "bar": 0.9, "read_on": "point"}
+    point = prereg._one_arm(arm, set(range(100)), ["reader_answered"], closing, 1)
+    assert point["state"] == "cleared" and point["read"] == 0.92 and point["n"] == 100
+    edge = prereg._one_arm(arm, set(range(100)), ["reader_answered"], {**closing, "read_on": "edge"}, 1)
+    assert edge["state"] == "missed" and edge["read"] < 0.9
+    # a cap is a lower promise, and its edge is the upper one
+    waits = {q: _accepted(True, "x" if q < 10 else None, "undecided" if q < 10 else "accepted") for q in range(100)}
+    cap = {"columns": ["left_for_judge"], "arm_should": "lower", "bar": 0.3, "read_on": "edge"}
+    capped = prereg._one_arm(waits, set(range(100)), ["left_for_judge"], cap, -1)
+    assert capped["state"] == "cleared" and capped["read"] == capped["level"]["ci95"][1] < 0.3
+
+
+def test_a_one_arm_bar_is_declared_with_its_reading_and_not_beside_a_floor_value():
+    base = {"columns": ["reader_answered"], "arm_should": "raise", "bar": 0.9}
+    with pytest.raises(prereg.Refused, match="closing.read_on"):
+        prereg._closing_or_refuse(base)
+    with pytest.raises(prereg.Refused, match="not both"):
+        prereg._closing_or_refuse({**base, "read_on": "point", "floor_value": 0.1})
+    assert prereg._closing_or_refuse({**base, "read_on": "edge"})["bar"] == 0.9
+
+
+# a closed promise keeps the numbers it was read on, not only its word
+def test_a_closing_stores_the_level_it_was_read_on(monkeypatch):
+    row = SimpleNamespace(closed_with=None)
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def scalar(self, query):
+            return row
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(prereg, "Session", _Session)
+    result = {"cleared": False, "cleared_because": "the closing does not clear its bar", "n": 67,
+              "level": {"mean": 0.4328}, "read": 0.4328, "bar": 0.9, "guards": []}
+    stored = prereg._closed_with("p", {"runs": {}, "measurements": {"arm": "m.json"}}, result)
+    assert stored["read"] == 0.4328 and stored["bar"] == 0.9 and stored["n"] == 67
+    assert "guards" not in stored and stored["measurements"] == {"arm": "m.json"}
+
+
+# a guard pairs two arms: beside a one-arm bar it could never be read, and the promise would never close
+def test_a_one_arm_bar_refuses_a_guard_at_the_door(monkeypatch):
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def scalar(self, query):
+            return None
+
+        def scalars(self, query):
+            return ["smoke"]
+
+    monkeypatch.setattr(prereg, "Session", _Session)
+    closing = {"columns": ["reader_answered"], "arm_should": "raise", "bar": 0.9, "read_on": "edge"}
+    guard = {"column": "reader_answered", "must_not": "fall"}
+    with pytest.raises(prereg.Refused, match="one-arm bar takes vetoes"):
+        prereg.write("p", {"sets": ["smoke"]}, {"arm": "a"}, closing, [guard], {})

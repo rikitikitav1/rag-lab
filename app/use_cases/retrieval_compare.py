@@ -10,7 +10,7 @@ import job_queue
 import limits
 import llm
 import logging_setup
-from corpus_keys import HAS_GOLD_SQL, SECTION_SEP, Gold
+from corpus_keys import HAS_GOLD_SQL, READ_BY_RUNS_SQL, Gold, leaf_of
 from evals.retrieval_metrics import rank_of_exact_section, rank_of_gold
 from evals.stats import bootstrap_ci, deltas_over, tally
 
@@ -53,7 +53,7 @@ def clean_gold(text):
 
 def heading_text(section):
     """section is a heading path ("h1 > 12. Question?"); only the leaf identifies the section."""
-    leaf = (section or "").split(SECTION_SEP)[-1]
+    leaf = leaf_of(section)
     return clean_gold(re.sub(r"^\d+\.\s*", "", leaf))
 
 
@@ -67,13 +67,14 @@ def questions(conn, set_name, limit, ids=None):
     rows = (
         conn.execute(
             sql(f"""
-            SELECT q.id, q.original_text, q.marked_sources, q.gold, q.embedding::text AS emb, q.embedded_by,
+            SELECT q.id, q.original_text, q.marked_sources, q.gold, q.pair_id, q.embedding::text AS emb,
+                   q.embedded_by,
                    COALESCE(o.original_text, q.original_text) AS gold_heading
             FROM questions q
             LEFT JOIN questions o ON o.id = q.source_question_id
             WHERE {where}
               AND q.embedding IS NOT NULL
-              AND {HAS_GOLD_SQL.format(q="q")}
+              AND {HAS_GOLD_SQL.format(q="q")} AND {READ_BY_RUNS_SQL.format(q="q")}
             ORDER BY q.id
             {cap}
         """),
@@ -275,6 +276,7 @@ def measure(
         out.append(
             {
                 "id": q["id"],
+                "pair_id": q.get("pair_id"),
                 # which corpus repository the gold sits in: halves are drawn across repos, not inside
                 "repo": gold.marks[0].split("/")[0],
                 "file_rank": rank_of_gold(files, gold),
@@ -301,18 +303,23 @@ def rr(rank) -> float:
 SPLIT_SEED = "hygiene_v1"
 
 
-# drawn by size: a split that moves when the set grows is no pre-registration
-def half_of(question_id) -> str:
+# drawn by size: a split that moves when the set grows is no pre-registration; a pair's two languages share a half
+def half_of(question_id, pair_id: str | None = None) -> str:
     import hashlib
 
-    digest = hashlib.md5(f"{question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False).hexdigest()
+    digest = hashlib.md5(f"{pair_id or question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False).hexdigest()
     return "A" if int(digest, 16) % 2 == 0 else "B"
 
 
-def paired_delta_half(before: list[dict], after: list[dict], level: str, which: str) -> dict:
-    # over the ids both arms carry: the hash names the questions the numbers came from
+# the ids both arms carry that fall in one half; the hash names the questions the numbers came from
+def half_ids(before: list[dict], after: list[dict], which: str) -> set:
     shared = {r["id"] for r in before} & {r["id"] for r in after}
-    kept = {qid for qid in shared if half_of(qid) == which}
+    pairs = {r["id"]: r.get("pair_id") for r in after}
+    return {qid for qid in shared if half_of(qid, pairs.get(qid)) == which}
+
+
+def paired_delta_half(before: list[dict], after: list[dict], level: str, which: str) -> dict:
+    kept = half_ids(before, after, which)
     out = paired_delta(
         [r for r in before if r["id"] in kept],
         [r for r in after if r["id"] in kept],

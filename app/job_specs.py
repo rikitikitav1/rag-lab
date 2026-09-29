@@ -16,6 +16,8 @@ from tool_names import SETTINGS_NAME, settings_refusal
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
 
+# a generated set names its files and its reports, so its name is one a path can carry as it is
+SET_NAME = r"^[\w.-]+$"
 # the only folder a graded pass reads: a path of its own would let a job open any file
 FROZEN_POOL_RE = re.compile(r"(/app/)?datasets/candidates/[\w.-]+\.json")
 
@@ -235,6 +237,72 @@ class ParaphraseQuestions(Spec):
     originals: list | None = None
 
 
+# a source's question pairs written from its sections; a probe caps the pairs it asks for
+class GenerateQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    max_pairs: int | None = Field(default=None, ge=1)
+    # a smoke: go on section by section until this many pairs are kept
+    kept_at_least: int | None = Field(default=None, ge=1)
+    # the languages a pair is asked in, over the set's configured ones; the stand reads two
+    languages: list[Literal["en", "ru"]] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _one_way_to_stop(self):
+        if self.max_pairs and self.kept_at_least:
+            raise ValueError("a run stops at max_pairs asked or at kept_at_least kept, not both")
+        if self.languages and len(set(self.languages)) != len(self.languages):
+            raise ValueError("languages: each language once")
+        return self
+
+
+# a set's candidate pairs of one source read from their sections; a probe caps the pairs it reads
+class AcceptQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    max_pairs: int | None = Field(default=None, ge=1)
+    # a pair read once waits for the judge; asking the reader again is a choice, not a rerun's default
+    again: bool = False
+    # a pass that only reports, so two passes over one set can be compared before either settles it
+    settle: bool = True
+    # settled pairs too, read and settled again: a reader or a reading changed since they were refused
+    every: bool = False
+
+
+# a set's undecided pairs of one source judged on their evidence; a probe caps the pairs it reads
+class JudgeQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    max_pairs: int | None = Field(default=None, ge=1)
+    settle: bool = True
+    every: bool = False
+    # a second judge over the role's own: the pairs read by another model, the role left seated
+    model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
+
+
+# a generation's report read again by today's checks; the name only, the folder is the stand's
+class ReparseQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    report: str = Field(pattern=r"^question_set_[\w.-]+\.json$", max_length=300)
+
+
+# a set's rows given their anchors by today's rule, the source's sections read once
+class AnchorQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+
+
+# a generated set to its file beside the sources, and back into the base on a later intake
+class SaveQuestions(Spec):
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+
+
+class LoadQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+
+
 class BuildVetoSet(Spec):
     seed: str | int | None = None
     set_name: str | None = None
@@ -336,6 +404,13 @@ class EmbedQuestions(Spec):
 
 SPECS: dict[str, type[Spec]] = {
     "paraphrase_questions": ParaphraseQuestions,
+    "generate_questions": GenerateQuestions,
+    "accept_questions": AcceptQuestions,
+    "judge_questions": JudgeQuestions,
+    "reparse_questions": ReparseQuestions,
+    "anchor_questions": AnchorQuestions,
+    "save_questions": SaveQuestions,
+    "load_questions": LoadQuestions,
     "build_veto_set": BuildVetoSet,
     "index_data": IndexData,
     "convert_source": ConvertSource,
@@ -356,7 +431,8 @@ SPECS: dict[str, type[Spec]] = {
     "delete_llm_model": ModelByName,
 }
 
-LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io"}
+# the question writer calls a cloud and holds no card, so it runs beside a converter
+LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io", "generate_questions": "io"}
 
 # lower first; judging waits for runs, and the API's `hand_card` overtakes what waits
 PRIORITY = {"hand_card": -2, "judge_answers": 10, "judge_guest_axes": 10, "judge_language": 10}
@@ -368,6 +444,14 @@ STARVED_AFTER_MINUTES = 30
 # the roles a type answers with; `hand_card` names its engine and model in the options instead
 LOADS: dict[str, tuple[Role, ...]] = {
     "paraphrase_questions": (Role.paraphrasing,),
+    "generate_questions": (Role.questioning,),
+    "accept_questions": (Role.accepting,),
+    "judge_questions": (Role.judging,),
+    # no model: the replies are the ones the generator gave
+    "reparse_questions": (),
+    "anchor_questions": (),
+    "save_questions": (),
+    "load_questions": (),
     "build_veto_set": (Role.paraphrasing,),
     "index_data": (Role.embedding,),
     # the converter is an engine, not a role: the handler takes the card for it

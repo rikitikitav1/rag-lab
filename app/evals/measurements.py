@@ -20,6 +20,11 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", (text or "").lower()).strip("_")[:60] or "unnamed"
 
 
+# the reports a name was recorded under, found by the slug `record` wrote them with; the caller reads which are its own
+def recorded(kind: str, name: str) -> list[Path]:
+    return sorted(FOLDER.glob(f"{_slug(kind)}_{_slug(name)}*.json"))
+
+
 # the worker runs as root over the host's tree, so the file is handed to whoever owns the folder
 def hand_back(path: Path) -> None:
     try:

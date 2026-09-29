@@ -354,6 +354,8 @@ class RetrievalCompareCfg(_Strict):
 class QuestionSetCfg(_Strict):
     per_source: int
     per_chapter: int
+    min_pairs: int
+    languages: list[Literal["en", "ru"]] = Field(min_length=1)
 
 
 class EvalsCfg(_Strict):

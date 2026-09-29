@@ -499,11 +499,17 @@ CREATE TABLE public.questions (
     set_name text,
     language text,
     kind text,
-    status text,
+    status text DEFAULT 'accepted'::text NOT NULL,
     embedding public.vector(1024),
     source_question_id integer,
     embedded_by text,
     gold jsonb,
+    pair_id text,
+    evidence text,
+    acceptance_why text,
+    answerable_by_reader boolean,
+    anchors jsonb,
+    evidence_at jsonb,
     CONSTRAINT questions_gold_shape CHECK (((gold IS NULL) OR ((jsonb_typeof((gold -> 'file'::text)) = 'string'::text) AND (jsonb_typeof((gold -> 'section'::text)) = 'string'::text)))),
     CONSTRAINT questions_one_kind_of_gold CHECK (((gold IS NULL) OR (cardinality(marked_sources) = 0)))
 );
@@ -1064,4 +1070,11 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260929000003'),
     ('20260929000004'),
     ('20260929000005'),
-    ('20260929000006');
+    ('20260929000006'),
+    ('20260929000007'),
+    ('20260929000008'),
+    ('20260929000009'),
+    ('20260929000010'),
+    ('20260930000011'),
+    ('20260930000012'),
+    ('20260930000013');

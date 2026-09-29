@@ -1,9 +1,13 @@
 """What each question set carries, and therefore which axes a run over it can be scored on."""
 
 import collections
+import json
+from types import SimpleNamespace
 
+import config
+from evals import columns, measurements, pair_judge
 from evals.pools import POOLS, kind_of_question
-from models.eval import Question
+from models.eval import ACCEPTED, REFUSED, Question
 from orm.sync_db import Session
 from sqlalchemy import select
 from sqlalchemy.orm import defer
@@ -14,6 +18,8 @@ def _of(questions: list) -> dict:
     languages = collections.Counter(q.language or "unknown" for q in questions)
     return {
         "questions": len(questions),
+        # what a run over the set reads; the rest wait for acceptance or were settled out
+        "read_by_runs": sum(1 for q in questions if q.status == ACCEPTED),
         "pools": {pool: pools.get(pool, 0) for pool in POOLS if pools.get(pool)},
         "languages": dict(sorted(languages.items())),
         # the corpus pool, and what every retrieval axis ranks against
@@ -26,6 +32,54 @@ def _of(questions: list) -> dict:
     }
 
 
+_JUDGE_SAID = {pair_judge.NOT_ANSWERED, pair_judge.SPLIT, pair_judge.UNREAD, pair_judge.NOT_FOUND}
+
+
+# a generated set's way from the generator to acceptance: what was asked and lost, then who settled what, by language
+def stages(set_name: str, questions: list) -> dict | None:
+    paired = [q for q in questions if q.pair_id]
+    if not paired:
+        return None
+    asked, kept, lost = 0, 0, collections.Counter()
+    for path in measurements.recorded("question_set", set_name):
+        report = json.loads(path.read_text())
+        if report.get("set_name") != set_name:
+            continue
+        asked += report.get("pairs_asked") or 0
+        kept += report.get("pairs_kept") or 0
+        lost.update(report.get("pairs_lost_by_reason") or {})
+    reparsed = 0
+    for path in measurements.recorded("question_reparse", set_name):
+        report = json.loads(path.read_text())
+        reparsed += report.get("pairs_kept_now", 0) if report.get("set_name") == set_name else 0
+    by_language = {}
+    for lang in sorted({q.language for q in paired if q.language}):
+        mine = [q for q in paired if q.language == lang]
+        refused = [q for q in mine if q.status == REFUSED]
+        # the columns a run's slices read, read here the same way
+        anchored = [columns.read("anchored_by_identifier", SimpleNamespace(question=q)) for q in mine]
+        by_language[lang] = {
+            "status": dict(collections.Counter(str(q.status) for q in mine)),
+            "refused_by_judge": sum(1 for q in refused if q.acceptance_why in _JUDGE_SAID),
+            "refused_by_sieve": sum(1 for q in refused if q.acceptance_why not in _JUDGE_SAID),
+            "anchored": sum(1 for v in anchored if v == 1.0),
+            "anchors_unread": sum(1 for v in anchored if v is None),
+            "shares_heading_word": sum(
+                1 for q in mine if columns.read("shares_heading_word", SimpleNamespace(question=q)) == 1.0
+            ),
+        }
+    accepted_pairs = len({q.pair_id for q in paired if q.status == ACCEPTED})
+    return {
+        "generated": {"pairs_asked": asked, "pairs_kept": kept, "pairs_lost_by_reason": dict(lost)},
+        # replies read again by later checks: kept then, so the generated and the set's own count differ by these
+        "reparsed_pairs": reparsed,
+        "pairs_in_set": len({q.pair_id for q in paired}),
+        "accepted_pairs": accepted_pairs,
+        "by_language": by_language,
+        "under_the_floor": accepted_pairs < config.settings.evals.question_set.min_pairs,
+    }
+
+
 def inventory(set_name: str | None = None) -> list[dict]:
     with Session() as session:
         stmt = select(Question)
@@ -35,10 +89,13 @@ def inventory(set_name: str | None = None) -> list[dict]:
     by_set = collections.defaultdict(list)
     for q in rows:
         by_set[q.set_name or "unnamed"].append(q)
-    return [
-        {"set_name": name, **_of(questions)}
-        for name, questions in sorted(by_set.items(), key=lambda kv: -len(kv[1]))
-    ]
+    out = []
+    for name, questions in sorted(by_set.items(), key=lambda kv: -len(kv[1])):
+        row = {"set_name": name, **_of(questions)}
+        if (way := stages(name, questions)) is not None:
+            row["stages"] = way
+        out.append(row)
+    return out
 
 
 # the rows themselves, pooled by the rule `_of` counts with, so a list and its set's counts agree
