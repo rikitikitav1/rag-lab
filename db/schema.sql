@@ -16,20 +16,6 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: ltree; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS ltree WITH SCHEMA public;
-
-
---
--- Name: EXTENSION ltree; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION ltree IS 'data type for hierarchical tree-like structures';
-
-
---
 -- Name: vector; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -53,8 +39,8 @@ CREATE FUNCTION public.data_chunks_content_tsv() RETURNS trigger
 BEGIN
   NEW.content_tsv := to_tsvector(
     CASE NEW.language
-      WHEN 'rus' THEN 'russian'
-      WHEN 'eng' THEN 'english'
+      WHEN 'ru' THEN 'russian'
+      WHEN 'en' THEN 'english'
       ELSE 'simple'
     END::regconfig,
     NEW.content
@@ -79,14 +65,16 @@ CREATE TABLE public.data_chunks (
     content text NOT NULL,
     embedding public.vector(1024),
     chunk_index integer NOT NULL,
-    category public.ltree NOT NULL,
     language text NOT NULL,
     content_tsv tsvector,
     variant text NOT NULL,
     section text,
     content_hash text,
     prefix_len integer,
-    embedded_by text
+    embedded_by text,
+    tags text[] DEFAULT '{}'::text[] NOT NULL,
+    category text,
+    versions text[] DEFAULT '{}'::text[] NOT NULL
 );
 
 
@@ -117,7 +105,7 @@ ALTER SEQUENCE public.data_chunks_id_seq OWNED BY public.data_chunks.id;
 CREATE TABLE public.data_sources (
     id integer NOT NULL,
     name character varying(256) NOT NULL,
-    kind character varying(32) NOT NULL,
+    kind character varying(32),
     git_url text,
     path text,
     active boolean DEFAULT true NOT NULL,
@@ -125,12 +113,14 @@ CREATE TABLE public.data_sources (
     ingest_variant text,
     ingest_checked_at timestamp with time zone,
     ingest_reports jsonb DEFAULT '{}'::jsonb NOT NULL,
-    stage text DEFAULT 'accepted'::text NOT NULL,
+    stage text DEFAULT 'declared'::text NOT NULL,
     language text,
     licence text,
     origin jsonb,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
-    indexed_with jsonb DEFAULT '{}'::jsonb NOT NULL
+    indexed_with jsonb DEFAULT '{}'::jsonb NOT NULL,
+    declaration jsonb,
+    seeded boolean DEFAULT false NOT NULL
 );
 
 
@@ -257,7 +247,8 @@ CREATE TABLE public.jobs (
     tokens jsonb,
     balances jsonb,
     code jsonb,
-    prereg text
+    prereg text,
+    result jsonb
 );
 
 
@@ -508,10 +499,19 @@ CREATE TABLE public.questions (
     set_name text,
     language text,
     kind text,
-    status text,
+    status text DEFAULT 'accepted'::text NOT NULL,
     embedding public.vector(1024),
     source_question_id integer,
-    embedded_by text
+    embedded_by text,
+    gold jsonb,
+    pair_id text,
+    evidence text,
+    acceptance_why text,
+    answerable_by_reader boolean,
+    anchors jsonb,
+    evidence_at jsonb,
+    CONSTRAINT questions_gold_shape CHECK (((gold IS NULL) OR ((jsonb_typeof((gold -> 'file'::text)) = 'string'::text) AND (jsonb_typeof((gold -> 'section'::text)) = 'string'::text)))),
+    CONSTRAINT questions_one_kind_of_gold CHECK (((gold IS NULL) OR (cardinality(marked_sources) = 0)))
 );
 
 
@@ -840,7 +840,7 @@ ALTER TABLE ONLY public.weights
 -- Name: data_chunks_category_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX data_chunks_category_idx ON public.data_chunks USING gist (category);
+CREATE INDEX data_chunks_category_idx ON public.data_chunks USING btree (category);
 
 
 --
@@ -869,11 +869,19 @@ CREATE INDEX data_chunks_content_tsv_idx ON public.data_chunks USING gin (conten
 
 
 
+
 --
 -- Name: data_chunks_source_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX data_chunks_source_id_idx ON public.data_chunks USING btree (source_id);
+
+
+--
+-- Name: data_chunks_tags_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_tags_idx ON public.data_chunks USING gin (tags);
 
 
 --
@@ -888,6 +896,20 @@ CREATE INDEX data_chunks_variant_embedded_by_idx ON public.data_chunks USING btr
 --
 
 CREATE INDEX data_chunks_variant_source_idx ON public.data_chunks USING btree (variant, source_id);
+
+
+--
+-- Name: data_chunks_versioned_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_versioned_idx ON public.data_chunks USING btree (variant, category) WHERE (cardinality(versions) > 0);
+
+
+--
+-- Name: data_chunks_versions_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_chunks_versions_idx ON public.data_chunks USING gin (versions);
 
 
 --
@@ -1039,4 +1061,20 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260923000002'),
     ('20260925000001'),
     ('20260925000002'),
-    ('20260926000001');
+    ('20260926000001'),
+    ('20260927000001'),
+    ('20260927000002'),
+    ('20260927000003'),
+    ('20260929000001'),
+    ('20260929000002'),
+    ('20260929000003'),
+    ('20260929000004'),
+    ('20260929000005'),
+    ('20260929000006'),
+    ('20260929000007'),
+    ('20260929000008'),
+    ('20260929000009'),
+    ('20260929000010'),
+    ('20260930000011'),
+    ('20260930000012'),
+    ('20260930000013');

@@ -172,6 +172,12 @@ PIECE = {Tool.docling: _docling_piece, Tool.mineru: _mineru_piece}
 VERSION_ROUTE = {Tool.docling: "/version", Tool.mineru: "/v1/health"}
 
 
+# the tool's own version when it is up; a run from kept readings leaves it asleep, and its build stamp says the rest
 def tool_version(spec, tool: str):
     route = VERSION_ROUTE.get(tool)
-    return requests.get(converter.base_url(spec) + route, timeout=10).json() if route else None
+    if not route:
+        return None
+    try:
+        return requests.get(converter.base_url(spec) + route, timeout=10).json()
+    except requests.RequestException:
+        return None

@@ -9,10 +9,12 @@ from itertools import combinations
 from pathlib import Path
 
 import config
+from corpus_keys import Gold
 from evals.loaders import load_logs
 from evals.measurements import hand_back, store_json
 from evals.pools import JOINS_BOTH_JUDGES, joins_both_judges
 from evals.stats import to_unit
+from paths import ROOT
 
 import db
 
@@ -23,7 +25,7 @@ GUEST = "ragas_faithfulness"
 SEED = 20260908
 BOTH_SPOKE = 15
 REPEATS = 3
-SHEETS = Path(__file__).resolve().parents[2] / "temp_files"
+SHEETS = ROOT / "temp_files"
 
 
 # a sheet the owner is filling is worth a refusal, and a library says so without exiting his shell
@@ -60,9 +62,9 @@ def _covariates(left, right) -> dict:
 def _hit_gold(ql) -> bool:
     from evals import retrieval_metrics
 
-    gold = (ql.question.marked_sources if ql.question else None) or []
+    gold = Gold.of_question(ql.question)
     _, _, names = retrieval_metrics.retrieved_sources(ql)
-    return any(retrieval_metrics.is_gold(one, gold) for one in names)
+    return bool(gold) and any(gold.holds_file(one) for one in names)
 
 
 LEAKS = (

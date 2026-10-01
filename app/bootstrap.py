@@ -1,4 +1,5 @@
 import config
+import corpus_keys
 import engines
 import job_queue
 import llm
@@ -308,7 +309,7 @@ def _repair_served_vector_index() -> None:
     log.error(
         "bootstrap.served_variant_has_no_index",
         variant=served,
-        index=use_cases.index.vector_index_name(served),
+        index=corpus_keys.vector_index_name(served),
     )
     _queue_index_build(served)
 

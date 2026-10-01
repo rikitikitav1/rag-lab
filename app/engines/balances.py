@@ -2,11 +2,11 @@ import time
 from datetime import UTC, datetime
 
 import requests
-from models.registry import Engine, EngineKind
+from models.registry import NO_READER, Engine, EngineKind
 from orm.sync_db import Session
 from sqlalchemy import select
 
-from .core import EngineSpec, Unconfigured, base_url, bearer
+from .core import EngineSpec, Unconfigured, base_url, bearer, is_cloud
 from .lookup import COLUMNS
 
 TIMEOUT = 15
@@ -20,7 +20,6 @@ def _gonka_key(spec: EngineSpec) -> dict:
 
 
 # each broker shapes its service route its own way, so the row names a reader and the code keeps it
-NO_READER = "none"
 GONKA = "gonka_key"
 READERS = {NO_READER: None, GONKA: _gonka_key}
 
@@ -28,6 +27,12 @@ READERS = {NO_READER: None, GONKA: _gonka_key}
 def refuse_unknown(name: str) -> None:
     if name not in READERS:
         raise ValueError(f"unknown balance reader {name}; known: {', '.join(sorted(READERS))}")
+
+
+# a reader on a local engine would never be asked, and the summary would not show it
+def refuse_off_the_cloud(kind: EngineKind, name: str | None) -> None:
+    if name not in (None, NO_READER) and not is_cloud(kind):
+        raise ValueError(f"only a cloud has a broker to ask; {kind.value} has none")
 
 
 # a cloud that cannot say what is left says why, instead of dropping out of the summary

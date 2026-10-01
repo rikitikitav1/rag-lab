@@ -9,6 +9,7 @@ from pathlib import Path
 import config
 import engines
 import logging_setup
+from engines import balances
 from models.eval import Question, text_hash
 from models.mcp_integration import McpIntegration
 from models.registry import Engine, EngineKind, Placement, Prompt, Purpose
@@ -148,7 +149,7 @@ def _question_rows() -> list[dict]:
     return rows
 
 
-# the seven columns of a question row: two readers built the same dictionary
+# the columns of a question row: two readers built the same dictionary
 def _question_row(row: dict, reference_answer: str | None) -> dict:
     return {
         "text_hash": text_hash(row["original_text"]),
@@ -157,6 +158,8 @@ def _question_row(row: dict, reference_answer: str | None) -> dict:
         "language": row["language"] or None,
         "kind": row["kind"] or None,
         "marked_sources": [s for s in row["marked_sources"].split(",") if s],
+        # an export written before the exact gold has no such column
+        "gold": json.loads(row["gold"]) if row.get("gold") else None,
         "reference_answer": reference_answer,
     }
 
@@ -249,7 +252,11 @@ def seed_engines() -> None:
                 raise ValueError(f"engine {declared.name}: {kind.value} cannot be placed {placement.value}")
             if session.scalar(select(exists().where(Engine.env_prefix == declared.env_prefix))):
                 raise ValueError(f"engine {declared.name}: prefix {declared.env_prefix} already names an engine")
-            session.add(Engine(name=declared.name, kind=kind, env_prefix=declared.env_prefix, placement=placement))
+            reader = declared.balance_reader or balances.NO_READER
+            balances.refuse_unknown(reader)
+            balances.refuse_off_the_cloud(kind, reader)
+            session.add(Engine(name=declared.name, kind=kind, env_prefix=declared.env_prefix, placement=placement,
+                               balance_reader=reader))
             session.commit()
         log.info("seed.engine", name=declared.name)
 
@@ -258,12 +265,22 @@ def seed_engines() -> None:
 def _source_rows(found: dict) -> list[dict]:
     from sources import files
 
-    return [files.row_of(source, name) for source in found.values() for name in files.rows_of(source)]
+    return [
+        {
+            **files.row_of(source, name),
+            "declaration": source.model_dump(mode="json", exclude_defaults=True),
+            "seeded": True,
+        }
+        for source in found.values()
+        for name in files.rows_of(source)
+    ]
 
 
 def seed_sources() -> None:
+    import job_queue
     from models.corpus import DataSource
     from sources import files
+    from use_cases import source_intake
 
     found = files.source_files()
     # a family the quotas do not count stops the seed, not the first veto build a week later
@@ -271,19 +288,23 @@ def seed_sources() -> None:
     rows = _source_rows(found)
     with Session() as session:
         known = set(session.scalars(select(DataSource.name)))
-        insert = pg_insert(DataSource).values([{**r, "stage": "accepted"} for r in rows])
+        # a new row walks the line from declared, as every source does; an existing row keeps its stage
+        insert = pg_insert(DataSource).values([{**r, "stage": "declared"} for r in rows])
         # the file wins over the row, as the index writes it: its fields are set again, the stage and the state stay
-        declared = [k for k in rows[0] if k != "name"]
         session.execute(
             insert.on_conflict_do_update(
-                index_elements=["name"],
-                set_={k: getattr(insert.excluded, k) for k in declared},
+                index_elements=["name"], set_=files.upserted(insert, DataSource.__table__, list(rows[0]))
             )
         )
         session.commit()
-    log.info(
-        "seed.sources", seeded=len({r["name"] for r in rows} - known), known=len(known & {r["name"] for r in rows})
-    )
+        # a seeded row still declared: inserted now, or left by a seed that died before queueing or a failed onboard
+        still = select(DataSource.name).where(DataSource.seeded, DataSource.stage == "declared")
+        waiting = sorted(session.scalars(still))
+    inserted = sorted({r["name"] for r in rows} - known)
+    queued = [n for n in waiting if not job_queue.pending_of_type("onboard_source", source=n)]
+    for name in queued:
+        job_queue.enqueue("onboard_source", source_intake.onboard_options(name, None))
+    log.info("seed.sources", seeded=len(inserted), queued=len(queued), known=len(known & {r["name"] for r in rows}))
 
 
 MCP_INTEGRATIONS = [

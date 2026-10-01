@@ -1,0 +1,8 @@
+# an example Russian book the stand downloads and converts on a cold start; free from Postgres Professional
+name: postgresql-internals-18
+language: ru
+licence: free from Postgres Professional
+urls:
+- https://edu.postgrespro.ru/postgresql_internals-18.pdf
+categories:
+- postgresql

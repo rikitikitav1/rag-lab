@@ -11,7 +11,7 @@ import passes
 import rerank
 from engines import card
 from errors import StandFault
-from models.eval import Question, QuestionLog
+from models.eval import READ_BY_RUNS, Question, QuestionLog, read_by_runs
 from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from outcomes import Outcome
@@ -28,17 +28,53 @@ log = logging_setup.get_logger(__name__)
 
 
 # an unnamed target is every question there is: `__noop__` swept the corpus through a typed door
-def _target_texts(set_name: str | None, question_ids: list[int] | None) -> list[str]:
+def _target_questions(set_name: str | None, question_ids: list[int] | None) -> list[tuple[str, dict | None]]:
     if not question_ids and not set_name:
         raise ValueError("a run needs a target: name a set or the question ids, not neither")
     with Session() as session:
         if question_ids:
             found = session.execute(
-                select(Question.id, Question.original_text).where(Question.id.in_(question_ids))
+                select(Question.id, Question.original_text, Question.gold, Question.status).where(
+                    Question.id.in_(question_ids)
+                )
             ).all()
-            _refuse_missing(question_ids, {qid for qid, _ in found})
-            return [text for _, text in found]
-        return list(session.scalars(select(Question.original_text).where(Question.set_name == set_name)))
+            _refuse_missing(question_ids, {row.id for row in found})
+            # a fixed list reads what a set would: a pair refused after the list was drawn is counted, not asked
+            return [(row.original_text, row.gold) for row in found if read_by_runs(row)]
+        return [
+            (text, gold)
+            for text, gold in session.execute(
+                select(Question.original_text, Question.gold).where(
+                    Question.set_name == set_name, READ_BY_RUNS
+                )
+            )
+        ]
+
+
+# a run that declares a version asks no question whose gold names another: it could only miss, and it would count
+def version_mismatch(gold: dict | None, version: str | None) -> bool:
+    named = (gold or {}).get("version")
+    return bool(version and named and named != version)
+
+
+def _target_texts(set_name: str | None, question_ids: list[int] | None, version: str | None = None) -> list[str]:
+    return [text for text, gold in _target_questions(set_name, question_ids) if not version_mismatch(gold, version)]
+
+
+# the ids a fixed list names that runs no longer read, because acceptance or the judge settled them otherwise since
+def not_accepted(question_ids: list[int] | None) -> int:
+    if not question_ids:
+        return 0
+    with Session() as session:
+        return session.scalar(
+            select(func.count()).where(Question.id.in_(question_ids), ~READ_BY_RUNS)
+        )
+
+
+def mismatched(set_name: str | None, question_ids: list[int] | None, version: str | None) -> int:
+    if not version:
+        return 0
+    return sum(1 for _, gold in _target_questions(set_name, question_ids) if version_mismatch(gold, version))
 
 
 class MissingQuestions(StandFault):
@@ -73,6 +109,7 @@ class RunSpec:
     orchestrator: str | None = None
     # carried onto every row: whether the sweep may ever judge what this run wrote
     judge_wanted: bool = True
+    scope: object = None
 
 
 # answered is a row that answered: the agent writes a row for a hop that failed and returns normally
@@ -100,6 +137,7 @@ def _answer_one(text: str, run_name: str, spec: RunSpec) -> bool:
     if spec.pipeline == Pipeline.single_shot:
         chat.answer(
             text,
+            spec.scope,
             add_context=True,
             run_name=run_name,
             use_rerank=spec.use_rerank,
@@ -184,7 +222,7 @@ def _phase_retrieve(texts: list[str], spec: RunSpec) -> tuple[list, int]:
             retrieved.append(
                 (
                     text,
-                    db.hybrid_search(text, vector, None, limit=limit, variant=spec.variant,
+                    db.hybrid_search(text, vector, spec.scope, limit=limit, variant=spec.variant,
                                      ef_search=depth, embedded_by=label),
                     None,
                 )
@@ -243,6 +281,7 @@ def _phase_generate(
                 placed_during=placed_during,
                 grade_chunks=spec.grade_chunks,
                 judge_wanted=spec.judge_wanted,
+                scope=spec.scope,
             )
             answered += 1
         except StandFault:
@@ -424,6 +463,7 @@ def run(
     resume: bool = False,
     generation_sampler: dict | None = None,
     judge: bool = True,
+    scope=None,
 ) -> int:
     pipeline = Pipeline(pipeline)
     variant = variant or config.settings.corpus.variant
@@ -443,7 +483,8 @@ def run(
             " sorts, so this run would measure exact search and record hnsw"
         )
     log.info("eval_run.corpus", variant=variant, known=known, ef_search=depth)
-    texts = _target_texts(set_name, question_ids)
+    version = getattr(scope, "version", None)
+    texts = _target_texts(set_name, question_ids, version) if version else _target_texts(set_name, question_ids)
     replaced, since = {}, None
     if resume:
         texts, replaced, since = _still_to_answer(run_name, texts)
@@ -466,6 +507,7 @@ def run(
         topic_threshold=topic_threshold,
         orchestrator=orchestrator,
         judge_wanted=judge,
+        scope=scope,
     )
 
     try:

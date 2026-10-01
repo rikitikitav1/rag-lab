@@ -31,6 +31,7 @@ class JobResponse(BaseModel):
     tokens: dict | None = None
     balances: dict | None = None
     code: dict | None = None
+    result: dict | None = None
     apply_since: datetime
     created_at: datetime
     updated_at: datetime

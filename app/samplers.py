@@ -1,4 +1,6 @@
-KEYS = ("temperature", "max_tokens", "seed", "repetition_penalty")
+KEYS = ("temperature", "max_tokens", "seed", "repetition_penalty", "reasoning_effort")
+# a broker that refuses a chat template switch takes the thinking down by this field instead
+EFFORTS = ("none", "low", "medium", "high")
 MAX_TOKENS = 65536
 
 
@@ -25,4 +27,7 @@ def check(options: dict) -> dict:
         isinstance(penalty, bool) or not isinstance(penalty, int | float) or not 1 <= penalty <= 2
     ):
         raise ValueError(f"repetition_penalty is a number from 1 to 2, got {penalty!r}")
+    effort = options.get("reasoning_effort")
+    if effort is not None and effort not in EFFORTS:
+        raise ValueError(f"reasoning_effort is one of {', '.join(EFFORTS)}, got {effort!r}")
     return options

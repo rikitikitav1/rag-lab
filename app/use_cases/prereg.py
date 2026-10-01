@@ -2,7 +2,7 @@ from evals import columns
 from evals.loaders import load_logs
 from evals.pools import Ambiguous, by_question
 from evals.stats import bootstrap_ci
-from models.eval import Question
+from models.eval import READ_BY_RUNS, Question
 from models.prereg import Preregistration
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -12,6 +12,8 @@ SCHEMA = 3
 # which way the arm is meant to move the closing columns, and which way a guard must not move
 ARM_SHOULD = ("lower", "raise")
 MUST_NOT = ("rise", "fall")
+# a one-arm bar is read on the arm's mean or on the edge of its band that the promise leans on
+READ_ON = ("point", "edge")
 
 
 class Refused(ValueError):
@@ -93,6 +95,11 @@ def _closing_or_refuse(closing: dict) -> dict:
     out = {**closing, "columns": cols}
     if "floor_value" in closing:
         out["floor_value"] = _margin_or_refuse(closing["floor_value"], "closing.floor_value")
+    if "bar" in closing:
+        out["bar"] = _margin_or_refuse(closing["bar"], "closing.bar")
+        _one_of_or_refuse(closing.get("read_on"), READ_ON, "closing.read_on")
+        if "floor_value" in closing:
+            raise Refused("closing: a bar is one arm's own level, a floor value a bar on a paired difference; not both")
     return out
 
 
@@ -120,8 +127,17 @@ def write(name: str, population: dict, arms: dict, closing: dict, guards: list, 
         closing = _closing_or_refuse(closing or {})
         checked = [_guard_or_refuse(session, guard) for guard in guards or []]
         vetoed = [_veto_or_refuse(veto) for veto in vetoes or []]
-        if not (arms or {}).get("control") or not (arms or {}).get("arm"):
+        if "bar" in closing:
+            if not (arms or {}).get("arm") or (arms or {}).get("control"):
+                raise Refused("arms: a one-arm bar names `arm` alone")
+            # a guard pairs the arm with a control, and a promise with none would stay open for good
+            if checked:
+                raise Refused("guards: a guard compares two arms; a one-arm bar takes vetoes")
+        elif not (arms or {}).get("control") or not (arms or {}).get("arm"):
             raise Refused("arms: name both `control` and `arm`")
+        language = (population or {}).get("language")
+        if language is not None and language not in ("en", "ru"):
+            raise Refused(f"population.language: en or ru, got {language!r}")
         row = Preregistration(
             name=name,
             population={**(population or {}), "sets": sets},
@@ -149,9 +165,12 @@ def read(name: str) -> dict:
         }
 
 
-def _question_ids(sets: list) -> set:
+# the population a run reads: a question settled out of its set since is not the promise's to score
+def _question_ids(sets: list, language: str | None = None) -> set:
+    wanted = [Question.set_name.in_(sets), READ_BY_RUNS]
+    wanted += [Question.language == language] if language else []
     with Session() as session:
-        return set(session.scalars(select(Question.id).where(Question.set_name.in_(sets))))
+        return set(session.scalars(select(Question.id).where(*wanted)))
 
 
 # the same pairing the other doors use, so two rows on one question refuse instead of one winning
@@ -237,7 +256,10 @@ def _guard(guard: dict, rows: dict, ids: set) -> dict:
 
 
 def _mean(by_q: dict, ids: set, name: str) -> tuple:
-    seen = [v for q, row in by_q.items() if q in ids and (v := columns.read(name, row)) is not None]
+    from evals import loaders
+
+    leaves = loaders.reference_leaves() if columns.needs_sources(name) else None
+    seen = [v for q, row in by_q.items() if q in ids and (v := columns.read(name, row, leaves)) is not None]
     return (round(sum(seen) / len(seen), 4) if seen else None), len(seen)
 
 
@@ -267,7 +289,7 @@ def _verdict(closing: str, guards: list, vetoes: list = ()) -> tuple:
     stops = [f"guard broken: {g['column']}" for g in guards if g["state"] == "broken"]
     stops += [f"veto fired: {v['column']} above {v['above']}" for v in vetoes if v["state"] == "fired"]
     if closing == "missed" or stops:
-        return False, "; ".join((["the closing band does not clear its floor"] if closing == "missed" else [])
+        return False, "; ".join((["the closing does not clear its bar"] if closing == "missed" else [])
                                 + stops)
     if closing in _OPEN:
         return None, _OPEN[closing]
@@ -291,14 +313,35 @@ def _closed_with(name: str, named: dict, result: dict) -> dict:
         row = session.scalar(select(Preregistration).where(Preregistration.name == name))
         # an undecided close is a look, not a closing, so it leaves the promise open
         if row.closed_with is None and result["cleared"] is not None:
+            # the numbers the promise was read on, so a month later the row says by how much it missed
+            read = {k: result[k] for k in ("n", "level", "read", "bar", "means", "effect", "floor") if k in result}
             row.closed_with = {**named, "cleared": result["cleared"],
-                               "cleared_because": result["cleared_because"]}
+                               "cleared_because": result["cleared_because"], **read}
             session.commit()
         elif row.closed_with is not None and _named(row.closed_with) != named:
             raise Refused(
                 f"{name!r} was closed with {_named(row.closed_with)}; a promise closes once"
             )
         return row.closed_with
+
+
+# one arm against a declared level: its own mean over the population, the band by the same bootstrap
+def _one_arm(arm: dict, ids: set, cols: list, closing: dict, sign: int) -> dict:
+    values = [v for q in sorted(set(arm) & ids) if (v := columns.value(cols, arm[q])) is not None]
+    if not values:
+        raise Refused("no question of the declared population has a value in the arm")
+    band = _band(values)
+    bar, arm_should = closing["bar"], closing.get("arm_should")
+    if arm_should not in ARM_SHOULD:
+        return {"n": band["n"], "level": band, "bar": bar, "state": "no_direction"}
+    # a raise leans on the lower edge, a lower on the upper one
+    read = band["mean"] if closing["read_on"] == "point" else band["ci95"][0 if sign > 0 else 1]
+    return {
+        "n": band["n"], "level": band, "bar": bar, "read": read,
+        "reads": f"the arm's own level on the closing columns, read on its {closing['read_on']} against the bar;"
+                 " level with the bar is missed, as the paired form reads it",
+        "state": "cleared" if sign * (read - bar) > 0 else "missed",
+    }
 
 
 # the door computes only what was declared, and says so when asked for anything else
@@ -309,7 +352,7 @@ def close(name: str, runs: dict | None = None, measurements: dict | None = None)
     runs, measurements = runs or {}, measurements or {}
     for role in set(runs) | set(measurements):
         _one_of_or_refuse(role, ("control", "arm", "floor"), "runs")
-    ids = _question_ids(promise["population"]["sets"])
+    ids = _question_ids(promise["population"]["sets"], promise["population"].get("language"))
     # a declared draw narrows the sets to the questions it named, and nothing else is read
     if promise["population"].get("question_ids") is not None:
         ids &= set(promise["population"]["question_ids"])
@@ -319,7 +362,12 @@ def close(name: str, runs: dict | None = None, measurements: dict | None = None)
     sign = -1 if arm_should == "lower" else 1
     out = {"schema": SCHEMA, "name": name, "columns": cols, "arm_should": arm_should}
     by_role = _source(rows, cols)
-    if {"control", "arm"} <= set(by_role):
+    if "bar" in closing and "arm" in by_role:
+        out |= _one_arm(by_role["arm"], ids, cols, closing, sign)
+        closing_state = out.pop("state")
+    elif "bar" in closing:
+        closing_state = "not_run"
+    elif {"control", "arm"} <= set(by_role):
         pairs = _pairs(by_role["control"], by_role["arm"], ids, cols)
         if not pairs:
             raise Refused("no question is shared by both arms on the declared population")

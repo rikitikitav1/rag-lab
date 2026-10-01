@@ -54,3 +54,4 @@ datasets/converter_gold/files/
 # files a source is added from and the raw markdown made of them: data of the stand, not of the repository
 datasets/inbox/
 datasets/raw_sources/
+datasets/readings/

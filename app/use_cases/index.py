@@ -1,11 +1,10 @@
-import hashlib
-import re
 from dataclasses import dataclass, field
 
 import config
 import llm
 import logging_setup
-from models.corpus import DataChunk, DataSource
+from corpus_keys import body_hash, check_variant, vector_index_name
+from models.corpus import DataChunk, DataSource, Stage
 from orm.sync_db import Session
 from sources import files
 from sqlalchemy import cast as sa_cast
@@ -13,22 +12,12 @@ from sqlalchemy import delete, select, update
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy_utils import Ltree
 from timing_wrappers import measure_elapsed
 
 log = logging_setup.get_logger(__name__)
 
-# the name reaches DDL as a literal; 22 chars of prefix + 36 + 4 of suffix fit in 63
-VARIANT_RE = re.compile(r"^[a-z0-9_]{1,36}$")
 # the default 64MB is smaller than the vectors themselves, and pgvector then builds the slow way
 MAINTENANCE_WORK_MEM = "512MB"
-
-
-# fullmatch: `$` admits a trailing newline, and the name reaches DDL twice
-def check_variant(name: str) -> str:
-    if not VARIANT_RE.fullmatch(name or ""):
-        raise ValueError(f"corpus variant '{name}' must match {VARIANT_RE.pattern}")
-    return name
 
 
 @dataclass
@@ -36,6 +25,10 @@ class IndexResult:
     sources: int
     chunks: int
     elapsed: float = 0.0
+    # rows a source file names that were not cut: declared or raw ones wait for the accept door, empty ones for a folder
+    refused: dict[str, str] = field(default_factory=dict)
+    # the sources a cancel left uncut, in the order they would have come
+    left: list[str] = field(default_factory=list)
     model: str = field(default_factory=lambda: llm.resolve_name("embedding"))
 
     def __str__(self) -> str:
@@ -44,15 +37,10 @@ class IndexResult:
 
 def _provision_source(session, source, variant) -> DataSource:
     values = files.row_of(source.settings, source.name)
-    stmt = (
-        pg_insert(DataSource)
-        .values(**values)
-        .on_conflict_do_update(
-            index_elements=["name"],
-            set_={k: v for k, v in values.items() if k != "name"},
-        )
-        .returning(DataSource)
-    )
+    insert = pg_insert(DataSource).values(**values)
+    stmt = insert.on_conflict_do_update(
+        index_elements=["name"], set_=files.upserted(insert, DataSource.__table__, list(values))
+    ).returning(DataSource)
     data_source = session.scalar(select(DataSource).from_statement(stmt))
     session.commit()
     return data_source
@@ -81,12 +69,6 @@ def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_s
 
 
 # whitespace must not decide whether two repositories hold the same answer
-def _body_hash(body: str) -> str:
-    normalised = re.sub(r"\s+", " ", body).strip().encode()
-    # a content fingerprint for deduplication, never a credential
-    return hashlib.md5(normalised, usedforsecurity=False).hexdigest()
-
-
 def _prefix_len(doc) -> int | None:
     # only when the body really is the tail: a guessed length hands the metrics nothing real
     if doc.body is None or not doc.content.endswith(doc.body):
@@ -100,17 +82,19 @@ def _chunk(source_id, doc, variant) -> DataChunk:
         source=doc.source,
         variant=variant,
         content=doc.content,
-        content_hash=_body_hash(doc.body or doc.content),
+        content_hash=body_hash(doc.body or doc.content),
+        versions=list(doc.versions),
         section=doc.section,
         prefix_len=_prefix_len(doc),
-        category=Ltree(doc.category),
+        category=doc.category,
+        tags=list(doc.tags),
         language=doc.language,
         chunk_index=doc.chunk_index,
     )
 
 
 @measure_elapsed
-def collect_data(sources, embed_size=None, variant=None, build_index=True) -> IndexResult:
+def collect_data(sources, embed_size=None, variant=None, build_index=True, stop=None) -> IndexResult:
     embed_size = embed_size or config.settings.ingestion.batch_size
     variant = check_variant(variant or config.settings.corpus.variant)
     policy = config.settings.corpus.policy(variant)
@@ -118,10 +102,25 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True) -> In
     total = 0
 
     with Session() as session:
-        for source in sources:
+        refused, left = {}, []
+        for n, source in enumerate(sources):
+            # a cancel is read between sources: one source is replaced whole or not at all
+            if stop is not None and stop():
+                left = [s.name for s in sources[n:]]
+                log.warning("index.cancelled", done=n, left=len(left))
+                break
             data_source = _provision_source(session, source, variant)
+            if data_source.stage != Stage.accepted:
+                log.warning("index.refused_stage", source=source.name, stage=data_source.stage)
+                refused[source.name] = f"stage {data_source.stage}, not accepted"
+                continue
             # the whole source at once, and the cut digest reads the same method
             buffer = [_chunk(data_source.id, doc, variant) for doc in source.documents(policy)]
+            # a folder this host lacks, or one of PDFs where the markdown should be, must not empty a source in silence
+            if not buffer:
+                log.error("index.refused_empty", source=source.name, root=str(source.root))
+                refused[source.name] = f"no documents under {source.root}"
+                continue
             total += _replace_chunks(session, data_source.id, variant, buffer, embed_size)
             # the digest of the rules this cut read, merged in the base so two variants cut at once keep both
             session.execute(
@@ -134,22 +133,17 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True) -> In
                 )
             )
             session.commit()
-            log.info("index.committed", source=source.name, chunks=len(buffer), total=total)
+            # texts merged across versions: the smoke of a second version reads it against the preregistered ceiling
+            merged = getattr(source, "merged", None)
+            log.info("index.committed", source=source.name, chunks=len(buffer), total=total, merged=merged)
 
-    if build_index:
+    if build_index and not left:
         ensure_vector_index(variant)
     log.info("index.done", chunks=total, variant=variant)
-    return IndexResult(sources=len(sources), chunks=total)
+    return IndexResult(sources=len(sources) - len(refused) - len(left), chunks=total, refused=refused, left=left)
 
 
 # the one owner of the name, so the three readers ask here
-VECTOR_INDEX_PREFIX = "data_chunks_embedding_"
-
-
-def vector_index_name(variant: str) -> str:
-    return f"{VECTOR_INDEX_PREFIX}{check_variant(variant)}_idx"
-
-
 def has_vector_index(variant: str) -> bool:
     with Session() as session:
         return bool(

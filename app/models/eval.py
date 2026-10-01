@@ -1,13 +1,24 @@
 import hashlib
 from datetime import datetime
+from enum import StrEnum
 
 from orm import Base
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, ForeignKey, String, func, text
+from sqlalchemy import ARRAY, Enum, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.registry import Pipeline
+
+
+# candidate as generated, accepted once a run may read it, refused with its reason; the model holds the values
+class QuestionStatus(StrEnum):
+    candidate = "candidate"
+    accepted = "accepted"
+    refused = "refused"
+
+
+CANDIDATE, ACCEPTED, REFUSED = QuestionStatus.candidate, QuestionStatus.accepted, QuestionStatus.refused
 
 
 # the uniqueness key of `questions`: four writers computed it independently
@@ -24,16 +35,42 @@ class Question(Base):
     normalized_text: Mapped[str | None]
     reference_answer: Mapped[str | None]
     marked_sources: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # {"file", "section", "version"} instead of marks; none_as_null, or a JSON null fails the one-kind check
+    gold: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # the two languages of one fact, and the section's words the generated answer rests on
+    pair_id: Mapped[str | None]
+    evidence: Mapped[str | None]
     set_name: Mapped[str | None]
     language: Mapped[str | None]
     kind: Mapped[str | None]
-    status: Mapped[str | None]
+    # a set made by hand is accepted as is
+    status: Mapped[QuestionStatus] = mapped_column(
+        Enum(QuestionStatus, native_enum=False, values_callable=lambda e: [x.value for x in e]),
+        default=QuestionStatus.accepted,
+        server_default="accepted",
+    )
+    # why the acceptance refused it or left it for the judge; the status says which
+    acceptance_why: Mapped[str | None]
+    # the reader's word on a generated question: None until it is asked
+    answerable_by_reader: Mapped[bool | None]
+    # {identifier: sections of the source that hold it}, for the identifiers of the question its gold section holds
+    anchors: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # {"block", "block_sha", "char"}: the block the generator read and where the evidence starts in it
+    evidence_at: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     source_question_id: Mapped[int | None] = mapped_column(ForeignKey("questions.id"))
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
     embedded_by: Mapped[str | None]
 
     def __repr__(self) -> str:
         return f"Question(id={self.id!r}, text={self.original_text[:40]!r})"
+
+
+# a run reads a question once it is accepted; `corpus_keys.READ_BY_RUNS_SQL` is the same test in raw sql
+READ_BY_RUNS = Question.status == ACCEPTED
+
+
+def read_by_runs(question) -> bool:
+    return question.status == ACCEPTED
 
 
 class QuestionLog(Base):

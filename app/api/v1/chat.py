@@ -1,8 +1,9 @@
 from typing import Literal
 
 import config
-from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field
+import search_scope
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from use_cases import card_wait, chat
 
 import db
@@ -15,8 +16,27 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 # options and tags were accepted and never read: a client that chose a model got the default unsaid
 class QuestionFilter(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # the MCP door validated this and the REST doors did not, onto the same lquery
-    category: str | None = Field(default=None, pattern=db.CATEGORY_RE.pattern)
+    # the MCP door validated this and the REST doors did not; a label, never a pattern
+    category: str | None = Field(default=None, pattern=search_scope.CATEGORY_RE.pattern)
+    sources: list[str] = Field(default=[], max_length=search_scope.MAX_SOURCES)
+    version: str | None = Field(default=None, pattern=search_scope.VERSION_RE.pattern)
+
+    # the scope's own rules; whether its sources are in search is the search's step, said as a 422 by `_scoped`
+    @model_validator(mode="after")
+    def _a_scope_the_search_can_read(self):
+        search_scope.refuse_malformed_scope(self.scope())
+        return self
+
+    def scope(self) -> search_scope.Scope:
+        return search_scope.Scope.of(self.category, self.sources, self.version)
+
+
+# a source named in the filter that the base does not hold is the asker's mistake, said before the answer is paid
+def _scoped(call):
+    try:
+        return call()
+    except db.ScopeRefused as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 class QuestionRequest(BaseModel):
@@ -52,13 +72,15 @@ class RetrievalResponse(BaseModel):
 @router.post("/question", response_model=QuestionResponse)
 def ask(question: QuestionRequest) -> QuestionResponse:
     wait_for_the_card(*card_wait.answering_roles(rerank_asked=question.rerank))
-    category = question.filter.category if question.filter else None
-    res = chat.answer(
-        question.text,
-        category,
-        use_rerank=question.rerank,
-        language=question.language,
-        ef_search=question.ef_search,
+    scope = question.filter.scope() if question.filter else None
+    res = _scoped(
+        lambda: chat.answer(
+            question.text,
+            scope,
+            use_rerank=question.rerank,
+            language=question.language,
+            ef_search=question.ef_search,
+        )
     )
     return QuestionResponse(
         text=res.text,
@@ -77,10 +99,15 @@ def ask(question: QuestionRequest) -> QuestionResponse:
 @router.post("/fast_question", response_model=RetrievalResponse)
 def quick_ask(question: QuestionRequest) -> RetrievalResponse:
     wait_for_the_card(*card_wait.retrieving_roles(rerank_asked=question.rerank))
-    category = question.filter.category if question.filter else None
-    res = chat.retrieve(
-        question.text, category, variant=config.settings.corpus.variant,
-        ef_search=question.ef_search, use_rerank=question.rerank,
+    scope = question.filter.scope() if question.filter else None
+    res = _scoped(
+        lambda: chat.retrieve(
+            question.text,
+            scope,
+            variant=config.settings.corpus.variant,
+            ef_search=question.ef_search,
+            use_rerank=question.rerank,
+        )
     )
     return RetrievalResponse(
         sources=[AnswerSource.of(s) for s in res.sources],

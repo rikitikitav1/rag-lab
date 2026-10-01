@@ -3,6 +3,7 @@ import contextlib
 import job_queue
 import llm
 import logging_setup
+from corpus_keys import VETO_CUT_FROM
 from engines import card
 from evals import build_paraphrased, build_veto
 from models.registry import Role
@@ -52,7 +53,7 @@ def build_veto_set(options: dict) -> None:
             seed=options.get("seed", ""),
             set_name=options.get("set_name", "veto_v1"),
             variants=options.get("variants"),
-            cut_from=options.get("cut_from", "clean_1024"),
+            cut_from=options.get("cut_from", VETO_CUT_FROM),
             quotas=options.get("quotas"),
         )
     log.info("build_veto_set.done", **counted)

@@ -7,6 +7,8 @@ from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from sqlalchemy import func, select, update
 
+import db
+
 from .base import Final, register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
@@ -67,11 +69,17 @@ def eval_run(options: dict) -> None:
             resume=resume,
             generation_sampler=options.get("generation_sampler"),
             judge=options.get("judge", True),
+            scope=db.Scope.of(options.get("category"), options.get("sources"), options.get("version")),
         )
     # the worker's retry would answer every question again beside the rows already written
     except StandFault as e:
         raise Final(str(e)) from e
-    log.info("eval_run.done", run_name=options["run_name"], answered=answered)
+    # the questions the run left out for naming another version, beside the answered: a smaller run says why
+    skipped = runner.mismatched(options.get("set_name"), options.get("question_ids"), options.get("version"))
+    unread = runner.not_accepted(options.get("question_ids"))
+    log.info("eval_run.done", run_name=options["run_name"], answered=answered, version_mismatch=skipped,
+             not_accepted=unread)
+    return {"answered": answered, "version_mismatch": skipped, "not_accepted": unread}
 
 
 @register("compare_retrieval")

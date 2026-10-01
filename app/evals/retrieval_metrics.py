@@ -1,20 +1,18 @@
 import sys
 
 import logging_setup
-from evals.loaders import load_logs
+from corpus_keys import Gold
+from evals.loaders import load_logs, reference_leaves
 from models.registry import Pipeline
 from sqlalchemy.exc import SQLAlchemyError
 
 log = logging_setup.get_logger(__name__)
 
 
-# a mark is a path fragment, so a source matches by containment: hit@k stands on this
-def is_gold(source: str, marked) -> bool:
-    return any(m in source for m in marked)
-
-
-def rank_of_gold(sources, marked) -> int | None:
-    return next((i for i, s in enumerate(sources, 1) if is_gold(s, marked)), None)
+# an older mark is a path fragment and matches by containment, an exact gold by its file: hit@k stands on this
+def rank_of_gold(sources, gold) -> int | None:
+    gold = Gold.coerce(gold)
+    return next((i for i, s in enumerate(sources, 1) if gold.holds_file(s)), None)
 
 
 # 6 scores a section only where the corpus has one; 5 added the axes; 4 added `file_precision`
@@ -36,16 +34,33 @@ def section_ids(chunks) -> list[tuple[str, str | None]]:
 
 
 # the gold section by its own rank, so a chunk of the right file in the wrong section is not a hit
-def rank_of_gold_section(chunks, marked, gold_heading) -> int | None:
+def rank_of_gold_section(chunks, gold, gold_heading=None) -> int | None:
     from use_cases.retrieval_compare import rank_of_section
 
-    return rank_of_section(section_ids(chunks), marked, gold_heading)
+    gold = Gold.coerce(gold)
+    if not gold.exact:
+        return rank_of_section(section_ids(chunks), gold, gold_heading)
+    return rank_of_exact_section([c for c in (chunks or []) if c], gold)
+
+
+# an exact gold ranks the distinct sections by their whole path, a sub-section of the gold counting as it
+def rank_of_exact_section(chunks, gold: Gold) -> int | None:
+    seen = []
+    for c in chunks:
+        key = (c["source"], c.get("section"))
+        if key in seen:
+            continue
+        seen.append(key)
+        if gold.holds_section(key[0], key[1], c.get("versions")):
+            return len(seen)
+    return None
 
 
 # what share of the files retrieval reached were gold; the same population `hit@k` ranks
-def file_precision(got: list[str], marked) -> float | None:
-    shown = {next((m for m in marked if m in s), s) for s in got}
-    return len(shown & set(marked)) / len(shown) if shown else None
+def file_precision(got: list[str], gold) -> float | None:
+    gold = Gold.coerce(gold)
+    shown = {gold.mark_of(s) or s for s in got}
+    return len(shown & set(gold.marks)) / len(shown) if shown else None
 
 
 # what a row is ranked on, in the order it is ranked: the second reader of this had to guess
@@ -83,7 +98,7 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
     from orm.sync_db import engine
     from use_cases.retrieval_compare import section_exists
 
-    wanted = [ql for ql in in_corpus if ql.chunks and golds.get(ql.question_id)]
+    wanted = [ql for ql in in_corpus if ql.chunks and (_gold(ql).exact or golds.get(ql.question_id))]
     if not wanted:
         return set()
     try:
@@ -94,8 +109,8 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
                 if section_exists(
                     conn,
                     ((ql.metrics or {}).get("config") or {}).get("variant"),
-                    ql.question.marked_sources,
-                    golds[ql.question_id],
+                    _gold(ql),
+                    golds.get(ql.question_id),
                 )
             }
     except SQLAlchemyError as e:
@@ -106,7 +121,7 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
 
 def evaluate(run_name=None):
     logs = load_logs(run_name)
-    in_corpus = [ql for ql in logs if ql.question and ql.question.marked_sources]
+    in_corpus = [ql for ql in logs if ql.question and _gold(ql)]
 
     hits, rr_sum, misses = 0, 0.0, []
     rr_in_hop, found_at_hop, hop_unknown, in_hop_n = 0.0, {}, 0, 0
@@ -114,10 +129,12 @@ def evaluate(run_name=None):
     section_hits, section_rr, section_scored = 0, 0.0, 0
     golds = _gold_headings(in_corpus)
     scorable = _scorable_sections(in_corpus, golds)
+    per_row = []
     for ql in in_corpus:
-        expected = ql.question.marked_sources
+        expected = _gold(ql)
         # the section axes see what the gate left; the file axes see what search found, gate aside
         gold_heading = golds.get(ql.question_id)
+        section_rank = None
         if id(ql) in scorable:
             section_scored += 1
             section_rank = rank_of_gold_section(ql.chunks, expected, gold_heading)
@@ -129,6 +146,7 @@ def evaluate(run_name=None):
         if precision is not None:
             precisions.append(precision)
         rank = rank_of_gold(got, expected)
+        per_row.append((ql, rank, section_rank if id(ql) in scorable else False))
         if rank:
             hits += 1
             rr_sum += 1 / rank
@@ -165,11 +183,19 @@ def evaluate(run_name=None):
         "n_section_scored": section_scored,
         # the two pairs differ by grain and by gate, and only the grain is in their names
         "section_axes_see_the_kept_chunks": True,
+        # the same run read on two pools by a property of the question: a rare identifier it names, or none
+        "by_anchor": _by_anchor(per_row),
+        "by_heading_word": _by_column(per_row, "shares_heading_word", ("shares", "does_not")),
+        "by_reference": _by_reference(per_row),
         # a rank across a concatenation of retrievals is not a rank
         "mrr_in_hop": round(rr_in_hop / in_hop_n, 3) if in_hop_n else None,
         "found_at_hop": {str(k): v for k, v in sorted(found_at_hop.items())},
         "hop_unknown": hop_unknown,
     }
+
+
+def _gold(ql) -> Gold | None:
+    return Gold.of_question(ql.question)
 
 
 # an agent row written before the stamp is unknown, and "hop 1" would be a claim
@@ -203,3 +229,41 @@ if __name__ == "__main__":
     print(f"hit@k: {r['hits']}/{r['n']} = {r['hit_at_k']:.0%}")
     print(f"MRR:   {r['mrr']:.3f}")
     print("misses:", r["misses"])
+
+
+def _pool(rows) -> dict:
+    n = len(rows)
+    scored = [section for _, _, section in rows if section is not False]
+    return {
+        "n": n,
+        "hit_at_k": round(sum(1 for _, rank, _ in rows if rank) / n, 3) if n else None,
+        "mrr": round(sum(1 / rank for _, rank, _ in rows if rank) / n, 3) if n else None,
+        "n_section_scored": len(scored),
+        "section_hit_at_k": round(sum(1 for r in scored if r) / len(scored), 3) if scored else None,
+    }
+
+
+def _by_anchor(per_row) -> dict:
+    from evals import columns
+
+    out = _by_column(per_row, "anchored_by_identifier", ("anchored", "not_anchored"))
+    return {**out, "rare_at_most_sections": columns.ANCHOR_RARE}
+
+
+# the patterns are read as the slice is computed and named beside it: a pattern edited later moves an old run's slice
+def _by_reference(per_row) -> dict:
+    leaves = reference_leaves() if per_row else {}
+    out = _by_column(per_row, "reference_page", ("reference", "not_reference"), leaves)
+    return {**out, "patterns": leaves}
+
+
+# the same run on two pools of one column of the question; a row the column cannot read is counted apart
+def _by_column(per_row, column: str, names: tuple[str, str], leaves: dict | None = None) -> dict:
+    from evals import columns
+
+    said = [(columns.read(column, ql, leaves), (ql, rank, section)) for ql, rank, section in per_row]
+    return {
+        names[0]: _pool([row for value, row in said if value == 1.0]),
+        names[1]: _pool([row for value, row in said if value == 0.0]),
+        "unread": sum(1 for value, _ in said if value is None),
+    }

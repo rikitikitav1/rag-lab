@@ -1177,10 +1177,7 @@ def html(only):
             if all(taken[k] >= quota[k] for k in quota):
                 break
             relative = path.relative_to(source_dir)
-            generated = next(
-                (g for g in entry["html"].get("generated", []) if re.search(g, path.read_text(errors="ignore"), re.M)),
-                None,
-            )
+            generated = site_page.generated_by(path.read_text(errors="ignore"), entry["html"].get("generated", []))
             if generated:
                 ledger["skipped"].append(
                     {
@@ -1470,14 +1467,25 @@ def _cells(markdown: str) -> list[str]:
     return [" ".join(_TAG.sub(" ", c).split()) for c in cells if c.strip()]
 
 
+# lines outside code fences with their index: a shell or Python comment in a listing is not a heading
+def _unfenced(lines: list[str]) -> list[tuple[int, str]]:
+    out, inside = [], False
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            inside = not inside
+        elif not inside:
+            out.append((i, line))
+    return out
+
+
 # a whole-book output's section: among the headings like its title, the cut whose text is most like the gold
 def _section_of(markdown: str, title: str, gold_md: str, check: dict) -> tuple[str | None, str | None]:
     from rapidfuzz import fuzz
 
     lines = markdown.splitlines()
-    heads = [(i, len(m.group(1)), m.group(2)) for i, line in enumerate(lines) if (m := _MD_HEADING.match(line))]
+    heads = [(i, len(m.group(1)), m.group(2)) for i, line in _unfenced(lines) if (m := _MD_HEADING.match(line))]
     # a section ends only at a foreign heading of its level, so a tool with flat levels does not cut it short
-    own = [m.group(2) for m in _MD_HEADING.finditer(gold_md)]
+    own = [m.group(2) for _, line in _unfenced(gold_md.splitlines()) if (m := _MD_HEADING.match(line))]
 
     def foreign(text):
         return not any(_heading_similarity(text, t) >= HEADING_SIMILARITY for t in own)
@@ -1727,6 +1735,7 @@ def gates(only):
 
 # what a good text layer looks like page by page, the reading the intake's route thresholds are tuned on
 def layer_band(only):
+    import config
     from use_cases.route import page_signals
 
     band = {}
@@ -1736,7 +1745,7 @@ def layer_band(only):
         pdf = next((FILES / doc_id / lang / "pdf").rglob("*.pdf"), None)
         if pdf is None:
             continue
-        signals = page_signals(pdf)
+        signals = page_signals(pdf, config.settings.intake.route)
         chars = sorted(s["layer_chars"] for s in signals)
         band[f"{doc_id}/{lang}"] = {
             "pages": len(signals),
@@ -1759,7 +1768,10 @@ def raw_band(only):
     from use_cases.route import layer_texts
 
     band = {}
-    for run in ("docling_no_code_enrichment_en_cuts", "docling_no_code_enrichment_ru_cuts"):
+    # the reading the corpus gets: Docling default with code from the layer, on docling-parse 7.20
+    runs = only or ("docling_default_en_cuts_codelayer", "docling_default_ru_cuts_codelayer",
+                    "docling_default_postgres_ru_cuts_codelayer")
+    for run in sorted(runs):
         rows = []
         for md in sorted((FILES / "runs" / run).glob("sections__*.md")):
             pdf = FILES / "sections" / md.name.removeprefix("sections__").removesuffix(".md")
@@ -1770,6 +1782,62 @@ def raw_band(only):
         }
         print(run, {k: (v[0], v[len(v) // 2], v[-1]) for k, v in band[run].items()})
     (GOLD / "raw_band.json").write_text(json.dumps(band, indent=1))
+
+
+def _reread_cuts(first_run, second_run):
+    from use_cases.raw_quality import conversion_signals, table_cells
+    from use_cases.route import layer_texts
+
+    cuts = []
+    for md in sorted(first_run.glob("sections__*.md")):
+        pdf = FILES / "sections" / md.name.removeprefix("sections__").removesuffix(".md")
+        layer = "\n".join(layer_texts(pdf))
+        readings = [(run / md.name).read_text() for run in (first_run, second_run)]
+        cuts.append(
+            {
+                "cut": pdf.stem,
+                "layer_f1": [conversion_signals(r, layer)["layer_f1"] for r in readings],
+                "table_cells": [table_cells(r) for r in readings],
+            }
+        )
+    return cuts
+
+
+# the reread rule on the gold: at each threshold, which cuts a second reading would take, and the sections recovered
+def reread_rule(only):
+    import config
+    from use_cases.raw_quality import better_reading
+
+    second = config.settings.intake.route.reread_settings.replace("/", "_")
+
+    def takes(cut, threshold):
+        pairs = zip(cut["layer_f1"], cut["table_cells"], strict=True)
+        first, second = ({"layer_f1": f, "table_cells": t} for f, t in pairs)
+        return first["layer_f1"] is not None and first["layer_f1"] < threshold and better_reading(first, second)
+
+    def read(row):
+        return row and row["found"] and not row["identification_note"] and not row.get("overrun")
+
+    rule = {"second": second}
+    for kind in ("en_cuts", "ru_cuts", "postgres_ru_cuts", "ares_cuts"):
+        # a population with no code has no codelayer run; its plain run is the same reading
+        first_run = FILES / "runs" / f"docling_default_{kind}_codelayer"
+        first_run = first_run if first_run.exists() else FILES / "runs" / f"docling_default_{kind}_v720"
+        second_run = FILES / "runs" / f"{second}_{kind}_codelayer"
+        if not first_run.exists() or not second_run.exists():
+            continue
+        pair = (first_run, second_run)
+        scores = [{r["id"]: r for r in json.loads((run / "score.json").read_text())["rows"]} for run in pair]
+        cuts = _reread_cuts(first_run, second_run)
+        rule[kind] = {"cuts": cuts}
+        for threshold in (0.9, 0.92, 0.95):
+            taken = [c["cut"] for c in cuts if takes(c, threshold)]
+            rows = [scores[c["cut"] in taken].get(c["cut"]) for c in cuts]
+            at = {cut: sum(1 for r in rows if read(r) and r["similarity"] >= cut) for cut in _SCORE["recovered_cuts"]}
+            code = {k: sum(r[k] for r in rows if read(r)) for k in ("code_exact", "code_whitespace", "code_blocks")}
+            rule[kind][str(threshold)] = {"taken": taken, "recovered": at, "code": code}
+            print(kind, threshold, len(taken), "of", len(cuts), at, code)
+    (GOLD / "reread_rule.json").write_text(json.dumps(rule, indent=1))
 
 
 def main():
@@ -1789,6 +1857,7 @@ def main():
             "prepare",
             "layer_band",
             "raw_band",
+            "reread_rule",
             "score",
             "gates",
         ],
@@ -1808,6 +1877,7 @@ def main():
         "prepare": prepare,
         "layer_band": layer_band,
         "raw_band": raw_band,
+        "reread_rule": reread_rule,
         "score": score,
         "gates": gates,
     }

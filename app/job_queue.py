@@ -63,6 +63,15 @@ def pending_of_type(type: str, **options) -> int | None:
         return session.scalar(query.limit(1))
 
 
+# a waiting or running job whose list option holds the value, as a veto build over several variants
+def pending_listing(type: str, key: str, value: str) -> int | None:
+    with Session() as session:
+        query = select(Job.id).where(
+            Job.type == type, Job.status.in_([JobStatus.new, JobStatus.running]), Job.options[key].contains([value])
+        )
+        return session.scalar(query.limit(1))
+
+
 def running_of_type(type: str) -> bool:
     with Session() as session:
         return bool(session.scalar(
@@ -150,10 +159,12 @@ def reclaimed(options: dict) -> dict:
     return {**options, "attempts": options.get("attempts", 0) + 1}
 
 
-def complete(id: int, elapsed: float | None = None) -> None:
+def complete(id: int, elapsed: float | None = None, result: dict | None = None) -> None:
     fields = {"status": JobStatus.done}
     if elapsed is not None:
         fields["elapsed"] = elapsed
+    if result:
+        fields["result"] = result
     _update(id, **fields)
 
 

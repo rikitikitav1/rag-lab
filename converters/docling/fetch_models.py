@@ -3,6 +3,7 @@
 import hashlib
 import io
 import sys
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -15,9 +16,17 @@ CODEFORMULA_FILES = [
 ]
 
 
+# a dropped connection mid-download fails the whole build, so a fetch is tried three times
 def _get(url):
-    with urllib.request.urlopen(url, timeout=1800) as response:
-        return response.read()
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=1800) as response:
+                return response.read()
+        except OSError as error:
+            print(f"{url}: {error}, attempt {attempt + 1} of 3", flush=True)
+            if attempt == 2:
+                raise
+            time.sleep(10)
 
 
 def _check(data, sha256, what):

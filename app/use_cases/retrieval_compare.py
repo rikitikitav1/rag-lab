@@ -10,7 +10,8 @@ import job_queue
 import limits
 import llm
 import logging_setup
-from evals.retrieval_metrics import is_gold, rank_of_gold
+from corpus_keys import HAS_GOLD_SQL, READ_BY_RUNS_SQL, Gold, leaf_of
+from evals.retrieval_metrics import rank_of_exact_section, rank_of_gold
 from evals.stats import bootstrap_ci, deltas_over, tally
 
 import db
@@ -52,7 +53,7 @@ def clean_gold(text):
 
 def heading_text(section):
     """section is a heading path ("h1 > 12. Question?"); only the leaf identifies the section."""
-    leaf = (section or "").split(" > ")[-1]
+    leaf = leaf_of(section)
     return clean_gold(re.sub(r"^\d+\.\s*", "", leaf))
 
 
@@ -66,13 +67,14 @@ def questions(conn, set_name, limit, ids=None):
     rows = (
         conn.execute(
             sql(f"""
-            SELECT q.id, q.original_text, q.marked_sources, q.embedding::text AS emb, q.embedded_by,
+            SELECT q.id, q.original_text, q.marked_sources, q.gold, q.pair_id, q.embedding::text AS emb,
+                   q.embedded_by,
                    COALESCE(o.original_text, q.original_text) AS gold_heading
             FROM questions q
             LEFT JOIN questions o ON o.id = q.source_question_id
             WHERE {where}
               AND q.embedding IS NOT NULL
-              AND array_length(q.marked_sources, 1) > 0
+              AND {HAS_GOLD_SQL.format(q="q")} AND {READ_BY_RUNS_SQL.format(q="q")}
             ORDER BY q.id
             {cap}
         """),
@@ -199,19 +201,40 @@ def _sections_under(conn, variant, marked: tuple[str, ...]) -> set[str]:
     return found
 
 
-def section_exists(conn, variant, marked, gold_heading) -> bool:
-    gold = clean_gold(gold_heading)
-    if not gold:
+# the corpus holds the gold section: an exact gold asks by its whole path, an older one by its heading's text
+def section_exists(conn, variant, gold, gold_heading=None) -> bool:
+    from sqlalchemy import text as sql
+
+    import db
+
+    gold = Gold.coerce(gold)
+    if gold.exact:
+        clause, params = gold.section_sql("source", "section", "versions")
+        query = f"SELECT EXISTS (SELECT 1 FROM data_chunks WHERE {db.live_rows()} AND {clause})"
+        return bool(conn.execute(sql(query), {"variant": variant, **params}).scalar())
+    heading = clean_gold(gold_heading)
+    if not heading:
         return False
-    return gold in _sections_under(conn, variant, tuple(marked))
+    return heading in _sections_under(conn, variant, gold.marks)
 
 
-def rank_of_section(sections, marked, gold_heading):
-    gold = clean_gold(gold_heading)
+def rank_of_section(sections, gold, gold_heading):
+    gold, heading_wanted = Gold.coerce(gold), clean_gold(gold_heading)
     for i, (source, heading) in enumerate(sections, 1):
-        if is_gold(source, marked) and heading and heading == gold:
+        if gold.holds_file(source) and heading and heading == heading_wanted:
             return i
     return None
+
+
+# an exact gold ranks the fused rows by their whole section path; an older one ranks the heading pairs as before
+def _section_rank(rows, sections, gold: Gold, gold_heading):
+    if not gold.exact:
+        return rank_of_section(sections, gold, gold_heading)
+    rank = rank_of_exact_section(
+        [{"source": h.source, "section": h.section, "versions": list(h.versions)} for h in rows], gold
+    )
+    # the same depth the heading pairs are cut at, counted in its own grain: distinct whole paths, not heading pairs
+    return rank if rank and rank <= DEPTH else None
 
 
 def measure(
@@ -230,10 +253,13 @@ def measure(
     source=None,
 ):
     qs = questions(conn, set_name, limit, ids=question_ids)
+    for q in qs:
+        q["gold"] = Gold.of(q["marked_sources"], q["gold"])
     if source:
-        qs = [q for q in qs if any(m.startswith(source) for m in q["marked_sources"])]
+        qs = [q for q in qs if any(m.startswith(source) for m in q["gold"].marks)]
     out = []
     for q in qs:
+        gold = q["gold"]
         files, sections, rows = ranked_lists(
             db,
             q,
@@ -246,20 +272,21 @@ def measure(
             exact=exact,
         )
         assert_pool(rows, q["id"], min(limit_vector, CANDIDATES))
-        scorable = section_exists(conn, variant, q["marked_sources"], q["gold_heading"])
+        scorable = section_exists(conn, variant, gold, q["gold_heading"])
         out.append(
             {
                 "id": q["id"],
+                "pair_id": q.get("pair_id"),
                 # which corpus repository the gold sits in: halves are drawn across repos, not inside
-                "repo": q["marked_sources"][0].split("/")[0] if q["marked_sources"] else None,
-                "file_rank": rank_of_gold(files, q["marked_sources"]),
+                "repo": gold.marks[0].split("/")[0],
+                "file_rank": rank_of_gold(files, gold),
                 "section_scorable": scorable,
                 "section_rank": (
-                    rank_of_section(sections, q["marked_sources"], q["gold_heading"]) if scorable else None
+                    _section_rank(rows, sections, gold, q["gold_heading"]) if scorable else None
                 ),
                 # `rows` is the fused list, so this is a floor on "the keyword leg reached the gold"
                 "gold_by_keyword_in_pool": any(
-                    hit.keyword_rank is not None and is_gold(hit.source, q["marked_sources"]) for hit in rows
+                    hit.keyword_rank is not None and gold.holds_file(hit.source) for hit in rows
                 ),
                 "files": files,
                 "sections": [list(s) for s in sections],
@@ -276,18 +303,23 @@ def rr(rank) -> float:
 SPLIT_SEED = "hygiene_v1"
 
 
-# drawn by size: a split that moves when the set grows is no pre-registration
-def half_of(question_id) -> str:
+# drawn by size: a split that moves when the set grows is no pre-registration; a pair's two languages share a half
+def half_of(question_id, pair_id: str | None = None) -> str:
     import hashlib
 
-    digest = hashlib.md5(f"{question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False).hexdigest()
+    digest = hashlib.md5(f"{pair_id or question_id}:{SPLIT_SEED}".encode(), usedforsecurity=False).hexdigest()
     return "A" if int(digest, 16) % 2 == 0 else "B"
 
 
-def paired_delta_half(before: list[dict], after: list[dict], level: str, which: str) -> dict:
-    # over the ids both arms carry: the hash names the questions the numbers came from
+# the ids both arms carry that fall in one half; the hash names the questions the numbers came from
+def half_ids(before: list[dict], after: list[dict], which: str) -> set:
     shared = {r["id"] for r in before} & {r["id"] for r in after}
-    kept = {qid for qid in shared if half_of(qid) == which}
+    pairs = {r["id"]: r.get("pair_id") for r in after}
+    return {qid for qid in shared if half_of(qid, pairs.get(qid)) == which}
+
+
+def paired_delta_half(before: list[dict], after: list[dict], level: str, which: str) -> dict:
+    kept = half_ids(before, after, which)
     out = paired_delta(
         [r for r in before if r["id"] in kept],
         [r for r in after if r["id"] in kept],

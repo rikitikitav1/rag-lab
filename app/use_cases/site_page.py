@@ -1,4 +1,5 @@
 import re
+from fnmatch import fnmatch
 
 import formats
 
@@ -68,6 +69,11 @@ def flat_pre(fragment: str) -> str:
     return _PRE.sub(lambda m: m.group(1) + "<code>" + _TAG.sub("", m.group(2)) + "</code>" + m.group(3), fragment)
 
 
+# the first of a site's `generated` patterns a page's text carries: the site builds that page, the file only names it
+def generated_by(text: str, patterns: list[str]) -> str | None:
+    return next((g for g in patterns if re.search(g, text, re.M)), None)
+
+
 # a page as its own text: the site's element, its furniture dropped, its highlighting flat; None when absent
 def prepared(page: str, main: str, drop: list[str]) -> str | None:
     found = element(page, main)
@@ -75,3 +81,14 @@ def prepared(page: str, main: str, drop: list[str]) -> str | None:
         return None
     body = flat_pre(dropped(found, drop))
     return f'<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>{body}</body></html>'
+
+
+_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+
+
+# a sitemap's page addresses kept by the include patterns and left by the exclude ones, sorted, each once
+def sitemap_urls(xml: str, include: list[str] = (), exclude: list[str] = ()) -> list[str]:
+    found = {url for url in _LOC.findall(xml)}
+    kept = {u for u in found if (not include or any(fnmatch(u, p) for p in include)) and
+            not any(fnmatch(u, p) for p in exclude)}
+    return sorted(kept)

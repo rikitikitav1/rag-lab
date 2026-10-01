@@ -3,10 +3,9 @@ from enum import StrEnum
 
 from orm import Base
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Enum, ForeignKey, String
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy_utils import LtreeType
 
 
 # the model is the one place that decides what a value may be; this column was plain text
@@ -28,7 +27,7 @@ class DataSource(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(256), unique=True)
-    kind: Mapped[str] = mapped_column(String(32))
+    kind: Mapped[str | None] = mapped_column(String(32))
     git_url: Mapped[str | None]
     path: Mapped[str | None]
     active: Mapped[bool] = mapped_column(default=True)
@@ -41,12 +40,16 @@ class DataSource(Base):
     # declared by hand, converted to a raw folder, or accepted for indexing
     stage: Mapped[Stage] = mapped_column(
         Enum(Stage, native_enum=False, values_callable=lambda e: [x.value for x in e]),
-        default=Stage.accepted,
-        server_default="accepted",
+        default=Stage.declared,
+        server_default="declared",
     )
     language: Mapped[str | None]
     licence: Mapped[str | None]
     origin: Mapped[dict | None] = mapped_column(JSONB)
+    # the whole declaration, reader and rules included, as a source file or the seed wrote it
+    declaration: Mapped[dict | None] = mapped_column(JSONB)
+    # written by the seed from a source file, which speaks for the row
+    seeded: Mapped[bool] = mapped_column(default=False, server_default="false")
     raw: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     # per variant, the digest of the source file the chunks were cut by
     indexed_with: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
@@ -70,7 +73,9 @@ class DataChunk(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1024))
     embedded_by: Mapped[str | None]
     chunk_index: Mapped[int]
-    category: Mapped[str] = mapped_column(LtreeType)
+    category: Mapped[str | None]
+    tags: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
+    versions: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
     language: Mapped[str]
     content_tsv: Mapped[str | None] = mapped_column(TSVECTOR)
     data_source: Mapped["DataSource"] = relationship(back_populates="chunks")

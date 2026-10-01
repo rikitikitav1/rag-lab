@@ -24,7 +24,6 @@ from models.corpus import Stage
 from models.experiment import Experiment, ExperimentKind
 from orm.sync_db import Session
 from pydantic import Field
-from sources.declaration import Language
 from sqlalchemy import select
 from use_cases import experiment as experiment_uc
 from use_cases import prereg, rejudge, retrieval_compare
@@ -39,7 +38,8 @@ mcp_ops = FastMCP("rag-lab-ops", mask_error_details=True)
     description=(
         "Aggregated eval metrics for one run_name: generation quality "
         "(faithfulness/relevance/completeness on a 0-10 numeric judge, plus 0-1 "
-        "normalized and refusal_accuracy) and retrieval (hit_at_k, mrr). Numbers "
+        "normalized and refusal_accuracy) and retrieval (hit_at_k, mrr; by_anchor reads the same run on "
+        "questions that name a rare identifier of their section and on the rest, each with its n). Numbers "
         "are averages over the run's judged logs. n_scored counts the in-corpus rows "
         "our judge scored, so a run holding no corpus question reads 0 there however "
         "well it was judged; debts says what the run still owes and why the rest of "
@@ -79,8 +79,10 @@ def run_metrics(
         "every retrieval axis ranks against; a set with none of it cannot be scored on hit@k "
         "or mrr. with_reference_answer is what the two guest context axes need "
         "(LLMContextPrecisionWithReference, LLMContextRecall); a set with none of it can only "
-        "be scored on faithfulness, and the guest pass will abstain on the rest. Read this "
-        "before spending a judge or a guest pass on a set."
+        "be scored on faithfulness, and the guest pass will abstain on the rest. A generated set "
+        "also carries stages: pairs asked and lost by the generator, pairs read again, and by "
+        "language who settled what (accepted, refused by the sieve or the judge, candidates) "
+        "and under_the_floor. Read this before spending a judge or a guest pass on a set."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -429,6 +431,7 @@ def list_jobs(
                 "tokens": j.tokens,
                 # per cloud, the broker's balance before and after; null for a job that called no cloud
                 "balances": j.balances,
+                "result": j.result,
             }
             for j in session.scalars(stmt)
         ]
@@ -471,17 +474,19 @@ def preregister(
         dict,
         Field(
             description=(
-                "{'sets': [question set names], 'question_ids': [ids]?}; named ids narrow the sets to a declared draw."
+                "{'sets': [question set names], 'question_ids': [ids]?, 'language': 'en' | 'ru'?}; named ids"
+                " narrow the sets to a declared draw, a language to its half."
             )
         ),
     ],
-    arms: Annotated[dict, Field(description="{'control': ..., 'arm': ...}.")],
+    arms: Annotated[dict, Field(description="{'control': ..., 'arm': ...}; `arm` alone under a one-arm `bar`.")],
     closing: Annotated[
         dict,
         Field(
             description=(
                 "{'columns': [names], 'arm_should': 'lower' | 'raise', 'floor_value': x?}; shares join into a"
                 " union, a judge score closes alone; the bar is the floor run's upper edge or `floor_value`."
+                " One arm against a level: {'bar': x, 'read_on': 'point' | 'edge'} instead of a floor."
             )
         ),
     ],
@@ -566,21 +571,19 @@ def close_preregistration(
 @mcp_ops.tool(
     name="add_source",
     description=(
-        "Declare a source to add: its name, language (en or ru), licence and exactly one origin: urls to "
-        "download, a folder placed by hand, a git repository, or pages of a site with the site's settings "
-        "(main, drop, generated). Never an engine: the route reads each file and picks it. The source starts "
-        "`declared` and inactive; converting it to a raw folder is a separate step."
+        "Declare a source to add, as POST /v1/source takes it: a name, a licence, optionally a language (en or ru), "
+        "and exactly one origin: urls to download, a folder placed by hand, a git repository or a family of them, or "
+        "pages of a site with the site's settings (main, drop, generated, release, sitemap with include and exclude, "
+        "release_page with release_pattern). Beside it what the index reads: categories, category_by_path, versions, "
+        "reader, skip, drop_docs_containing, intake knobs, its own questions, reference_leaf. Never an engine: the "
+        "route reads each file and picks it. The source starts `declared` and inactive; converting it is a separate "
+        "step."
     ),
 )
 def add_source(
-    name: Annotated[str, Field(description="Lowercase name, letters, digits, dash, underscore.")],
-    language: Annotated[Language, Field(description="The language of its text.")],
-    licence: Annotated[str, Field(description="The licence the source is published under.")],
-    urls: Annotated[list[str] | None, Field(description="Files to download.")] = None,
-    folder: Annotated[str | None, Field(description="A folder under the stand holding the files.")] = None,
-    git: Annotated[dict | None, Field(description="{'repo', 'ref'?, 'path'?, 'include'?}.")] = None,
-    pages: Annotated[list[str] | None, Field(description="Pages of a site.")] = None,
-    site: Annotated[dict | None, Field(description="{'main', 'drop'?, 'generated'?} for pages.")] = None,
+    declaration: Annotated[dict, Field(description=(
+        "The declaration, field for field as `sources/<name>.yaml` writes it, e.g. {'name': 'nginx-org-en', "
+        "'licence': 'BSD-2', 'pages': [...], 'site': {'main': 'div#content'}, 'categories': ['nginx']}."))],
 ) -> dict:
     from models.corpus import DataSource
     from pydantic import ValidationError
@@ -589,11 +592,14 @@ def add_source(
     from use_cases import source_intake
 
     try:
-        declaration = Declaration(
-            name=name, language=language, licence=licence, urls=urls, folder=folder, git=git, pages=pages, site=site
-        )
+        declaration = Declaration.model_validate(declaration)
     except ValidationError as e:
         raise ToolError(str(e)) from e
+    name = declaration.name
+    from paths import ROOT
+
+    if refusal := source_intake.declaration_refusal(declaration, ROOT):
+        raise ToolError(refusal)
     with Session() as session:
         if session.scalar(select(DataSource.id).where(DataSource.name == name)):
             raise ToolError(source_intake.name_taken(name))
@@ -609,7 +615,7 @@ def add_source(
 
 @mcp_ops.tool(
     name="source",
-    description="One source by name: its stage, origin, licence, chunk count and what its raw conversion said.",
+    description="One source by name: its stage, declaration, chunk count and what its raw conversion said.",
     annotations={"readOnlyHint": True},
 )
 def source(name: Annotated[str, Field(description="The source's name.")]) -> dict:
@@ -629,20 +635,31 @@ def source(name: Annotated[str, Field(description="The source's name.")]) -> dic
 
 @mcp_ops.tool(
     name="sources",
-    description="Sources by stage (declared, raw, accepted): name, stage, raw verdict and whether active.",
+    description=(
+        "Sources by stage (declared, raw, accepted), a page at a time by name: name, stage, raw verdict and "
+        "whether active."
+    ),
     annotations={"readOnlyHint": True},
 )
 def sources(
     stage: Annotated[Stage | None, Field(description="Filter by stage.")] = None,
+    limit: Annotated[int, Field(ge=1, le=1000, description="Rows in the page.")] = 100,
+    offset: Annotated[int, Field(ge=0, description="Rows to skip, by name.")] = 0,
 ) -> list[dict]:
     from models.corpus import DataSource
+    from use_cases import source_intake
 
     with Session() as session:
-        stmt = select(DataSource).order_by(DataSource.name)
+        stmt = select(DataSource).order_by(DataSource.name).limit(limit).offset(offset)
         if stage is not None:
             stmt = stmt.where(DataSource.stage == stage)
         return [
-            {"name": s.name, "stage": s.stage, "active": s.active, "raw_verdict": (s.raw or {}).get("verdict")}
+            {
+                "name": s.name,
+                "stage": s.stage,
+                "active": s.active,
+                "raw_verdict": source_intake.run_under_review(s).get("verdict"),
+            }
             for s in session.scalars(stmt)
         ]
 
@@ -653,23 +670,181 @@ def sources(
         "Convert a declared source to a raw one: the job routes every file to its engine (markdown as it is, a "
         "page without a text layer to MinerU, the rest to Docling), writes the markdown and a suitability report "
         "without a gold, and marks the source raw with its verdict and reasons. Nothing is indexed. `settings` "
-        "names a settings file per engine, e.g. {'docling': 'docling/default'}; another set is another raw folder."
+        "names a settings file per engine, e.g. {'docling': 'docling/default'}; another set is another raw folder. "
+        "`fresh` reads every piece by its tool again, no kept reading or piece, stamped in the record: for a measure "
+        "of the tool itself."
     ),
 )
 def onboard_source(
     name: Annotated[str, Field(description="The declared source's name.")],
     settings: Annotated[dict | None, Field(description="{engine: 'tool/settings'} overriding intake.settings.")] = None,
+    fresh: Annotated[bool, Field(description="Read every piece by its tool again, past every cache.")] = False,
 ) -> dict:
-    from models.corpus import DataSource
     from use_cases import source_intake
 
     with Session() as session:
-        found = session.scalar(select(DataSource).where(DataSource.name == name))
-        if found is None:
-            raise ToolError(f"no source named {name}")
-        if refusal := source_intake.onboard_refusal(found):
-            raise ToolError(refusal)
-    return {"job_id": job_queue.enqueue("onboard_source", source_intake.onboard_options(name, settings))}
+        _transition(source_intake.check_onboard, _source_named(session, name))
+    return {"job_id": job_queue.enqueue("onboard_source", source_intake.onboard_options(name, settings, fresh))}
+
+
+def _transition(step, source, *args):
+    from errors import Final
+
+    try:
+        return step(source, *args)
+    except Final as e:
+        raise ToolError(str(e)) from e
+
+
+def _source_named(session, name: str):
+    from models.corpus import DataSource
+
+    found = session.scalar(select(DataSource).where(DataSource.name == name))
+    if found is None:
+        raise ToolError(f"no source named {name}")
+    return found
+
+
+@mcp_ops.tool(
+    name="set_source_active",
+    description="Put a source in search or take it out, by name; its chunks and files stay. `remove_source` deletes.",
+    annotations={"idempotentHint": True},
+)
+def set_source_active(
+    name: Annotated[str, Field(description="The source's name.")],
+    active: Annotated[bool, Field(description="True puts it in search, false takes it out.")],
+) -> dict:
+    from use_cases import source_intake
+
+    with Session() as session:
+        _transition(source_intake.set_active, _source_named(session, name), active)
+        session.commit()
+        return {"source": name, "active": active}
+
+
+@mcp_ops.tool(
+    name="accept_source",
+    description=(
+        "Accept a raw source for indexing: the owner's word that its conversion is fit. A bad raw verdict needs "
+        "a `reason`, kept on the row. The index then reads it once a source file names it; it stays out of search "
+        "until set_source_active turns it on."
+    ),
+)
+def accept_source(
+    name: Annotated[str, Field(description="The raw source's name.")],
+    reason: Annotated[str | None, Field(description="Why a bad verdict is accepted anyway.")] = None,
+) -> dict:
+    from use_cases import source_intake
+
+    with Session() as session:
+        replaced = _transition(source_intake.accept, _source_named(session, name), reason)
+        session.commit()
+        source_intake.drop_folder(replaced, name)
+        return {"source": name, "stage": "accepted"}
+
+
+@mcp_ops.tool(
+    name="set_source_intake",
+    description=(
+        "Set a source's own intake knobs over the stand's defaults in config/intake.yaml, read by its next "
+        "onboarding: `settings` per tool (as {\"docling\": \"docling/pypdfium2\"}), "
+        + ", ".join(f"`{name}`" for name in config.SOURCE_KNOBS)
+        + ". An empty object clears them. Refused while a job reads the source or a source file speaks for it."
+    ),
+)
+def set_source_intake(
+    name: Annotated[str, Field(description="The source's name.")],
+    intake: Annotated[dict, Field(description="The knobs; a key left out keeps the stand's own.")],
+) -> dict:
+    from sources.declaration import IntakeOverride
+    from use_cases import source_intake
+
+    try:
+        block = IntakeOverride(**intake).model_dump(exclude_none=True, exclude_defaults=True)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+    with Session() as session:
+        _transition(source_intake.set_intake, _source_named(session, name), block)
+        session.commit()
+        return {"source": name, "intake": block}
+
+
+@mcp_ops.tool(
+    name="probe_intake",
+    description=(
+        "Try intake knobs on a few pages before setting them: a job reads the pages of the source's PDF with its own "
+        "knobs and again with these over them, and scores both against the text layer; the job's `result` holds "
+        "each side's defect counts, read with list_jobs. The source is not changed. Knobs as in set_source_intake."
+    ),
+)
+def probe_intake(
+    name: Annotated[str, Field(description="The source's name.")],
+    pages: Annotated[list[int], Field(description="[first, last], counted from 1.", min_length=2, max_length=2)],
+    knobs: Annotated[dict, Field(description="The knobs to try over the source's own.")],
+    file: Annotated[str | None, Field(description="The PDF, for a source of several.")] = None,
+) -> dict:
+    from job_specs import Refused
+
+    options = {"source": name, "pages": pages, "knobs": knobs, **({"file": file} if file else {})}
+    try:
+        return {"job_id": job_queue.enqueue("probe_intake", options)}
+    except Refused as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="remove_source",
+    description=(
+        "Delete a source by name: its row, its chunks in every variant, and the stand's own folders of it (raw "
+        "conversions, what its job fetched); a folder origin the owner placed stays, and its gate history goes with "
+        "the row. Refused while a job reads it or questions have their gold in it."
+    ),
+    annotations={"destructiveHint": True},
+)
+def remove_source(name: Annotated[str, Field(description="The source's name.")]) -> dict:
+    from errors import Final
+    from paths import RAW
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = _source_named(session, name)
+    try:
+        return source_intake.remove_source(found, RAW)
+    except Final as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="remove_variant",
+    description="Delete a corpus variant's chunks in every source; the variant the stand searches is refused.",
+    annotations={"destructiveHint": True},
+)
+def remove_variant(variant: Annotated[str, Field(description="The variant's name.")]) -> dict:
+    from errors import Final
+    from use_cases import source_intake
+
+    try:
+        return source_intake.remove_variant(variant, config.settings.corpus.variant)
+    except Final as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="remove_question_set",
+    description=(
+        "Delete a question set by name with its questions. Refused while the verdict names it, a job reads it, answer "
+        "logs hold its questions, or questions of another set are drawn from it."
+    ),
+    annotations={"destructiveHint": True},
+)
+def remove_question_set(set_name: Annotated[str, Field(description="The set's name.", max_length=200)]) -> dict:
+    from errors import Final
+    from evals import question_sets
+
+    try:
+        return question_sets.remove(set_name)
+    except Final as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp_ops.tool(
@@ -693,12 +868,13 @@ def raw_rows(
 ) -> dict:
     from evals import measurements
     from models.corpus import DataSource
+    from use_cases import source_intake
 
     with Session() as session:
         found = session.scalar(select(DataSource).where(DataSource.name == name))
-        if found is None or not (found.raw or {}).get("report"):
+        report = source_intake.run_under_review(found).get("report") if found is not None else None
+        if not report:
             raise ToolError(f"{name} has no raw report yet")
-        report = found.raw["report"]
     try:
         rows = measurements.rows_of(measurements.ROOT / report, "rows" if kind == "pieces" else kind)
     except FileNotFoundError as e:

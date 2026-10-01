@@ -1,6 +1,6 @@
 """Three classes of a candidate chunk: the gold section, its neighbour in the gold file, a stranger."""
 
-from evals.retrieval_metrics import is_gold
+from corpus_keys import Gold
 from use_cases.retrieval_compare import clean_gold, heading_text
 
 SCHEMA = 1
@@ -16,16 +16,19 @@ READS = (
 
 
 # the stand's own predicate, by its own functions: an SQL rewrite of it drifted twice before
-def classify(candidate: dict, marked, gold_heading: str | None) -> str:
-    if not is_gold(candidate.get("source") or "", marked or ()):
+def classify(candidate: dict, gold, gold_heading: str | None) -> str:
+    gold, source = Gold.coerce(gold), candidate.get("source") or ""
+    if not gold.holds_file(source):
         return STRANGER
+    if gold.exact:
+        return GOLD if gold.holds_section(source, candidate.get("section"), candidate.get("versions")) else NEIGHBOUR
     heading = heading_text(candidate.get("section"))
     return GOLD if heading and heading == clean_gold(gold_heading) else NEIGHBOUR
 
 
 def of_row(row: dict) -> list[str]:
     return [
-        classify(candidate, row.get("marked_sources"), row.get("gold_heading"))
+        classify(candidate, Gold.of(row.get("marked_sources"), row.get("gold")) or (), row.get("gold_heading"))
         for candidate in row.get("candidates") or ()
     ]
 

@@ -6,15 +6,18 @@ from typing import Literal
 
 import limits
 import samplers
+from corpus_keys import VARIANT_RE
 from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from sources.declaration import Language
-from tool_names import SETTINGS_NAME
+from search_scope import CATEGORY_RE, MAX_SOURCES, VERSION_RE, Scope, refuse_malformed_scope
+from sources.declaration import SOURCE_NAME, IntakeOverride, Language
+from tool_names import SETTINGS_NAME, settings_refusal
 from use_cases import agent_policy
 from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
-from use_cases.index import VARIANT_RE
 
+# a generated set names its files and its reports, so its name is one a path can carry as it is
+SET_NAME = r"^[\w.-]+$"
 # the only folder a graded pass reads: a path of its own would let a job open any file
 FROZEN_POOL_RE = re.compile(r"(/app/)?datasets/candidates/[\w.-]+\.json")
 
@@ -65,11 +68,27 @@ class EvalRunFields(Spec):
     purpose: Purpose = Purpose.smoke
     # the preregistration this run was made under, by name
     prereg: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
+    # the search's scope, as the chat doors take it: a book's questions asked of that book alone
+    category: str | None = Field(default=None, pattern=CATEGORY_RE.pattern)
+    sources: list[str] | None = Field(default=None, max_length=MAX_SOURCES)
+    version: str | None = Field(default=None, pattern=VERSION_RE.pattern)
 
     @field_validator("generation_sampler")
     @classmethod
     def _sampler_keys(cls, value):
         return samplers.check(value) if value else value
+
+    def scope(self) -> Scope:
+        return Scope.of(self.category, self.sources, self.version)
+
+    # the agent searches with its own queries and no filter; a scope it would drop is refused, as at the MCP door
+    @model_validator(mode="after")
+    def _a_scope_the_pipeline_can_read(self):
+        scope = self.scope()
+        if scope.narrowed and self.pipeline == Pipeline.agent:
+            raise ValueError("a category, source or version scope is only supported with pipeline=single_shot")
+        refuse_malformed_scope(scope)
+        return self
 
     # the gate lives here and not on a route, so the REST door and the queue get it from one place
     @model_validator(mode="after")
@@ -218,6 +237,72 @@ class ParaphraseQuestions(Spec):
     originals: list | None = None
 
 
+# a source's question pairs written from its sections; a probe caps the pairs it asks for
+class GenerateQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    max_pairs: int | None = Field(default=None, ge=1)
+    # a smoke: go on section by section until this many pairs are kept
+    kept_at_least: int | None = Field(default=None, ge=1)
+    # the languages a pair is asked in, over the set's configured ones; the stand reads two
+    languages: list[Literal["en", "ru"]] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _one_way_to_stop(self):
+        if self.max_pairs and self.kept_at_least:
+            raise ValueError("a run stops at max_pairs asked or at kept_at_least kept, not both")
+        if self.languages and len(set(self.languages)) != len(self.languages):
+            raise ValueError("languages: each language once")
+        return self
+
+
+# a set's candidate pairs of one source read from their sections; a probe caps the pairs it reads
+class AcceptQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    max_pairs: int | None = Field(default=None, ge=1)
+    # a pair read once waits for the judge; asking the reader again is a choice, not a rerun's default
+    again: bool = False
+    # a pass that only reports, so two passes over one set can be compared before either settles it
+    settle: bool = True
+    # settled pairs too, read and settled again: a reader or a reading changed since they were refused
+    every: bool = False
+
+
+# a set's undecided pairs of one source judged on their evidence; a probe caps the pairs it reads
+class JudgeQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    max_pairs: int | None = Field(default=None, ge=1)
+    settle: bool = True
+    every: bool = False
+    # a second judge over the role's own: the pairs read by another model, the role left seated
+    model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
+
+
+# a generation's report read again by today's checks; the name only, the folder is the stand's
+class ReparseQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    report: str = Field(pattern=r"^question_set_[\w.-]+\.json$", max_length=300)
+
+
+# a set's rows given their anchors by today's rule, the source's sections read once
+class AnchorQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+
+
+# a generated set to its file beside the sources, and back into the base on a later intake
+class SaveQuestions(Spec):
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+
+
+class LoadQuestions(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+
+
 class BuildVetoSet(Spec):
     seed: str | int | None = None
     set_name: str | None = None
@@ -238,6 +323,18 @@ class ConvertSource(Spec):
     # paths under the gold's files; a path of its own would let a job read any file
     inputs: list[str] = Field(min_length=1, max_length=5000)
     out: str = Field(pattern=r"^[\w.-]{1,80}$")
+    # read as the corpus reads a file (route, seams, reread, join), not by the one settings file alone
+    intake: bool = False
+    # where the inputs lie: the gold's files, or the store of sources, read and never written
+    root: Literal["gold", "inbox"] = "gold"
+    # an input read over a page range of its own file, first and last inclusive, as onboarding hands a piece
+    pages: dict[str, tuple[int, int]] | None = None
+    # a run's own piece size in place of the settings', stamped in its record
+    pages_per_chunk: int | None = Field(default=None, ge=1)
+    # an input's source by name, so it is read with that source's own intake knobs
+    sources: dict[str, str] | None = None
+    # intake knobs of the run itself, over every input's own: an arm is its settings plus these
+    knobs: dict | None = None
 
     @field_validator("inputs")
     @classmethod
@@ -247,19 +344,56 @@ class ConvertSource(Spec):
                 raise ValueError(f"{path}: a path relative to the gold's files, without ..")
         return inputs
 
+    @model_validator(mode="after")
+    def _ranges_name_inputs(self):
+        as_corpus = (self.pages, self.root != "gold", self.pages_per_chunk, self.sources, self.knobs)
+        if not self.intake and any(as_corpus):
+            raise ValueError("pages, root and pages_per_chunk read a file as the corpus does, so they need intake")
+        if self.knobs is not None:
+            from sources.declaration import IntakeOverride
+
+            IntakeOverride(**self.knobs)
+        for path, (first, last) in (self.pages or {}).items():
+            if path not in self.inputs or not 1 <= first <= last:
+                raise ValueError(f"pages {path}: an input of the job with 1 <= first <= last")
+        return self
+
 
 class OnboardSource(Spec):
     # a declared source by name; the route picks each file's engine, these name the settings each engine runs with
-    source: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")
+    source: str = Field(pattern=SOURCE_NAME)
     settings: dict[str, str] | None = None
+    # every piece read by its tool now, for a measure of the tool: no kept reading, no kept piece, stamped in the record
+    fresh: bool = False
 
     @field_validator("settings")
     @classmethod
     def _settings_files(cls, settings):
         for tool, name in (settings or {}).items():
-            if not SETTINGS_NAME.fullmatch(name) or not name.startswith(f"{tool}/"):
-                raise ValueError(f"{tool}: {name} is not a settings file of that tool")
+            if refusal := settings_refusal(tool, name):
+                raise ValueError(refusal)
         return settings
+
+
+class ProbeIntake(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    pages: tuple[int, int]
+    knobs: dict
+    # a source of several PDFs names the one to read
+    file: str | None = None
+
+    @field_validator("pages")
+    @classmethod
+    def _pages(cls, pages):
+        if not 1 <= pages[0] <= pages[1]:
+            raise ValueError("pages are [first, last], counted from 1")
+        return pages
+
+    @field_validator("knobs")
+    @classmethod
+    def _knobs(cls, knobs):
+        IntakeOverride.model_validate(knobs)
+        return knobs
 
 
 class BuildVectorIndex(Spec):
@@ -272,10 +406,18 @@ class EmbedQuestions(Spec):
 
 SPECS: dict[str, type[Spec]] = {
     "paraphrase_questions": ParaphraseQuestions,
+    "generate_questions": GenerateQuestions,
+    "accept_questions": AcceptQuestions,
+    "judge_questions": JudgeQuestions,
+    "reparse_questions": ReparseQuestions,
+    "anchor_questions": AnchorQuestions,
+    "save_questions": SaveQuestions,
+    "load_questions": LoadQuestions,
     "build_veto_set": BuildVetoSet,
     "index_data": IndexData,
     "convert_source": ConvertSource,
     "onboard_source": OnboardSource,
+    "probe_intake": ProbeIntake,
     "build_vector_index": BuildVectorIndex,
     "embed_questions": EmbedQuestions,
     "eval_run": EvalRun,
@@ -291,7 +433,8 @@ SPECS: dict[str, type[Spec]] = {
     "delete_llm_model": ModelByName,
 }
 
-LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io"}
+# the question writer calls a cloud and holds no card, so it runs beside a converter
+LANES = {"pull_llm_model": "io", "delete_llm_model": "io", "check_mcp_health": "io", "generate_questions": "io"}
 
 # lower first; judging waits for runs, and the API's `hand_card` overtakes what waits
 PRIORITY = {"hand_card": -2, "judge_answers": 10, "judge_guest_axes": 10, "judge_language": 10}
@@ -303,12 +446,21 @@ STARVED_AFTER_MINUTES = 30
 # the roles a type answers with; `hand_card` names its engine and model in the options instead
 LOADS: dict[str, tuple[Role, ...]] = {
     "paraphrase_questions": (Role.paraphrasing,),
+    "generate_questions": (Role.questioning,),
+    "accept_questions": (Role.accepting,),
+    "judge_questions": (Role.judging,),
+    # no model: the replies are the ones the generator gave
+    "reparse_questions": (),
+    "anchor_questions": (),
+    "save_questions": (),
+    "load_questions": (),
     "build_veto_set": (Role.paraphrasing,),
     "index_data": (Role.embedding,),
     # the converter is an engine, not a role: the handler takes the card for it
     "convert_source": (),
     # the converters are engines, not roles: the handler takes the card for each
     "onboard_source": (),
+    "probe_intake": (),
     "embed_questions": (Role.embedding,),
     "build_vector_index": (),
     "analyze_source": (),
@@ -360,8 +512,16 @@ def check(job_type: str, options: dict | None, *, from_the_worker: bool = False)
         return
     asked = {k: v for k, v in given.items() if k not in WORKER_KEYS}
     try:
-        spec.model_validate(asked)
+        checked = spec.model_validate(asked)
     except ValidationError as bad:
         first = bad.errors()[0]
         where = ".".join(str(part) for part in first["loc"]) or "options"
         raise Refused(f"{where}: {first['msg']}") from bad
+    # the search's own step is the queue's door's, as at the MCP door: sources out of search, a version none holds
+    if not from_the_worker and hasattr(checked, "scope") and checked.scope().narrowed:
+        import db
+
+        try:
+            db.refuse_bad_scope(checked.scope(), getattr(checked, "variant", None))
+        except db.ScopeRefused as bad:
+            raise Refused(f"scope: {bad}") from bad

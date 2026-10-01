@@ -16,7 +16,7 @@ from use_cases.retrieval_compare import (
     arm_procedure,
     comparable,
     file_drift,
-    half_of,
+    half_ids,
     ids_hash,
     measure,
     paired_delta,
@@ -129,9 +129,7 @@ def print_file_drift(before: str, after: str) -> None:
 
 
 def compare_half(before, after, level, which):
-    # over the ids both sides carry: the hash names the questions the numbers came from
-    shared = {r["id"] for r in before} & {r["id"] for r in after}
-    kept = {qid for qid in shared if half_of(qid) == which}
+    kept = half_ids(before, after, which)
     result = paired_delta(
         [r for r in before if r["id"] in kept],
         [r for r in after if r["id"] in kept],
@@ -213,8 +211,8 @@ def main() -> int:
                 print(json.dumps(compare_half(before["rows"], after["rows"], level, which)))
         return 0
 
+    from corpus_keys import check_variant
     from orm.sync_db import engine
-    from use_cases.index import check_variant
 
     import db
 

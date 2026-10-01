@@ -11,10 +11,10 @@ class CheatsheetsSource(Base):
         post = frontmatter.loads(self.text_of(file) if hygienic else self.legacy_text_of(file))
         if post.metadata.get("category") == "Hidden":
             return None
+        # the sheet's own category is a label, not a row of the map
         raw = post.metadata.get("category")
-        tree = self.settings.categories
-        category = tree.by_front_matter.get(raw) or tree.by_file.get(file.stem) or "misc"
         title = post.metadata.get("title") or (
             self.title_from(post.content) if hygienic else self.legacy_title_from(post.content)
         )
-        return Parsed(post.content, category, title, [], post.metadata.get("tags", []))
+        labels = [str(raw)] if raw else []
+        return Parsed(post.content, self.category_for(rel), title, [], labels + list(post.metadata.get("tags", [])))

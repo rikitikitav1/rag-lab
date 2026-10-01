@@ -1,0 +1,20 @@
+# the control group's chapter 2, read once after the step 0 fixes; drawn by scripts/chapter_set.py rules
+documents:
+- source: control-arhitektury-dannyh
+  file: books/control-arhitektury-dannyh/arhitektury-dannyh.pdf
+  language: ru
+  file_pages: 288
+  pages:
+  - 100
+  - 110
+  chapter: null
+  by: no outline
+- source: control-learning-python-6e
+  file: books/control-learning-python-6e/learning-python-6e.pdf
+  language: en
+  file_pages: 3087
+  pages:
+  - 52
+  - 76
+  chapter: 2. How Python Runs Programs
+  by: numbered outline

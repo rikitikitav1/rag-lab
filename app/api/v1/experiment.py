@@ -10,7 +10,7 @@ from crud import get_or_404
 from evals import sampling
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from models.eval import Question
+from models.eval import READ_BY_RUNS, Question
 from models.experiment import Experiment, ExperimentKind, ExperimentStatus, can_advance
 from models.registry import Pipeline
 from orm.async_db import commit_and_refresh, get_session
@@ -195,7 +195,7 @@ async def _resolve_sample(
         return None
     stmt = (
         select(Question.id)
-        .where(Question.set_name == dataset)
+        .where(Question.set_name == dataset, READ_BY_RUNS)
         .order_by(sampling.by_id_and_seed(Question.id, sample_seed))
         .limit(sample_size)
     )

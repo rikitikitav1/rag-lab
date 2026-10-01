@@ -1,0 +1,326 @@
+from types import SimpleNamespace
+
+from evals import pools
+
+
+def _log(kind=None, marked=None, answer="the corpus says hello", sources=(), metrics=None,
+         faithfulness=None):
+    return SimpleNamespace(
+        question=SimpleNamespace(kind=kind, marked_sources=marked or []),
+        question_text="the corpus says what",
+        answer=answer,
+        sources=[{"source": s} for s in sources],
+        metrics=metrics or {},
+        faithfulness=faithfulness,
+    )
+
+
+def test_a_declared_kind_wins_over_the_marked_sources():
+    assert pools.kind(_log(kind="off_domain", marked=["a.md"])) == "off_domain"
+    assert pools.kind(_log(kind="nonsense", marked=["a.md"])) == "in_corpus"
+
+
+def test_without_a_kind_the_marked_sources_decide():
+    assert pools.kind(_log(marked=["a.md"])) == "in_corpus"
+    assert pools.kind(_log()) == "out_of_corpus"
+
+
+def test_an_in_corpus_question_with_nothing_marked_cannot_be_scored_against_the_corpus():
+    split = pools.split([_log(kind="in_corpus")])
+    assert split["in_corpus"] == []
+    assert len(split["out_of_corpus"]) == 1
+
+
+def test_rejected_questions_keep_their_own_bucket():
+    split = pools.split([_log(kind="rejected", marked=["a.md"])])
+    assert len(split["rejected"]) == 1
+    assert split["in_corpus"] == []
+
+
+def test_a_recorded_narration_is_trusted_over_the_text():
+    log = _log(metrics={"outcome": "narrated_call"})
+    log.answer = "No relevant documents found."
+    assert pools.outcome(log) == "narrated_call"
+
+
+def test_an_error_at_the_hop_cap_is_exhaustion_not_a_crash():
+    capped = _log(answer="", metrics={"outcome": "error", "hops": 4, "config": {"max_hops": 4}})
+    crashed = _log(answer="", metrics={"outcome": "error", "hops": 1, "config": {"max_hops": 4}})
+    assert pools.outcome(capped) == "exhausted"
+    assert pools.outcome(crashed) == "error"
+
+
+def test_a_settled_outcome_is_trusted_and_an_unsettled_one_is_still_derived():
+    # the judge settles it, because groundedness is unknowable when the answer is written
+    settled = _log(metrics={"outcome": "answered", "settled_outcome": "answered_ungrounded"},
+                   sources=["a.md"], faithfulness="7")
+    assert pools.outcome(settled) == "answered_ungrounded", "the record wins over the derivation"
+    assert pools.settled(settled) is True
+
+    # no stamp means a row written before this existed, and it keeps being read exactly as before
+    stale = _log(metrics={"outcome": "answered"}, sources=["a.md"], faithfulness="0")
+    assert pools.outcome(stale) == "answered_ungrounded", "derived, so no recorded verdict moves"
+    assert pools.settled(stale) is False
+
+
+def test_a_row_without_its_own_ceiling_is_not_judged_by_todays_config(monkeypatch):
+    # the ceiling has only ever been 4; pinning it means moving the config never rewrites history
+    import config
+
+    old = _log(answer="", metrics={"outcome": "error", "hops": 4})
+    assert pools.outcome(old) == "exhausted"
+    monkeypatch.setattr(config.settings.agent, "max_hops", 9)
+    assert pools.outcome(old) == "exhausted", "history keeps the ceiling it actually ran under"
+
+
+def test_a_guard_that_fired_stays_an_error_at_the_same_hop_count():
+    guarded = _log(
+        answer="",
+        metrics={"outcome": "error", "hops": 5, "failed": True, "config": {"max_hops": 4}},
+    )
+    spent = _log(answer="", metrics={"outcome": "error", "hops": 5, "config": {"max_hops": 4}})
+    assert pools.outcome(guarded) == "error"
+    assert pools.outcome(spent) == "exhausted"
+
+
+def test_an_answer_without_sources_is_unsupported_not_answered():
+    assert pools.outcome(_log(sources=["a.md"])) == "answered"
+    assert pools.outcome(_log()) == "unsupported_answer"
+
+
+def test_only_an_mcp_prefix_counts_as_remote_evidence():
+    assert pools.has_remote_evidence(_log(sources=["mcp:deepwiki__ask_question"]))
+    assert not pools.has_remote_evidence(_log(sources=["mcp_notes/readme.md"]))
+    assert not pools.has_remote_evidence(_log())
+
+
+def test_the_report_carries_a_bucket_for_every_outcome_the_enum_knows(monkeypatch):
+    # the pre-registration listed three buckets while the data held four
+    import outcomes
+    from evals import generation_metrics
+
+    log = SimpleNamespace(
+        question=SimpleNamespace(original_text="q", marked_sources=["a.md"], kind=None),
+        question_text="the corpus says what", metrics={}, answered=True,
+        answer="the corpus says hello",
+        faithfulness=8, relevance=9, completeness=7, sources=[{"source": "a.md"}],
+    )
+    monkeypatch.setattr(generation_metrics, "load_logs", lambda run_name: [log])
+    reported = generation_metrics.evaluate("run")["outcomes"]
+
+    assert set(reported) == {o.value for o in outcomes.Outcome}
+
+
+def test_sources_that_the_answer_did_not_use_are_their_own_bucket():
+    # six off-domain questions came back with sources attached and scored 7 to 10
+    assert pools.outcome(_log(sources=["a.md"], faithfulness="0")) == "answered_ungrounded"
+    assert pools.outcome(_log(sources=["a.md"], faithfulness="7")) == "answered"
+    assert pools.outcome(_log(sources=["a.md"])) == "answered", "unjudged stays where it was"
+    assert pools.outcome(_log(faithfulness="0")) == "unsupported_answer", "no source is not this"
+
+
+def test_a_row_is_read_against_the_ceiling_it_recorded_not_the_one_configured_now():
+    # `config.get("max_hops") or default` sent a recorded zero to the default
+    from types import SimpleNamespace
+
+    from evals import pools
+
+    def row(recorded_max_hops, hops):
+        return SimpleNamespace(
+            metrics={"outcome": "error", "hops": hops, "config": {"max_hops": recorded_max_hops}},
+            question=None, answer="a", sources=[], faithfulness=None,
+        )
+
+    assert pools.outcome(row(2, 2)) == "exhausted"
+    assert pools.outcome(row(9, 2)) == "error", "two hops of nine is not exhaustion"
+    # a row that recorded none is read against the default, which is what the default is for
+    assert pools.outcome(row(None, 99)) == "exhausted"
+    # the case `or` could not express, unreachable through the door today
+    assert pools.outcome(row(0, 0)) == "exhausted"
+
+
+def _question(**over):
+    from types import SimpleNamespace
+
+    base = dict(kind=None, marked_sources=[], reference_answer=None, language="en",
+                source_question_id=None, set_name="s", status="accepted")
+    return SimpleNamespace(**{**base, **over})
+
+
+def test_the_inventory_counts_what_each_axis_needs_before_a_pass_is_spent():
+    # an hour of card went on two pools whose reference answers were zero, and the set knew
+    from evals.question_sets import _of
+
+    out = _of([
+        _question(marked_sources=["a.md"], reference_answer="ref"),
+        _question(marked_sources=["b.md"]),
+        _question(kind="off_domain"),
+    ])
+
+    assert out["questions"] == 3
+    assert out["pools"] == {"in_corpus": 2, "off_domain": 1}
+    assert out["with_marked_sources"] == 2
+    assert out["with_reference_answer"] == 1
+
+
+def test_the_rows_of_a_pool_add_up_to_its_count_in_the_inventory(monkeypatch):
+    # a smoke run's ids came from SQL: nothing listed the rows, and the stand is read through its doors
+    from evals import question_sets
+
+    stored = [
+        _question(id=1, original_text="a", marked_sources=["a.md"], reference_answer="ref",
+                  embedded_by="bge-m3@ollama"),
+        _question(id=2, original_text="b", kind="off_domain", embedded_by=None),
+        _question(id=3, original_text="c", marked_sources=["b.md", "c.md"], embedded_by=None),
+    ]
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def scalars(self, _stmt):
+            return iter(stored)
+
+    monkeypatch.setattr(question_sets, "Session", _Session)
+    in_corpus = question_sets.rows(pool="in_corpus")
+    assert [r["id"] for r in in_corpus] == [1, 3]
+    assert len(in_corpus) == question_sets._of(stored)["pools"]["in_corpus"]
+    assert in_corpus[1] == {"id": 3, "set_name": "s", "language": "en", "pool": "in_corpus",
+                            "text": "c", "has_reference": False, "marked_sources": 2, "gold": None,
+                            "embedded_by": None, "paraphrase_of": None}
+    assert [r["id"] for r in question_sets.rows(pool="in_corpus", limit=1, offset=1)] == [3]
+
+
+def test_the_rest_door_and_the_mcp_tool_read_the_same_rows(monkeypatch):
+    import bootstrap
+
+    monkeypatch.setattr(bootstrap, "bootstrap_models", lambda: None)
+    import mcp_ops
+    import server
+    from evals import question_sets
+    from fastapi.testclient import TestClient
+
+    asked = []
+
+    def rows(*args):
+        asked.append(args)
+        return [{"id": 7, "set_name": "s", "language": "en", "pool": "in_corpus", "text": "q",
+                 "has_reference": True, "marked_sources": 1, "gold": None, "embedded_by": None,
+                 "paraphrase_of": None}]
+
+    monkeypatch.setattr(question_sets, "rows", rows)
+    monkeypatch.setattr(question_sets, "inventory", lambda name: [{"set_name": name}])
+    with TestClient(server.app) as client:
+        got = client.get("/v1/questions", params={"set_name": "s", "pool": "in_corpus", "limit": 5})
+        unknown = client.get("/v1/questions", params={"pool": "corpus"})
+    assert got.status_code == 200 and got.json()[0]["id"] == 7
+    assert unknown.status_code == 422, "a pool the rule does not know is refused, not read as empty"
+    assert mcp_ops.list_questions(set_name=" s ", pool="in_corpus", limit=5) == got.json()
+    assert asked == [("s", None, "in_corpus", 5, 0)] * 2
+
+
+def test_the_pool_rule_has_one_holder_for_a_row_and_for_a_question():
+    # the inventory asks it of a question, `split` asks it of a log, and they parted once already
+    from types import SimpleNamespace
+
+    from evals import pools
+
+    question = _question(marked_sources=["a.md"])
+    assert pools.kind(SimpleNamespace(question=question)) == pools.kind_of_question(question)
+    assert pools.kind_of_question(_question(kind="rejected")) == "rejected"
+
+
+def test_the_stored_refusal_says_exactly_what_the_report_would_say():
+    # the judge read a raw key only the agent wrote and the report re-derived from the text
+    import outcomes
+
+    names, prefixes = ("search_corpus",), ("web__",)
+    cases = [
+        "I cannot answer this from the corpus",
+        "the corpus has nothing on that",
+        outcomes.NO_RESULTS,
+        "A middleware records the method and the url of each request.",
+        "",
+        None,
+        "I will call search_corpus with the query logging",
+    ]
+    for text in cases:
+        report_says = outcomes.classify(text or "", True, names, prefixes) == outcomes.Outcome.refused
+        assert outcomes.reads_as_refusal(text, names, prefixes) == report_says, text
+
+
+def test_both_answering_paths_record_the_refusal_fact():
+    # the judge abstained on agent rows and judged the same refusal on single_shot ones
+    import inspect
+
+    from use_cases import agent, chat
+
+    for module in (agent, chat):
+        source = inspect.getsource(module)
+        assert '"refusal": outcomes.reads_as_refusal(' in source, module.__name__
+
+
+def test_a_settlement_equal_to_what_the_answer_knew_overrode_nothing():
+    # 266 rows carry the key from an earlier pass, and counting the key called them overrides
+    from evals.pools import settled
+
+    assert settled(_log(metrics={"outcome": "answered",
+                                 "settled_outcome": "answered_ungrounded"})) is True
+    assert settled(_log(metrics={"outcome": "answered", "settled_outcome": "answered"})) is False
+    assert settled(_log(metrics={"outcome": "answered"})) is False
+
+
+def test_the_shared_predicates_live_here_and_the_reports_call_them():
+    # three reports held population vocabulary and imported it sideways from each other
+    import evals.compare as compare
+    import evals.human_anchor as anchor
+    import evals.judge_correlation as corr
+    import evals.language_cost as costs
+    from evals import pools
+
+    for holder in (compare, corr, anchor):
+        assert holder.joins_both_judges is pools.joins_both_judges
+        assert holder.JOINS_BOTH_JUDGES is pools.JOINS_BOTH_JUDGES
+    assert costs.answered_in_target is pools.answered_in_target
+
+    from pathlib import Path
+
+    source = Path(compare.__file__).read_text(encoding="utf-8")
+    assert "judge_correlation" not in source, "a comparison importing a report is the wrong way"
+
+
+def test_pairing_by_question_refuses_a_double_instead_of_keeping_whichever_came_last():
+    # four doors paired by question with three rules: two last-wins, one refusal, one set
+    from types import SimpleNamespace
+
+    from evals.pools import Ambiguous, by_question
+
+    def row(question, log_id):
+        return SimpleNamespace(question_id=question, id=log_id, run_name="r")
+
+    assert list(by_question([row(1, 10), row(2, 20)])) == [1, 2]
+    assert list(by_question([row(1, 10), row(None, 11)])) == [1], "a row with no question is out"
+    assert list(by_question([row(1, 10), row(2, 20)], lambda ql: ql.id != 20)) == [1]
+
+    try:
+        by_question([row(1, 10), row(1, 11)])
+        raise AssertionError("a double must refuse, not pick whichever row came last")
+    except Ambiguous:
+        pass
+
+
+def test_an_echo_of_the_recorded_outcome_does_not_short_circuit_the_derivation():
+    # 266 rows in the base carry a settlement equal to what the answer knew, from an earlier pass
+    from evals.pools import outcome, settled
+
+    echo = _log(metrics={"outcome": "answered", "settled_outcome": "answered"},
+                answer="an answer", sources=[{"source": "a.md"}], faithfulness="0")
+    assert settled(echo) is False
+    assert outcome(echo) == "answered_ungrounded", "the wider rule applies, the echo is not a fact"
+
+    real = _log(metrics={"outcome": "answered", "settled_outcome": "answered_ungrounded"},
+                answer="an answer", sources=[{"source": "a.md"}], faithfulness="8")
+    assert settled(real) is True and outcome(real) == "answered_ungrounded"

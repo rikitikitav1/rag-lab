@@ -135,8 +135,7 @@ def run(path: str, form: str = "per_chunk", top: int = 5, limit: int | None = No
         kept = set(graded["kept"])
         out.append({
             "question_id": row["id"],
-            "classes": [gold_classes.classify(c, row["marked_sources"], row["gold_heading"])
-                        for c in chunks],
+            "classes": gold_classes.of_row({**row, "candidates": chunks}),
             "addresses": [c["address"] for c in chunks],
             "kept": sorted(kept),
             "asked": graded["asked"],

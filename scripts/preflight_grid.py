@@ -19,7 +19,7 @@ def sh(*args: str) -> str:
 # asked of the worker: this script runs on the host, without the app's dependencies
 @lru_cache(maxsize=1)
 def vector_index_prefix() -> str:
-    out = _in_worker("from use_cases.index import VECTOR_INDEX_PREFIX as p; print(p)")
+    out = _in_worker("from corpus_keys import VECTOR_INDEX_PREFIX as p; print(p)")
     return out or "data_chunks_embedding_"
 
 
@@ -163,25 +163,112 @@ def roles_match_the_config() -> tuple[bool, str]:
     return True, "roles: " + ", ".join(f"{r}={n}" for r, n in sorted(seen["served"].items()))
 
 
-# the file wins over the row: a variant cut by another version of its source file is stale
+# a variant cut by another version of its row's declaration, or from a run since replaced, is stale
 def sources_match_their_files() -> tuple[bool, str]:
     out = _in_worker(
         "import json; from orm.sync_db import Session; from models.corpus import DataSource; from sources import files;"
-        " rows = Session().query(DataSource.name, DataSource.indexed_with).all();"
+        " rows = Session().query(DataSource.name, DataSource.indexed_with, DataSource.declaration).all();"
         " print(json.dumps(files.drift_report([tuple(r) for r in rows])))"
     )
     if not out.startswith("{"):
-        return False, f"source files: cannot read them ({out[:60] or 'no answer'})"
+        return False, f"source declarations: cannot read them ({out[:60] or 'no answer'})"
     return source_files_verdict(json.loads(out))
 
 
 def source_files_verdict(seen: dict) -> tuple[bool, str]:
-    bad = [f"{file}: {', '.join(variants)}" for file, variants in seen["moved"].items()]
+    bad = [f"{source}: {', '.join(variants)}" for source, variants in seen["moved"].items()]
     if seen["orphaned"]:
-        bad.append(f"rows whose file is gone: {', '.join(seen['orphaned'])}")
+        bad.append(f"rows indexed with no declaration: {', '.join(seen['orphaned'])}")
     if bad:
-        return False, "source files moved since their rows were cut: " + "; ".join(bad) + ". Re-index them"
-    return True, f"source files: none moved; {seen['unrecorded']} rows indexed before digests were kept"
+        said = "; ".join(bad)
+        return False, f"declarations or accepted runs moved since their rows were cut: {said}. Re-index them"
+    return True, f"source declarations: none moved; {seen['unrecorded']} rows indexed before digests were kept"
+
+
+# a folder the host lacks gives onboarding nothing to read; where the index reads, onboarding writes on the row
+def source_folders_are_there() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, pathlib; from orm.sync_db import Session; from models.corpus import DataSource;"
+        " from sources.declaration import Declaration;"
+        " declared = [Declaration.model_validate(d) for (d,) in Session().query(DataSource.declaration).all() if d];"
+        " seen = {s.name: {'folders': [f for f in [s.folder, *(v.folder for v in s.versions.values())] if f]}"
+        "   for s in declared if s.folder is not None};"
+        " print(json.dumps({n: {**v, 'there': [pathlib.Path(f).is_dir() for f in v['folders']]}"
+        "   for n, v in seen.items()}))"
+    )
+    if not out.startswith("{"):
+        return False, f"source folders: cannot read them ({out[:60] or 'no answer'})"
+    return source_folders_verdict(json.loads(out))
+
+
+def source_folders_verdict(seen: dict) -> tuple[bool, str]:
+    bad = []
+    for name, v in sorted(seen.items()):
+        paired = zip(v["folders"], v["there"], strict=True)
+        bad += [f"{name}: {f} is not on this host" for f, there in paired if not there]
+    if bad:
+        return False, "source folders: " + "; ".join(bad)
+    return True, f"source folders: {len(seen)} folder sources, each on this host"
+
+
+# a converted source read under settings or a route the stand no longer has is due a re-intake before it is trusted
+def converted_sources_are_current() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json; from orm.sync_db import Session; from models.corpus import DataSource, Stage;"
+        " from use_cases import source_intake;"
+        " rows = Session().query(DataSource).filter(DataSource.stage == Stage.accepted).all();"
+        " print(json.dumps({r.name: d for r in rows if (d := source_intake.conversion_drift(r))}))"
+    )
+    if not out.startswith("{"):
+        return False, f"converted sources: cannot read them ({out[:60] or 'no answer'})"
+    return converted_sources_verdict(json.loads(out))
+
+
+def converted_sources_verdict(seen: dict) -> tuple[bool, str]:
+    if not seen:
+        return True, "converted sources: each read under the stand's current settings and route"
+    said = [f"{name}: {', '.join(k for k, v in moved.items() if v)}" for name, moved in sorted(seen.items())]
+    return False, "converted sources read under older settings or route: " + "; ".join(said) + ". Onboard them again"
+
+
+# a seeded row whose source file is gone is still indexed, and its knobs door points at a file no longer there
+def seeded_rows_have_files() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json; from orm.sync_db import Session; from models.corpus import DataSource; from sources import files;"
+        " named = {n for s in files.source_files().values() for n in files.rows_of(s)};"
+        " rows = Session().query(DataSource.name).filter(DataSource.seeded).all();"
+        " print(json.dumps(sorted(r.name for r in rows if r.name not in named)))"
+    )
+    if not out.startswith("["):
+        return False, f"seeded rows: cannot read them ({out[:60] or 'no answer'})"
+    return seeded_rows_verdict(json.loads(out))
+
+
+def seeded_rows_verdict(orphans: list[str]) -> tuple[bool, str]:
+    if not orphans:
+        return True, "seeded rows: each has its source file"
+    return False, f"seeded rows whose source file is gone: {', '.join(orphans)}. Remove them or put the file back"
+
+
+# a question with no version reads the map's newest; a variant of older versions only answers it thinly, in silence
+def newest_versions_are_searchable() -> tuple[bool, str]:
+    # what a search reads, through the search's own rows and newest: an inactive source's version answers nothing
+    out = _in_worker(
+        "import json, config, db;"
+        " held = db.versions_held(config.settings.corpus.variant);"
+        " print(json.dumps({'held': held, 'newest': dict(zip(*db.newest()))}))"
+    )
+    if not out.startswith("{"):
+        return False, f"versions: cannot read them ({out[:60] or 'no answer'})"
+    return newest_versions_verdict(json.loads(out))
+
+
+def newest_versions_verdict(seen: dict) -> tuple[bool, str]:
+    held, newest = seen["held"], seen["newest"]
+    bad = [f"{c} holds {sorted(held[c])}, not its newest {v}" for c, v in newest.items() if v not in held.get(c, [v])]
+    if bad:
+        return False, "a question with no version would read a missing newest: " + "; ".join(bad)
+    return True, f"versions: {len(held)} versioned categories in the variant, each holds its newest"
 
 
 def prompt_drift(declared: dict, active: dict) -> list[str]:
@@ -388,7 +475,9 @@ def every_variant_cuts_into_its_own_rows() -> tuple[bool, str]:
         return False, "variants cut into their own rows: unknown"
 
     # a source whose file says it drifts, asked of the worker that reads the files
-    said = _in_worker("import json; from sources import files; print(json.dumps(files.drifting_rows()))")
+    said = _in_worker(
+        "import json; from use_cases import source_intake; print(json.dumps(source_intake.drifting_rows()))"
+    )
     drifting = set(json.loads(said)) if said.startswith("[") else set()
     bad = []
     for entry in report:
@@ -472,18 +561,9 @@ def veto_sets() -> tuple[str, ...]:
 
 
 def marks_are_reachable() -> tuple[bool, str]:
-    # `db.live_rows`: this asked only for the variant, so a deactivated file counted
     out = _in_worker(
         "import json, config, db;"
-        " from orm.sync_db import engine; from sqlalchemy import text;"
-        ' sql = text("SELECT q.set_name, count(*) AS unreachable FROM questions q"'
-        ' " WHERE array_length(q.marked_sources, 1) > 0 AND NOT EXISTS ("'
-        ' "   SELECT 1 FROM data_chunks dc, unnest(q.marked_sources) m"'
-        " f\"   WHERE {db.live_rows('dc')} AND dc.source LIKE '%' || m || '%')\""
-        ' " GROUP BY q.set_name ORDER BY 2 DESC");'
-        " rows = engine.connect().execute("
-        "   sql, {'variant': config.settings.corpus.variant}).all();"
-        " print(json.dumps([[r[0], r[1]] for r in rows]))"
+        " print(json.dumps(db.unreachable_by_set(variant=config.settings.corpus.variant)))"
     )
     rows = json.loads(out) if out.startswith("[") else None
     if rows is None:
@@ -547,6 +627,10 @@ CHECKS = (
     roles_match_the_config,
     prompts_match_the_config,
     sources_match_their_files,
+    source_folders_are_there,
+    converted_sources_are_current,
+    seeded_rows_have_files,
+    newest_versions_are_searchable,
     role_engines_answer,
     queue_is_idle,
     corpus_variant_is_usable,

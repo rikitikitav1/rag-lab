@@ -21,7 +21,8 @@ fork
   :postgresql;
   :dbmate: migrations;
   :seed: engines, prompts, the question bank,
-MCP integrations, the code's sources;
+MCP integrations, the rows of sources/
+(declared, onboarding queued);
 fork again
   :ollama;
 fork again
@@ -39,7 +40,8 @@ partition "bootstrap, once every service above is healthy" {
   vLLM rows filled from what it serves;
   :ollama reconciled: a missing model queues a pull,
   the repetition penalty is written in;
-  :a corpus indexed only if the database holds none
+  :a corpus index queued only if the database holds none,
+  reading the accepted sources
   (an empty variant beside others is only logged),
   missing vector indexes built;
   :questions without a vector queued;

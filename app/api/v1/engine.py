@@ -86,10 +86,11 @@ class EngineCreateRequest(BaseModel):
     _reader = field_validator("balance_reader")(_known_reader)
 
 
-# a reader on a local engine would never be asked, and the summary would not show it
 def _refuse_a_reader_off_the_cloud(kind: EngineKind, reader: str | None) -> None:
-    if reader not in (None, balances.NO_READER) and not engines.is_cloud(kind):
-        raise HTTPException(status_code=422, detail=f"only a cloud has a broker to ask; {kind.value} has none")
+    try:
+        balances.refuse_off_the_cloud(kind, reader)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
 
 
 # a remote engine on `gpu` joined the card engines and every handover waited for it forever

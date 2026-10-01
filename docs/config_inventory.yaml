@@ -9,7 +9,7 @@ families:
   converter_settings: 'which settings file each converter runs: named in `intake.settings`, held by the file under `converters/*/settings/`'
   piece_ceiling: 'the bound on one converter piece: `CHUNK_CEILING` in code, `piece_ceiling_seconds` in a settings file overrides
     it'
-  context_length: 'the ollama window: `llm.context_length` in config and `OLLAMA_CONTEXT_LENGTH` in compose, checked by tests/test_no_card_mode.py'
+  context_length: 'the ollama window: `llm.context_length` in config and `OLLAMA_CONTEXT_LENGTH` in compose, checked by tests/stand/test_no_card_mode.py'
   postgres_host: 'the database host: `postgres.host` in config, `POSTGRES_HOST` in the environment wins (`app/orm/dsn.py`)'
   ollama_url: 'the ollama address: `OLLAMA_BASE_URL` wins, `llm.base_url` is the fallback when compose leaves it empty (`app/engines/core.py`)'
   judge_model: 'the judge model: `llm.roles.judging.model` in config, `VLLM_MODEL` exported by scripts/up.sh, compose falls
@@ -42,6 +42,9 @@ config:
     class: setting
   retrieval.ef_search:
     class: setting
+  retrieval.filtered_scan:
+    class: setting
+    how: not measured
   verdict.criterion_sets:
     class: setting
   verdict.veto_sets:
@@ -174,6 +177,70 @@ config:
     class: setting
   intake.route.suspect_min_words:
     class: setting
+  intake.route.reread_below_layer_f1:
+    class: setting
+  intake.route.reread_settings:
+    class: setting
+  intake.route.reread_cells_slack:
+    class: setting
+  intake.route.splice_tables:
+    class: setting
+  intake.route.seam_window:
+    class: setting
+  intake.route.seam_margin:
+    class: setting
+  intake.route.epub_skip:
+    class: setting
+  intake.route.headings_by_number:
+    class: setting
+  intake.route.man_page_titles:
+    class: setting
+  intake.route.join_wrapped_identifiers:
+    class: setting
+  intake.route.join_continued_rows:
+    class: setting
+  intake.route.listing_callouts:
+    class: setting
+  intake.route.mono_by_step:
+    class: setting
+  intake.route.code_row_rules:
+    class: setting
+  intake.route.outline_levels:
+    class: setting
+  intake.route.html_one_title:
+    class: setting
+  intake.route.epub_chapters:
+    class: setting
+  intake.route.numbered_levels:
+    class: setting
+  intake.route.decode_entities:
+    class: setting
+  intake.route.drop_lone_pipes:
+    class: setting
+  intake.route.join_layer_hyphens:
+    class: setting
+  intake.route.restore_dashes:
+    class: setting
+  intake.route.join_broken_words:
+    class: setting
+  intake.route.unescape_bullets:
+    class: setting
+  intake.route.unescape_underscores:
+    class: setting
+  intake.route.picture_addresses:
+    class: setting
+  intake.route.formula_text:
+    class: setting
+  intake.route.demote_caption_headings:
+    class: setting
+  intake.route.drop_running_headings:
+    class: setting
+  intake.route.join_split_words:
+    class: setting
+  intake.route.mono_spread:
+    class: setting
+  intake.route.mono_faces:
+    class: setting
   intake.quality.output_share_min:
     class: setting
   intake.quality.output_share_max:
@@ -185,6 +252,8 @@ config:
   intake.quality.layer_band_engines:
     class: setting
   intake.quality.bad_share:
+    class: setting
+  intake.quality.auto_accept_ok:
     class: setting
   intake.engines.docling:
     class: setting
@@ -226,9 +295,9 @@ config:
     class: setting
   prompts_dir:
     class: setting
-  technologies:
+  categories:
     class: setting
-    how: owner decision 26.09, the coverage map's rows
+    how: owner decision 26.09, the coverage map's rows; named categories, not technologies, 27.09
   engines.ollama.name:
     class: seed
     note: seeded into the engine rows
@@ -325,6 +394,75 @@ config:
   engines.converter-mineru.placement:
     class: seed
     note: seeded into the engine rows
+  engines.ollama.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.ollama-cpu.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-cpu.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-embed.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.vllm-rerank.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-docling.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.converter-mineru.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.gonka.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.neuraldeep.balance_reader:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.name:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.kind:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.env_prefix:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.placement:
+    class: seed
+    note: seeded into the engine rows
+  engines.groq.balance_reader:
+    class: seed
+    note: seeded into the engine rows
   llm.base_url:
     class: setting
     family: ollama_url
@@ -419,6 +557,33 @@ config:
   llm.roles.paraphrasing.options.temperature:
     class: setting
     note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.questioning.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.questioning.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.questioning.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.questioning.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.accepting.model:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.accepting.engine:
+    class: seed
+    note: the role seat is a row in the base; the row wins after bootstrap
+  llm.roles.accepting.options.max_tokens:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.accepting.options.temperature:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
+  llm.roles.accepting.options.seed:
+    class: setting
+    note: read live at every call and stamped as the sampler; a model row options lie over it
   llm.roles.reranking.model:
     class: seed
     note: the role seat is a row in the base; the row wins after bootstrap
@@ -469,11 +634,17 @@ config:
     class: setting
   evals.veto.quotas.redis-doc/docs:
     class: setting
-  evals.veto.quotas.notes:
-    class: setting
   evals.veto.quotas.system-design-primer:
     class: setting
   evals.veto.min_heading:
+    class: setting
+  evals.question_set.per_source:
+    class: setting
+  evals.question_set.per_chapter:
+    class: setting
+  evals.question_set.min_pairs:
+    class: setting
+  evals.question_set.languages:
     class: setting
   evals.grade_curve.cuts:
     class: setting
@@ -518,6 +689,9 @@ config:
   llm.roles.judging.prompts.judge_completeness:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.judging.prompts.judge_pair:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
   llm.roles.grading.prompts.grade_chunk:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
@@ -536,6 +710,12 @@ config:
   llm.roles.paraphrasing.prompts.question_from_heading:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.questioning.prompts.questions_from_section:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
+  llm.roles.accepting.prompts.answer_from_section:
+    class: seed
+    note: the version the seed activates on an empty database; the active row wins after
   llm.roles.reranking.prompts:
     class: seed
     note: the version the seed activates on an empty database; the active row wins after
@@ -548,8 +728,6 @@ config:
 constant:
   app/api/v1/questions.py:_MAX_UPLOAD:
     class: cap
-  app/db.py:CATEGORY_RE:
-    class: code
   app/engines/answer_parsers.py:_DEEPSEEK_CALLS:
     class: code
   app/engines/answer_parsers.py:_MINIMAX_CALLS:
@@ -681,7 +859,7 @@ constant:
   app/ingest.py:SECTION_CAP:
     class: code
     note: the width a stored chunk field is cut to
-  app/job_handlers/converting.py:CHUNK_CEILING:
+  app/use_cases/converting.py:CHUNK_CEILING:
     class: cap
     family: piece_ceiling
   app/job_handlers/judging.py:_MAX_JUDGE_ATTEMPTS:
@@ -692,7 +870,7 @@ constant:
     class: cap
   app/job_handlers/judging.py:_ERROR_CHARS:
     class: cap
-  app/job_handlers/onboard.py:_SLUG:
+  app/corpus_keys.py:_SLUG:
     class: code
     family: slug
   app/job_queue.py:LIVE_BATCH_SECONDS:
@@ -766,6 +944,12 @@ constant:
     class: code
   app/samplers.py:MAX_TOKENS:
     class: cap
+  app/search_scope.py:MAX_SOURCES:
+    class: cap
+  app/search_scope.py:CATEGORY_RE:
+    class: code
+  app/search_scope.py:VERSION_RE:
+    class: code
   app/seed.py:_PROMPT_RE:
     class: code
   app/server.py:MAX_BODY_BYTES:
@@ -784,13 +968,30 @@ constant:
     class: cap
   app/use_cases/card_wait.py:FREE_RETRY_SECONDS:
     class: cap
+  app/use_cases/code_lines.py:_NUMBER:
+    class: code
+  app/use_cases/code_lines.py:_FORMULA_NOISE:
+    class: code
+  app/use_cases/reading.py:_OPERATORS:
+    class: code
+  app/use_cases/markup.py:FENCE:
+    class: code
   app/use_cases/experiment.py:SCHEMA:
     class: code
     note: the shape of a stored record
+  app/use_cases/fetch.py:_PAGE_TYPE:
+    class: code
+  app/use_cases/fetch.py:_TYPE_HEAD:
+    class: code
   app/use_cases/fetch.py:TIMEOUT:
     class: cap
-  app/use_cases/index.py:VARIANT_RE:
+  app/use_cases/fetch.py:TRIES:
+    class: cap
+  app/corpus_keys.py:VARIANT_RE:
     class: code
+  app/corpus_keys.py:CYRILLIC_SHARE:
+    class: cap
+    why: "measured 29.09: 1876 questions change language at neither 0.2 nor 0.3; on three Russian books' raw chunks 0.2 misreads 47 as English, 0.3 misreads 88 (footnotes, SQL, unfenced code)"
   app/use_cases/ingest_quality.py:FENCE:
     class: code
   app/use_cases/ingest_quality.py:PROSE_WORD:
@@ -809,16 +1010,105 @@ constant:
     class: cap
   app/use_cases/mcp_integration.py:_MAX_SCHEMA_CHARS:
     class: cap
+  app/use_cases/code_lines.py:_MARKS:
+    class: code
+  app/use_cases/code_lines.py:_MONO_SHARE:
+    class: code
+    note: an item is code when nine glyphs in ten are monospace; inline code in prose stays below it
+  app/use_cases/heading_rules.py:_NAME_SECTION:
+    class: code
+  app/use_cases/layer_words.py:_WRAPPED_UNDERSCORE:
+    class: code
+  app/use_cases/layer_words.py:_MID_LINE_MARK:
+    class: code
+  app/use_cases/heading_rules.py:_HEADING:
+    class: code
+  app/use_cases/layer_check.py:_TOKEN:
+    class: code
+  app/use_cases/layer_check.py:_INLINE:
+    class: code
+  app/use_cases/layer_check.py:_PICTURE:
+    class: code
+  app/use_cases/layer_check.py:_COMMENT:
+    class: code
+  app/use_cases/layer_check.py:_TAG:
+    class: code
+  app/use_cases/layer_check.py:_WRAPPER:
+    class: code
+  app/use_cases/layer_check.py:_ENTITY:
+    class: code
+  app/use_cases/layer_check.py:_ESCAPE:
+    class: code
+  app/use_cases/layer_check.py:_DASHED:
+    class: code
+  app/use_cases/layer_check.py:_BROKEN:
+    class: code
+  app/use_cases/layer_check.py:_LINE_END_HYPHEN:
+    class: code
+  app/use_cases/layer_check.py:_LONE_PIPE:
+    class: code
+  app/use_cases/layer_check.py:VERSION:
+    class: code
+    note: the checker's version; columns of different versions are never compared
+  app/use_cases/layer_check.py:TEXT_LOST_BELOW:
+    class: cap
+  app/use_cases/layer_check.py:TEXT_LOST_MIN_WORDS:
+    class: cap
+  app/use_cases/markdown_cleanup.py:_TABLE_PIPE:
+    class: code
+  app/use_cases/layer_words.py:_SPLIT:
+    class: code
+  app/use_cases/markdown_cleanup.py:_INLINE_PICTURE:
+    class: code
+  app/use_cases/heading_rules.py:_CAPTION_HEADING:
+    class: code
+  app/use_cases/layer_check.py:_HEADING:
+    class: code
+  app/use_cases/layer_check.py:_TABLE_ROW:
+    class: code
+  app/use_cases/layer_check.py:_CAPTION:
+    class: code
+  app/use_cases/heading_rules.py:_EDGE_NUMBER:
+    class: code
+  app/use_cases/heading_rules.py:RUNNING_MIN_PAGES:
+    class: cap
+    why: not measured; a line first or last on three pages is a running head, two could be a repeated title
+  app/use_cases/markdown_cleanup.py:_ESCAPED_BULLET:
+    class: code
+  app/use_cases/markup.py:INLINE_CODE:
+    class: code
+  app/use_cases/layer_words.py:_BROKEN:
+    class: code
+  app/use_cases/layer_words.py:_DASHED:
+    class: code
+  app/use_cases/markdown_cleanup.py:_ENTITY:
+    class: code
+  app/use_cases/markup.py:FENCE_LINE:
+    class: code
+  app/use_cases/heading_rules.py:_MD_HEADING:
+    class: code
+  app/use_cases/heading_rules.py:_NUMBERED:
+    class: code
+  app/use_cases/heading_rules.py:_OUTLINE_PAGES:
+    class: code
+    note: an outline entry points at its page top; a heading may close the page before
+  app/use_cases/piece_join.py:_MARGIN_WORDS:
+    class: code
+    note: read on PostgreSQL Internals margin notes («с. 211»), one book
   app/use_cases/prereg.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/use_cases/raw_quality.py:_FENCE:
+  app/use_cases/raw_quality.py:_CELL:
     class: code
   app/use_cases/raw_quality.py:_MARKUP:
     class: code
   app/use_cases/raw_quality.py:_LINE_MARKS:
     class: code
   app/use_cases/raw_quality.py:_ESCAPES:
+    class: code
+  app/use_cases/raw_quality.py:_FENCE_LINE:
+    class: code
+  app/use_cases/raw_quality.py:_HEADING:
     class: code
   app/use_cases/rejudge.py:SCHEMA:
     class: code
@@ -829,6 +1119,86 @@ constant:
     class: code
   app/use_cases/rejudge.py:PAIR_EVERY_UP_TO:
     class: cap
+  app/corpus_keys.py:CHAPTER_STEPS:
+    class: code
+    note: the chapter grain the coverage report reads too
+  app/corpus_keys.py:_LINK:
+    class: code
+  app/corpus_keys.py:_LAYOUT:
+    class: code
+  app/corpus_keys.py:_BACKTICKED:
+    class: code
+  app/corpus_keys.py:_TOKEN:
+    class: code
+  app/corpus_keys.py:_WORDS:
+    class: code
+  app/evals/columns.py:ANCHOR_RARE:
+    class: setting
+    note: not measured; the auditor's reading of a rare token (round 159), read at this threshold and stored as counts
+  app/evals/pair_judge.py:AROUND_WORDS:
+    class: setting
+    note: not measured; enough of a passage to read a fact in context and short of any window
+  app/evals/pair_judge.py:_LEADING_WORDS:
+    class: code
+  app/evals/pair_judge.py:_WORD:
+    class: code
+  app/evals/section_questions.py:MIN_WORDS:
+    class: setting
+    note: a stub section gets no pairs; the probe of the generators set it
+  app/evals/section_questions.py:MAX_EVIDENCE_WORDS:
+    class: cap
+  app/evals/section_questions.py:PAIRS_PER_CALL:
+    class: setting
+    note: a thinking generator spends about 3000 tokens a pair; the probe's six-pair ask was cut at 4096
+  app/evals/section_questions.py:_JSON:
+    class: code
+  app/evals/section_questions.py:_WORD:
+    class: code
+  app/evals/section_questions.py:_MARKUP:
+    class: code
+  app/evals/section_questions.py:_LEANS_ON_THE_PAGE:
+    class: code
+  app/sources/arangodb_docs.py:_COMMENT:
+    class: code
+  app/sources/arangodb_docs.py:_SHORTCODE:
+    class: code
+  app/sources/arangodb_docs.py:_QUOTED:
+    class: code
+  app/evals/question_acceptance.py:EVIDENCE_HELD:
+    class: setting
+    note: a quote holding this share of the evidence's words names its place; preregistered before a set is read
+  app/evals/question_acceptance.py:WINDOW_WORDS:
+    class: setting
+    note: the reader's window over a long section; 800, 1500 and 2500 tried on think-python, whole chapters lost most facts
+  app/evals/question_acceptance.py:WINDOW_OVERLAP:
+    class: setting
+    note: a fact cut by a window's edge is whole in the next
+  app/evals/question_acceptance.py:_WORD:
+    class: code
+  app/evals/question_acceptance.py:WINDOW_CHARS:
+    class: setting
+    note: not measured; about 1500 words of ordinary text at eight characters, so only link or code runs are cut again
+  app/evals/question_acceptance.py:_SHORTEST:
+    class: code
+  app/book_matter.py:BOOK_MATTER:
+    class: setting
+    note: the headings neither the index nor a generator reads; every accepted source before and after, each leaf that went read
+  app/book_matter.py:_CONTENTS_LINE:
+    class: code
+  app/book_matter.py:_BOOK_FILE:
+    class: code
+  app/book_matter.py:_LEADING_NUMBER:
+    class: code
+  app/book_matter.py:_NOT_A_WORD:
+    class: code
+  app/use_cases/section_export.py:BLOCK_CHARS:
+    class: setting
+    note: not measured; the index's chunks joined to about 1300 words, one window of acceptance (1500 words)
+  app/use_cases/section_export.py:BLOCK_BREAK_SHARE:
+    class: setting
+    note: not measured; a subsection starts a block once half of it is held, so small ones join a neighbour
+  app/use_cases/section_export.py:_SUBHEADING:
+    class: code
   app/use_cases/retrieval_compare.py:SCHEMA:
     class: code
     note: the shape of a stored record
@@ -839,6 +1209,8 @@ constant:
   app/use_cases/retrieval_compare.py:AXIS_RULES:
     class: code
   app/use_cases/retrieval_compare.py:ABSENT_MEANS:
+    class: code
+  app/use_cases/route.py:_BROKEN_WORD:
     class: code
   app/use_cases/route.py:_WORD:
     class: code
@@ -853,6 +1225,8 @@ constant:
     class: code
   app/use_cases/site_page.py:_CLASS:
     class: code
+  app/use_cases/site_page.py:_LOC:
+    class: code
   app/use_cases/site_page.py:_SELECTOR:
     class: code
   app/use_cases/site_page.py:_NOT_TEXT:
@@ -861,7 +1235,9 @@ constant:
     class: code
   app/use_cases/site_page.py:_TAG:
     class: code
-  app/use_cases/source_intake.py:_SLUG:
+  app/use_cases/source_intake.py:REASON_CHARS:
+    class: cap
+  app/use_cases/intake_fetch.py:_SLUG:
     class: code
     family: slug
   app/version.py:_ASKED_AT:
@@ -887,6 +1263,16 @@ constant:
   scripts/broker_price.py:CASES:
     class: setting
     how: not measured
+  scripts/chapter_set.py:MATTER:
+    class: code
+  scripts/chapter_set.py:NO_OUTLINE:
+    class: code
+  scripts/chapter_set.py:PART:
+    class: code
+  scripts/chapter_set.py:CHAPTER_FILES:
+    class: code
+  scripts/chapter_set.py:WHOLE_UNDER:
+    class: code
   scripts/config_inventory.py:_ENV_IN_CODE:
     class: code
     note: a pattern that reads a format
@@ -1072,6 +1458,18 @@ env:
   GONKA_API_KEY:
     class: setting
     note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  GROQ_API_KEY:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  GROQ_BASE_URL:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  NEURALDEEP_API_KEY:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
+  NEURALDEEP_BASE_URL:
+    class: setting
+    note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
   GONKA_BASE_URL:
     class: setting
     note: 'a cloud engine prefix: read by its engine row, which lives in the base, not in the tree'
@@ -1109,6 +1507,9 @@ env:
   POSTGRES_HOST:
     class: setting
     family: postgres_host
+  RAG_LAB_API:
+    class: setting
+    note: the stand's API a host script calls
   RAG_LAB_URL:
     class: setting
   SUPERVISOR_PORT:

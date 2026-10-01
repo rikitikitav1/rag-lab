@@ -1,3 +1,7 @@
+import hashlib
+
+import llm
+from engines.core import key_fingerprint
 from errors import Final as Final
 from models.registry import Model, ModelRole, Role, Status, refuse_unknown_registry
 from orm.sync_db import Session
@@ -96,3 +100,24 @@ def _failed_pull(name: str, engine_id: int) -> str | None:
     if last is None or last.status != JobStatus.error:
         return None
     return str((last.error or {}).get("error") or "the pull failed")
+
+
+# a pass whose report is written whether it ends or breaks: pairs settled before a failure keep their record
+def reported(run, finish):
+    try:
+        run()
+    except Exception as e:
+        finish(e)
+        raise
+    return finish(None)
+
+
+# what a pass read with: the model, where it ran, the account it spent on, its sampler and its prompt
+def stamp(role, picked, template: str, version) -> dict:
+    return {
+        "model": picked.name,
+        "engine": picked.engine.name,
+        "key_fingerprint": key_fingerprint(picked.engine),
+        "sampler": llm.sampler_of(role, picked),
+        "prompt": {"version": version, "sha256": hashlib.sha256(template.encode()).hexdigest()[:12]},
+    }

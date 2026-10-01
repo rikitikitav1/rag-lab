@@ -1,7 +1,7 @@
 import config
+from corpus_keys import check_variant
 from orm.sync_db import engine
 from sqlalchemy import text
-from use_cases.index import check_variant
 
 import db
 

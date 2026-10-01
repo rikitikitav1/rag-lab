@@ -12,7 +12,7 @@ import db
 log = logging_setup.get_logger(__name__)
 
 # the snapshot's shape, raised with every key it gains
-SCHEMA = 19
+SCHEMA = 20
 
 # every key a run records about how it was configured, written whether or not it applies
 KEYS = (
@@ -65,6 +65,10 @@ KEYS = (
     "answer_parsers",
     # per cloud role, what keyed the broker's cache: a second pass without it could have read the first
     "cache_keys",
+    # what the search was narrowed to: a filtered arm and a whole-corpus arm read different rows
+    "scope",
+    # how a filtered HNSW scan walks: off stops at ef_search candidates, relaxed_order keeps going
+    "filtered_scan",
 )
 
 
@@ -86,6 +90,7 @@ def _by_role(picked, roles=ANSWERING) -> tuple[dict, dict, dict, dict, dict, dic
             placed[role] = card.model_on_card(spec, chosen.name)
             added[role] = {key: value for key, value in engines.added_by(spec, chosen.name).items()
                            if role in SAMPLING_ROLES or key != "repetition_penalty"}
+            added[role] |= llm.thinking_added(spec, samplers[role].sent)
             if key := llm.cache_key_of(spec):
                 cache_keys[role] = key
             parsers[role] = answer_parsers.label(getattr(chosen, "parser", answer_parsers.NONE))
@@ -198,6 +203,7 @@ def of_run(
         "on_card": placed,
         "answer_parsers": parsers,
         "cache_keys": cache_keys,
+        "filtered_scan": config.settings.retrieval.filtered_scan,
     }
     return {key: None for key in KEYS} | common | filled
 
@@ -206,6 +212,14 @@ def of_run(
 RETRIEVAL_KEYS = ("results_count", "min_distance", "top_rerank_score", "dropped_sources")
 # `question-log?max_distance` filters on this, so the two pipelines must round it alike
 DISTANCE_DIGITS = 3
+
+
+# a search's scope as the record keeps it; a whole-corpus search keeps none
+def scope_of(scope) -> dict | None:
+    import db
+
+    scope = db.as_scope(scope)
+    return {"label": scope.label, "sources": list(scope.sources), "version": scope.version} if scope.narrowed else None
 
 
 def of_retrieval(**filled) -> dict:

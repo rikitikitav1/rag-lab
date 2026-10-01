@@ -1,14 +1,17 @@
 import time
 from typing import Literal
 
+import config
 import job_queue
 from evals import pools, question_sets
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile
 from models.eval import Question, text_hash
 from orm.async_db import get_session
 from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+
+import db
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -46,6 +49,8 @@ class QuestionRow(BaseModel):
     text: str
     has_reference: bool
     marked_sources: int
+    # the exact gold, when the question has one instead of marks
+    gold: dict | None = None
     embedded_by: str | None
     paraphrase_of: int | None
 
@@ -62,6 +67,17 @@ def list_questions(
     return question_sets.rows(set_name, language, pool, limit, offset)
 
 
+# a set and its questions; refused while it is named in the verdict, read by a job, answered, or drawn from
+@router.delete("/set/{set_name}")
+def remove_question_set(set_name: str = Path(max_length=200)) -> dict:
+    from errors import Final
+
+    try:
+        return question_sets.remove(set_name)
+    except Final as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+
 class ImportResponse(BaseModel):
     set_name: str
     parsed: int
@@ -75,7 +91,8 @@ class ImportResponse(BaseModel):
 async def import_questions(
     file: UploadFile = File(...),
     set_name: str = Form(...),
-    language: str | None = Form(default=None),
+    # the two the corpus and the text search speak; a detector stray once came in through here
+    language: Literal["en", "ru"] | None = Form(default=None),
     run: bool = Form(default=False),
     run_name: str | None = Form(default=None),
     session: AsyncSession = Depends(get_session),
@@ -92,6 +109,10 @@ async def import_questions(
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="file must be UTF-8") from None
     parsed = _parse(content)
+    # a mark no searched chunk holds is a question whose gold can never be hit, a zero that reads as a miss
+    marks = [m for *_, marked in parsed for m in marked]
+    if missing := db.unreachable_marks(marks, variant=config.settings.corpus.variant):
+        raise HTTPException(status_code=422, detail=f"{len(missing)} marks no searched chunk holds: {missing[:10]}")
 
     inserted = 0
     if parsed:

@@ -8,10 +8,10 @@ git:
   - commands/*.md
   - docs/**/*.md
 reader: redis-doc
-categories:
-  prefix: databases.redis.
+# a command page is headed by the command in capitals, which no code shape catches
+reference_leaf: "^[A-Z][A-Z0-9_]+( [A-Z][A-Z0-9_]+)?$"
 veto_families:
 - name: redis-doc/docs
   prefix: redis-doc/docs/
-technologies:
+categories:
 - redis

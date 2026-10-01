@@ -5,10 +5,10 @@ import asyncio
 import json
 from pathlib import Path
 
+from corpus_keys import Gold
 from evals.loaders import load_logs
 from evals.retrieval_metrics import (
     _gold_headings,
-    is_gold,
     rank_of_gold,
     rank_of_gold_section,
     retrieved_sources,
@@ -24,15 +24,29 @@ ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = 1
 
 
-# ragas compares ids by equality, `is_gold` by containment: reduce before handing them over
-def as_ids(sources: list[str], marked: list[str]) -> list[str]:
-    return [next((m for m in marked if m in s), s) for s in sources]
+# ragas compares ids by equality, the gold rule by its own test: reduce before handing them over
+def as_ids(sources: list[str], gold: Gold) -> list[str]:
+    return [gold.mark_of(s) or s for s in sources]
 
 
 # the address of a chunk, in the shape ragas takes as an id
-def as_section_ids(chunks, marked, gold_heading) -> tuple[list[str], list[str]]:
+def as_section_ids(chunks, gold: Gold, gold_heading) -> tuple[list[str], list[str]]:
     from use_cases.retrieval_compare import clean_gold
 
+    if gold.exact:
+        # a sub-section of the gold is the gold, as the rank reads it
+        wanted = f"{gold.marks[0]}#{gold.section}"
+        seen = []
+        for c in chunks or []:
+            if not c:
+                continue
+            one = wanted if gold.holds_section(c["source"], c.get("section"), c.get("versions")) else (
+                f"{c['source']}#{c.get('section') or ''}"
+            )
+            if one not in seen:
+                seen.append(one)
+        return seen, [wanted]
+    marked = gold.marks
     # a headless chunk keeps its place, or `rr` and `id_precision` count different populations
     retrieved = [
         f"{next((m for m in marked if m in src), src)}#{head or ''}"
@@ -46,12 +60,12 @@ def rows_of(run_name=None, level="file") -> list[dict]:
     out = []
     golds = _gold_headings(load_logs(run_name)) if level == "section" else {}
     for ql in load_logs(run_name):
-        marked = ql.question.marked_sources if ql.question else None
+        marked = Gold.of_question(ql.question)
         if not marked:
             continue
         if level == "section":
             gold = golds.get(ql.question_id)
-            if not (ql.chunks and gold):
+            if not (ql.chunks and (gold or marked.exact)):
                 continue
             retrieved, reference = as_section_ids(ql.chunks, marked, gold)
             if not retrieved:
@@ -74,11 +88,11 @@ def rows_of(run_name=None, level="file") -> list[dict]:
             "run_name": ql.run_name,
             "pipeline": str(ql.pipeline),
             "retrieved": as_ids(got, marked),
-            "reference": list(marked),
+            "reference": list(marked.marks),
             "hit": 1.0 if rank else 0.0,
             "rr": 1 / rank if rank else 0.0,
             "n_retrieved": len(got),
-            "n_gold_retrieved": sum(1 for s in got if is_gold(s, marked)),
+            "n_gold_retrieved": sum(1 for s in got if marked.holds_file(s)),
         })
     return out
 

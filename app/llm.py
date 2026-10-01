@@ -85,6 +85,11 @@ class ServerFailed(StandFault):
     pass
 
 
+# a 400 is this one request refused, an input too long for the model most often; the next row may pass
+class RequestRefused(RuntimeError):
+    pass
+
+
 # one reading of a failed call for chat and embeddings: which failures stop the run and which fail one row
 def _failed(e: OpenAIError, spec, name: str, what: str) -> Exception:
     said = _without_the_body(e)
@@ -100,6 +105,8 @@ def _failed(e: OpenAIError, spec, name: str, what: str) -> Exception:
         log.error("llm.server_failed", model=name, engine=spec.name, status=status)
         return ServerFailed(f"{spec.name} failed {name}: {said}, the server says it is broken")
     log.error(f"llm.{what}_failed", model=name, engine=spec.name, error=said)
+    if status == 400:
+        return RequestRefused(f"LLM {what} failed ({name} on {spec.name}): {said}")
     return RuntimeError(f"LLM {what} failed ({name} on {spec.name}): {said}")
 
 
@@ -417,8 +424,30 @@ def _without_the_body(e: Exception) -> str:
     return type(e).__name__
 
 
+# gemma spent four fifths of a reply on reasoning; ollama has no such field and its models do not think
+NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
+THINKING_OFF_ON = frozenset({EngineKind.vllm, EngineKind.openai_compatible})
+
+
+def _turns_thinking_off(spec, params: dict) -> bool:
+    # a model that names its own effort turns the thinking down by it: Groq refuses the template switch with a 400
+    return spec.kind in THINKING_OFF_ON and "reasoning_effort" not in params
+
+
+def _thinking_off(spec, params: dict) -> dict:
+    if not _turns_thinking_off(spec, params):
+        return params
+    return {**params, "extra_body": {**(params.get("extra_body") or {}), **NO_THINKING}}
+
+
+# the switch the stand adds to every chat, so a record says the thinking was off rather than leaving it to guess
+def thinking_added(spec, sent: dict) -> dict:
+    return {"enable_thinking": False} if _turns_thinking_off(spec, sent) else {}
+
+
 # one contract for a failed completion: the same log event and error text, written twice
 def _complete(spec, name: str, messages, params, role=None):
+    params = _thinking_off(spec, params)
     with _card_for(spec, name):
         return _paced(
             spec,
@@ -563,7 +592,9 @@ def chat(messages, tools=None, role="generation", model=None) -> ChatTurn:
 
 # the same dict the call is made with, so a stamp cannot drift from what was sent
 def sampler_of(role, picked=None) -> dict:
-    return sampler(role, picked).sent
+    picked = picked or resolve(role)
+    sent = sampler(role, picked).sent
+    return {**sent, **thinking_added(picked.engine, sent)}
 
 
 # the generator's sampler for one run, over its role's and its model's; no other role reads it

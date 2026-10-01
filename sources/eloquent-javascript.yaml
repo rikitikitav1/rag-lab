@@ -1,0 +1,8 @@
+# an example book the stand downloads and converts on a cold start; the text stays out of git, only its address is here
+name: eloquent-javascript
+language: en
+licence: CC BY-NC 3.0, code MIT
+urls:
+- https://eloquentjavascript.net/Eloquent_JavaScript.pdf
+categories:
+- javascript

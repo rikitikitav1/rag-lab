@@ -65,7 +65,6 @@ services:
     deploy: *gpu
     volumes:
       - .:/app
-      - ${HOME}/working_docs/notes:/notes:ro
       - repos_data:/repos
       # the role gate reads a vLLM model's quant from its weights, before a handover is wasted on it
       - ${HOME}/.cache/huggingface:/engine_weights:ro
@@ -158,6 +157,8 @@ services:
     build:
       dockerfile: Dockerfile
     command: ["python", "app/worker.py"]
+    # a native crash in the PDF library killed the queue for an hour; a restart requeues the job it held
+    restart: unless-stopped
     # the worker writes pulled weights into the host's cache, and as root they were not the host's
     user: *host-user
     env_file:
@@ -187,7 +188,6 @@ services:
     volumes:
       - .:/app
       - repos_data:/repos
-      - ${HOME}/working_docs/notes:/notes:ro
       # where `pull_llm_model` puts vLLM weights: the same host cache the `vllm` service reads
       - ${HOME}/.cache/huggingface:/engine_weights
     deploy: *gpu

@@ -4,13 +4,16 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 
 import config
+from book_matter import is_matter
+from corpus_keys import SECTION_SEP, chapter_of
 from sources.base import cuts_of, first_heading, hygienic
 from tool_names import Tool
 from use_cases import ingest_quality as quality
+from use_cases.markup import FENCE
 from use_cases.route import mixed_share, words
 
-_FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
-_MARKUP = re.compile(r"<[^>]+>|!\[[^\]]*\]\([^)]*\)|\[([^\]]*)\]\([^)]*\)")
+# an HTML tag by its name, on one line; a bare `<` in code (`a < b`, `<%= %>`, JSX) is text and stays
+_MARKUP = re.compile(r"</?[A-Za-z][\w:-]*(?:\s[^<>\n]*)?/?>|!\[[^\]\n]*\]\([^)\n]*\)|\[([^\]\n]*)\]\([^)\n]*\)")
 _LINE_MARKS = re.compile(r"^[#>*\-+|\s]+|[*_`|]+", re.M)
 # a converter escapes markdown's own characters; the backslash is its mark, never the page's text
 _ESCAPES = re.compile(r"\\+")
@@ -66,7 +69,7 @@ def typography(text: str) -> str:
 # markdown as the words a reader sees; a character-level score folds typography, a word count needs not
 def plain(markdown: str, fold_typography: bool = False, keep_escapes: bool = False) -> str:
     text = unicodedata.normalize("NFKC", markdown)
-    text = _FENCE.sub(lambda m: m.group(1), typography(text) if fold_typography else text)
+    text = FENCE.sub(lambda m: m.group(1), typography(text) if fold_typography else text)
     text = _MARKUP.sub(r"\1", text)
     text = _LINE_MARKS.sub(" ", text if keep_escapes else _ESCAPES.sub(" ", text))
     return " ".join(text.split())
@@ -98,32 +101,31 @@ def chunker_gates(markdown: str, file: str) -> dict:
     return _gates(_samples(markdown, file, policy), policy)
 
 
-# the text before a file's first chapter has no heading below the root, so alone it breaches coverage by its shape
-def _with_lead(chapters: dict) -> dict:
-    keys = list(chapters)
-    if len(keys) > 1 and (keys[0] is None or (keys[1] or "").startswith(f"{keys[0]} > ")):
-        chapters = dict(chapters)
-        chapters[keys[1]] = chapters.pop(keys[0]) + chapters[keys[1]]
-    return chapters
-
-
 # the chunker's gates a chapter of a file, a chapter the second step of the section path; no chapters, one row
 def section_rows(markdown: str, file: str) -> list[dict]:
     policy = _policy()
     chapters: dict[str | None, list] = {}
     for sample in _samples(markdown, file, policy):
-        chapters.setdefault(" > ".join((sample.section or "").split(" > ")[:2]) or None, []).append(sample)
+        # the index and the questions never read a book's matter, so its sections do not judge the conversion
+        if is_matter(file, sample.section):
+            continue
+        chapters.setdefault(chapter_of(sample.section), []).append(sample)
     rows = []
-    for chapter, samples in _with_lead(chapters).items():
+    for chapter, samples in chapters.items():
         gates = _gates(samples, policy)
+        # a chapter that is the file's root alone has no heading below it by shape, so coverage measures nothing there
+        root_only = chapter is None or SECTION_SEP not in chapter
+        hard = [g for g in gates["hard"] if not (root_only and g.startswith("section_coverage."))]
+        verdict = gates["verdict"] if hard == gates["hard"] else quality.verdict(hard, gates["soft"], judged=True)
         rows.append(
             {
                 "file": file,
                 "section": chapter,
                 "words": len(words(" ".join(s.body if s.body is not None else s.content for s in samples))),
                 **gates["metrics"],
-                "chunker_verdict": gates["verdict"],
-                "breached": gates["hard"] + gates["soft"],
+                "chunker_verdict": verdict,
+                "breached": hard + gates["soft"],
+                "coverage_by_shape": root_only,
             }
         )
     return rows
@@ -175,3 +177,50 @@ def conversion_breaches(signals: dict, engine: str | None = Tool.docling) -> lis
 def unit_row(markdown: str, layer_text: str | None, unit: dict, arm: dict, seconds: float | None) -> dict:
     signals = conversion_signals(markdown, layer_text)
     return {**unit, **arm, **signals, "seconds": seconds, "breached": conversion_breaches(signals, arm.get("engine"))}
+
+
+_CELL = re.compile(r"<t[dh][^>]*>\s*[^<\s]")
+
+
+# filled cells of the markdown's tables, pipe and HTML alike; a reading that merges columns has fewer of them
+def table_cells(markdown: str) -> int:
+    pipe = 0
+    for line in markdown.splitlines():
+        line = line.strip()
+        if line.startswith("|") and not set(line) <= set("|-: "):
+            pipe += sum(1 for cell in line.strip("|").split("|") if cell.strip())
+    return pipe + len(_CELL.findall(markdown))
+
+
+# a second reading replaces the first when it agrees better with the layer and keeps every filled table cell
+def better_reading(first: dict, second: dict, cells_slack: float = 0.0) -> bool:
+    if first["layer_f1"] is None or second["layer_f1"] is None:
+        return False
+    return second["layer_f1"] > first["layer_f1"] and second["table_cells"] >= first["table_cells"] * (1 - cells_slack)
+
+
+_FENCE_LINE = re.compile(r"^\s*```", re.M)
+_HEADING = re.compile(r"^#{1,6}\s+(.+)$", re.M)
+
+
+def _title(text: str) -> str:
+    return " ".join(words(text))
+
+
+# an outline title is found when a heading holds it, or it holds a heading of two words or more («Chapter 2 Foo»)
+def _found(title: str, headings: list[str]) -> bool:
+    return any(title in h or (h.count(" ") and h in title) for h in headings)
+
+
+# what a file's markdown says about itself with no gold: its outline found as headings, fences, one-line code
+def self_check(markdown: str, outline: list[str]) -> dict:
+    headings = [t for t in map(_title, _HEADING.findall(markdown)) if t]
+    titles = [t for t in map(_title, outline) if t]
+    blocks = [b.strip() for b in FENCE.findall(markdown) if b.strip()]
+    return {
+        "outline": len(titles),
+        "outline_found": sum(_found(t, headings) for t in titles),
+        "fences_unbalanced": len(_FENCE_LINE.findall(markdown)) % 2,
+        "code_blocks": len(blocks),
+        "code_one_line": sum("\n" not in b for b in blocks),
+    }

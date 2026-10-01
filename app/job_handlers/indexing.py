@@ -7,32 +7,33 @@ from orm.sync_db import Session
 from sqlalchemy import select
 from use_cases.index import question_needs_embedding
 
-from .base import register, require_embedder_ready
+from .base import Final, register, require_embedder_ready
 from .card import clear_the_engine_for
 
 log = logging_setup.get_logger(__name__)
 
 
 @register("index_data")
-def index_data(options: dict) -> None:
+def index_data(options: dict) -> dict:
     import sources.factory
     import use_cases.index
 
     require_embedder_ready()
     clear_the_engine_for("embedding")
-    built = list(sources.factory.all_sources())
-    # written by the bootstrap and read by nobody: a job for one source re-indexed all 177
+    # a job for one source builds that one alone: the rest are not cloned, read or cut
     wanted = options.get("source") or "all"
-    if wanted != "all":
-        built = [s for s in built if s.name == wanted]
-        if not built:
-            known = sorted(s.name for s in sources.factory.all_sources())
-            raise ValueError(f"no such source: {wanted!r}; known: {known}")
+    built = list(sources.factory.sources(None if wanted == "all" else [wanted]))
+    if wanted != "all" and not built:
+        raise Final(f"no accepted source named {wanted!r}; only accepted rows are indexed")
     # resolved once: the call below took it bare and requeued itself with an unmatchable null
     variant = options.get("variant") or config.settings.corpus.variant
-    use_cases.index.collect_data(built, variant=variant, build_index=False)
-    # the report reads rows, not the index, so a failing build must not take it down
-    for source in built:
+    job_id = options.get("_job_id")
+    stop = (lambda: job_queue.is_cancelled(job_id)) if job_id is not None else None
+    result = use_cases.index.collect_data(built, variant=variant, build_index=False, stop=stop)
+    if wanted != "all" and result.refused:
+        raise Final(f"{wanted} was not cut: {result.refused[wanted]}")
+    # the report reads rows, not the index; a refused source has none of this cut, nor has one a cancel left uncut
+    for source in (s for s in built if s.name not in result.refused and s.name not in result.left):
         job_queue.enqueue(
             "analyze_source",
             {"source": source.name, "variant": variant, "mode": "indexed"},
@@ -46,15 +47,16 @@ def index_data(options: dict) -> None:
         # the same dedup bootstrap does: three retries would queue three builds on one lane
         if not job_queue.pending_of_type("build_vector_index", variant=variant):
             job_queue.enqueue("build_vector_index", {"variant": variant})
+    # a full reindex goes on past a refused source; the refusals stay on the job's row, not only in the log
+    cancelled = {"left_by_cancel": result.left} if result.left else {}
+    return {"sources": len(built) - len(result.left), "refused": result.refused, **cancelled}
 
 
 @register("build_vector_index")
 def build_vector_index(options: dict) -> None:
     import use_cases.index
 
-    use_cases.index.ensure_vector_index(
-        options.get("variant") or config.settings.corpus.variant
-    )
+    use_cases.index.ensure_vector_index(options.get("variant") or config.settings.corpus.variant)
     _report_depth()
 
 

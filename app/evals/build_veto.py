@@ -5,6 +5,7 @@ import config
 import llm
 import logging_setup
 import prompt_repo
+from corpus_keys import VETO_CUT_FROM, leaf_of
 from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
@@ -59,7 +60,7 @@ def _headings(session, variant: str) -> list[tuple[str, str, str]]:
 
 # `rank_of_section` strips a numeric prefix on one side, so the stripped form is stored
 def _leaf(section: str) -> str:
-    written = (section or "").split(" > ")[-1].strip()
+    written = leaf_of(section).strip()
     return re.sub(r"^\d+\.\s*", "", written).strip()
 
 
@@ -120,7 +121,7 @@ def plan(seed: str, variants: list[str], cut_from: str, quotas: dict | None = No
 
 
 def _ask(row: dict) -> str:
-    language = "Russian" if row["language"] == "rus" else "English"
+    language = "Russian" if row["language"] == "ru" else "English"
     return llm.ask(
         system=prompt_repo.active_template(Purpose.question_from_heading),
         user=f"File: {row['source']}\nHeading: {row['heading']}\nTarget language: {language}",
@@ -164,11 +165,13 @@ def _already_asked(session, set_name: str) -> set[int]:
     )
 
 
+
+
 def build(
     seed: str,
     set_name: str = "veto_v1",
     variants: list[str] | None = None,
-    cut_from: str = "clean_1024",
+    cut_from: str = VETO_CUT_FROM,
     quotas: dict | None = None,
 ) -> dict:
     if not seed:

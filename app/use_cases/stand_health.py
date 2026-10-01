@@ -145,6 +145,9 @@ def roles_down() -> list[str]:
     for role, picked in _roles():
         if role == Role.reranking and not rerank_used:
             continue
+        # a cloud role only its own job asks is checked by that job; readiness does not spend its limit
+        if role == Role.questioning and picked is not None and engines.is_cloud(picked.engine.kind):
+            continue
         if picked is None:
             # an optional role nobody seated is not down; the reranker stops being optional once used
             if role in config.REQUIRED_ROLES or role == Role.reranking:

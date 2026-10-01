@@ -5,9 +5,9 @@
     "do_ocr": "true",
     "do_pdf_heading_hierarchy": "true",
     "do_code_enrichment": "false",
-    "do_formula_enrichment": "true",
+    "do_formula_enrichment": "false",
     "code_formula_preset": "codeformulav2",
-    "do_picture_classification": "true",
+    "do_picture_classification": "false",
     "ocr_preset": "tesseract"
   },
   "ocr_lang": {
@@ -19,5 +19,6 @@
       "eng"
     ]
   },
-  "pages_per_chunk": 50
+  "pages_per_chunk": 50,
+  "code_from_layer": true
 }
