@@ -40,7 +40,21 @@ def _join_table(before: str, after: str) -> tuple[str, str, bool]:
     if _cells(tail[0]) != _cells(header):
         return before, after, False
     rest = tail[2:] if tail[0].split() == header.split() else [tail[0], *tail[2:]]
-    return before.rstrip("\n"), "\n".join(rest), True
+    head_text = before.rstrip("\n")
+    # a row the page break cut goes on in a row whose first cell is empty: its cells finish the row above
+    if rest and (merged := _continued_row(head[-1], rest[0])):
+        head_text, rest = "\n".join([*before.rstrip("\n").splitlines()[:-1], merged]), rest[1:]
+    return head_text, "\n".join(rest), True
+
+
+def _continued_row(above: str, row: str) -> str | None:
+    if _separator(above) or not row.strip().startswith("|"):
+        return None
+    top, low = above.strip().strip("|").split("|"), row.strip().strip("|").split("|")
+    if len(top) != len(low) or low[0].strip() or not any(cell.strip() for cell in low):
+        return None
+    cells = [f"{a.strip()} {b.strip()}".strip() for a, b in zip(top, low, strict=True)]
+    return "| " + " | ".join(cells) + " |"
 
 
 # a file's pieces joined in page order, with what the joins healed
@@ -289,11 +303,16 @@ _DASHED = re.compile(r"(\w+)(?:([\u2014\u2013])\s*|(-))(\w+)")
 
 
 # Docling reads a dash at a line end as a hyphenation and glues the two words; the layer still has the dash
-def restore_dashes(markdown: str, layer: str | None) -> tuple[str, int]:
+def restore_dashes(markdown: str, layer: str | None, marked: frozenset = frozenset()) -> tuple[str, int]:
     if not layer:
         return markdown, 0
-    words = set(re.findall(r"\w+", layer))
+    # a word the join made from a mid-line hyphen mark is no proof the layer writes it glued
+    words = set(re.findall(r"\w+", layer)) - marked
     glued = {a + b: f"{a}{dash or hyphen}{b}" for a, dash, hyphen, b in _DASHED.findall(layer) if a + b not in words}
+    # a dash Docling prints as a hyphen, where the layer never hyphenates the pair
+    hyphened = {f"{a}-{b}" for a, _, hyphen, b in _DASHED.findall(layer) if hyphen}
+    glued |= {f"{a}-{b}": f"{a}{dash}{b}" for a, dash, _, b in _DASHED.findall(layer)
+              if dash and f"{a}-{b}" not in hyphened}
     if not glued:
         return markdown, 0
     count = 0
@@ -305,6 +324,14 @@ def restore_dashes(markdown: str, layer: str | None) -> tuple[str, int]:
 
     pattern = re.compile(r"\b(" + "|".join(map(re.escape, sorted(glued, key=len, reverse=True))) + r")\b")
     return pattern.sub(put_back, markdown), count
+
+
+_MID_LINE_MARK = re.compile("(\\w+)\ufffe(\\w+)")
+
+
+# the words a mid-line hyphen mark joins: soft hyphens mostly, a compound's own hyphen where the layer spells it so too
+def marked_joins(layer: str | None) -> frozenset:
+    return frozenset(a + b for a, b in _MID_LINE_MARK.findall(layer or ""))
 
 
 # a space or a line end beside the hyphen: a hyphen inside a line (`well-known`) is the word's own
@@ -474,3 +501,41 @@ def join_split_words(markdown: str, layer: str | None) -> tuple[str, int]:
             parts[::2] = [_SPLIT.sub(join, part) for part in parts[::2]]
             lines[n] = "".join(parts)
     return "\n".join(lines), count
+
+
+# one underscore after a letter or digit: a dunder name (`__repr__`) ends a word, the next line is not its tail
+_WRAPPED_UNDERSCORE = re.compile(r"(?<!\w)(\w*[^\W_]_)\r?\n[ \t]*(\w[\w.]*)")
+
+
+# an identifier wrapped after its underscore: the converter reads the line end as a space, the layer keeps the wrap
+def join_wrapped_identifiers(markdown: str, layer: str | None) -> tuple[str, int]:
+    if not layer:
+        return markdown, 0
+    pairs = {f"{a} {b}": f"{a}{b}" for a, b in _WRAPPED_UNDERSCORE.findall(layer)}
+    if not pairs:
+        return markdown, 0
+    pattern = re.compile(r"(?<!\w)(" + "|".join(map(re.escape, sorted(pairs, key=len, reverse=True))) + r")(?![\w])")
+    return pattern.subn(lambda m: pairs[m.group(0)], markdown)
+
+
+_NAME_SECTION = re.compile(r"^(#{1,5}) NAME[ \t]*\n+([^\n#]+)", re.M)
+
+
+# a man page's title back over its NAME, from the page's first name: `dup, dup2 - duplicate` heads the page `dup`
+def man_page_titles(markdown: str) -> tuple[str, int]:
+    def title(found: re.Match) -> str:
+        level, line = found.group(1), found.group(2)
+        name = re.split(r"[,\s]", line.split(" - ", 1)[0].strip().lstrip("\\"), maxsplit=1)[0]
+        # a NAME whose next line is another section's word lost its own line to the scan
+        if not name or name.upper() == name and name.isalpha() or name.lower() == "name":
+            return found.group(0)
+        return f"{level[:-1] or '#'} {name}\n\n{level} NAME\n\n{line}"
+
+    titled = [0]
+
+    def counted(found: re.Match) -> str:
+        new = title(found)
+        titled[0] += new != found.group(0)
+        return new
+
+    return _NAME_SECTION.sub(counted, markdown), titled[0]

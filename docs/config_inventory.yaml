@@ -193,6 +193,10 @@ config:
     class: setting
   intake.route.headings_by_number:
     class: setting
+  intake.route.man_page_titles:
+    class: setting
+  intake.route.join_wrapped_identifiers:
+    class: setting
   intake.route.listing_callouts:
     class: setting
   intake.route.mono_by_step:
@@ -1009,6 +1013,12 @@ constant:
   app/use_cases/code_lines.py:_MONO_SHARE:
     class: code
     note: an item is code when nine glyphs in ten are monospace; inline code in prose stays below it
+  app/use_cases/piece_join.py:_NAME_SECTION:
+    class: code
+  app/use_cases/piece_join.py:_WRAPPED_UNDERSCORE:
+    class: code
+  app/use_cases/piece_join.py:_MID_LINE_MARK:
+    class: code
   app/use_cases/piece_join.py:_HEADING:
     class: code
   app/use_cases/layer_check.py:_TOKEN:

@@ -213,6 +213,7 @@ class RouteCfg(_Strict):
     mono_spread: float = Field(gt=0)
     mono_faces: list[str] = Field(min_length=1)
     headings_by_number: bool
+    man_page_titles: bool
     listing_callouts: bool
     mono_by_step: bool
     code_row_rules: list[Literal["run_on", "once", "numbers"]]
@@ -231,6 +232,7 @@ class RouteCfg(_Strict):
     demote_caption_headings: bool
     drop_running_headings: bool
     join_split_words: bool
+    join_wrapped_identifiers: bool
     epub_chapters: bool
 
 

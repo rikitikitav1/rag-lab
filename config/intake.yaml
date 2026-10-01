@@ -27,6 +27,8 @@ intake:
     mono_faces: [mono, monl, courier, cmtt, lmtt, consol, menlo, inconsolata, iosevka, typewriter, sftt, txtt]
     # a heading's section number over the outline, for a manual whose outline flattens it (FreePascal); off by default
     headings_by_number: false
+    # a manual of man pages whose page title the scan's reader took for a running head: each NAME gets its page back
+    man_page_titles: false
     # callouts in a text face inside a code box go after the fence as a line (Redis in Action); off by default
     listing_callouts: false
     # spaces by glyph origins, for a code face whose boxes are wider than its step (Object Pascal); off by default
@@ -63,6 +65,8 @@ intake:
     drop_running_headings: true
     # a word split by a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole; 14 sources
     join_split_words: true
+    # an identifier wrapped after its underscore is joined back where the layer keeps the wrap
+    join_wrapped_identifiers: true
     # an EPUB read as its chapters; one EPUB seen so far, so off and the file is skipped with its reason
     epub_chapters: false
   # tuned: file=datasets/converter_gold/raw_band.json

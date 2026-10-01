@@ -82,15 +82,18 @@ def _dashes_back(done: dict, layer, rule, piece=None) -> dict:
         return _counted(done, counts)
     if rule.drop_running_headings:
         done["markdown"], counts["running_heads_dropped"] = piece_join.drop_running_headings(done["markdown"], layer)
+    marked = piece_join.marked_joins(layer)
     # only the word rules read the joined layer; the reread's floor was set on the layer as PDFium gives it
     if rule.join_layer_hyphens:
         layer = route.joined_hyphens(layer)
     if rule.restore_dashes:
-        done["markdown"], counts["dashes_restored"] = piece_join.restore_dashes(done["markdown"], layer)
+        done["markdown"], counts["dashes_restored"] = piece_join.restore_dashes(done["markdown"], layer, marked)
     if rule.join_broken_words:
         done["markdown"], counts["words_joined"] = piece_join.join_broken_words(done["markdown"], layer)
     if rule.join_split_words:
         done["markdown"], counts["split_words_joined"] = piece_join.join_split_words(done["markdown"], layer)
+    if rule.join_wrapped_identifiers:
+        done["markdown"], counts["identifiers_joined"] = piece_join.join_wrapped_identifiers(done["markdown"], layer)
     return _counted(done, counts)
 
 

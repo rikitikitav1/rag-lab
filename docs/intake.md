@@ -112,6 +112,7 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `mono_by_step` | spaces by glyph positions, for a code font whose boxes are wider than its advance | off | Object Pascal Handbook |
 | `listing_callouts` | callouts set in a text font inside a listing go after it | off | Redis in Action |
 | `headings_by_number` | a heading's section number (`1.4.22`) decides its level over the outline | off | FreePascal reference |
+| `man_page_titles` | each `NAME` section of a manual of man pages gets its page's title back from its first name | off | 4.3BSD reference scan |
 | `outline_levels` | step 5 | on | |
 | `code_row_rules` | which code row rules run: `run_on` (a row runs on to the line's end), `once` (a row is given once a page), `numbers` (a listing's line numbers go) | `[run_on, once]` | |
 | `numbered_levels` | in a file with no outline, a numbered heading takes its level from its number | off | |
@@ -119,6 +120,7 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `drop_lone_pipes` | a paragraph that is only `\|` dropped | on | |
 | `unescape_bullets` | a list marker MinerU escapes (`\- item`) unescaped | on | |
 | `join_split_words` | a word the converter split with a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole and one half is no word of the layer | on | |
+| `join_wrapped_identifiers` | an identifier the layer wraps after its underscore (`reviews_` then `dataset.csv`) joined where the converter read the wrap as a space | on | |
 | `picture_addresses` | a Docling picture's placeholder becomes `![caption](picture:p<page>-<n>)`, its page and place on the page, caption empty when it has none; a MinerU picture inlined as base64 becomes `![](picture:pages<a>-<b>-<n>)`, by the piece's pages, since MinerU does not give a picture's page | on | |
 | `formula_text` | a formula Docling could not decode (`<!-- formula-not-decoded -->`) gets the text the layer holds under it, flattened to one line, private-use glyphs of the math font dropped; searchable, not typeset | on | |
 | `demote_caption_headings` | a heading that is a figure, listing or table caption (`Figure 2.6`, `Listing 2.4`, `Таблица 8.4`) goes back to a line of text, outside code fences, so it does not cut a section in two | on | |

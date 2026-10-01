@@ -343,3 +343,57 @@ def test_a_running_head_first_seen_in_a_later_piece_is_dropped_from_the_whole_fi
     whole, healed = reading.whole_file([first, second], ["text layer", "text layer"], rule, layers)
 
     assert whole.count("## Chapter 3 Paging") == 1 and healed["running_heads"] == 1
+
+
+# a man page's title comes back over its NAME from the page's first name, so two pages' NAMEs stop being one section
+def test_a_man_page_gets_its_title_back_from_its_name_line():
+    from use_cases.piece_join import man_page_titles
+
+    text = ("## SEE ALSO\n\nopen(2)\n\n## NAME\n\ndup, dup2 - duplicate a descriptor\n\n"
+            "## SYNOPSIS\n\nnewd = dup(oldd)\n\n"
+            "## NAME\n\nexecve - execute a file\n")
+    out, count = man_page_titles(text)
+    assert count == 2
+    assert "# dup\n\n## NAME\n\ndup, dup2 - duplicate a descriptor" in out and "# execve\n\n## NAME" in out
+    assert man_page_titles("## Names of things\n\ntext\n") == ("## Names of things\n\ntext\n", 0)
+    assert man_page_titles("## NAME\n\nSYNOPSIS\n\nx\n")[1] == 0, "a NAME that lost its line to the scan stays as it is"
+
+
+# a dash Docling prints as a hyphen comes back from the layer; a pair the layer itself hyphenates stays a hyphen
+def test_a_dash_printed_as_a_hyphen_comes_back_from_the_layer():
+    from use_cases.piece_join import restore_dashes
+
+    layer = "appealing—it is, pages 511–515, a well-known and a well—known slip"
+    out, count = restore_dashes("appealing-it is, pages 511-515, a well-known", layer)
+    assert out == "appealing—it is, pages 511–515, a well-known" and count == 2
+
+
+# an identifier the layer wraps after its underscore is joined back; two words the layer sets apart stay apart
+def test_an_identifier_wrapped_after_its_underscore_is_joined_back():
+    from use_cases.piece_join import join_wrapped_identifiers
+
+    layer = "olist_order_reviews_\r\ndataset.csv and review_\r\ncomment_message, a_ b"
+    out, count = join_wrapped_identifiers("файл olist_order_reviews_ dataset.csv, review_ comment_message, a_ b", layer)
+    assert out == "файл olist_order_reviews_dataset.csv, review_comment_message, a_ b" and count == 2
+
+
+# a table row the page break cut goes on in a row with an empty first cell, and the join finishes the row above with it
+def test_a_row_cut_at_the_page_break_is_finished_by_its_continuation():
+    from use_cases.piece_join import _join_table
+
+    before = "| Field | Contents | Description |\n|---|---|---|\n| 1 | Device | such as /dev/sda1. Modern |"
+    after = ("| Field | Contents | Description |\n|---|---|---|\n|  |  | with a text label instead. |\n"
+             "| 2 | Mount point | The directory |")
+    head, rest, merged = _join_table(before, after)
+    assert merged and head.endswith("| 1 | Device | such as /dev/sda1. Modern with a text label instead. |")
+    assert rest == "| 2 | Mount point | The directory |"
+
+
+# a compound the converter glued at a mid-line hyphen mark gets its hyphen back where the layer spells it so elsewhere
+def test_a_compound_glued_at_a_hyphen_mark_takes_the_layers_own_hyphen():
+    from use_cases.piece_join import marked_joins, restore_dashes
+    from use_cases.route import joined_hyphens
+
+    raw = "p303 exactly-once semantics. p313 support exactly￾once guarantees; de￾signed well"
+    out, count = restore_dashes("support exactlyonce guarantees; designed well", joined_hyphens(raw), marked_joins(raw))
+    assert out == "support exactly-once guarantees; designed well" and count == 1

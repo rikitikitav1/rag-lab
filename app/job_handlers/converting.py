@@ -87,6 +87,9 @@ def code_lines_of(settings: dict, path: Path, result: dict, rule) -> tuple[str, 
     counts["formulas_from_layer"] = 0
     if rule.formula_text:
         markdown, counts["formulas_from_layer"] = code_lines.formula_text(markdown, result["structure"])
+    counts["man_page_titles"] = 0
+    if rule.man_page_titles:
+        markdown, counts["man_page_titles"] = piece_join.man_page_titles(markdown)
     return markdown, counts
 
 
