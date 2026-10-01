@@ -7,10 +7,17 @@ from config import SHAPE_NO_PIECE, RouteCfg
 from engines import converter
 from engines.converter_tools import KEPT_STATUSES
 from tool_names import Tool
-from use_cases import code_lines, piece_join, raw_quality, route
-
-from .card import take
-from .converting import ceiling, code_lines_of, convert, converter_for, fields, load_settings, pieces
+from use_cases import (
+    code_lines,
+    docling_structure,
+    heading_rules,
+    layer_words,
+    markdown_cleanup,
+    piece_join,
+    raw_quality,
+    route,
+)
+from use_cases.converting import ceiling, code_lines_of, convert, converter_for, fields, load_settings, pieces
 
 # the route's keys that shape a piece or its reading; a file skipped or a signal's floor moves no piece
 _SHAPES = tuple(name for name in RouteCfg.model_fields if name not in SHAPE_NO_PIECE)
@@ -49,7 +56,7 @@ def convert_piece(file: Path, engine: str | None, piece, settings: tuple | None,
     tool_settings, _ = settings
     spec = converter_for(engine)
     tool_fields = fields(tool_settings, language)
-    result = convert(spec, engine, file, tool_fields, piece, ceiling(tool_settings), hold=lambda: take(spec))
+    result = convert(spec, engine, file, tool_fields, piece, ceiling(tool_settings))
     reading = converter.reading(spec)[1]
     markdown, code = code_lines_of(tool_settings, file, result, rule)
     return {
@@ -69,31 +76,31 @@ def _dashes_back(done: dict, layer, rule, piece=None) -> dict:
     counts = {}
     # the Docling path decodes before its code rules; a reading without them, as MinerU's, is decoded here
     if rule.decode_entities and done.get("code") is None:
-        done["markdown"], counts["entities_decoded"] = piece_join.decode_entities(done["markdown"])
+        done["markdown"], counts["entities_decoded"] = markdown_cleanup.decode_entities(done["markdown"])
     if rule.picture_addresses and done.get("code") is None:
-        done["markdown"], counts["pictures_addressed"] = piece_join.inline_pictures(done["markdown"], piece)
+        done["markdown"], counts["pictures_addressed"] = markdown_cleanup.inline_pictures(done["markdown"], piece)
     if rule.unescape_bullets:
-        done["markdown"], counts["bullets_unescaped"] = piece_join.unescape_bullets(done["markdown"])
+        done["markdown"], counts["bullets_unescaped"] = markdown_cleanup.unescape_bullets(done["markdown"])
     if rule.unescape_underscores:
-        done["markdown"], counts["underscores_unescaped"] = piece_join.unescape_underscores(done["markdown"])
+        done["markdown"], counts["underscores_unescaped"] = markdown_cleanup.unescape_underscores(done["markdown"])
     if rule.demote_caption_headings:
-        done["markdown"], counts["captions_demoted"] = piece_join.demote_caption_headings(done["markdown"])
+        done["markdown"], counts["captions_demoted"] = heading_rules.demote_caption_headings(done["markdown"])
     if not layer:
         return _counted(done, counts)
     if rule.drop_running_headings:
-        done["markdown"], counts["running_heads_dropped"] = piece_join.drop_running_headings(done["markdown"], layer)
-    marked = piece_join.marked_joins(layer)
+        done["markdown"], counts["running_heads_dropped"] = heading_rules.drop_running_headings(done["markdown"], layer)
+    marked = layer_words.marked_joins(layer)
     # only the word rules read the joined layer; the reread's floor was set on the layer as PDFium gives it
     if rule.join_layer_hyphens:
         layer = route.joined_hyphens(layer)
     if rule.restore_dashes:
-        done["markdown"], counts["dashes_restored"] = piece_join.restore_dashes(done["markdown"], layer, marked)
+        done["markdown"], counts["dashes_restored"] = layer_words.restore_dashes(done["markdown"], layer, marked)
     if rule.join_broken_words:
-        done["markdown"], counts["words_joined"] = piece_join.join_broken_words(done["markdown"], layer)
+        done["markdown"], counts["words_joined"] = layer_words.join_broken_words(done["markdown"], layer)
     if rule.join_split_words:
-        done["markdown"], counts["split_words_joined"] = piece_join.join_split_words(done["markdown"], layer)
+        done["markdown"], counts["split_words_joined"] = layer_words.join_split_words(done["markdown"], layer)
     if rule.join_wrapped_identifiers:
-        done["markdown"], counts["identifiers_joined"] = piece_join.join_wrapped_identifiers(done["markdown"], layer)
+        done["markdown"], counts["identifiers_joined"] = layer_words.join_wrapped_identifiers(done["markdown"], layer)
     return _counted(done, counts)
 
 
@@ -160,11 +167,12 @@ def read_piece(file: Path, engine: str | None, piece, name: str | None, loaded: 
 
 
 def _tables_by_page(done: dict) -> list[tuple[int, tuple[int, int]]] | None:
-    items = [item for _, item in code_lines.reading_order(done.get("structure") or {}) if item.get("label") == "table"]
+    order = docling_structure.reading_order(done.get("structure") or {})
+    items = [item for _, item in order if item.get("label") == "table"]
     spans = piece_join.table_spans(done["markdown"].split("\n"))
     if len(items) != len(spans):
         return None
-    return [(code_lines.page_of(item), span) for item, span in zip(items, spans, strict=True)]
+    return [(docling_structure.page_of(item), span) for item, span in zip(items, spans, strict=True)]
 
 
 # a table of the prose reading swapped for the table reading's one on its page, when that one keeps more cells
@@ -216,22 +224,22 @@ def splice_formulas(prose: dict, tables: dict) -> tuple[str, int]:
 
 
 # a file's pieces in page order as one markdown, with what the joins healed
-def assemble(parts: list[str], html: bool, one_title: bool = False) -> tuple[str, dict]:
-    whole, healed = piece_join.join(parts)
+def assemble(parts: list[str], html: bool, one_title: bool = False, continued_rows: bool = False) -> tuple[str, dict]:
+    whole, healed = piece_join.join(parts, continued_rows)
     healed["headings"] = 0
     if html and one_title:
-        whole, healed["headings"] = piece_join.one_title(whole)
+        whole, healed["headings"] = heading_rules.one_title(whole)
     return whole, healed
 
 
 # one file whole for the corpus, the gold's intake arm and the probe alike; a running head is read over the whole file
 def whole_file(parts: list[str], routes: list[str], rule, layers: list[str] | None) -> tuple[str, dict]:
     html = bool(routes) and all(why == "html" for why in routes)
-    whole, healed = assemble(parts, html, rule.html_one_title)
+    whole, healed = assemble(parts, html, rule.html_one_title, rule.join_continued_rows)
     healed["running_heads"] = 0
     # a piece drops the heads it repeats itself; the first of each in a later piece is only seen from the whole
     if rule.drop_running_headings and layers:
-        whole, healed["running_heads"] = piece_join.drop_running_headings(whole, "\f".join(layers))
+        whole, healed["running_heads"] = heading_rules.drop_running_headings(whole, "\f".join(layers))
     return whole, healed
 
 

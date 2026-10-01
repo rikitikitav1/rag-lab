@@ -120,7 +120,8 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `drop_lone_pipes` | a paragraph that is only `\|` dropped | on | |
 | `unescape_bullets` | a list marker MinerU escapes (`\- item`) unescaped | on | |
 | `join_split_words` | a word the converter split with a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole and one half is no word of the layer | on | |
-| `join_wrapped_identifiers` | an identifier the layer wraps after its underscore (`reviews_` then `dataset.csv`) joined where the converter read the wrap as a space | on | |
+| `join_wrapped_identifiers` | an identifier the layer wraps after its underscore (`reviews_` then `dataset.csv`) joined where the converter read the wrap as a space | off until its gate | |
+| `join_continued_rows` | a table row a page break cut is finished by the next row when that row starts with an empty cell; a real row may start empty, so it waits for its gate | off until its gate | |
 | `picture_addresses` | a Docling picture's placeholder becomes `![caption](picture:p<page>-<n>)`, its page and place on the page, caption empty when it has none; a MinerU picture inlined as base64 becomes `![](picture:pages<a>-<b>-<n>)`, by the piece's pages, since MinerU does not give a picture's page | on | |
 | `formula_text` | a formula Docling could not decode (`<!-- formula-not-decoded -->`) gets the text the layer holds under it, flattened to one line, private-use glyphs of the math font dropped; searchable, not typeset | on | |
 | `demote_caption_headings` | a heading that is a figure, listing or table caption (`Figure 2.6`, `Listing 2.4`, `Таблица 8.4`) goes back to a line of text, outside code fences, so it does not cut a section in two | on | |

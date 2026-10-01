@@ -16,7 +16,7 @@ llm:
     # building the question sets; 2048: one question in, and at 8192 gemma2:9b with ollama's reserve outgrows the card
     paraphrasing: { model: gemma2:9b-w2048, options: { max_tokens: 512, temperature: 0.3 }, prompts: { paraphrase_question: 1, translate_question: 1, question_from_heading: 1 } }
     # a source's question pairs from its sections: gemma on neuraldeep, the blind reading's pick of four, not the judge's family
-    questioning:  { model: gemma-4-31b, engine: neuraldeep, options: { max_tokens: 4096, temperature: 0.3 }, prompts: { questions_from_section: 8 } }
+    questioning:  { model: gemma-4-31b, engine: neuraldeep, options: { max_tokens: 4096, temperature: 0.3 }, prompts: { questions_from_section: 9 } }
     # a generated question answered from its section, a quote rather than a word; a whole chapter needs the wide window, and 16384 spills off the card
     accepting:    { model: llama3.1:8b-w12288, options: { max_tokens: 256, temperature: 0, seed: 0 }, prompts: { answer_from_section: 1 } }
     # the cross-encoder, out of the API and the worker: `vllm-rerank`, `--profile rerank`

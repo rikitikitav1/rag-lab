@@ -2,7 +2,7 @@ from evals import columns
 from evals.loaders import load_logs
 from evals.pools import Ambiguous, by_question
 from evals.stats import bootstrap_ci
-from models.eval import ACCEPTED, Question
+from models.eval import READ_BY_RUNS, Question
 from models.prereg import Preregistration
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -167,7 +167,7 @@ def read(name: str) -> dict:
 
 # the population a run reads: a question settled out of its set since is not the promise's to score
 def _question_ids(sets: list, language: str | None = None) -> set:
-    wanted = [Question.set_name.in_(sets), Question.status == ACCEPTED]
+    wanted = [Question.set_name.in_(sets), READ_BY_RUNS]
     wanted += [Question.language == language] if language else []
     with Session() as session:
         return set(session.scalars(select(Question.id).where(*wanted)))
@@ -256,7 +256,10 @@ def _guard(guard: dict, rows: dict, ids: set) -> dict:
 
 
 def _mean(by_q: dict, ids: set, name: str) -> tuple:
-    seen = [v for q, row in by_q.items() if q in ids and (v := columns.read(name, row)) is not None]
+    from evals import loaders
+
+    leaves = loaders.reference_leaves() if columns.needs_sources(name) else None
+    seen = [v for q, row in by_q.items() if q in ids and (v := columns.read(name, row, leaves)) is not None]
     return (round(sum(seen) / len(seen), 4) if seen else None), len(seen)
 
 

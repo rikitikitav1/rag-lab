@@ -65,8 +65,10 @@ intake:
     drop_running_headings: true
     # a word split by a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole; 14 sources
     join_split_words: true
-    # an identifier wrapped after its underscore is joined back where the layer keeps the wrap
-    join_wrapped_identifiers: true
+    # an identifier wrapped after its underscore is joined back where the layer keeps the wrap; off until its gate
+    join_wrapped_identifiers: false
+    # a table row a page break cut, whose next row starts with an empty cell, is finished by it; off until its gate
+    join_continued_rows: false
     # an EPUB read as its chapters; one EPUB seen so far, so off and the file is skipped with its reason
     epub_chapters: false
   # tuned: file=datasets/converter_gold/raw_band.json

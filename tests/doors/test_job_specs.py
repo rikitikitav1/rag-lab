@@ -181,8 +181,20 @@ def test_a_graded_pass_names_a_frozen_pool_and_not_any_path():
             job_specs.check("grade_candidates", {"candidates": bad})
 
 
-def test_a_run_takes_the_chat_doors_scope_and_refuses_what_they_refuse():
-    job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "17"})
+def test_a_run_takes_the_chat_doors_scope_and_refuses_what_they_refuse(monkeypatch):
+    import db
+
+    held = {"18"}
+
+    def unheld(scope, variant):
+        if scope.version not in held:
+            raise db.ScopeRefused(f"no searched source holds version {scope.version}")
+
+    monkeypatch.setattr(db, "refuse_unheld_version", unheld)
+    job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "18"})
+    # a version none holds is refused at the queue's door, as at the MCP door, not when the run's searches start
+    with pytest.raises(job_specs.Refused, match="holds version 17"):
+        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "17"})
     with pytest.raises(job_specs.Refused, match="names no category"):
         job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "version": "17"})
     with pytest.raises(job_specs.Refused, match="only supported with pipeline=single_shot"):

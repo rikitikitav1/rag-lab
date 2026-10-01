@@ -11,6 +11,8 @@ NOT_ANSWERED = "the judge found the evidence does not answer the question"
 UNREAD = "the judge's reply was not YES or NO"
 NOT_FOUND = "the evidence was not found in its section"
 REFUSED_CALL = "the judge's engine refused the request"
+# every reason the judge gives; a refused row with any other came from the sieve
+REASONS = frozenset({SPLIT, NOT_ANSWERED, UNREAD, NOT_FOUND, REFUSED_CALL})
 
 
 # where a quote sits in a text: the occurrence of its first words that holds the most of its words after it

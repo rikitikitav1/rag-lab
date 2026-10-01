@@ -1,4 +1,3 @@
-import hashlib
 import json
 from collections import Counter
 
@@ -7,16 +6,14 @@ import job_queue
 import llm
 import logging_setup
 import prompt_repo
-from engines.core import key_fingerprint
-from evals import measurements, section_questions
+from evals import measurements, question_sets, section_questions
 from models.eval import Question
 from models.registry import Purpose, Role
 from orm.sync_db import Session
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import select
 from use_cases import section_export
 
-from .base import register, require_role_ready
+from .base import register, reported, require_role_ready, stamp
 
 log = logging_setup.get_logger(__name__)
 
@@ -39,7 +36,7 @@ def generate_questions(options: dict) -> dict | None:
     picked = llm.resolve(Role.questioning)
     rows = {section_questions.section_key(r): r for r in exported["sections"]}
     anchored_in = section_questions.anchors_for(exported["sections"])
-    languages = tuple(options.get("languages") or config.settings.evals.question_set.languages)
+    languages = section_questions.set_languages(options.get("languages"))
     # a retried job, or a second pass into one set, asks a section only for the pairs the set does not hold yet
     held = _held_by_section(set_name, languages[0])
     sections, tally = [], Counter()
@@ -122,7 +119,7 @@ def _generate_section(key, row, pairs, prior, set_name, source, template, anchor
                 lost = [{"why": "the reply was cut at max_tokens", "count": ask}]
             section_rows = [q for pair in kept for q in section_questions.question_rows(
                 pair, row, set_name, anchored_in(row), section_questions.placed_in(block, text), languages)]
-            done, gone = write_pairs(section_rows)
+            done, gone = question_sets.write_pairs(section_rows)
             written, dropped = written + done, dropped + gone
             kept_here += kept
             refused += lost
@@ -142,27 +139,6 @@ def _generate_section(key, row, pairs, prior, set_name, source, template, anchor
     }
 
 
-# a pass whose report is written whether it ends or breaks: pairs settled before a failure keep their record
-def reported(run, finish):
-    try:
-        run()
-    except Exception as e:
-        finish(e)
-        raise
-    return finish(None)
-
-
-# what a pass read with: the model, where it ran, the account it spent on, its sampler and its prompt
-def stamp(role, picked, template: str, version) -> dict:
-    return {
-        "model": picked.name,
-        "engine": picked.engine.name,
-        "key_fingerprint": key_fingerprint(picked.engine),
-        "sampler": llm.sampler_of(role, picked),
-        "prompt": {"version": version, "sha256": hashlib.sha256(template.encode()).hexdigest()[:12]},
-    }
-
-
 # a generation's stored replies read again by today's checks, the pairs they hold now written; nothing is asked anew
 @register("reparse_questions")
 def reparse_questions(options: dict) -> dict | None:
@@ -177,10 +153,15 @@ def reparse_questions(options: dict) -> dict | None:
     # the languages the stored replies were asked in; a report older than the option asked the two
     languages = tuple(stored.get("languages") or ("en", "ru"))
     taken_by_section = _held_by_section(set_name, languages[0])
+    # a report older than the version field names a section by file and heading, sound while one stream has it
+    by_place = Counter((file, section) for file, section, _ in rows)
+    unversioned = {(file, section): r for (file, section, _), r in rows.items() if by_place[(file, section)] == 1}
     kept_now, written, dropped, gone, moved = 0, 0, 0, 0, 0
     for sec in measurements.rows_of(path, "sections"):
-        key = (sec["file"], sec["section"], sec.get("version"))
-        row = rows.get(key)
+        if "version" in sec:
+            row = rows.get((sec["file"], sec["section"], sec["version"]))
+        else:
+            row = unversioned.get((sec["file"], sec["section"]))
         if row is None:
             gone += 1
             continue
@@ -190,7 +171,7 @@ def reparse_questions(options: dict) -> dict | None:
                for c in sec["calls"]):
             moved += 1
             continue
-        taken = [pair["evidence"] for pair in taken_by_section.get(key, [])]
+        taken = [pair["evidence"] for pair in taken_by_section.get(section_questions.section_key(row), [])]
         parts = row.get("blocks") or [row["text"]]
         for call in sec["calls"]:
             # a reply read by a block is checked against that block, as the generation checked it
@@ -199,7 +180,7 @@ def reparse_questions(options: dict) -> dict | None:
             kept, _ = section_questions.parse(call["reply"] or "", read, call["asked"], taken, languages)
             taken += [pair["evidence"] for pair in kept]
             placed = section_questions.placed_in(block, parts[block]) if block is not None else None
-            done, repeat = write_pairs([q for pair in kept for q in section_questions.question_rows(
+            done, repeat = question_sets.write_pairs([q for pair in kept for q in section_questions.question_rows(
                 pair, row, set_name, anchored_in(row), placed, languages)])
             kept_now, written, dropped = kept_now + len(kept), written + done, dropped + repeat
     if written:
@@ -234,7 +215,7 @@ def anchor_questions(options: dict) -> dict | None:
 
 
 # the pairs a set already holds, by section, as the generator keeps them: a pair on their evidence is the same fact
-def _held_by_section(set_name: str, language: str = "en") -> dict[tuple, list[dict]]:
+def _held_by_section(set_name: str, language: str) -> dict[tuple, list[dict]]:
     with Session() as session:
         found = session.execute(
             select(Question.gold, Question.original_text, Question.evidence)
@@ -265,34 +246,3 @@ def _capped(wanted: dict, cap: int) -> dict:
         out[key] = out.get(key, 0) + 1
         left[key] -= 1
     return out
-
-
-# a pair is written whole or not at all: a question already in the base, or twice in the batch, would leave a lone half
-def write_pairs(rows: list[dict]) -> tuple[int, int]:
-    pairs: dict[str, list] = {}
-    for row in rows:
-        pairs.setdefault(row["pair_id"], []).append(row)
-    with Session() as session:
-        # two writers checking the same pair at once would each see it absent and leave one half apiece
-        session.execute(select(func.pg_advisory_xact_lock(func.hashtext("question_write"))))
-        hashes = [r["text_hash"] for r in rows]
-        taken = set(session.scalars(select(Question.text_hash).where(Question.text_hash.in_(hashes))))
-        fresh, dropped = [], 0
-        for members in pairs.values():
-            mine = {m["text_hash"] for m in members}
-            if taken & mine or len(mine) < len(members):
-                dropped += 1
-                continue
-            taken |= mine
-            fresh += members
-        written = 0
-        if fresh:
-            written = len(
-                session.execute(
-                    pg_insert(Question).values(fresh).on_conflict_do_nothing(index_elements=["text_hash"]).returning(
-                        Question.id
-                    )
-                ).all()
-            )
-            session.commit()
-    return written, dropped

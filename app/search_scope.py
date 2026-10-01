@@ -56,7 +56,7 @@ def as_scope(scope) -> Scope:
 
 
 # the rules a scope keeps by itself: a version is a category's, and a category lacking it is said, not emptied
-def refuse_bad_scope(scope: Scope) -> None:
+def refuse_malformed_scope(scope: Scope) -> None:
     refuse_bad_category(scope.label)
     if scope.version is None:
         return

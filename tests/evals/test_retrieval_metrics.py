@@ -18,6 +18,7 @@ def _log(sources, marked=("gold.md",), dropped=None, pipeline="agent"):
 
 def _evaluate(monkeypatch, logs):
     monkeypatch.setattr(retrieval_metrics, "load_logs", lambda run_name: logs)
+    monkeypatch.setattr(retrieval_metrics, "reference_leaves", lambda: {})
     return retrieval_metrics.evaluate("run")
 
 

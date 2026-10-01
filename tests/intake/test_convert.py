@@ -1,9 +1,11 @@
 import json
+from pathlib import Path
 
 import pytest
 from config import settings
 from engines import converter_tools
-from job_handlers import convert, converting
+from job_handlers import convert
+from use_cases import converting
 
 # the stand's own rules, named where a test reads with them rather than taken as a silent default
 STAND = settings.intake.route
@@ -28,7 +30,7 @@ def test_a_cancelled_conversion_stops_before_its_next_piece(tmp_path, monkeypatc
     monkeypatch.setattr(converting, "SETTINGS", tmp_path / "converters")
     monkeypatch.setattr(converting, "ROOT", tmp_path)
     monkeypatch.setattr(convert, "converter_for", lambda tool: object())
-    monkeypatch.setattr(convert, "take", lambda spec: None)
+    monkeypatch.setattr(convert, "converter_hold", lambda: converting.CardHold(lambda spec: None, lambda spec: None))
     monkeypatch.setattr(convert.converter, "reading", lambda spec: (None, {"tool": "docling", "build": None}))
     monkeypatch.setattr(convert, "tool_version", lambda spec, tool: {"docling-serve": "test"})
     monkeypatch.setattr(convert, "_pages", lambda path: 120)
@@ -115,10 +117,10 @@ def test_a_timeout_restarts_the_child(monkeypatch):
     monkeypatch.setitem(
         converter_tools.PIECE, "docling", lambda *a: {"status": "timeout", "errors": ["no result in 1 s"]}
     )
-    monkeypatch.setattr(converting, "restart_holder", restarted.append)
     monkeypatch.setattr(converting, "reading_key", lambda *a: None)
 
-    result = converting.convert("spec", "docling", None, [], None, 1)
+    with converting.card_hold(converting.CardHold(lambda spec: None, restarted.append)):
+        result = converting.convert("spec", "docling", None, [], None, 1)
 
     assert restarted == ["spec"] and result["errors"][-1] == "child restarted"
 
@@ -139,33 +141,44 @@ def test_a_kept_reading_skips_the_tool(tmp_path, monkeypatch):
     pdf.write_bytes(b"%PDF one")
 
     held = []
-    first = converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (1, 50), 60, hold=lambda: held.append(1))
-    again = converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (1, 50), 60, hold=lambda: held.append(2))
-    converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (51, 100), 60)
-    build["built_at"] = "b2"
-    converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (1, 50), 60)
+    with converting.card_hold(converting.CardHold(held.append, lambda spec: None)):
+        first = converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (1, 50), 60)
+        again = converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (1, 50), 60)
+        converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (51, 100), 60)
+        build["built_at"] = "b2"
+        converting.convert("spec", "docling", pdf, [("do_ocr", "false")], (1, 50), 60)
 
     assert again == {**first, "seconds": 0.0, "read_seconds": 5.0, "cached": True}
     assert calls == [(1, 50), (51, 100), (1, 50)]
-    assert held == [1]
+    # the card is taken only for a piece the tool reads, never for a kept reading
+    assert held == ["spec"] * 3
 
 
 # a partial reading, a timeout or an unstamped converter keeps nothing, so the next run reads the piece again
 def test_a_failed_or_unstamped_reading_is_not_kept(tmp_path, monkeypatch):
     monkeypatch.setattr(converting, "READINGS", tmp_path / "readings")
-    monkeypatch.setattr(converting, "restart_holder", lambda spec: None)
     monkeypatch.setitem(converter_tools.PIECE, "docling", lambda *a: {"status": "timeout", "errors": []})
     monkeypatch.setattr(converting.converter, "reading", lambda spec: (None, {"build": {"built_at": "b"}}))
     pdf = tmp_path / "a.pdf"
     pdf.write_bytes(b"%PDF")
-    converting.convert("spec", "docling", pdf, [], None, 1)
-    monkeypatch.setitem(converter_tools.PIECE, "docling", lambda *a: {"status": "partial_success", "errors": []})
-    converting.convert("spec", "docling", pdf, [], None, 1)
-    monkeypatch.setitem(converter_tools.PIECE, "docling", lambda *a: {"status": "success", "errors": []})
-    monkeypatch.setattr(converting.converter, "reading", lambda spec: (None, {}))
-    converting.convert("spec", "docling", pdf, [], None, 1)
+    with converting.card_hold(converting.CardHold(lambda spec: None, lambda spec: None)):
+        converting.convert("spec", "docling", pdf, [], None, 1)
+        monkeypatch.setitem(converter_tools.PIECE, "docling", lambda *a: {"status": "partial_success", "errors": []})
+        converting.convert("spec", "docling", pdf, [], None, 1)
+        monkeypatch.setitem(converter_tools.PIECE, "docling", lambda *a: {"status": "success", "errors": []})
+        monkeypatch.setattr(converting.converter, "reading", lambda spec: (None, {}))
+        converting.convert("spec", "docling", pdf, [], None, 1)
 
     assert not (tmp_path / "readings").exists()
+
+
+# a tool read with no job's card hold is refused rather than read off a card nobody took
+def test_a_tool_read_without_a_card_hold_is_refused(monkeypatch):
+    from errors import Final
+
+    monkeypatch.setattr(converting, "reading_key", lambda *a: None)
+    with pytest.raises(Final, match="no job handed over the card"):
+        converting.convert("spec", "docling", Path("a.pdf"), [], None, 1)
 
 
 def test_a_resume_under_another_language_is_refused():
@@ -178,8 +191,7 @@ def test_a_resume_under_another_language_is_refused():
 
 # an intake arm reads the gold as the corpus does: the shared plan, the reread, and the join of its pieces
 def test_an_intake_arm_reads_through_the_corpus_path_and_joins_its_pieces(tmp_path, monkeypatch):
-    from job_handlers import reading
-    from use_cases import route
+    from use_cases import reading, route
 
     gold = tmp_path / "files"
     (gold / "books").mkdir(parents=True)
@@ -187,7 +199,7 @@ def test_an_intake_arm_reads_through_the_corpus_path_and_joins_its_pieces(tmp_pa
     monkeypatch.setattr(convert, "GOLD", gold)
     monkeypatch.setattr(convert, "RUNS", gold / "runs")
     monkeypatch.setattr(convert, "converter_for", lambda tool: object())
-    monkeypatch.setattr(convert, "take", lambda spec: None)
+    monkeypatch.setattr(convert, "converter_hold", lambda: converting.CardHold(lambda spec: None, lambda spec: None))
     monkeypatch.setattr(convert.converter, "reading", lambda spec: (None, {"tool": "docling", "build": None}))
     monkeypatch.setattr(convert, "tool_version", lambda spec, tool: {"docling-serve": "test"})
     monkeypatch.setattr(convert, "_pages", lambda path: 2)
@@ -216,8 +228,7 @@ def test_an_intake_arm_reads_through_the_corpus_path_and_joins_its_pieces(tmp_pa
 
 # a store's file read over its own page range, in pieces of the run's size, as onboarding reads a piece of a book
 def test_an_intake_arm_reads_a_page_range_of_a_store_file(tmp_path, monkeypatch):
-    from job_handlers import reading
-    from use_cases import route
+    from use_cases import reading, route
 
     inbox = tmp_path / "inbox"
     (inbox / "books").mkdir(parents=True)
@@ -225,7 +236,7 @@ def test_an_intake_arm_reads_a_page_range_of_a_store_file(tmp_path, monkeypatch)
     monkeypatch.setattr(convert, "INBOX", inbox)
     monkeypatch.setattr(convert, "RUNS", tmp_path / "runs")
     monkeypatch.setattr(convert, "converter_for", lambda tool: object())
-    monkeypatch.setattr(convert, "take", lambda spec: None)
+    monkeypatch.setattr(convert, "converter_hold", lambda: converting.CardHold(lambda spec: None, lambda spec: None))
     monkeypatch.setattr(convert.converter, "reading", lambda spec: (None, {"tool": "docling", "build": None}))
     monkeypatch.setattr(convert, "tool_version", lambda spec, tool: {"docling-serve": "test"})
     monkeypatch.setattr(convert, "_pages", lambda path: 300)
@@ -270,7 +281,7 @@ def test_a_run_s_knobs_are_checked_and_need_intake():
 
 # an intake arm's route stamp moves when an input's own source moves a knob, not only when the stand's rule does
 def test_an_arm_s_route_stamp_moves_with_a_source_s_knob(monkeypatch):
-    from job_handlers import reading
+    from use_cases import reading
 
     monkeypatch.setattr(reading, "load_settings", lambda name: ({}, name))
     origin = {"intake": {}}
@@ -285,7 +296,7 @@ def test_an_arm_s_route_stamp_moves_with_a_source_s_knob(monkeypatch):
 
 # the reread's floor was set on the layer as PDFium gives it; only the word rules read the layer with its hyphens joined
 def test_the_word_rules_read_the_joined_layer_and_the_reread_floor_the_raw_one(monkeypatch):
-    from job_handlers import reading
+    from use_cases import reading
 
     layer = "a sep￾\r\narate word"
     seen = []
@@ -306,7 +317,7 @@ def test_the_word_rules_read_the_joined_layer_and_the_reread_floor_the_raw_one(m
 
 # a reading no code rule ran on, as MinerU's, gets its entities decoded; a Docling reading is not decoded twice
 def test_entities_are_decoded_on_a_reading_the_code_rules_did_not_touch(monkeypatch):
-    from job_handlers import reading
+    from use_cases import reading
 
     monkeypatch.setattr(reading.raw_quality, "conversion_signals", lambda markdown, text: {"layer_f1": None})
     for code, expected, count in ((None, "#include <signal.h>", 2), ({"rebuilt": 0}, "a &amp;lt; b", None)):
@@ -318,7 +329,7 @@ def test_entities_are_decoded_on_a_reading_the_code_rules_did_not_touch(monkeypa
 
 # a markdown file read as it is keeps its author's escapes and entities: no word rule touches it
 def test_a_file_read_without_an_engine_is_left_as_its_author_wrote_it(tmp_path):
-    from job_handlers import reading
+    from use_cases import reading
 
     page = tmp_path / "a.md"
     page.write_text("\\- item &lt;div&gt; and\\_that")
@@ -339,9 +350,9 @@ def _reading(markdown, pages):
 
 # the second reading keeps its prose and takes back a table the first reading kept with more cells, on the same page
 def test_a_second_reading_lost_on_cells_keeps_its_prose_and_takes_the_first_readings_tables(monkeypatch):
-    from job_handlers import reading
+    from use_cases import reading
 
-    monkeypatch.setattr(reading.code_lines, "reading_order", lambda st: [("t", t) for t in st.get("_order", [])])
+    monkeypatch.setattr(reading.docling_structure, "reading_order", lambda st: [("t", t) for t in st.get("_order", [])])
     first = _reading("ass u m in g text\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nmore", [3])
     second = _reading("assuming text\n\n| a b |\n|---|\n\nmore", [3])
 
@@ -358,7 +369,7 @@ def _formula(page, orig):
 
 # the second reading's backend reads a math font's operators as control marks; the first reading's formula comes back
 def test_a_formula_that_lost_its_operators_comes_back_from_the_first_reading(monkeypatch):
-    from job_handlers import reading
+    from use_cases import reading
 
     monkeypatch.setattr(reading.code_lines, "reading_order", lambda st: [("f", f) for f in st.get("_order", [])])
     lost = _formula(3, "r \x01x - y\x03 z")
@@ -372,7 +383,7 @@ def test_a_formula_that_lost_its_operators_comes_back_from_the_first_reading(mon
 
 # a short formula is taken back on its own line, not where the same words first stand in prose
 def test_a_formula_is_spliced_on_its_own_line_and_not_in_the_prose_before_it(monkeypatch):
-    from job_handlers import reading
+    from use_cases import reading
 
     monkeypatch.setattr(reading.code_lines, "reading_order", lambda st: [("f", f) for f in st.get("_order", [])])
     prose = {"markdown": "set x 1 before\n\nx 1\n\nmore", "structure": {"_order": [_formula(3, "x \x011")]}}
@@ -384,7 +395,7 @@ def test_a_formula_is_spliced_on_its_own_line_and_not_in_the_prose_before_it(mon
 # a second reading taken whole for its prose still gets back a formula whose operators only the first one kept
 def test_a_reading_taken_whole_takes_back_the_formulas_the_first_one_kept(monkeypatch):
     from config import settings
-    from job_handlers import reading
+    from use_cases import reading
 
     monkeypatch.setattr(reading.code_lines, "reading_order", lambda st: [("f", f) for f in st.get("_order", [])])
     first = {"markdown": "prose\n\nr =( x + y ) z", "structure": {"_order": [_formula(1, "r =( x + y ) z")]}}
@@ -409,8 +420,7 @@ def test_a_reading_taken_whole_takes_back_the_formulas_the_first_one_kept(monkey
 def test_no_step_of_the_reading_path_falls_back_to_the_stands_rules():
     import inspect
 
-    from job_handlers import reading
-    from use_cases import route
+    from use_cases import reading, route
 
     steps = (
         reading.plan, reading.convert_piece, reading.read_piece, reading.route_sha, converting.code_lines_of,
@@ -422,7 +432,7 @@ def test_no_step_of_the_reading_path_falls_back_to_the_stands_rules():
 
 # a piece the tool read in part is read once more by the reread settings, and the whole reading is the one kept
 def test_a_partly_read_piece_is_read_once_more_and_the_whole_reading_kept(monkeypatch):
-    from job_handlers import reading
+    from use_cases import reading
 
     said = iter([("partial_success", "half"), ("success", "whole"), ("partial_success", "half"),
                  ("partial_success", "still half")])

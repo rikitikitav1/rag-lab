@@ -7,10 +7,8 @@ from job_handlers import question_reading as reading
 
 @pytest.fixture(autouse=True)
 def _no_key(monkeypatch):
-    from job_handlers import questions
-
-    # the pass's stamp is read where it is built, beside the generation
-    monkeypatch.setattr(questions, "key_fingerprint", lambda spec: None)
+    # the pass's stamp is read where it is built, beside the other job helpers
+    monkeypatch.setattr("job_handlers.base.key_fingerprint", lambda spec: None)
 
 EVIDENCE = "The NX option sets the expiry only when the key has none."
 

@@ -215,9 +215,9 @@ def source_folders_verdict(seen: dict) -> tuple[bool, str]:
 def converted_sources_are_current() -> tuple[bool, str]:
     out = _in_worker(
         "import json; from orm.sync_db import Session; from models.corpus import DataSource, Stage;"
-        " from job_handlers import onboard;"
+        " from use_cases import source_intake;"
         " rows = Session().query(DataSource).filter(DataSource.stage == Stage.accepted).all();"
-        " print(json.dumps({r.name: d for r in rows if (d := onboard.conversion_drift(r))}))"
+        " print(json.dumps({r.name: d for r in rows if (d := source_intake.conversion_drift(r))}))"
     )
     if not out.startswith("{"):
         return False, f"converted sources: cannot read them ({out[:60] or 'no answer'})"

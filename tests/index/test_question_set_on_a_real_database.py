@@ -56,11 +56,11 @@ def test_a_question_taken_after_the_check_refuses_the_removal(db, monkeypatch):
 
 # a generated pair is written whole: one of its questions already in the base leaves the pair out
 def test_a_generated_pair_is_written_whole_or_not_at_all(db, monkeypatch):
-    from job_handlers import questions
+    from evals import question_sets
     from models.eval import text_hash
     from sqlalchemy.orm import sessionmaker
 
-    monkeypatch.setattr(questions, "Session", sessionmaker(bind=db))
+    monkeypatch.setattr(question_sets, "Session", sessionmaker(bind=db))
     gold = {"file": "a.md", "section": "A > B", "version": None}
 
     def row(text, pair):
@@ -75,7 +75,7 @@ def test_a_generated_pair_is_written_whole_or_not_at_all(db, monkeypatch):
         )
         c.commit()
 
-    written = questions.write_pairs(
+    written = question_sets.write_pairs(
         [row("fresh en", "p1"), row("fresh ru", "p1"), row("taken", "p2"), row("its ru", "p2")]
     )
 
@@ -87,11 +87,11 @@ def test_a_generated_pair_is_written_whole_or_not_at_all(db, monkeypatch):
 
 # two pairs of one batch sharing a question are both dropped whole, never written as halves
 def test_two_pairs_sharing_a_question_in_one_batch_are_dropped_whole(db, monkeypatch):
-    from job_handlers import questions
+    from evals import question_sets
     from models.eval import text_hash
     from sqlalchemy.orm import sessionmaker
 
-    monkeypatch.setattr(questions, "Session", sessionmaker(bind=db))
+    monkeypatch.setattr(question_sets, "Session", sessionmaker(bind=db))
     gold = {"file": "a.md", "section": "A > B", "version": None}
 
     def row(text, pair):
@@ -99,7 +99,7 @@ def test_two_pairs_sharing_a_question_in_one_batch_are_dropped_whole(db, monkeyp
                 "kind": "in_corpus", "gold": gold, "reference_answer": "x", "evidence": "y", "pair_id": pair}
 
     rows = [row("shared en", "p1"), row("first ru", "p1"), row("shared en", "p2"), row("second ru", "p2")]
-    assert questions.write_pairs(rows) == (2, 1)
+    assert question_sets.write_pairs(rows) == (2, 1)
     with db.connect() as c:
         got = c.execute(text("SELECT original_text FROM questions WHERE set_name = 'batch' ORDER BY 1")).scalars()
         assert list(got) == ["first ru", "shared en"]

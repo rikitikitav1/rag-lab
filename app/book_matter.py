@@ -43,3 +43,8 @@ def is_title_page(source: str, section: str | None) -> bool:
     named = set(_words(_BOOK_FILE.sub("", source.rsplit("/", 1)[-1])).split())
     # two words at least: a chapter named «Redis» in redis-in-action.pdf is text
     return len(leaf) >= 2 and set(leaf) <= named
+
+
+# the one test the index and the suitability report read: a section that is the book's matter, not its text
+def is_matter(file: str, section: str | None) -> bool:
+    return is_book_matter(section) or is_title_page(file, section)

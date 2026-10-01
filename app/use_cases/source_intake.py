@@ -1,20 +1,19 @@
+import json
 import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
-import corpus_keys
 import logging_setup
 from errors import Final
 from models.corpus import DataSource, Stage
 from paths import FETCHED, RAW, ROOT
 from sources import files
-from sources.declaration import DEFAULT_INCLUDE, Declaration, GitFamily, site_of
-from use_cases import fetch, route, site_page
+from sources.declaration import Declaration
+from use_cases.intake_fetch import stand_folder
 
 log = logging_setup.get_logger(__name__)
 
-_SLUG = re.compile(r"[^\w.-]+")
 # a reason kept beside a bad verdict, bounded alike at every door
 REASON_CHARS = (3, 500)
 # outside the alphabet of a source name, so one source's folder never reads as another's
@@ -246,13 +245,13 @@ def remove_variant(variant: str, live: str) -> dict:
 # a pending veto build that reads the variant, by name or through its defaults (no variants, no cut_from)
 def veto_reading(variant: str) -> int | None:
     import job_queue
-    from evals.build_veto import CUT_FROM
+    from corpus_keys import VETO_CUT_FROM
 
     found = job_queue.pending_listing("build_veto_set", "variants", variant)
     found = found or job_queue.pending_of_type("build_veto_set", cut_from=variant)
-    if variant in ("baseline", CUT_FROM):
+    if variant in ("baseline", VETO_CUT_FROM):
         found = found or job_queue.pending_of_type("build_veto_set", variants=None)
-    if variant == CUT_FROM:
+    if variant == VETO_CUT_FROM:
         found = found or job_queue.pending_of_type("build_veto_set", cut_from=None)
     return found
 
@@ -324,31 +323,6 @@ def declared_row(declaration: Declaration) -> DataSource:
     )
 
 
-# a url to a file under a folder of its own hash, so two index.html stay apart and keep their suffix for the route
-def _download(url: str, folder: Path) -> tuple[Path, bool]:
-    target = folder / corpus_keys.short_hash(url) / (_SLUG.sub("_", url.rstrip("/").rsplit("/", 1)[-1]) or "index.html")
-    return target, fetch.download(url, target)
-
-
-def _clone(git: dict, folder: Path) -> tuple[Path, dict]:
-    if fetch.inside(folder, git.get("path")) is None:
-        raise Final(f"{git.get('path')}: not a folder of the repository")
-    # a repeated intake reads the upstream as it is now; the gold keeps its clone as it came, for a stable arm
-    state = fetch.clone(git["repo"], folder, git.get("ref"), git.get("path"), update=True)
-    return fetch.inside(folder, git.get("path")), state
-
-
-# a folder origin read at the door as its job would read it, so a typo fails before the job's turn in the queue
-def stand_folder(folder: str, stand: Path) -> tuple[Path, list[Path]]:
-    root = (stand / folder).resolve()
-    if stand.resolve() not in root.parents or not root.is_dir():
-        raise Final(f"{folder}: not a folder of the stand")
-    files = sorted(p for p in root.rglob("*") if p.is_file() and not p.name.startswith("."))
-    if not files:
-        raise Final(f"{folder}: a folder with no files")
-    return root, files
-
-
 # what a declaration names that the door can check now; the job's turn may be hours away in the queue
 def declaration_refusal(declaration: Declaration, stand: Path) -> str | None:
     if refusal := files.index_refusal(declaration):
@@ -361,133 +335,35 @@ def declaration_refusal(declaration: Declaration, stand: Path) -> str | None:
     return None
 
 
-# the files of a declared source as the route will read them, fetched into its inbox when they come from outside
-def gather(source: DataSource, inbox: Path, stand: Path) -> tuple[Path, list[Path], dict]:
-    origin = source.declaration or {}
-    inbox.mkdir(parents=True, exist_ok=True)
-    if "git_family" in origin:
-        family = GitFamily.model_validate(origin["git_family"])
-        origin = {**origin, "git": {"repo": family.repo_of(source.name), "include": family.include}}
-    if "folder" in origin:
-        return *stand_folder(origin["folder"], stand), {}
-    if "urls" in origin:
-        got = [_download(url, inbox) for url in origin["urls"]]
-        # an archive is the files inside it, as the gold's fetch reads it
-        files = [p for f, _ in got for p in (fetch.unzip(f) if f.suffix.lower() == ".zip" else [f])]
-        return inbox, files, _fetched(any(new for _, new in got))
-    if "git" in origin:
-        root, state = _clone(origin["git"], inbox / "repo")
-        # a repeated intake reads the upstream anew, so a clone is always fetched now
-        state = {**state, **_fetched(True)}
-        found = {p.resolve() for pattern in origin["git"].get("include", DEFAULT_INCLUDE) for p in root.glob(pattern)}
-        return root, sorted(p for p in found if p.is_file() and root in p.parents), state
-    site = site_of(origin)
-    release = site.release if site else None
-    read = {}
-    if site and site.release_page:
-        live = _live_release(site, inbox)
-        if live != release:
-            _refuse_unlisted_release(origin, live)
-            release, read = live, {"release": live}
-    _drop_pages_of_another_release(inbox, release)
-    files, fresh = [], False
-    for url in origin.get("pages") or _sitemap_pages(site, inbox):
-        page, new = _download(url, inbox / "pages")
-        fresh |= new
-        main = site_page.prepared(page.read_text(errors="ignore"), site.main, site.drop) if site else None
-        if main is None:
-            files.append(page)
-            continue
-        target = inbox / "main" / page.parent.name / page.with_suffix(".html").name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(main)
-        files.append(target)
-    if release:
-        (inbox / "release").write_text(release)
-    return inbox, files, {**_fetched(fresh), **read}
+def _settings_sha(name: str) -> str | None:
+    from use_cases.converting import load_settings
+
+    try:
+        return load_settings(name)[1]
+    # a settings file gone since the run is that tool's edit, not a failed check
+    except Final:
+        return None
 
 
-# the release the site documents now, read from its own page every intake
-def _live_release(site, inbox: Path) -> str:
-    target = inbox / "release_page.html"
-    target.unlink(missing_ok=True)
-    fetch.download(site.release_page, target)
-    found = re.search(site.release_pattern, target.read_text(errors="ignore"))
-    if found is None:
-        raise Final(f"{site.release_page}: no release matches {site.release_pattern}")
-    return found.group(1)
+# a converted source against the stand now: the settings chosen, their files or the route moved since it was read
+def conversion_drift(source: DataSource) -> dict | None:
+    from use_cases import reading
 
-
-# a newer release is a version of the source's category, so the category must list it before its pages are fetched
-def _refuse_unlisted_release(origin: dict, live: str) -> None:
-    import config
-
-    categories = origin.get("categories") or []
-    listed = config.settings.categories[categories[0]].versions if len(categories) == 1 else []
-    if live not in listed:
-        raise Final(f"{origin.get('name')}: the site documents {live} now; list it for {categories} and intake again")
-
-
-# the site's pages as its sitemap lists them now, filtered by the declaration; the sitemap is read anew every intake
-def _sitemap_pages(site, inbox: Path) -> list[str]:
-    target = inbox / "sitemap.xml"
-    target.unlink(missing_ok=True)
-    fetch.download(site.sitemap, target)
-    found = site_page.sitemap_urls(target.read_text(errors="ignore"), site.include, site.exclude)
-    if not found:
-        raise Final(f"{site.sitemap}: the sitemap lists no page the declaration keeps")
-    return found
-
-
-# pages kept from another release, or from before one was declared, would take its name unread: they are fetched anew
-def _drop_pages_of_another_release(inbox: Path, release: str | None) -> None:
-    stamp = inbox / "release"
-    if not release or (stamp.is_file() and stamp.read_text() == release):
-        return
-    for folder in ("pages", "main", "flat"):
-        shutil.rmtree(inbox / folder, ignore_errors=True)
-
-
-# an HTML file with its highlighting flat, beside the fetched one, for any HTML and not only a site's own element
-def _flat(file: Path, inbox: Path, rel: str) -> Path:
-    if file.suffix.lower() not in route.HTML:
-        return file
-    text = file.read_text(errors="ignore")
-    flat = site_page.flat_pre(text)
-    if flat == text:
-        return file
-    target = inbox / "flat" / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(flat)
-    return target
-
-
-# every file under its report name, and what was left out; an EPUB stands for its chapters when the source reads them
-def named_files(
-    root: Path, files: list[Path], inbox: Path, skip=frozenset(), epub: bool = False, generated: list[str] = ()
-) -> tuple[dict[Path, str], dict[str, str]]:
-    names, skipped = {}, {}
-    for file in files:
-        rel = str(file.relative_to(root))
-        page = generated and file.suffix.lower() in route.HTML
-        if page and (built := site_page.generated_by(file.read_text(errors="ignore"), generated)):
-            skipped[rel] = f"the site builds this page: {built}"
-            continue
-        if file.suffix.lower() != ".epub":
-            names[_flat(file, inbox, rel)] = rel
-            continue
-        if not epub:
-            skipped[rel] = "EPUB reading is off until a second EPUB is measured (knob epub_chapters)"
-            continue
-        chapters, left_out = fetch.epub_chapters(file, inbox / "epub" / rel, skip)
-        names |= {_flat(chapter, inbox, f"{rel}/{chapter.name}"): f"{rel}/{chapter.name}" for chapter in chapters}
-        skipped |= {f"{rel}/{name}": why for name, why in left_out.items()}
-    return names, skipped
-
-
-# a fetch is stamped when something was fetched; a resume that found every file on disk keeps the earlier stamp
-def _fetched(fresh: bool) -> dict:
-    return {"fetched_at": datetime.now(UTC).isoformat(timespec="seconds")} if fresh else {}
+    raw = source.raw or {}
+    if not raw.get("folder") or raw.get("root_kind") == "tree":
+        return None
+    record_path = ROOT / raw["folder"] / "record.json"
+    if not record_path.exists():
+        return {"record": "missing"}
+    record = json.loads(record_path.read_text())
+    rule, names = intake_rule(intake_block(source.declaration))
+    names = {**names, **(record.get("settings_override") or {})}
+    was = record.get("settings") or {}
+    chosen = sorted(t for t in was if names.get(t) != was[t])
+    hashes = record.get("settings_sha256") or {}
+    edited = sorted(t for t, name in was.items() if _settings_sha(name) != hashes.get(t))
+    moved = {"chosen": chosen, "edited": edited, "route": record.get("route_sha256") != reading.route_sha(rule)}
+    return moved if chosen or edited or moved["route"] else {}
 
 
 # the rows whose declaration says they drift on their own
@@ -501,23 +377,3 @@ def drifting_rows() -> list[str]:
     return sorted(name for name, declaration in rows if (declaration or {}).get("drifts"))
 
 
-# the source's language before any piece is read, since a scan's OCR is told it: declared, else from its own text
-def source_language(source: DataSource, files: list[Path], layers: dict) -> str:
-    # the row's column holds what an earlier run found; only the declaration says what was declared
-    if declared := (source.declaration or {}).get("language"):
-        return declared
-    text = []
-    for file in files:
-        if file.suffix.lower() == ".pdf":
-            # a file the reader cannot open is marked in the report, not a reason to stop before it
-            try:
-                layers.setdefault(file, route.layer_texts(file))
-            except route.Unreadable:
-                continue
-            text += layers[file]
-        elif file.suffix.lower() in route.MARKDOWN | route.HTML:
-            text.append(file.read_text(errors="ignore"))
-    joined = "".join(text)
-    if not any(c.isalpha() for c in joined):
-        raise Final(f"{source.name}: no text layer to read its language from; declare its language")
-    return corpus_keys.language_by_alphabet(joined)

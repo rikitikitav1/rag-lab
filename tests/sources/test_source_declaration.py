@@ -115,11 +115,15 @@ def test_a_door_row_has_the_path_and_the_family_url_a_seeded_row_has():
 
 # a site's pages come from its sitemap or from a written list, never both, and the sitemap is filtered by address
 def test_a_site_reads_its_pages_from_its_sitemap():
+    from sources import files
+    from use_cases import source_intake
     from use_cases.site_page import sitemap_urls
 
     site = {"main": "div#content", "sitemap": "https://nginx.org/sitemap.xml",
             "include": ["https://nginx.org/en/docs/*"], "exclude": ["*/dirindex.html"]}
-    Declaration(name="n", licence="x", site=site)
+    sitemapped = Declaration(name="n", licence="x", site=site)
+    assert files.row_of(sitemapped, "n")["kind"] == "pages"
+    assert source_intake.declared_row(sitemapped).kind == "pages"
     with pytest.raises(ValidationError, match="not both"):
         Declaration(name="n", licence="x", site=site, pages=["https://nginx.org/en/docs/a.html"])
     xml = ("<urlset><url><loc>https://nginx.org/en/docs/b.html</loc></url>"
@@ -134,7 +138,7 @@ def test_a_site_reads_its_pages_from_its_sitemap():
 def test_a_site_reads_its_release_first_and_refuses_one_its_category_does_not_list(monkeypatch, tmp_path):
     from errors import Final
     from models.corpus import DataSource
-    from use_cases import source_intake
+    from use_cases import intake_fetch
 
     with pytest.raises(ValidationError, match="both or neither"):
         Declaration(name="n", licence="x", pages=["https://a/b"], site={"main": "m", "release_page": "https://a/d"})
@@ -147,20 +151,38 @@ def test_a_site_reads_its_release_first_and_refuses_one_its_category_does_not_li
         target.write_text(f"<a>nginx-{written['live']}</a>" if url.endswith("download.html") else "<p>page</p>")
         return True
 
-    monkeypatch.setattr(source_intake.fetch, "download", download)
-    monkeypatch.setattr(source_intake.site_page, "prepared", lambda html, main, drop: None)
+    monkeypatch.setattr(intake_fetch.fetch, "download", download)
+    monkeypatch.setattr(intake_fetch.site_page, "prepared", lambda html, main, drop: None)
     declared = Declaration(name="nginx-org-en", licence="x", pages=["https://nginx.org/en/docs/a.html"], site=site,
                            categories=["nginx"]).model_dump(exclude_none=True)
     source = DataSource(name="nginx-org-en", declaration=declared)
 
-    _, _, state = source_intake.gather(source, tmp_path, tmp_path)
-    assert "release" not in state
+    assert intake_fetch.gather(source, tmp_path, tmp_path).release is None
     written["live"] = "9.9.9"
     with pytest.raises(Final, match="documents 9.9.9 now"):
-        source_intake.gather(source, tmp_path, tmp_path)
+        intake_fetch.gather(source, tmp_path, tmp_path)
     import config
 
     nginx = config.settings.categories["nginx"]
     monkeypatch.setattr(nginx, "versions", ["9.9.9", *nginx.versions])
-    _, _, state = source_intake.gather(source, tmp_path, tmp_path)
-    assert state["release"] == "9.9.9" and (tmp_path / "release").read_text() == "9.9.9"
+    gathered = intake_fetch.gather(source, tmp_path, tmp_path)
+    assert gathered.release == "9.9.9" and (tmp_path / "release").read_text() == "9.9.9"
+
+
+
+# the index keys a site's pages by the release its accepted run fetched; the declaration only asks for one
+def test_the_index_keys_pages_by_the_release_of_the_accepted_run():
+    from sources import factory
+
+    rows = {"nginx-org-en": {"raw": {"root": "raw/a", "root_kind": "converted", "version": {"release": "9.9.9"}}},
+            "old": {"raw": {"folder": "raw/b"}}}
+    onboarded = factory._onboarded(rows)
+    assert onboarded["nginx-org-en"][2] == "9.9.9" and onboarded["old"][2] is None
+
+# a site that reads its release from its page is refused at the door without exactly one category
+def test_a_release_page_without_one_category_is_refused_before_the_queue():
+    from sources import files
+
+    site = {"main": "m", "release_page": "https://nginx.org/en/download.html", "release_pattern": r"nginx-(\d+)"}
+    loose = Declaration(name="n", licence="x", pages=["https://nginx.org/en/docs/a.html"], site=site)
+    assert "exactly one category" in files.index_refusal(loose)

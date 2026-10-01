@@ -354,7 +354,7 @@ def nearest_distance(embedding, *, variant, embedded_by: str) -> float | None:
 
 # the search's own step past the scope's pure rules: the sources it names must be in search now, its version held
 def refuse_bad_scope(scope: Scope, variant: str | None = None) -> None:
-    search_scope.refuse_bad_scope(scope)
+    search_scope.refuse_malformed_scope(scope)
     if scope.sources:
         refuse_sources_out_of_search(scope.sources)
     if scope.version:

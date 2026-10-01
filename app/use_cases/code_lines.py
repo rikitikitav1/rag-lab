@@ -3,11 +3,13 @@ import statistics
 from contextlib import closing
 from pathlib import Path
 
-FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
+from use_cases.docling_structure import continued, page_of, reading_order
+from use_cases.markup import FENCE, HYPHEN_MARK
+
 # a code row runs on to the line's end, is given once a page, and a listing's line numbers go
 ROW_RULES = frozenset({"run_on", "once", "numbers"})
-# PDFium's mark for a hyphen at a line end is a real `-` in code, as in `app-`
-_LINE_END_HYPHEN = {"\ufffe": "-"}
+# the mark at a line end is a real `-` in code, as in `app-`
+_LINE_END_HYPHEN = {HYPHEN_MARK: "-"}
 
 
 def _chars(page) -> list[tuple[float, float, float, float, str]]:
@@ -22,23 +24,20 @@ def _chars(page) -> list[tuple[float, float, float, float, str]]:
 
 
 # glyphs of one advance as a monospace face sets them: nine in ten near the median, so a number column does not count
-def uniform(widths: list[float], spread: float | None = None) -> bool:
-    import config
-
+def uniform(widths: list[float], spread: float) -> bool:
     middle = statistics.median(widths) if widths else 0
     if middle <= 0:
         return False
-    spread = spread or config.settings.intake.route.mono_spread
     return sum(1 for w in widths if abs(w - middle) / middle <= spread) >= 0.9 * len(widths)
 
 
 # enough glyphs at one advance to call a face monospace though its name is not on the list; a short digit row is not
-def one_advance(widths: list[float], spread: float | None = None) -> bool:
+def one_advance(widths: list[float], spread: float) -> bool:
     return len(widths) >= 8 and uniform(widths, spread)
 
 
 # rows top to bottom, each its glyphs left to right
-def _rows(chars: list) -> list[list]:
+def glyph_rows(chars: list) -> list[list]:
     rows: list[list] = []
     for c in sorted(chars, key=lambda c: -(c[1] + c[3]) / 2):
         middle = (c[1] + c[3]) / 2
@@ -77,7 +76,8 @@ def layer_code(
     page,
     box: dict,
     taken: set | None = None,
-    spread: float | None = None,
+    *,
+    spread: float,
     drop=frozenset(),
     by_step: bool = False,
     rows_by: frozenset = ROW_RULES,
@@ -96,11 +96,11 @@ def layer_code(
         return None
     else:
         advance = statistics.median(c[2] - c[0] for c in visible)
-    page_rows = _rows(chars)
+    page_rows = glyph_rows(chars)
     taken = set() if taken is None else taken
     tally = {} if tally is None else tally
     rows = []
-    for middle, row in _rows(visible):
+    for middle, row in glyph_rows(visible):
         key = round(middle)
         # a row is given again unless every glyph of it was drawn: a fragment that took its tail does not take it all
         if "once" in rows_by and all((key, round(c[0])) in taken for c in row):
@@ -132,58 +132,14 @@ def layer_code(
 
 
 # the advance by glyph origins, for a face whose boxes are wider than its step: nine steps in ten a whole number of it
-def _step(visible: list, spread: float | None = None) -> float | None:
-    import config
-
-    steps = [b[0] - a[0] for _, row in _rows(visible) for a, b in zip(row, row[1:], strict=False) if b[0] > a[0]]
+def _step(visible: list, spread: float) -> float | None:
+    steps = [b[0] - a[0] for _, row in glyph_rows(visible) for a, b in zip(row, row[1:], strict=False) if b[0] > a[0]]
     if not steps:
         return None
     floor = sorted(steps)[len(steps) // 10]
     advance = statistics.median(x for x in steps if x <= 1.5 * floor)
-    spread = spread or config.settings.intake.route.mono_spread
     whole = sum(1 for x in steps if abs(x / advance - round(x / advance)) <= spread * 1.5)
     return advance if whole >= 0.9 * len(steps) else None
-
-
-def page_of(item: dict) -> int | None:
-    return (item.get("prov") or [{}])[0].get("page_no")
-
-
-# the body in reading order, furniture (running heads and feet) left out
-def reading_order(structure: dict) -> list[tuple[str, dict]]:
-    kinds = ("texts", "tables", "pictures", "groups")
-    items = {f"#/{kind}/{i}": t for kind in kinds for i, t in enumerate(structure.get(kind, []))}
-
-    def walk(node):
-        for child in node.get("children", []):
-            ref = child.get("$ref", "")
-            item = items.get(ref)
-            if item is None or item.get("content_layer") == "furniture":
-                continue
-            if ref.startswith("#/groups/"):
-                yield from walk(item)
-            else:
-                yield ref, item
-
-    return list(walk(structure.get("body", {})))
-
-
-# for each code item and each table, whether the next one goes on from it over the page break, nothing between
-def continued(structure: dict | None) -> dict[str, list[bool]]:
-    out: dict[str, list[bool]] = {"code": [], "table": []}
-    # a lone pipe between two halves is a running foot's rule and is stepped over; a code block reading `|` still counts
-    order = [
-        (ref, item)
-        for ref, item in reading_order(structure or {})
-        if item.get("label") in out or item.get("text", "").strip() != "|"
-    ]
-    for (_, item), (_, after) in zip(order, [*order[1:], ("", {})], strict=True):
-        label = item.get("label")
-        if label in out:
-            page, next_page = page_of(item), page_of(after)
-            same_kind = after.get("label") == label
-            out[label].append(same_kind and page is not None and next_page == page + 1)
-    return out
 
 
 # Docling's code blocks with their lines from the PDF's own layer, and a block the page break cut in two made one again
@@ -191,7 +147,7 @@ def rebuild(
     markdown: str,
     structure: dict | None,
     pdf: Path,
-    spread: float | None = None,
+    spread: float,
     callouts=None,
     by_step: bool = False,
     rows_by: frozenset = ROW_RULES,
@@ -222,7 +178,10 @@ def rebuild(
                 drop, note = _callouts(page, box, callouts) if callouts else (frozenset(), "")
                 notes.append(note)
                 taken_here = taken.setdefault(page_no, set())
-                texts.append(layer_code(page, box, taken_here, spread, drop, by_step, rows_by, tally))
+                texts.append(
+                    layer_code(page, box, taken_here, spread=spread, drop=drop, by_step=by_step, rows_by=rows_by,
+                               tally=tally)
+                )
     finally:
         document.close()
     # None keeps Docling's own block, "" drops a duplicate block, any other text replaces the block
@@ -282,7 +241,7 @@ def _inside(glyphs: list, edges: tuple) -> list:
 
 
 # the share of an item's visible glyphs set in a monospace face by name; a face with no name counts by its one advance
-def mono_share(page, box: dict, mono_name, glyphs: list | None = None, spread: float | None = None) -> float:
+def mono_share(page, box: dict, mono_name, glyphs: list | None = None, *, spread: float) -> float:
     inside = _inside(glyphs if glyphs is not None else _faces(page), _box_edges(page, box))
     if not inside:
         return 0.0
@@ -325,9 +284,9 @@ def _long_or_prompt(text: str) -> bool:
     return len(text.split()) >= 3 or text[:1] in ("$", "#", ">") and len(text) > 1
 
 
-def _share_on(pages: dict, document, prov: dict, mono_name, spread=None) -> float:
+def _share_on(pages: dict, document, prov: dict, mono_name, spread: float) -> float:
     page, glyphs = _page_faces(pages, document, prov)
-    return mono_share(page, prov["bbox"], mono_name, glyphs, spread)
+    return mono_share(page, prov["bbox"], mono_name, glyphs, spread=spread)
 
 
 def _page_faces(pages: dict, document, prov: dict) -> tuple:
@@ -340,11 +299,11 @@ def _page_faces(pages: dict, document, prov: dict) -> tuple:
 # a heading in the code face on one line is a signature or a command name and stays a heading; a session runs longer
 def _one_line(pages: dict, document, prov: dict) -> bool:
     page, glyphs = _page_faces(pages, document, prov)
-    return len(_rows([(*g[:4], "x") for g in _inside(glyphs, _box_edges(page, prov["bbox"]))])) <= 1
+    return len(glyph_rows([(*g[:4], "x") for g in _inside(glyphs, _box_edges(page, prov["bbox"]))])) <= 1
 
 
 # runs of Docling text items set wholly in a monospace face, in reading order on one page; an outline heading stays one
-def _mono_runs(structure: dict, document, mono_name, outline: set[str], spread=None) -> list[list[dict]]:
+def _mono_runs(structure: dict, document, mono_name, outline: set[str], spread: float) -> list[list[dict]]:
     runs, last, pages = [], None, {}
     try:
         for _, item in reading_order(structure):
@@ -374,7 +333,7 @@ def _mono_runs(structure: dict, document, mono_name, outline: set[str], spread=N
 
 # code Docling gave no code box, as a shell prompt it made a heading: fenced with its lines from the layer
 def fence_mono(
-    markdown: str, structure: dict | None, pdf: Path, mono_name, outline=(), spread=None, rows_by=ROW_RULES
+    markdown: str, structure: dict | None, pdf: Path, mono_name, outline=(), *, spread: float, rows_by=ROW_RULES
 ) -> tuple[str, int]:
     import pypdfium2 as pdfium
 
@@ -398,7 +357,7 @@ def fence_mono(
                 prov = item["prov"][0]
                 with closing(document[prov["page_no"] - 1]) as page:
                     drawn = layer_code(
-                        page, prov["bbox"], taken.setdefault(prov["page_no"], set()), spread, rows_by=rows_by
+                        page, prov["bbox"], taken.setdefault(prov["page_no"], set()), spread=spread, rows_by=rows_by
                     )
                 if drawn != "":
                     lines.append(drawn if drawn is not None else item["text"])

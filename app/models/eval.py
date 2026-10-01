@@ -65,6 +65,14 @@ class Question(Base):
         return f"Question(id={self.id!r}, text={self.original_text[:40]!r})"
 
 
+# a run reads a question once it is accepted; `corpus_keys.READ_BY_RUNS_SQL` is the same test in raw sql
+READ_BY_RUNS = Question.status == ACCEPTED
+
+
+def read_by_runs(question) -> bool:
+    return question.status == ACCEPTED
+
+
 class QuestionLog(Base):
     __tablename__ = "question_logs"
 

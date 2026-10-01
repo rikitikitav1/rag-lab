@@ -48,14 +48,16 @@ def _reader(source) -> type[Base]:
 
 
 # where onboarding said a row is read: its own tree, or the raw folder a converter wrote; an older row names its folder
-def _onboarded(rows: dict) -> dict[str, tuple[Path, bool]]:
+def _onboarded(rows: dict) -> dict[str, tuple[Path, bool, str | None]]:
     out = {}
     for name, info in rows.items():
         raw = info["raw"]
+        # the release the accepted run fetched is the one its pages document; the declaration only asks for one
+        release = (raw.get("version") or {}).get("release")
         if raw.get("root"):
-            out[name] = (Path(raw["root"]), raw.get("root_kind") == "converted")
+            out[name] = (Path(raw["root"]), raw.get("root_kind") == "converted", release)
         elif raw.get("folder"):
-            out[name] = (Path(raw["folder"]), True)
+            out[name] = (Path(raw["folder"]), True, release)
     return out
 
 
@@ -102,11 +104,12 @@ def sources(names=None, limit=None, offset=0):
     log.info("sources.gather", onboarded=len(raw), local=len(local), git=len(specs))
     roots = provision([(name, url, ref) for name, url, _, ref in specs])
     built = 0
-    for name, (root, is_converted) in raw.items():
+    for name, (root, is_converted, release) in raw.items():
         declaration = declared[rows[name]["source"]]
         reader = Base._registry["converted"] if is_converted else _reader(declaration)
         built += 1
-        release = declaration.site.release if declaration.site else None
+        # a run from before the release was stamped on it read the declared one
+        release = release or (declaration.site.release if declaration.site else None)
         yield reader(root, declaration, name=name, onboarded=True, version=release)
     for source in local:
         built += 1

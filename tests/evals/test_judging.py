@@ -929,3 +929,19 @@ def test_a_remote_judge_is_stamped_with_no_residency_rather_than_one_of_its_own(
     monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: engines.Resolved("m", cloud))
     assert j._residency(42) == j.Residency(None, False, card.NO_RESIDENCY)
 
+
+
+# a judge on vLLM gets its thinking turned off, and its verdict stamp says so as a pass's sampler does
+def test_the_judge_stamp_says_its_thinking_was_turned_off(monkeypatch):
+    import engines
+    import job_handlers.judging as j
+    from models.registry import EngineKind, Placement
+
+    vllm = engines.EngineSpec(3, "vllm", EngineKind.vllm, "VLLM", Placement.gpu)
+    picked = engines.Resolved("Qwen/Q", vllm)
+    monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: picked)
+    monkeypatch.setattr(j.llm, "resolve", lambda role: picked)
+    monkeypatch.setattr(j.engines, "added_by", lambda spec, name: {})
+    monkeypatch.setattr(j.engines, "address_of", lambda spec: "http://vllm")
+    monkeypatch.setattr(j, "residency_instrument", lambda spec: None)
+    assert j.stamp_of(1)["sampler"]["enable_thinking"] is False

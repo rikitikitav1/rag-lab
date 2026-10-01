@@ -88,3 +88,19 @@ def test_a_reference_page_is_read_from_its_leaf():
     assert reference_by("Commands > EXPIRE", r"^[A-Z][A-Z0-9_]+( [A-Z][A-Z0-9_]+)?$") == "knob"
     plain = ("Guide > WebSocket proxying", "Book > FAQ", "Анализ > ВЫВОД", "Lists")
     assert [reference_by(s) for s in plain] == [None] * 4
+
+
+# the column reads the patterns the caller passes, so a run reads one set of them and names it beside its slice
+def test_the_reference_column_reads_the_patterns_it_is_given():
+    from types import SimpleNamespace
+
+    from evals import columns
+
+    def row(gold):
+        return SimpleNamespace(question=SimpleNamespace(gold=gold))
+
+    leaves = {"redis-doc": r"^[A-Z]+$"}
+    expire = {"file": "redis-doc/commands/expire.md", "section": "Commands > EXPIRE"}
+    assert columns.read("reference_page", row(expire), leaves) == 1.0
+    assert columns.read("reference_page", row(expire)) == 0.0
+    assert columns.read("reference_page", row(None), leaves) is None

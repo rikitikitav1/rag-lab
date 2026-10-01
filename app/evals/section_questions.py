@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 
+import config
 from corpus_keys import anchors, language_by_alphabet, leaf_of, short_hash, spaceless_key, unlinked
 from models.eval import CANDIDATE, text_hash
 
@@ -50,11 +51,17 @@ def section_pairs(rows: list[dict], chapter_pairs: dict) -> dict[tuple, int]:
     return out
 
 
+# the languages a set asks in when its job names none: the stand's own, in its order
+def set_languages(given=None) -> tuple[str, ...]:
+    return tuple(given or config.settings.evals.question_set.languages)
+
+
 # the system text the generator reads, the section apart in the user turn
 _NAMES = {"en": "English", "ru": "Russian"}
 
 
-def prompt(template: str, source: str, pairs: int, languages=("en", "ru")) -> str:
+def prompt(template: str, source: str, pairs: int, languages=None) -> str:
+    languages = set_languages(languages)
     named = " and ".join(f"{_NAMES[code]} ({code})" for code in languages)
     keys = ", ".join(f'"{code}": "..."' for code in languages)
     return template.format(source=source, pairs=pairs, languages=named, keys=keys)
@@ -90,8 +97,9 @@ def _echoes_heading(question: str, section: str) -> bool:
 
 # the pairs a reply holds that the section can stand behind, and each one refused with its reason
 def parse(
-    reply: str, row: dict, wanted: int, taken: list[str] = (), languages=("en", "ru")
+    reply: str, row: dict, wanted: int, taken: list[str] = (), languages=None
 ) -> tuple[list[dict], list[dict]]:
+    languages = set_languages(languages)
     found = _JSON.search(reply or "")
     try:
         pairs = json.loads(found.group(0)).get("pairs") if found else None
@@ -135,7 +143,7 @@ _LEANS_ON_THE_PAGE = re.compile(
 )
 
 
-def _refusal(pair, row: dict, text: str, seen: set, languages=("en", "ru")) -> str | None:
+def _refusal(pair, row: dict, text: str, seen: set, languages: tuple[str, ...]) -> str | None:
     fields = (*languages, "answer", "evidence")
     if not isinstance(pair, dict) or not all(isinstance(pair.get(k), str) and pair[k].strip() for k in fields):
         return f"a field of {', '.join(fields)} is missing or empty"
@@ -157,7 +165,8 @@ def _refusal(pair, row: dict, text: str, seen: set, languages=("en", "ru")) -> s
 
 # a kept pair as one question row per language, sharing their pair id and the section's exact gold
 def question_rows(pair: dict, row: dict, set_name: str, anchors_of=None, evidence_at=None,
-                  languages=("en", "ru")) -> list[dict]:
+                  languages=None) -> list[dict]:
+    languages = set_languages(languages)
     gold = {"file": row["file"], "section": row["section"], "version": section_key(row)[2]}
     pair_id = short_hash("#".join([row["file"], row["section"], *(pair[code] for code in languages)]))
     return [
@@ -188,7 +197,7 @@ def anchors_for(sections: list[dict]):
 
 # a section as the export keys it: a versioned source holds one path once per version stream
 def section_key(row: dict) -> tuple:
-    return row["file"], row["section"], row.get("stream", (row.get("versions") or [None])[0])
+    return row["file"], row["section"], row.get("stream")
 
 
 # the section a question's gold names, spelled as `section_key` spells an exported row

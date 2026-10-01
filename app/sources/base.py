@@ -6,7 +6,7 @@ from pathlib import Path
 
 import ingest
 import logging_setup
-from book_matter import is_book_matter, is_title_page
+from book_matter import is_matter
 from corpus_keys import language_by_alphabet
 from sources.declaration import DEFAULT_INCLUDE
 
@@ -217,7 +217,7 @@ class Base(ABC):
         docs, matter = [], set()
         for file in found:
             for doc in self.to_documents(file, policy):
-                if is_book_matter(doc.section) or is_title_page(doc.source, doc.section):
+                if is_matter(doc.source, doc.section):
                     matter.add((doc.source, doc.section))
                 else:
                     docs.append(doc)

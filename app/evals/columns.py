@@ -1,4 +1,3 @@
-import functools
 import json
 from dataclasses import dataclass
 
@@ -8,19 +7,12 @@ from evals import gold_classes, grade_curve, measurements, pools
 from evals.stats import score_of
 
 
-# a source's own reference pattern, by the first step of a gold's file path, which is the source's name
-@functools.cache
-def _reference_leaf(file: str | None) -> str | None:
-    from sources import files
-
-    found = files.source_files().get((file or "").split("/", 1)[0])
-    return found.reference_leaf if found else None
-
-
-def _reference_page(gold: dict | None) -> float | None:
+# the first step of a gold's file path names the source's row; its pattern comes from the caller, read once a run
+def _reference_page(gold: dict | None, leaves: dict) -> float | None:
     if gold is None:
         return None
-    return float(reference_by(gold.get("section"), _reference_leaf(gold.get("file"))) is not None)
+    leaf = leaves.get((gold.get("file") or "").split("/", 1)[0])
+    return float(reference_by(gold.get("section"), leaf) is not None)
 
 
 # a column named in a preregistration and nowhere else is a column nobody can compute
@@ -164,7 +156,6 @@ _READERS = {
         None if getattr(ql.question, "gold", None) is None
         else float(shares_heading_word(ql.question.original_text, ql.question.gold.get("section")))
     ),
-    "reference_page": lambda ql: _reference_page(getattr(ql.question, "gold", None)),
     # a question whose anchors were never read has no value, not a zero
     "anchored_by_identifier": lambda ql: (
         None if getattr(ql.question, "anchors", None) is None else float(anchored(ql.question.anchors))
@@ -185,7 +176,17 @@ def source_of(names) -> set:
     return {REGISTRY[name].source for name in names}
 
 
-def read(name: str, row) -> float | None:
+# columns that read what the sources declare: the caller reads it once and passes it, so a column stays a function
+_WITH_SOURCES = {"reference_page": lambda ql, leaves: _reference_page(getattr(ql.question, "gold", None), leaves)}
+
+
+def needs_sources(name: str) -> bool:
+    return name in _WITH_SOURCES
+
+
+def read(name: str, row, leaves: dict | None = None) -> float | None:
+    if name in _WITH_SOURCES:
+        return _WITH_SOURCES[name](row, leaves or {})
     if name not in _READERS:
         raise KeyError(f"no column named {name!r}; known: {', '.join(known())}")
     return _READERS[name](row)

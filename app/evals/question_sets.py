@@ -7,9 +7,10 @@ from types import SimpleNamespace
 import config
 from evals import columns, measurements, pair_judge
 from evals.pools import POOLS, kind_of_question
-from models.eval import ACCEPTED, REFUSED, Question
+from models.eval import REFUSED, Question, read_by_runs
 from orm.sync_db import Session
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import defer
 
 
@@ -19,7 +20,7 @@ def _of(questions: list) -> dict:
     return {
         "questions": len(questions),
         # what a run over the set reads; the rest wait for acceptance or were settled out
-        "read_by_runs": sum(1 for q in questions if q.status == ACCEPTED),
+        "read_by_runs": sum(1 for q in questions if read_by_runs(q)),
         "pools": {pool: pools.get(pool, 0) for pool in POOLS if pools.get(pool)},
         "languages": dict(sorted(languages.items())),
         # the corpus pool, and what every retrieval axis ranks against
@@ -30,9 +31,6 @@ def _of(questions: list) -> dict:
         "with_reference_answer": sum(1 for q in questions if q.reference_answer),
         "paraphrases": sum(1 for q in questions if q.source_question_id),
     }
-
-
-_JUDGE_SAID = {pair_judge.NOT_ANSWERED, pair_judge.SPLIT, pair_judge.UNREAD, pair_judge.NOT_FOUND}
 
 
 # a generated set's way from the generator to acceptance: what was asked and lost, then who settled what, by language
@@ -60,15 +58,15 @@ def stages(set_name: str, questions: list) -> dict | None:
         anchored = [columns.read("anchored_by_identifier", SimpleNamespace(question=q)) for q in mine]
         by_language[lang] = {
             "status": dict(collections.Counter(str(q.status) for q in mine)),
-            "refused_by_judge": sum(1 for q in refused if q.acceptance_why in _JUDGE_SAID),
-            "refused_by_sieve": sum(1 for q in refused if q.acceptance_why not in _JUDGE_SAID),
+            "refused_by_judge": sum(1 for q in refused if q.acceptance_why in pair_judge.REASONS),
+            "refused_by_sieve": sum(1 for q in refused if q.acceptance_why not in pair_judge.REASONS),
             "anchored": sum(1 for v in anchored if v == 1.0),
             "anchors_unread": sum(1 for v in anchored if v is None),
             "shares_heading_word": sum(
                 1 for q in mine if columns.read("shares_heading_word", SimpleNamespace(question=q)) == 1.0
             ),
         }
-    accepted_pairs = len({q.pair_id for q in paired if q.status == ACCEPTED})
+    accepted_pairs = len({q.pair_id for q in paired if read_by_runs(q)})
     return {
         "generated": {"pairs_asked": asked, "pairs_kept": kept, "pairs_lost_by_reason": dict(lost)},
         # replies read again by later checks: kept then, so the generated and the set's own count differ by these
@@ -162,3 +160,34 @@ def remove(set_name: str) -> dict:
     if refusal := removal_refusal(set_name, db.question_set_holds(set_name), named, queued):
         raise Final(refusal)
     return {"set_name": set_name, "questions": db.remove_question_set(set_name)}
+
+
+# a pair is written whole or not at all: a question already in the base, or twice in the batch, would leave a lone half
+def write_pairs(rows: list[dict]) -> tuple[int, int]:
+    pairs: dict[str, list] = {}
+    for row in rows:
+        pairs.setdefault(row["pair_id"], []).append(row)
+    with Session() as session:
+        # two writers checking the same pair at once would each see it absent and leave one half apiece
+        session.execute(select(func.pg_advisory_xact_lock(func.hashtext("question_write"))))
+        hashes = [r["text_hash"] for r in rows]
+        taken = set(session.scalars(select(Question.text_hash).where(Question.text_hash.in_(hashes))))
+        fresh, dropped = [], 0
+        for members in pairs.values():
+            mine = {m["text_hash"] for m in members}
+            if taken & mine or len(mine) < len(members):
+                dropped += 1
+                continue
+            taken |= mine
+            fresh += members
+        written = 0
+        if fresh:
+            written = len(
+                session.execute(
+                    pg_insert(Question).values(fresh).on_conflict_do_nothing(index_elements=["text_hash"]).returning(
+                        Question.id
+                    )
+                ).all()
+            )
+            session.commit()
+    return written, dropped

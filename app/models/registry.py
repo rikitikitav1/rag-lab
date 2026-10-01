@@ -104,6 +104,10 @@ class Placement(StrEnum):
     remote = "remote"
 
 
+# an engine with no broker to ask what is left on its account
+NO_READER = "none"
+
+
 class Engine(Base):
     __tablename__ = "engines"
 
@@ -114,7 +118,7 @@ class Engine(Base):
     env_prefix: Mapped[str]
     placement: Mapped[Placement] = mapped_column(Enum(Placement, native_enum=False))
     # which reader in `engines.balances` asks this cloud's broker what is left on the key
-    balance_reader: Mapped[str] = mapped_column(default="none")
+    balance_reader: Mapped[str] = mapped_column(default=NO_READER)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     def __repr__(self) -> str:

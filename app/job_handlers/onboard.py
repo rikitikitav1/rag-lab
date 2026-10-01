@@ -3,6 +3,7 @@ import json
 import os
 import time
 from collections import Counter
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,11 +19,11 @@ from orm.sync_db import Session
 from paths import FETCHED, RAW, ROOT
 from sources.declaration import site_of
 from sqlalchemy import select
-from use_cases import raw_quality, route, source_intake
+from use_cases import converting, intake_fetch, raw_quality, reading, route, source_intake
+from use_cases.converting import load_settings, pieces
 
-from . import converting, reading
 from .base import Final, register
-from .converting import load_settings, pieces
+from .card import converter_hold
 
 log = logging_setup.get_logger(__name__)
 
@@ -138,7 +139,7 @@ def _read_unit(unit, folder: Path, shas: dict, loaded: dict, language: str, laye
 # each file's markdown whole, its pieces in page order as the loader will read it, and the chunker's rows a chapter
 def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: set, rule, layers: dict) -> tuple:
     sections: list[dict] = []
-    joins = Counter({"fences": 0, "tables": 0, "headings": 0, "running_heads": 0})
+    joins = Counter({"fences": 0, "tables": 0, "rows_continued": 0, "headings": 0, "running_heads": 0})
     check: Counter = Counter()
     for file in files:
         rel = named[file]
@@ -215,33 +216,6 @@ def _rules_fired(rows: list[dict]) -> dict:
 
 
 
-def _settings_sha(name: str) -> str | None:
-    try:
-        return load_settings(name)[1]
-    # a settings file gone since the run is that tool's edit, not a failed check
-    except Final:
-        return None
-
-
-# a converted source against the stand now: the settings chosen, their files or the route moved since it was read
-def conversion_drift(source: DataSource) -> dict | None:
-    raw = source.raw or {}
-    if not raw.get("folder") or raw.get("root_kind") == "tree":
-        return None
-    record_path = ROOT / raw["folder"] / "record.json"
-    if not record_path.exists():
-        return {"record": "missing"}
-    record = json.loads(record_path.read_text())
-    rule, names = source_intake.intake_rule(source_intake.intake_block(source.declaration))
-    names = {**names, **(record.get("settings_override") or {})}
-    was = record.get("settings") or {}
-    chosen = sorted(t for t in was if names.get(t) != was[t])
-    hashes = record.get("settings_sha256") or {}
-    edited = sorted(t for t, name in was.items() if _settings_sha(name) != hashes.get(t))
-    moved = {"chosen": chosen, "edited": edited, "route": record.get("route_sha256") != reading.route_sha(rule)}
-    return moved if chosen or edited or moved["route"] else {}
-
-
 def _fingerprint(arm_hash: str, route_sha: str, file_shas: dict) -> str:
     return hashlib.sha256(json.dumps([arm_hash, route_sha, sorted(file_shas.items())]).encode()).hexdigest()
 
@@ -256,11 +230,62 @@ def _index_root(units: list, tree: Path, folder: Path) -> tuple[str, str]:
 # a declared source to a raw folder: every file through the engine its route names, a report row a run, no index
 @register("onboard_source")
 def onboard_source(options: dict) -> dict | None:
-    with converting.reading_fresh(bool(options.get("fresh"))):
+    with converting.reading_fresh(bool(options.get("fresh"))), converting.card_hold(converter_hold()):
         return _onboard(options)
 
 
+# what one onboarding run carries from its setup through its pieces to its report
+@dataclass
+class _Run:
+    source: DataSource
+    options: dict
+    rule: object
+    names: dict
+    loaded: dict
+    route_sha: str
+    origin: dict
+    root: Path
+    fetched: dict
+    named: dict
+    skipped: dict
+    shas: dict
+    fingerprint: str
+    accepted: bool
+    fresh: bool
+    folder: Path | None = None
+    # the record's pieces were read under this route; a piece read under another is read again
+    same_route: bool = False
+    record: dict = field(default_factory=dict)
+    units: list = field(default_factory=list)
+    unreadable: dict = field(default_factory=dict)
+    layers: dict = field(default_factory=dict)
+    language: str | None = None
+
+    @property
+    def files(self) -> list[Path]:
+        return list(self.named)
+
+    @property
+    def site(self):
+        return site_of(self.origin)
+
+    @property
+    def record_path(self) -> Path:
+        return self.folder / "record.json"
+
+
 def _onboard(options: dict) -> dict | None:
+    run = _set_up(options)
+    if isinstance(run, dict):
+        return run
+    _plan_run(run)
+    if not _read_units(run):
+        return None
+    return _finish(run)
+
+
+# the source, its rule and settings, its files fetched and fingerprinted; the accepted run's twin stops here unchanged
+def _set_up(options: dict):
     with Session() as session:
         source = session.scalar(select(DataSource).where(DataSource.name == options["source"]))
         if source is None:
@@ -277,36 +302,36 @@ def _onboard(options: dict) -> dict | None:
     loaded = {name: settings[tool] for tool, name in names.items()}
     route_sha = reading.route_sha(rule)
     origin = source.declaration or {}
-    root, gathered, fetched = source_intake.gather(source, FETCHED / source.name, ROOT)
-    # a release read from the site moves the row's declaration with it, so the index keys its pages by it
-    if release_read := fetched.pop("release", None):
+    root, gathered, fetched, release_read = intake_fetch.gather(source, FETCHED / source.name, ROOT)
+    # a release read from the site keys this run's pages; the declaration on the row keeps only what was asked for
+    if release_read:
         origin = {**origin, "site": {**origin["site"], "release": release_read}}
-        source.declaration = origin
     # what the gather says it fetched now, a folder read from the tree as it lies: unchanged speaks for that
     refetched = "folder" in origin or "fetched_at" in fetched
-    epub_skip = frozenset(rule.epub_skip)
     site = site_of(origin)
-    generated = site.generated if site else []
-    named, left_out = source_intake.named_files(
-        root, gathered, FETCHED / source.name, epub_skip, rule.epub_chapters, generated
+    named, left_out = intake_fetch.named_files(
+        root, gathered, FETCHED / source.name, frozenset(rule.epub_skip), rule.epub_chapters,
+        site.generated if site else [],
     )
-    files = list(named)
-    shas = {file: sha256(file) for file in files}
+    shas = {file: sha256(file) for file in named}
     fingerprint = _fingerprint(arm_hash, route_sha, {named[f]: sha for f, sha in shas.items()})
     accepted = source.stage == Stage.accepted
-    # the files, settings and route of the accepted run: nothing to read again
     fresh = bool(options.get("fresh"))
-    if accepted and (source.raw or {}).get("fingerprint") == fingerprint and not fresh:
+    # a site whose release moved while its pages stayed byte for byte is a new run all the same: the release keys it
+    same_release = ((source.raw or {}).get("version") or {}).get("release") == (site.release if site else None)
+    # the files, settings and route of the accepted run: nothing to read again
+    if accepted and (source.raw or {}).get("fingerprint") == fingerprint and same_release and not fresh:
         log.info("onboard.unchanged", source=source.name)
         return {"unchanged": True, "refetched": refetched}
+    run = _Run(source, options, rule, names, loaded, route_sha, origin, root, fetched, named, dict(left_out), shas,
+               fingerprint, accepted, fresh)
     # a new run of an accepted source goes beside the accepted folder, which search keeps reading until it is accepted
-    folder = source_intake.raw_folder(RAW, source.name, arm_hash, fingerprint if accepted else None)
-    (folder / "files").mkdir(parents=True, exist_ok=True)
-    (folder / "pieces").mkdir(exist_ok=True)
-    record_path = folder / "record.json"
-    record = json.loads(record_path.read_text()) if record_path.exists() else {"units": {}}
-    same_route = record.get("route_sha256") == route_sha
-    record.update(
+    run.folder = source_intake.raw_folder(RAW, source.name, arm_hash, fingerprint if accepted else None)
+    (run.folder / "files").mkdir(parents=True, exist_ok=True)
+    (run.folder / "pieces").mkdir(exist_ok=True)
+    run.record = json.loads(run.record_path.read_text()) if run.record_path.exists() else {"units": {}}
+    run.same_route = run.record.get("route_sha256") == route_sha
+    run.record.update(
         {
             "source": source.name,
             "settings": names,
@@ -318,34 +343,51 @@ def _onboard(options: dict) -> dict | None:
             "fresh": fresh,
         }
     )
-    # a unit is a piece of a run, so a bad stretch of a long book is named by its pages, not hidden in the whole
-    skipped = dict(left_out)
-    units, unreadable = _plan(files, named, shas, names, loaded, skipped, rule)
-    planned = {_key(rel, piece) for _, rel, _, piece, _ in units}
+    return run
+
+
+# a unit is a piece of a run, so a bad stretch of a long book is named by its pages, not hidden in the whole
+def _plan_run(run: _Run) -> None:
+    run.units, run.unreadable = _plan(run.files, run.named, run.shas, run.names, run.loaded, run.skipped, run.rule)
+    planned = {_key(rel, piece) for _, rel, _, piece, _ in run.units}
     # a row whose file left, changed its route or its pieces is not this source any more
-    record["units"] = {k: v for k, v in record["units"].items() if k in planned} | unreadable
+    run.record["units"] = {k: v for k, v in run.record["units"].items() if k in planned} | run.unreadable
     # one engine's units together: every switch between the two converters is a handover of the card
-    units.sort(key=lambda u: u[2].engine or "")
-    layers: dict[Path, list[str]] = {}
-    language = source_intake.source_language(source, files, layers)
-    for unit in units:
+    run.units.sort(key=lambda u: u[2].engine or "")
+    run.language = intake_fetch.source_language(run.source, run.files, run.layers)
+
+
+# each piece read or kept, the record written after every one; False when a cancel stopped the run between pieces
+def _read_units(run: _Run) -> bool:
+    for unit in run.units:
         file, rel, _, piece, name = unit
         key = _key(rel, piece)
         # a piece whose markdown is gone from the folder, or was written under an older name, is converted again
-        kept = not fresh and _kept(record["units"].get(key), shas[file], loaded[name][1] if name else None, same_route)
-        if kept and (folder / "pieces" / f"{_stem(key)}.md").exists():
+        sha = run.loaded[name][1] if name else None
+        kept = not run.fresh and _kept(run.record["units"].get(key), run.shas[file], sha, run.same_route)
+        if kept and (run.folder / "pieces" / f"{_stem(key)}.md").exists():
             continue
         # a cancel is read between pieces: a long book otherwise holds the queue and the card after it was called off
-        if options.get("_job_id") is not None and job_queue.is_cancelled(options["_job_id"]):
-            _write_json(record_path, record)
-            log.info("onboard.cancelled", source=source.name, unit=key)
-            return
+        job_id = run.options.get("_job_id")
+        if job_id is not None and job_queue.is_cancelled(job_id):
+            _write_json(run.record_path, run.record)
+            log.info("onboard.cancelled", source=run.source.name, unit=key)
+            return False
         started = time.monotonic()
-        record["units"][key] = _read_unit(unit, folder, shas, loaded, language, layers, rule)
-        _write_json(record_path, record)
-        log.info("onboard.unit", source=source.name, unit=key, seconds=round(time.monotonic() - started, 1))
-    sections, joins, check = _assemble(files, named, record, folder, set(unreadable) | set(skipped), rule, layers)
-    index_root, root_kind = _index_root(units, root, folder)
+        run.record["units"][key] = _read_unit(unit, run.folder, run.shas, run.loaded, run.language, run.layers,
+                                              run.rule)
+        _write_json(run.record_path, run.record)
+        log.info("onboard.unit", source=run.source.name, unit=key, seconds=round(time.monotonic() - started, 1))
+    return True
+
+
+# the whole files assembled and judged, the report recorded and the run handed to its row
+def _finish(run: _Run) -> dict:
+    source, folder, record, fetched = run.source, run.folder, run.record, run.fetched
+    sections, joins, check = _assemble(
+        run.files, run.named, record, folder, set(run.unreadable) | set(run.skipped), run.rule, run.layers
+    )
+    index_root, root_kind = _index_root(run.units, run.root, folder)
     rows = list(record["units"].values())
     verdict, reasons, shares = _verdict(rows, sections)
     pages_by_engine, pages_by_settings = Counter(), Counter()
@@ -364,7 +406,7 @@ def _onboard(options: dict) -> dict | None:
     earlier = json.loads(provenance_path.read_text()) if provenance_path.exists() else {}
     fetched = {"fetched_at": earlier["fetched_at"], **fetched} if "fetched_at" in earlier else fetched
     # a site's pages are keyed by the product's release; the fetch date stands beside it as a label
-    release = site.release if site else None
+    release = run.site.release if run.site else None
     summary = {
         "schema": 2,
         "reads": (
@@ -377,19 +419,19 @@ def _onboard(options: dict) -> dict | None:
         "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "source": source.name,
         # the way back from a report to the job that wrote it and the code it ran
-        "job_id": options.get("_job_id"),
+        "job_id": run.options.get("_job_id"),
         "code": version.mine(),
         "folder": str(folder.relative_to(ROOT)),
         # where the index reads it: its own tree (markdown) or this raw folder (a converter's output)
         "root": index_root,
         "root_kind": root_kind,
-        "language": language,
-        "fingerprint": fingerprint,
+        "language": run.language,
+        "fingerprint": run.fingerprint,
         "verdict": verdict,
         "reasons": reasons,
         "units": len(rows),
         # files no engine reads, by suffix; they weigh nothing in the verdict
-        "skipped": skipped,
+        "skipped": run.skipped,
         "chapters": len(sections),
         # chapters that are a file's root alone, where the coverage gate is not read
         "coverage_by_shape": sum(1 for s in sections if s["coverage_by_shape"]),
@@ -400,12 +442,12 @@ def _onboard(options: dict) -> dict | None:
         "joins_healed": dict(joins),
         "rules_fired": _rules_fired(rows),
         # the source read against itself with no gold: outline titles found as headings, fences, one-line code, seams
-        "self_check": {**dict(check), "seams_moved": _seams_moved(units, loaded)},
+        "self_check": {**dict(check), "seams_moved": _seams_moved(run.units, run.loaded)},
         # a resume across a rebuild keeps the earlier rows, so a report can hold two builds of one engine
         "builds": {engine: sorted(b or "unstamped" for b in found) for engine, found in builds.items()},
-        "settings": names,
+        "settings": run.names,
         # the knobs this source set for itself over the stand's
-        "intake": source_intake.intake_block(source.declaration),
+        "intake": source_intake.intake_block(run.origin),
         "version": {"release": release, "fetched_at": fetched.get("fetched_at")} if release else None,
         "partial_pages": partial_pages,
         "signals": {k: {"better": v.better, "source": v.source} for k, v in raw_quality.SIGNALS.items()},
@@ -414,21 +456,19 @@ def _onboard(options: dict) -> dict | None:
         "raw_source", source.name, {**summary, "rows": rows, "sections": sections}, bulk=("rows", "sections")
     )
     provenance = {
-        "declaration": source.declaration, **fetched, "settings": record["settings_sha256"], "files": len(files)
+        "declaration": run.origin, **fetched, "settings": record["settings_sha256"], "files": len(run.files)
     }
     _write_json(provenance_path, provenance)
     with Session() as session:
         row = session.get(DataSource, source.id)
-        run = {
+        finished = {
             **summary,
             "report": str(Path(report).relative_to(measurements.ROOT)),
             "finished_at": datetime.now(UTC).isoformat(),
         }
-        gone = source_intake.take_run(row, run)
-        if release_read:
-            row.declaration = origin
+        gone = source_intake.take_run(row, finished)
         session.commit()
     for folder in gone:
         source_intake.drop_folder(folder, source.name)
     log.info("onboard.done", source=source.name, verdict=verdict, units=len(rows))
-    return {"verdict": verdict, "candidate": accepted}
+    return {"verdict": verdict, "candidate": run.accepted}

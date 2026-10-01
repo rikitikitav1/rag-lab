@@ -2,7 +2,6 @@ from collections import Counter
 
 import config
 import engines
-import job_queue
 import llm
 import logging_setup
 import prompt_repo
@@ -10,11 +9,11 @@ from evals import measurements, pair_judge, question_acceptance, section_questio
 from models.eval import ACCEPTED, CANDIDATE, REFUSED, Question
 from models.registry import Purpose, Role
 from orm.sync_db import Session
+from passes import Pass, Seat
 from sqlalchemy import or_, select, update
 from use_cases import section_export
 
-from .base import register, require_role_ready
-from .questions import reported, stamp
+from .base import register, reported, require_role_ready, stamp
 
 log = logging_setup.get_logger(__name__)
 
@@ -25,18 +24,15 @@ def accept_questions(options: dict) -> dict | None:
     require_role_ready(Role.accepting)
     source, set_name = options["source"], options["set_name"]
     texts = {section_questions.section_key(r): r["text"] for r in section_export.of_source(source)["sections"]}
-    # a pass that only reports reads the whole set, settled pairs too, so it can be set beside another reading
-    every = bool(options.get("every")) or not options.get("settle", True)
-    pairs = _candidate_pairs(set_name, {key[0] for key in texts}, again=bool(options.get("again")), every=every)
-    if cap := options.get("max_pairs"):
-        pairs = dict(list(pairs.items())[:cap])
+    pairs = _pairs_to_read(options, set_name, {key[0] for key in texts}, again=bool(options.get("again")))
     template, version = prompt_repo.active(Purpose.answer_from_section)
     picked = llm.resolve(Role.accepting)
     rows, outcomes = [], Counter()
+    walk = Pass(options.get("_job_id"), (Seat(Role.accepting, spill_from=None),))
 
     def read_pairs() -> None:
         for pair_id, members in pairs.items():
-            if options.get("_job_id") is not None and job_queue.is_cancelled(options["_job_id"]):
+            if not walk.before_row():
                 break
             text = texts.get(section_questions.gold_key(members[0].gold))
             # a section the export refuses now: settled once, or every rerun would read and skip it again
@@ -98,17 +94,15 @@ def judge_questions(options: dict) -> dict | None:
     exported = section_export.of_source(source)["sections"]
     texts = {section_questions.section_key(r): r["text"] for r in exported}
     blocks = {section_questions.section_key(r): r.get("blocks") or [] for r in exported}
-    every = bool(options.get("every")) or not options.get("settle", True)
     # the judge reads what the sieve has read: run first, it would settle pairs the reader never saw
-    pairs = _candidate_pairs(set_name, {key[0] for key in texts}, again=True, every=every, sieved=True)
-    if cap := options.get("max_pairs"):
-        pairs = dict(list(pairs.items())[:cap])
+    pairs = _pairs_to_read(options, set_name, {key[0] for key in texts}, again=True, sieved=True)
     template, version = prompt_repo.active(Purpose.judge_pair)
     rows, outcomes = [], Counter()
+    walk = Pass(options.get("_job_id"), (Seat(Role.judging, model, spill_from=None),))
 
     def judge_pairs() -> None:
         for pair_id, members in pairs.items():
-            if options.get("_job_id") is not None and job_queue.is_cancelled(options["_job_id"]):
+            if not walk.before_row():
                 break
             key = section_questions.gold_key(members[0].gold)
             # a gone section is the sieve's to settle; the judge finding nothing there would hand the pair back
@@ -137,7 +131,8 @@ def judge_questions(options: dict) -> dict | None:
             "settled": options.get("settle", True),
             "pairs": dict(outcomes),
             "said_by_language": {
-                lang: dict(Counter(str(r["said"]) for r in rows if r["language"] == lang)) for lang in ("en", "ru")
+                lang: dict(Counter(str(r["said"]) for r in rows if r["language"] == lang))
+                for lang in sorted({r["language"] for r in rows})
             },
         }
         summary["set"] = _set_counts(set_name, {key[0] for key in texts})
@@ -178,9 +173,23 @@ def _passage(question, text: str, blocks: list[str]) -> str | None:
     return pair_judge.around(text, question.evidence or "")
 
 
+# the pairs a pass reads; a pass that only reports reads the whole set, settled pairs too, to sit beside another
+def _pairs_to_read(options: dict, set_name: str, files: set, *, again: bool, sieved: bool = False) -> dict:
+    every = bool(options.get("every")) or not options.get("settle", True)
+    pairs = _candidate_pairs(set_name, files, again=again, every=every, sieved=sieved)
+    if cap := options.get("max_pairs"):
+        pairs = dict(list(pairs.items())[:cap])
+    return pairs
+
+
+# a pair's outcome as its questions' status: one left undecided waits as a candidate
+def _status_of(outcome: str):
+    return {"accepted": ACCEPTED, "refused": REFUSED}.get(outcome, CANDIDATE)
+
+
 # the judge's word moves the status and the reason; the reader's own word on each row stays as it read
 def _settle_judged(members: list, outcome: str, why: str | None) -> None:
-    status = {"accepted": ACCEPTED, "refused": REFUSED}.get(outcome, CANDIDATE)
+    status = _status_of(outcome)
     with Session() as session:
         session.execute(
             update(Question).where(Question.id.in_([q.id for q in members])).values(status=status, acceptance_why=why)
@@ -238,7 +247,7 @@ def _candidate_pairs(
 
 
 def _settle(members: list, verdicts: list[dict], outcome: str, why: str | None) -> None:
-    status = {"accepted": ACCEPTED, "refused": REFUSED}.get(outcome, CANDIDATE)
+    status = _status_of(outcome)
     with Session() as session:
         for question, said in zip(members, verdicts, strict=True):
             session.execute(

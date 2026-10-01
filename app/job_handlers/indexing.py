@@ -32,10 +32,8 @@ def index_data(options: dict) -> dict:
     result = use_cases.index.collect_data(built, variant=variant, build_index=False, stop=stop)
     if wanted != "all" and result.refused:
         raise Final(f"{wanted} was not cut: {result.refused[wanted]}")
-    if result.left:
-        return {"sources": result.sources, "refused": result.refused, "left_by_cancel": result.left}
-    # the report reads rows, not the index; a refused source has none of this cut, so it gets no «indexed» report
-    for source in (s for s in built if s.name not in result.refused):
+    # the report reads rows, not the index; a refused source has none of this cut, nor has one a cancel left uncut
+    for source in (s for s in built if s.name not in result.refused and s.name not in result.left):
         job_queue.enqueue(
             "analyze_source",
             {"source": source.name, "variant": variant, "mode": "indexed"},
@@ -50,7 +48,8 @@ def index_data(options: dict) -> dict:
         if not job_queue.pending_of_type("build_vector_index", variant=variant):
             job_queue.enqueue("build_vector_index", {"variant": variant})
     # a full reindex goes on past a refused source; the refusals stay on the job's row, not only in the log
-    return {"sources": len(built), "refused": result.refused}
+    cancelled = {"left_by_cancel": result.left} if result.left else {}
+    return {"sources": len(built) - len(result.left), "refused": result.refused, **cancelled}
 
 
 @register("build_vector_index")

@@ -3,7 +3,7 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 
-from use_cases.piece_join import CAPTION, bare_line, running_heads, unfenced
+from use_cases.heading_rules import CAPTION, bare_line, running_heads, unfenced
 from use_cases.route import joined_hyphens, words
 
 VERSION = 8

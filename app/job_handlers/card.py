@@ -121,3 +121,10 @@ def clear_the_engine_for(role: str) -> None:
     picked = llm.resolve(role)
     with _taking:
         card.clear_for(picked.engine, picked.name)
+
+
+# what a reading job hands the conversion: this worker's own way to take the card and restart a hung tool
+def converter_hold():
+    from use_cases.converting import CardHold
+
+    return CardHold(take, restart_holder)

@@ -158,11 +158,19 @@ class Declaration(_Strict):
     # a leaf pattern that names this source's reference pages where the leaf has no code shape (a command in capitals)
     reference_leaf: str | None = None
 
+    # a site read from its sitemap comes from pages though it lists none
+    def _origins(self) -> list[str]:
+        return [k for k in self.ORIGINS if getattr(self, k) or (k == "pages" and self.site and self.site.sitemap)]
+
+    @property
+    def origin(self) -> str:
+        return self._origins()[0]
+
     @model_validator(mode="after")
     def _one_origin(self):
         if self.reference_leaf is not None:
             re.compile(self.reference_leaf)
-        given = [k for k in self.ORIGINS if getattr(self, k) or (k == "pages" and self.site and self.site.sitemap)]
+        given = self._origins()
         if len(given) != 1:
             raise ValueError(f"a source comes from exactly one of {', '.join(self.ORIGINS)}; given {given or 'none'}")
         if self.site is not None and not (self.pages or self.site.sitemap):

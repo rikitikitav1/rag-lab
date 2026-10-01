@@ -337,3 +337,25 @@ def test_the_depth_script_searches_with_the_embedder_of_each_question(monkeypatc
 
     assert [kw["embedded_by"] for kw in seen] == ["bge-m3@vllm-embed", "bge-m3@ollama"]
     assert "embedded_by" in ef_latency.SAMPLE
+
+
+# a cancel between sources leaves the cut ones replaced: they get their report and the index, the rest are named
+def test_a_cancelled_index_reports_and_builds_for_the_sources_it_did_cut(monkeypatch):
+    from types import SimpleNamespace
+
+    import job_handlers.indexing as indexing
+    import sources.factory
+    import use_cases.index
+
+    built = [SimpleNamespace(name="a"), SimpleNamespace(name="b"), SimpleNamespace(name="c")]
+    queued, indexed = [], []
+    monkeypatch.setattr(indexing, "require_embedder_ready", lambda: None)
+    monkeypatch.setattr(indexing, "clear_the_engine_for", lambda role: None)
+    monkeypatch.setattr(sources.factory, "sources", lambda names: built)
+    monkeypatch.setattr(use_cases.index, "collect_data", lambda *a, **k: use_cases.index.IndexResult(
+        sources=1, chunks=5, refused={}, left=["b", "c"], model="m"))
+    monkeypatch.setattr(use_cases.index, "ensure_vector_index", indexed.append)
+    monkeypatch.setattr(indexing, "_report_depth", lambda: None)
+    monkeypatch.setattr(indexing.job_queue, "enqueue", lambda kind, opts: queued.append(opts["source"]))
+    out = indexing.index_data({"variant": "v", "_job_id": 1})
+    assert queued == ["a"] and indexed == ["v"] and out["left_by_cancel"] == ["b", "c"] and out["sources"] == 1

@@ -233,6 +233,7 @@ class RouteCfg(_Strict):
     drop_running_headings: bool
     join_split_words: bool
     join_wrapped_identifiers: bool
+    join_continued_rows: bool
     epub_chapters: bool
 
 
@@ -279,7 +280,7 @@ class EngineCfg(_Strict):
     kind: Literal["ollama", "vllm", "openai_compatible", "converter"]
     env_prefix: str
     placement: Literal["gpu", "cpu", "gpu+cpu", "remote"]
-    balance_reader: str = "none"
+    balance_reader: str | None = None
 
 
 class TokenEstimateCfg(_Strict):
@@ -359,6 +360,14 @@ class QuestionSetCfg(_Strict):
     per_chapter: int
     min_pairs: int
     languages: list[Literal["en", "ru"]] = Field(min_length=1)
+
+    # a language named twice gives each pair two rows of one text, and every pair is dropped as a repeat
+    @field_validator("languages")
+    @classmethod
+    def _each_once(cls, languages: list[str]) -> list[str]:
+        if len(set(languages)) != len(languages):
+            raise ValueError("languages: each language once")
+        return languages
 
 
 class EvalsCfg(_Strict):

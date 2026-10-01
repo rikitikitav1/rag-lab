@@ -47,6 +47,9 @@ def index_refusal(source: Declaration) -> str | None:
         return f"{source.name}: {unknown} are not rows of config/categories.yaml"
     if len(source.categories) > 1 and not source.category_by_path:
         return f"{source.name}: several categories need a category_by_path to say which files are which"
+    # a release read from the site's page is listed under its one category: refused here, not after a fetch in the queue
+    if source.site and source.site.release_page and (len(source.categories) != 1 or source.category_by_path):
+        return f"{source.name}: a site that reads its release from its page names exactly one category"
     if source.site and source.site.release:
         return _unlisted(source, [source.site.release], "release")
     return _unlisted(source, list(source.versions), "versions") if source.versions else None
@@ -123,7 +126,7 @@ UNSAID_KEPT = ("language", "licence")
 
 # a database row whole as its declaration says it; the doors, the seed and the index build it here alike
 def row_of(source: Declaration, name: str) -> dict:
-    kind = next(KINDS[k] for k in KINDS if getattr(source, k))
+    kind = KINDS[source.origin]
     common = {"name": name, "language": source.language, "licence": source.licence, "kind": kind}
     if source.folder is not None:
         return {**common, "git_url": None, "path": source.folder}

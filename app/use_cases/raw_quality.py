@@ -4,12 +4,12 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 
 import config
-from book_matter import is_book_matter, is_title_page
+from book_matter import is_matter
 from corpus_keys import SECTION_SEP, chapter_of
 from sources.base import cuts_of, first_heading, hygienic
 from tool_names import Tool
 from use_cases import ingest_quality as quality
-from use_cases.code_lines import FENCE
+from use_cases.markup import FENCE
 from use_cases.route import mixed_share, words
 
 # an HTML tag by its name, on one line; a bare `<` in code (`a < b`, `<%= %>`, JSX) is text and stays
@@ -107,7 +107,7 @@ def section_rows(markdown: str, file: str) -> list[dict]:
     chapters: dict[str | None, list] = {}
     for sample in _samples(markdown, file, policy):
         # the index and the questions never read a book's matter, so its sections do not judge the conversion
-        if is_book_matter(sample.section) or is_title_page(file, sample.section):
+        if is_matter(file, sample.section):
             continue
         chapters.setdefault(chapter_of(sample.section), []).append(sample)
     rows = []

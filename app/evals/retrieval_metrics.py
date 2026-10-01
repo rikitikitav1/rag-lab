@@ -2,7 +2,7 @@ import sys
 
 import logging_setup
 from corpus_keys import Gold
-from evals.loaders import load_logs
+from evals.loaders import load_logs, reference_leaves
 from models.registry import Pipeline
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -186,7 +186,7 @@ def evaluate(run_name=None):
         # the same run read on two pools by a property of the question: a rare identifier it names, or none
         "by_anchor": _by_anchor(per_row),
         "by_heading_word": _by_column(per_row, "shares_heading_word", ("shares", "does_not")),
-        "by_reference": _by_column(per_row, "reference_page", ("reference", "not_reference")),
+        "by_reference": _by_reference(per_row),
         # a rank across a concatenation of retrievals is not a rank
         "mrr_in_hop": round(rr_in_hop / in_hop_n, 3) if in_hop_n else None,
         "found_at_hop": {str(k): v for k, v in sorted(found_at_hop.items())},
@@ -250,11 +250,18 @@ def _by_anchor(per_row) -> dict:
     return {**out, "rare_at_most_sections": columns.ANCHOR_RARE}
 
 
+# the patterns are read as the slice is computed and named beside it: a pattern edited later moves an old run's slice
+def _by_reference(per_row) -> dict:
+    leaves = reference_leaves() if per_row else {}
+    out = _by_column(per_row, "reference_page", ("reference", "not_reference"), leaves)
+    return {**out, "patterns": leaves}
+
+
 # the same run on two pools of one column of the question; a row the column cannot read is counted apart
-def _by_column(per_row, column: str, names: tuple[str, str]) -> dict:
+def _by_column(per_row, column: str, names: tuple[str, str], leaves: dict | None = None) -> dict:
     from evals import columns
 
-    said = [(columns.read(column, ql), (ql, rank, section)) for ql, rank, section in per_row]
+    said = [(columns.read(column, ql, leaves), (ql, rank, section)) for ql, rank, section in per_row]
     return {
         names[0]: _pool([row for value, row in said if value == 1.0]),
         names[1]: _pool([row for value, row in said if value == 0.0]),

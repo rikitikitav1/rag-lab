@@ -45,12 +45,14 @@ def body_hash(body: str) -> str:
 GOLD_SQL = "position({mark} in {source}) > 0"
 # a questions row carries a gold of either kind
 HAS_GOLD_SQL = "(cardinality({q}.marked_sources) > 0 OR {q}.gold IS NOT NULL)"
-# a run reads a question once it is accepted; `Question.status == ACCEPTED` is the same test in the orm
+# a run reads a question once it is accepted; `models.eval.READ_BY_RUNS` is the same test in the orm
 READ_BY_RUNS_SQL = "{q}.status = 'accepted'"
 
 SECTION_SEP = " > "
 # a chapter is a section path's first two steps, the grain the coverage report reads and a question set is spread over
 CHAPTER_STEPS = 2
+# the variant a veto build cuts its headings from when its job names none; with no variants it reads baseline too
+VETO_CUT_FROM = "clean_1024"
 
 
 def chapter_of(section: str | None) -> str | None:
@@ -163,19 +165,16 @@ def spaceless_key(text: str) -> str:
 
 _BACKTICKED = re.compile(r"`([^`\n]+)`")
 _TOKEN = re.compile(r"[\w.()\-]+")
-# snake_case, module.name, call(), --option, a digit among letters, a case change inside
-_SHAPES = (
+# snake_case, module.name, call(), --option, a digit among letters; a product name in camelCase is not code
+_CODE_SHAPES = (
     re.compile(r"[A-Za-z0-9]_[A-Za-z0-9]"),
     re.compile(r"[A-Za-z]\.[A-Za-z]"),
     re.compile(r"\w\(\)$"),
     re.compile(r"^--[A-Za-z]"),
     re.compile(r"[A-Za-z]\d|\d[A-Za-z]"),
-    re.compile(r"[a-z][A-Z]"),
 )
-
-
-# a token that names a thing of code by its shape; backticks are the generator's habit and the Russian half drops them
-_CODE_SHAPES = tuple(shape for shape in _SHAPES if shape.pattern != r"[a-z][A-Z]")
+# a token that names a thing of code by its shape, a case change inside too; backticks are the generator's habit
+_SHAPES = (*_CODE_SHAPES, re.compile(r"[a-z][A-Z]"))
 
 
 def identifiers(question: str) -> list[str]:

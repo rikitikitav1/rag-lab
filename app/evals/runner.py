@@ -11,7 +11,7 @@ import passes
 import rerank
 from engines import card
 from errors import StandFault
-from models.eval import ACCEPTED, Question, QuestionLog
+from models.eval import READ_BY_RUNS, Question, QuestionLog, read_by_runs
 from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from outcomes import Outcome
@@ -40,12 +40,12 @@ def _target_questions(set_name: str | None, question_ids: list[int] | None) -> l
             ).all()
             _refuse_missing(question_ids, {row.id for row in found})
             # a fixed list reads what a set would: a pair refused after the list was drawn is counted, not asked
-            return [(row.original_text, row.gold) for row in found if row.status == ACCEPTED]
+            return [(row.original_text, row.gold) for row in found if read_by_runs(row)]
         return [
             (text, gold)
             for text, gold in session.execute(
                 select(Question.original_text, Question.gold).where(
-                    Question.set_name == set_name, Question.status == ACCEPTED
+                    Question.set_name == set_name, READ_BY_RUNS
                 )
             )
         ]
@@ -67,7 +67,7 @@ def not_accepted(question_ids: list[int] | None) -> int:
         return 0
     with Session() as session:
         return session.scalar(
-            select(func.count()).where(Question.id.in_(question_ids), Question.status != ACCEPTED)
+            select(func.count()).where(Question.id.in_(question_ids), ~READ_BY_RUNS)
         )
 
 

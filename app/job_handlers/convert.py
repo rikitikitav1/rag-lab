@@ -8,12 +8,20 @@ import logging_setup
 from engines import converter
 from engines.converter_tools import KEPT_STATUSES, sha256, tool_version
 from paths import ROOT
-from use_cases import route, source_intake
+from use_cases import converting, reading, route, source_intake
+from use_cases.converting import (
+    SETTINGS,
+    ceiling,
+    code_lines_of,
+    convert,
+    converter_for,
+    fields,
+    load_settings,
+    pieces,
+)
 
-from . import reading
 from .base import Final, register
-from .card import take
-from .converting import SETTINGS, ceiling, code_lines_of, convert, converter_for, fields, load_settings, pieces
+from .card import converter_hold
 
 log = logging_setup.get_logger(__name__)
 
@@ -163,6 +171,11 @@ def _stopped(options: dict, record: dict, record_path: Path, key: str, chunk: st
 # resumable for free: an input whose markdown is already written is not converted again
 @register("convert_source")
 def convert_source(options: dict) -> None:
+    with converting.card_hold(converter_hold()):
+        _convert_source(options)
+
+
+def _convert_source(options: dict) -> None:
     settings, settings_sha256 = load_settings(options["settings"])
     base = INBOX if options.get("root") == "inbox" else GOLD
     inputs = [base / p for p in options["inputs"]]
@@ -223,7 +236,7 @@ def convert_source(options: dict) -> None:
                 continue
             if _stopped(options, record, record_path, key, name):
                 return
-            result = convert(spec, settings["tool"], path, tool_fields, chunk, bound, hold=lambda: take(spec))
+            result = convert(spec, settings["tool"], path, tool_fields, chunk, bound)
             markdown, code = (None, None)
             if result["markdown"] is not None:
                 markdown, code = code_lines_of(settings, path, result, _stand_rules())

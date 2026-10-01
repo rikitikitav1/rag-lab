@@ -10,7 +10,7 @@ from corpus_keys import VARIANT_RE
 from evals.guest_axes import MESSAGE_FORMS
 from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from search_scope import CATEGORY_RE, MAX_SOURCES, VERSION_RE, Scope, refuse_bad_scope
+from search_scope import CATEGORY_RE, MAX_SOURCES, VERSION_RE, Scope, refuse_malformed_scope
 from sources.declaration import SOURCE_NAME, IntakeOverride, Language
 from tool_names import SETTINGS_NAME, settings_refusal
 from use_cases import agent_policy
@@ -87,7 +87,7 @@ class EvalRunFields(Spec):
         scope = self.scope()
         if scope.narrowed and self.pipeline == Pipeline.agent:
             raise ValueError("a category, source or version scope is only supported with pipeline=single_shot")
-        refuse_bad_scope(scope)
+        refuse_malformed_scope(scope)
         return self
 
     # the gate lives here and not on a route, so the REST door and the queue get it from one place
@@ -517,11 +517,11 @@ def check(job_type: str, options: dict | None, *, from_the_worker: bool = False)
         first = bad.errors()[0]
         where = ".".join(str(part) for part in first["loc"]) or "options"
         raise Refused(f"{where}: {first['msg']}") from bad
-    # sources out of search are the queue's door's to refuse; one switched off after, the job's search says so
-    if not from_the_worker and hasattr(checked, "scope") and checked.scope().sources:
+    # the search's own step is the queue's door's, as at the MCP door: sources out of search, a version none holds
+    if not from_the_worker and hasattr(checked, "scope") and checked.scope().narrowed:
         import db
 
         try:
-            db.refuse_sources_out_of_search(checked.scope().sources)
+            db.refuse_bad_scope(checked.scope(), getattr(checked, "variant", None))
         except db.ScopeRefused as bad:
-            raise Refused(f"sources: {bad}") from bad
+            raise Refused(f"scope: {bad}") from bad

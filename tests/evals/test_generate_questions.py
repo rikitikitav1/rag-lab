@@ -7,7 +7,7 @@ from job_handlers import questions
 
 @pytest.fixture(autouse=True)
 def _an_empty_set(monkeypatch):
-    monkeypatch.setattr(questions, "_held_by_section", lambda set_name, language="en": {})
+    monkeypatch.setattr(questions, "_held_by_section", lambda set_name, language: {})
 
 
 def _export(words=200):
@@ -42,7 +42,7 @@ def test_a_source_is_asked_section_by_section_and_its_pairs_written(monkeypatch)
     engine = SimpleNamespace(name="neuraldeep", env_prefix="NEURALDEEP")
     monkeypatch.setattr(questions.llm, "resolve", lambda role: SimpleNamespace(name="gemma-4-31b", engine=engine))
     monkeypatch.setattr(questions.llm, "sampler_of", lambda role, picked: {"temperature": 0.3, "max_tokens": 4096})
-    monkeypatch.setattr(questions, "key_fingerprint", lambda spec: "abc123")
+    monkeypatch.setattr("job_handlers.base.key_fingerprint", lambda spec: "abc123")
     queued = []
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: queued.append(kind))
 
@@ -52,7 +52,7 @@ def test_a_source_is_asked_section_by_section_and_its_pairs_written(monkeypatch)
         return SimpleNamespace(text=reply, prompt_tokens=100, completion_tokens=50, finish_reason="stop", parsed=None)
 
     monkeypatch.setattr(questions.llm, "ask", ask)
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "report.json")
 
     out = questions.generate_questions({"source": "redis-doc", "set_name": "smoke"})
@@ -97,9 +97,9 @@ def test_a_report_is_reparsed_into_the_set_without_asking_anyone(monkeypatch, tm
     monkeypatch.setattr(questions.section_export, "of_source", lambda name: _export())
     held = {("r/expire.md", "EXPIRE > Options", None): [
         {"en": "held?", "evidence": "The NX option sets the expiry only when the key has none."}]}
-    monkeypatch.setattr(questions, "_held_by_section", lambda set_name, language="en": held)
+    monkeypatch.setattr(questions, "_held_by_section", lambda set_name, language: held)
     written, queued = [], []
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: queued.append(kind))
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "record.json")
 
@@ -107,6 +107,28 @@ def test_a_report_is_reparsed_into_the_set_without_asking_anyone(monkeypatch, tm
 
     assert out["pairs_kept_now"] == 1 and len(written) == 2 and out["sections_gone"] == 1
     assert queued == ["embed_questions"]
+
+
+# a report from before the version field still finds a versioned section, by file and heading, while one stream has it
+def test_a_report_without_versions_is_reparsed_on_a_versioned_source(monkeypatch, tmp_path):
+    import json
+
+    report = tmp_path / "question_set_smoke_redis_doc_20260930.json"
+    report.write_text(json.dumps({"source": "redis-doc", "set_name": "smoke", "sections": [
+        {"file": "r/expire.md", "section": "EXPIRE > Options", "calls": [
+            {"asked": 1, "reply": json.dumps({"pairs": [_pair(2)]})}]}]}))
+    exported = _export()
+    exported["sections"][0] |= {"stream": "7.4", "versions": ["7.4"]}
+    monkeypatch.setattr(questions.measurements, "FOLDER", tmp_path)
+    monkeypatch.setattr(questions.section_export, "of_source", lambda name: exported)
+    monkeypatch.setattr(questions, "_held_by_section", lambda set_name, language: {})
+    written = []
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
+    monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: None)
+    monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "record.json")
+
+    out = questions.reparse_questions({"source": "redis-doc", "set_name": "smoke", "report": report.name})
+    assert out["sections_gone"] == 0 and {r["gold"]["version"] for r in written} == {"7.4"}
 
 
 # a reply is read against the block it was written from; a block the intake has moved since is counted, not read
@@ -120,7 +142,7 @@ def test_a_reparse_skips_a_section_whose_block_moved(monkeypatch, tmp_path):
     ]}))
     monkeypatch.setattr(questions.measurements, "FOLDER", tmp_path)
     monkeypatch.setattr(questions.section_export, "of_source", lambda name: _export())
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (len(rows), 0))
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: None)
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "record.json")
 
@@ -142,7 +164,7 @@ def test_a_smoke_stops_once_enough_pairs_are_kept(monkeypatch):
     engine = SimpleNamespace(name="neuraldeep", env_prefix="NEURALDEEP")
     monkeypatch.setattr(questions.llm, "resolve", lambda role: SimpleNamespace(name="gemma", engine=engine))
     monkeypatch.setattr(questions.llm, "sampler_of", lambda role, picked: {})
-    monkeypatch.setattr(questions, "key_fingerprint", lambda spec: "abc123")
+    monkeypatch.setattr("job_handlers.base.key_fingerprint", lambda spec: "abc123")
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: None)
 
     def ask(system, user, role):
@@ -151,7 +173,7 @@ def test_a_smoke_stops_once_enough_pairs_are_kept(monkeypatch):
                                completion_tokens=1, finish_reason="stop", parsed=None)
 
     monkeypatch.setattr(questions.llm, "ask", ask)
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (len(rows), 0))
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "report.json")
 
     out = questions.generate_questions({"source": "redis-doc", "set_name": "smoke", "kept_at_least": 2})
@@ -171,7 +193,7 @@ def test_a_refused_section_is_lost_alone(monkeypatch):
     monkeypatch.setattr(questions.prompt_repo, "active", lambda purpose: ("{source}: write {pairs} pair(s)", 1))
     monkeypatch.setattr(questions.llm, "resolve", lambda role: SimpleNamespace(name="gemma", engine=engine))
     monkeypatch.setattr(questions.llm, "sampler_of", lambda role, picked: {})
-    monkeypatch.setattr(questions, "key_fingerprint", lambda spec: "abc123")
+    monkeypatch.setattr("job_handlers.base.key_fingerprint", lambda spec: "abc123")
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: None)
 
     def ask(system, user, role):
@@ -181,7 +203,7 @@ def test_a_refused_section_is_lost_alone(monkeypatch):
                                completion_tokens=1, finish_reason="stop", parsed=None)
 
     monkeypatch.setattr(questions.llm, "ask", ask)
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (len(rows), 0))
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "report.json")
 
     out = questions.generate_questions({"source": "redis-doc", "set_name": "smoke"})
@@ -202,7 +224,7 @@ def test_a_section_is_asked_block_by_block(monkeypatch):
     monkeypatch.setattr(questions.prompt_repo, "active", lambda purpose: ("{source}: write {pairs} pair(s)", 1))
     monkeypatch.setattr(questions.llm, "resolve", lambda role: SimpleNamespace(name="gemma", engine=engine))
     monkeypatch.setattr(questions.llm, "sampler_of", lambda role, picked: {})
-    monkeypatch.setattr(questions, "key_fingerprint", lambda spec: "abc123")
+    monkeypatch.setattr("job_handlers.base.key_fingerprint", lambda spec: "abc123")
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: None)
 
     def ask(system, user, role):
@@ -211,7 +233,7 @@ def test_a_section_is_asked_block_by_block(monkeypatch):
                                completion_tokens=1, finish_reason="stop", parsed=None)
 
     monkeypatch.setattr(questions.llm, "ask", ask)
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "report.json")
 
     out = questions.generate_questions({"source": "redis-doc", "set_name": "smoke"})
@@ -236,7 +258,7 @@ def test_a_saved_set_is_poured_back_without_generation(monkeypatch, tmp_path):
     (tmp_path / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n")
     written = []
     monkeypatch.setattr(files.section_export, "of_source", lambda name: _export())
-    monkeypatch.setattr(files, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
+    monkeypatch.setattr(files.question_sets, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
     monkeypatch.setattr(files.job_queue, "enqueue", lambda kind, options: None)
 
     out = files.load_questions({"source": "redis-doc", "set_name": "s"})
@@ -253,9 +275,9 @@ def _stub_generation(monkeypatch, export, ask):
     monkeypatch.setattr(questions.prompt_repo, "active", lambda purpose: ("{source}: write {pairs} pair(s)", 1))
     monkeypatch.setattr(questions.llm, "resolve", lambda role: SimpleNamespace(name="gemma", engine=engine))
     monkeypatch.setattr(questions.llm, "sampler_of", lambda role, picked: {})
-    monkeypatch.setattr(questions, "key_fingerprint", lambda spec: None)
+    monkeypatch.setattr("job_handlers.base.key_fingerprint", lambda spec: None)
     monkeypatch.setattr(questions.llm, "ask", ask)
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (len(rows), 0))
 
 
 # a retried pass asks a section only for the pairs its set lacks, and the prompt hears the ones it holds
@@ -270,7 +292,7 @@ def test_a_retried_generation_does_not_ask_again_for_what_the_set_holds(monkeypa
     _stub_generation(monkeypatch, _export(), ask)
     held = {("r/expire.md", "EXPIRE > Options", None): [
         {"en": "Held question?", "evidence": "The NX option sets the expiry only when the key has none."}]}
-    monkeypatch.setattr(questions, "_held_by_section", lambda set_name, language="en": held)
+    monkeypatch.setattr(questions, "_held_by_section", lambda set_name, language: held)
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: None)
     records = []
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: records.append(a[2]) or "r.json")
@@ -315,7 +337,7 @@ def test_a_reparsed_reply_is_checked_against_its_own_block(monkeypatch, tmp_path
     monkeypatch.setattr(questions.measurements, "FOLDER", tmp_path)
     monkeypatch.setattr(questions.section_export, "of_source", lambda name: export)
     written = []
-    monkeypatch.setattr(questions, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
+    monkeypatch.setattr(questions.question_sets, "write_pairs", lambda rows: (written.extend(rows) or len(rows), 0))
     monkeypatch.setattr(questions.job_queue, "enqueue", lambda kind, options: None)
     monkeypatch.setattr(questions.measurements, "record", lambda *a, **kw: "record.json")
 

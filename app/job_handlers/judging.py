@@ -703,8 +703,8 @@ def stamp_of(width: int, residency: Residency | None = None, model: str | None =
     return {
         # at temperature zero this says the sampler took no part, not that the pass repeats
         "seed": sampler.sent.get("seed"),
-        # what went out: a budget set on the model changed the judge, and the record did not say
-        "sampler": sampler.sent,
+        # what went out: a budget set on the model changed the judge, and the record did not say; thinking off too
+        "sampler": llm.sampler_of(role, judged_by),
         # what the role asked for and the engine would not carry: never read as applied
         "engine_refused": sampler.dropped,
         # and what the engine added on its own, read from the server: our vLLM start is not default

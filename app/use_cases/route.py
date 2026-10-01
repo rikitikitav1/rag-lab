@@ -6,14 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tool_names import Tool
-from use_cases import code_lines
+from use_cases import code_lines, markup
 
 MARKDOWN = {".md", ".markdown", ".txt"}
 IMAGE = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 HTML = {".html", ".htm", ".xhtml"}
 OFFICE = {".docx", ".pptx", ".xlsx", ".odt", ".rtf"}
 _WORD = re.compile(r"\w+")
-_BROKEN_WORD = re.compile("\ufffe(?:\r?\n)?\f?")
+_BROKEN_WORD = re.compile(markup.HYPHEN_MARK + r"(?:\r?\n)?\f?")
 
 
 @dataclass(frozen=True)
@@ -167,7 +167,7 @@ def mono_rows(page, rule) -> list[bool]:
         by_name = sum(bool(mono_name.search(g[4])) for g in row) * 2 > len(row)
         return by_name or code_lines.one_advance([g[2] - g[0] for g in row], rule.mono_spread)
 
-    return [monospace(row) for _, row in code_lines._rows(glyphs)]
+    return [monospace(row) for _, row in code_lines.glyph_rows(glyphs)]
 
 
 # code runs over the page break when the last row of one page and the first of the next are both monospace

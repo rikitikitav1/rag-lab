@@ -24,7 +24,7 @@ class QuestionFilter(BaseModel):
     # the scope's own rules; whether its sources are in search is the search's step, said as a 422 by `_scoped`
     @model_validator(mode="after")
     def _a_scope_the_search_can_read(self):
-        search_scope.refuse_bad_scope(self.scope())
+        search_scope.refuse_malformed_scope(self.scope())
         return self
 
     def scope(self) -> search_scope.Scope:

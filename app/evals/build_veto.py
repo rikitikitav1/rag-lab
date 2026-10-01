@@ -5,7 +5,7 @@ import config
 import llm
 import logging_setup
 import prompt_repo
-from corpus_keys import leaf_of
+from corpus_keys import VETO_CUT_FROM, leaf_of
 from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
@@ -165,15 +165,13 @@ def _already_asked(session, set_name: str) -> set[int]:
     )
 
 
-# the variant a veto build cuts its headings from when a job names none; with no variants it reads baseline too
-CUT_FROM = "clean_1024"
 
 
 def build(
     seed: str,
     set_name: str = "veto_v1",
     variants: list[str] | None = None,
-    cut_from: str = CUT_FROM,
+    cut_from: str = VETO_CUT_FROM,
     quotas: dict | None = None,
 ) -> dict:
     if not seed:

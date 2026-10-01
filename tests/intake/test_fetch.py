@@ -56,17 +56,17 @@ def test_an_epub_is_its_chapters_in_reading_order(tmp_path):
 
 
 def test_an_epub_in_a_folder_is_named_by_its_chapters(tmp_path):
-    from use_cases import source_intake
+    from use_cases import intake_fetch
 
     root = tmp_path / "book"
     root.mkdir()
     _epub(root / "book.epub")
     (root / "notes.md").write_text("## Notes")
 
-    names, skipped = source_intake.named_files(root, sorted(root.iterdir()), tmp_path / "inbox")
+    names, skipped = intake_fetch.named_files(root, sorted(root.iterdir()), tmp_path / "inbox")
     assert list(names.values()) == ["notes.md"] and "epub_chapters" in skipped["book.epub"]
 
-    names, _ = source_intake.named_files(root, sorted(root.iterdir()), tmp_path / "inbox", epub=True)
+    names, _ = intake_fetch.named_files(root, sorted(root.iterdir()), tmp_path / "inbox", epub=True)
 
     assert sorted(names.values()) == [
         "book.epub/001_ch01.html",
@@ -94,7 +94,7 @@ def test_a_page_type_is_read_from_any_element_near_the_top():
 
 # a page the site builds itself is left out with its pattern named, as the gold leaves it out
 def test_a_page_the_site_builds_is_left_out_by_its_pattern(tmp_path):
-    from use_cases import source_intake
+    from use_cases import intake_fetch
 
     root = tmp_path / "site"
     root.mkdir()
@@ -102,7 +102,7 @@ def test_a_page_the_site_builds_is_left_out_by_its_pattern(tmp_path):
     (root / "guide.html").write_text("<p>a guide</p>")
 
     files = sorted(root.iterdir())
-    names, skipped = source_intake.named_files(root, files, tmp_path / "inbox", generated=["^.*auto-generated"])
+    names, skipped = intake_fetch.named_files(root, files, tmp_path / "inbox", generated=["^.*auto-generated"])
 
     assert list(names.values()) == ["guide.html"]
     assert skipped == {"api.html": "the site builds this page: ^.*auto-generated"}
@@ -110,7 +110,7 @@ def test_a_page_the_site_builds_is_left_out_by_its_pattern(tmp_path):
 
 # highlighting is flat in any HTML, a page from `urls` too, and the fetched file is left as it came
 def test_any_html_reaches_the_tool_with_its_highlighting_flat(tmp_path):
-    from use_cases import source_intake
+    from use_cases import intake_fetch
 
     root = tmp_path / "book"
     root.mkdir()
@@ -118,7 +118,7 @@ def test_any_html_reaches_the_tool_with_its_highlighting_flat(tmp_path):
     page.write_text('<pre><span class="k">def</span> <span class="n">f</span>():</pre>')
     (root / "plain.html").write_text("<p>no code</p>")
 
-    names, _ = source_intake.named_files(root, sorted(root.iterdir()), tmp_path / "inbox")
+    names, _ = intake_fetch.named_files(root, sorted(root.iterdir()), tmp_path / "inbox")
 
     flat = next(f for f, rel in names.items() if rel == "ch1.html")
     assert flat.read_text() == "<pre><code>def f():</code></pre>" and "<span" in page.read_text()

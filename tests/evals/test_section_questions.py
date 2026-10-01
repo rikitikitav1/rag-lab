@@ -6,6 +6,7 @@ ROW = {
     "file": "redis/commands/expire.md",
     "section": "EXPIRE > Options",
     "chapter": "EXPIRE > Options",
+    "stream": "7.4",
     "versions": ["7.4", "7.2"],
     "words": 120,
     "text": (
@@ -174,3 +175,23 @@ def test_a_set_of_one_language_asks_and_writes_that_language_alone():
     assert '"ru": "..."' in sq.prompt("{languages} {keys}", "redis-doc", 1, ("ru",))
     _, refused = sq.parse(reply, ROW, 1)
     assert refused[0]["why"].startswith("a field of en, ru")
+
+
+# the version a role pins asks only for the set's languages, so a one-language set pays for one half
+def test_the_pinned_question_prompt_asks_for_the_sets_languages_only():
+    from pathlib import Path
+
+    import config
+
+    version = config.declared_prompts()["questions_from_section"]
+    template = (Path(config.settings.prompts_dir) / f"questions_from_section.v{version}.txt").read_text()
+    asked = sq.prompt(template, "redis-doc", 1, ("ru",))
+    assert '"ru": "..."' in asked and '"en"' not in asked and "English" not in asked
+
+
+def test_the_stand_refuses_a_set_language_named_twice():
+    import pytest
+    from config import QuestionSetCfg
+
+    with pytest.raises(ValueError, match="each language once"):
+        QuestionSetCfg(per_source=1, per_chapter=1, min_pairs=1, languages=["en", "en"])

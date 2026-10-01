@@ -24,7 +24,6 @@ from models.corpus import Stage
 from models.experiment import Experiment, ExperimentKind
 from orm.sync_db import Session
 from pydantic import Field
-from sources.declaration import Language
 from sqlalchemy import select
 from use_cases import experiment as experiment_uc
 from use_cases import prereg, rejudge, retrieval_compare
@@ -572,22 +571,19 @@ def close_preregistration(
 @mcp_ops.tool(
     name="add_source",
     description=(
-        "Declare a source to add: its name, optionally its language (en or ru) and licence, and exactly one "
-        "origin: urls to "
-        "download, a folder placed by hand, a git repository, or pages of a site with the site's settings "
-        "(main, drop, generated, release). Never an engine: the route reads each file and picks it. The source starts "
-        "`declared` and inactive; converting it to a raw folder is a separate step."
+        "Declare a source to add, as POST /v1/source takes it: a name, a licence, optionally a language (en or ru), "
+        "and exactly one origin: urls to download, a folder placed by hand, a git repository or a family of them, or "
+        "pages of a site with the site's settings (main, drop, generated, release, sitemap with include and exclude, "
+        "release_page with release_pattern). Beside it what the index reads: categories, category_by_path, versions, "
+        "reader, skip, drop_docs_containing, intake knobs, its own questions, reference_leaf. Never an engine: the "
+        "route reads each file and picks it. The source starts `declared` and inactive; converting it is a separate "
+        "step."
     ),
 )
 def add_source(
-    name: Annotated[str, Field(description="Lowercase name, letters, digits, dash, underscore.")],
-    language: Annotated[Language | None, Field(description="Its language, when not left to the stand.")] = None,
-    licence: Annotated[str | None, Field(description="The licence the source is published under.")] = None,
-    urls: Annotated[list[str] | None, Field(description="Files to download.")] = None,
-    folder: Annotated[str | None, Field(description="A folder under the stand holding the files.")] = None,
-    git: Annotated[dict | None, Field(description="{'repo', 'ref'?, 'path'?, 'include'?}.")] = None,
-    pages: Annotated[list[str] | None, Field(description="Pages of a site.")] = None,
-    site: Annotated[dict | None, Field(description="{'main', 'drop'?, 'generated'?, 'release'?} for pages.")] = None,
+    declaration: Annotated[dict, Field(description=(
+        "The declaration, field for field as `sources/<name>.yaml` writes it, e.g. {'name': 'nginx-org-en', "
+        "'licence': 'BSD-2', 'pages': [...], 'site': {'main': 'div#content'}, 'categories': ['nginx']}."))],
 ) -> dict:
     from models.corpus import DataSource
     from pydantic import ValidationError
@@ -596,11 +592,10 @@ def add_source(
     from use_cases import source_intake
 
     try:
-        declaration = Declaration(
-            name=name, language=language, licence=licence, urls=urls, folder=folder, git=git, pages=pages, site=site
-        )
+        declaration = Declaration.model_validate(declaration)
     except ValidationError as e:
         raise ToolError(str(e)) from e
+    name = declaration.name
     from paths import ROOT
 
     if refusal := source_intake.declaration_refusal(declaration, ROOT):

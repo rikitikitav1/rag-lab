@@ -252,9 +252,11 @@ def seed_engines() -> None:
                 raise ValueError(f"engine {declared.name}: {kind.value} cannot be placed {placement.value}")
             if session.scalar(select(exists().where(Engine.env_prefix == declared.env_prefix))):
                 raise ValueError(f"engine {declared.name}: prefix {declared.env_prefix} already names an engine")
-            balances.refuse_unknown(declared.balance_reader)
+            reader = declared.balance_reader or balances.NO_READER
+            balances.refuse_unknown(reader)
+            balances.refuse_off_the_cloud(kind, reader)
             session.add(Engine(name=declared.name, kind=kind, env_prefix=declared.env_prefix, placement=placement,
-                               balance_reader=declared.balance_reader))
+                               balance_reader=reader))
             session.commit()
         log.info("seed.engine", name=declared.name)
 

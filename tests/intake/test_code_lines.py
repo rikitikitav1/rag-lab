@@ -1,6 +1,9 @@
 import re
 
-from use_cases import code_lines
+from use_cases import code_lines, docling_structure
+
+# the stand's own spread, passed as every caller passes its source's
+SPREAD = 0.1
 
 
 class _Text:
@@ -43,14 +46,14 @@ def test_a_block_comes_back_with_its_lines_and_indentation():
     chars = _line("def f(a, b):", 100, 700) + _line("    return a_b  # сумма", 100, 688) + _line("outside", 400, 700)
     box = {"l": 99, "r": 300, "t": 713, "b": 687, "coord_origin": "BOTTOMLEFT"}
 
-    assert code_lines.layer_code(_Page(chars), box) == "def f(a, b):\n    return a_b  # сумма"
+    assert code_lines.layer_code(_Page(chars), box, spread=SPREAD) == "def f(a, b):\n    return a_b  # сумма"
 
 
 def test_a_top_left_box_is_turned_to_the_layer_s_origin():
     chars = _line("x = 1", 100, 700)
     box = {"l": 99, "r": 200, "t": 87, "b": 101, "coord_origin": "TOPLEFT"}
 
-    assert code_lines.layer_code(_Page(chars), box) == "x = 1"
+    assert code_lines.layer_code(_Page(chars), box, spread=SPREAD) == "x = 1"
 
 
 def test_fences_are_rebuilt_in_order_and_kept_when_they_do_not_pair(tmp_path, monkeypatch):
@@ -72,11 +75,11 @@ def test_fences_are_rebuilt_in_order_and_kept_when_they_do_not_pair(tmp_path, mo
     item = {"label": "code", "prov": [{"page_no": 1, "bbox": {"l": 99, "r": 200, "t": 713, "b": 699}}]}
     markdown = "Text\n\n```\na = 1 glued\n```\n\nMore"
 
-    rebuilt, counts = code_lines.rebuild(markdown, _structure(item), tmp_path / "a.pdf")
+    rebuilt, counts = code_lines.rebuild(markdown, _structure(item), tmp_path / "a.pdf", spread=SPREAD)
     assert rebuilt == "Text\n\n```\na  =  1\n```\n\nMore"
     assert counts == {"rebuilt": 1, "kept": 0, "joined": 0, "duplicates_dropped": 0}
 
-    same, counts = code_lines.rebuild(markdown, _structure(item, item), tmp_path / "a.pdf")
+    same, counts = code_lines.rebuild(markdown, _structure(item, item), tmp_path / "a.pdf", spread=SPREAD)
     assert same == markdown and counts == {"rebuilt": 0, "kept": 1, "joined": 0, "duplicates_dropped": 0}
 
 
@@ -109,7 +112,7 @@ def test_a_code_block_cut_by_a_page_break_is_one_again(tmp_path, monkeypatch):
 
     markdown = "```\nfor i in x:\n```\n\n```\n    print(i)\n```\n\n```\nlater\n```"
     structure = _structure(code(4), code(5), code(5), furniture=(1,))
-    joined, counts = code_lines.rebuild(markdown, structure, tmp_path / "a.pdf")
+    joined, counts = code_lines.rebuild(markdown, structure, tmp_path / "a.pdf", spread=SPREAD)
 
     assert joined == "```\nfor i in x:\n    print(i)\n```\n\n```\nlater\n```" and counts["joined"] == 1
 
@@ -120,7 +123,7 @@ def test_a_block_set_in_a_proportional_face_is_not_rebuilt():
     chars = [(100 + 7 * i, 700, 100 + 7 * i + w, 712, ch) for i, (ch, w) in enumerate(widths)]
     box = {"l": 99, "r": 300, "t": 713, "b": 699, "coord_origin": "BOTTOMLEFT"}
 
-    assert code_lines.layer_code(_Page(chars), box) is None
+    assert code_lines.layer_code(_Page(chars), box, spread=SPREAD) is None
 
 
 # a box drawn short of the line's end: the row runs on to its end, and the next box on the page does not give it again
@@ -130,8 +133,8 @@ def test_a_short_box_runs_on_to_the_line_s_end_and_a_row_is_given_once():
     both = {"l": 99, "r": 300, "t": 713, "b": 687, "coord_origin": "BOTTOMLEFT"}
     taken = set()
 
-    assert code_lines.layer_code(page, short, taken) == "resources :comments"
-    assert code_lines.layer_code(page, both, taken) == "get 'x'"
+    assert code_lines.layer_code(page, short, taken, spread=SPREAD) == "resources :comments"
+    assert code_lines.layer_code(page, both, taken, spread=SPREAD) == "get 'x'"
 
 
 # a listing's line numbers, set in another face, neither undo the monospace check nor stay in the code
@@ -141,7 +144,7 @@ def test_a_listing_loses_its_line_numbers():
     code = sum((_line(text, 100, 700 - 12 * i) for i, text in enumerate(listing)), [])
     box = {"l": 85, "r": 300, "t": 713, "b": 651, "coord_origin": "BOTTOMLEFT"}
 
-    assert code_lines.layer_code(_Page(numbers + code), box) == "\n".join(listing)
+    assert code_lines.layer_code(_Page(numbers + code), box, spread=SPREAD) == "\n".join(listing)
 
 
 # a shell session Docling made a heading is fenced from the layer; prose, a signature and an outline heading stay
@@ -186,7 +189,9 @@ def test_code_with_no_box_is_fenced_and_an_outline_heading_stays(tmp_path, monke
         "## kafka-topics\n\nBrokers keep the log.\n\n# telnet localhost 2181 Trying 127.0.0.1...\n\n"
         "##### class mailbox.Mailbox(path)"
     )
-    fenced, count = code_lines.fence_mono(markdown, structure, tmp_path / "a.pdf", re.compile("Mono"), ["kafka-topics"])
+    fenced, count = code_lines.fence_mono(
+        markdown, structure, tmp_path / "a.pdf", re.compile("Mono"), ["kafka-topics"], spread=SPREAD
+    )
 
     assert count == 1
     assert fenced == (
@@ -228,7 +233,9 @@ def test_callouts_leave_the_listing_as_a_line_after_it(tmp_path, monkeypatch):
     item = {"label": "code", "prov": [{"page_no": 1, "bbox": {"l": 99, "r": 500, "t": 713, "b": 699}}]}
     markdown = "```\nreturn conn.hget('login:', token) Fetch the user\n```\n\nNext"
 
-    rebuilt, counts = code_lines.rebuild(markdown, _structure(item), tmp_path / "a.pdf", callouts=re.compile("Courier"))
+    rebuilt, counts = code_lines.rebuild(
+        markdown, _structure(item), tmp_path / "a.pdf", callouts=re.compile("Courier"), spread=SPREAD
+    )
     assert rebuilt == "```\nreturn conn.hget('login:', token)\n```\n\nFetch the user\n\nNext"
     assert counts["rebuilt"] == 1
 
@@ -239,8 +246,8 @@ def test_a_wide_boxed_face_keeps_its_spaces_by_step():
     glyphs = [(100 + 5.4 * i, 700, 100 + 5.4 * i + (7.8 if i > 7 else 5.4), 712, ch) for i, ch in enumerate(line)]
     box = {"l": 99, "r": 300, "t": 713, "b": 699}
     page = _Page([g for g in glyphs if g[4] != " "])
-    assert code_lines.layer_code(page, box) != line
-    assert code_lines.layer_code(page, box, by_step=True) == line
+    assert code_lines.layer_code(page, box, spread=SPREAD) != line
+    assert code_lines.layer_code(page, box, by_step=True, spread=SPREAD) == line
 
 
 # a source's own monospace spread decides the equal-advance check, as it does for the code it rebuilds
@@ -258,19 +265,19 @@ def test_row_rules_off_keep_the_box_as_drawn():
     chars = _line("1 a = 1", 100, 700) + _line("2 b = 2", 100, 688) + _line("3 c = 3", 100, 676)
     chars += _line(" # more", 142, 676)
     box = {"l": 99, "r": 143, "t": 713, "b": 675}
-    assert code_lines.layer_code(_Page(chars), box, rows_by=frozenset()) == "1 a = 1\n2 b = 2\n3 c = 3"
+    assert code_lines.layer_code(_Page(chars), box, rows_by=frozenset(), spread=SPREAD) == "1 a = 1\n2 b = 2\n3 c = 3"
     tally = {}
-    drawn = code_lines.layer_code(_Page(chars), box, rows_by=frozenset({"run_on"}), tally=tally)
+    drawn = code_lines.layer_code(_Page(chars), box, rows_by=frozenset({"run_on"}), tally=tally, spread=SPREAD)
     assert drawn.endswith("3 c = 3 # more")
     assert tally == {"rows_run_on": 1}
-    assert code_lines.layer_code(_Page(chars), box) == "a = 1\nb = 2\nc = 3 # more"
+    assert code_lines.layer_code(_Page(chars), box, spread=SPREAD) == "a = 1\nb = 2\nc = 3 # more"
 
 
 # a line-end hyphen PDFium marks as U+FFFE is a real minus in code drawn from the layer
 def test_a_marked_line_end_hyphen_is_a_minus_in_code():
     chars = _line("debug=true app\ufffe", 100, 700)
     box = {"l": 99, "r": 300, "t": 713, "b": 699}
-    assert code_lines.layer_code(_Page(chars), box) == "debug=true app-"
+    assert code_lines.layer_code(_Page(chars), box, spread=SPREAD) == "debug=true app-"
 
 
 def test_each_picture_placeholder_gets_its_page_place_and_caption():
@@ -318,9 +325,9 @@ def test_a_row_whose_tail_a_fragment_drew_is_still_given_whole_by_its_block():
     block = {"l": 99, "r": 400, "t": 713, "b": 687, "coord_origin": "BOTTOMLEFT"}
     taken = set()
 
-    code_lines.layer_code(page, tail, taken)
+    code_lines.layer_code(page, tail, taken, spread=SPREAD)
 
-    assert code_lines.layer_code(page, block, taken) == "PRIVACY_URL=https://fedoraproject.org/wiki/Legal\nVARIANT=ws"
+    assert code_lines.layer_code(page, block, taken, spread=SPREAD) == "PRIVACY_URL=https://fedoraproject.org/wiki/Legal\nVARIANT=ws"
 
 
 # two listings side by side share their rows' heights; the second is not taken for the first drawn again
@@ -332,8 +339,8 @@ def test_two_listings_side_by_side_are_each_given_their_own_rows():
     right = {"l": 299, "r": 400, "t": 713, "b": 687, "coord_origin": "BOTTOMLEFT"}
     taken = set()
 
-    assert code_lines.layer_code(page, left, taken, rows_by=frozenset({"once"})) == "a = 1\nb = 2"
-    assert code_lines.layer_code(page, right, taken, rows_by=frozenset({"once"})) == "x = 9\ny = 8"
+    assert code_lines.layer_code(page, left, taken, rows_by=frozenset({"once"}), spread=SPREAD) == "a = 1\nb = 2"
+    assert code_lines.layer_code(page, right, taken, rows_by=frozenset({"once"}), spread=SPREAD) == "x = 9\ny = 8"
 
 
 # a code box whose every row an earlier box drew is a duplicate: its block goes, not Docling's own misreading of it
@@ -358,7 +365,7 @@ def test_a_code_block_that_only_repeats_rows_drawn_before_is_dropped(tmp_path, m
     again = {"label": "code", "prov": [{"page_no": 1, "bbox": box}]}
     markdown = "Text\n\n```\nx = f(y\n```\n\n```\nx f(y);\n```\n\nMore"
 
-    rebuilt, counts = code_lines.rebuild(markdown, _structure(first, again), tmp_path / "a.pdf")
+    rebuilt, counts = code_lines.rebuild(markdown, _structure(first, again), tmp_path / "a.pdf", spread=SPREAD)
     assert rebuilt == "Text\n\n```\nx = f(y);\n```\n\n\n\nMore" and counts["duplicates_dropped"] == 1
 
 
@@ -383,8 +390,10 @@ def test_every_page_opened_while_reading_code_is_closed_before_the_call_returns(
     item = {"label": "code", "prov": [{"page_no": 1, "bbox": {"l": 99, "r": 200, "t": 713, "b": 699}}]}
     box = {"l": 99, "r": 300, "t": 713, "b": 687}
     text = {"label": "text", "text": "telnet localhost 2181", "prov": [{"page_no": 1, "bbox": box}]}
-    code_lines.rebuild("```\nx\n```", _structure(item), tmp_path / "a.pdf")
-    code_lines.fence_mono("telnet localhost 2181", _structure(text), tmp_path / "a.pdf", re.compile("Mono"))
+    code_lines.rebuild("```\nx\n```", _structure(item), tmp_path / "a.pdf", spread=SPREAD)
+    code_lines.fence_mono(
+        "telnet localhost 2181", _structure(text), tmp_path / "a.pdf", re.compile("Mono"), spread=SPREAD
+    )
     assert open_at_close and not any(open_at_close)
 
 
@@ -427,4 +436,5 @@ def test_a_code_block_reading_a_pipe_keeps_its_place_among_the_code_blocks():
         {"label": "code", "text": "a = 1", "prov": [{"page_no": 3}]},
         {"label": "code", "text": "b = 2", "prov": [{"page_no": 4}]},
     )
-    assert code_lines.continued(structure)["code"] == [False, True, False], "one mark per code block, three blocks"
+    marks = docling_structure.continued(structure)["code"]
+    assert marks == [False, True, False], "one mark per code block, three blocks"

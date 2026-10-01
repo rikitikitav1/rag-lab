@@ -4,9 +4,9 @@ import pytest
 from config import settings
 from job_handlers import onboard
 from job_handlers.base import Final
-from job_handlers.converting import pieces
 from models.corpus import DataSource
-from use_cases import source_intake
+from use_cases import intake_fetch, source_intake
+from use_cases.converting import pieces
 
 # the stand's own rules, named where a test reads with them rather than taken as a silent default
 STAND = settings.intake.route
@@ -65,7 +65,7 @@ def test_a_folder_origin_stays_inside_the_stand(tmp_path):
     source = DataSource(name="a", kind="local", declaration={"folder": "../../etc"})
 
     with pytest.raises(Final, match="not a folder of the stand"):
-        source_intake.gather(source, tmp_path / "fetched", tmp_path)
+        intake_fetch.gather(source, tmp_path / "fetched", tmp_path)
 
 
 def test_the_door_refuses_a_missing_or_empty_folder_before_the_queue(tmp_path):
@@ -292,10 +292,10 @@ def test_two_urls_ending_alike_are_two_files(tmp_path, monkeypatch):
         def iter_content(self, size):
             yield self.url.encode()
 
-    monkeypatch.setattr(source_intake.fetch.requests, "get", lambda url, **kw: _Got(url))
-    a, fresh_a = source_intake._download("https://x.org/intro/index.html", tmp_path)
-    b, _ = source_intake._download("https://x.org/api/index.html", tmp_path)
-    again, fresh_again = source_intake._download("https://x.org/intro/index.html", tmp_path)
+    monkeypatch.setattr(intake_fetch.fetch.requests, "get", lambda url, **kw: _Got(url))
+    a, fresh_a = intake_fetch._download("https://x.org/intro/index.html", tmp_path)
+    b, _ = intake_fetch._download("https://x.org/api/index.html", tmp_path)
+    again, fresh_again = intake_fetch._download("https://x.org/intro/index.html", tmp_path)
     assert a != b and a.suffix == ".html" and a.read_text() != b.read_text()
     assert fresh_a and not fresh_again and again == a
     assert not list(tmp_path.rglob("*.part"))
@@ -352,7 +352,7 @@ def test_a_file_no_engine_reads_is_skipped_not_failed(tmp_path, monkeypatch):
 
 def test_a_git_path_stays_inside_the_clone(tmp_path):
     with pytest.raises(Final, match="not a folder of the repository"):
-        source_intake._clone({"repo": "https://x.org/r.git", "path": "../../"}, tmp_path / "repo")
+        intake_fetch._clone({"repo": "https://x.org/r.git", "path": "../../"}, tmp_path / "repo")
 
 
 def test_a_cancel_stops_before_the_next_piece(tmp_path, monkeypatch):
@@ -626,7 +626,7 @@ def test_onboarding_reads_a_source_with_its_own_settings(tmp_path, monkeypatch):
 # the route's fingerprint moves with what shapes a piece and with the reread file's content, not a skipped page type
 def test_the_route_fingerprint_reads_what_shapes_a_piece(monkeypatch):
     import config
-    from job_handlers import reading
+    from use_cases import reading
 
     content = {"sha": "one"}
     monkeypatch.setattr(reading, "load_settings", lambda name: ({}, content["sha"]))
@@ -662,7 +662,7 @@ def test_a_source_s_language_is_declared_or_read_from_its_text_and_a_bare_scan_m
     scan = tmp_path / "scan.pdf"
     scan.write_bytes(b"%PDF")
     monkeypatch.setattr(route, "layer_texts", lambda path: ["", ""])
-    language = source_intake.source_language
+    language = intake_fetch.source_language
     assert language(DataSource(name="x", declaration={"language": "en"}), [note], {}) == "en"
     assert language(DataSource(name="x", declaration={}), [note], {}) == "ru"
     # what an earlier run found is on the row, and a new run reads the text again rather than taking it as declared
@@ -697,8 +697,8 @@ def test_a_family_row_is_gathered_as_its_own_repository(tmp_path, monkeypatch):
         (folder / "README.md").write_text("# A\n")
         return folder, {}
 
-    monkeypatch.setattr(source_intake, "_clone", clone)
-    root, files, _ = source_intake.gather(source, tmp_path / "inbox", tmp_path)
+    monkeypatch.setattr(intake_fetch, "_clone", clone)
+    root, files, _, _ = intake_fetch.gather(source, tmp_path / "inbox", tmp_path)
     assert seen["repo"] == "https://github.com/x/a-repo" and [f.name for f in files] == ["README.md"]
 
 
@@ -710,25 +710,25 @@ def test_a_converted_source_says_what_moved_since_it_was_read(tmp_path, monkeypa
     folder.mkdir(parents=True)
     record = {"settings": {"docling": "docling/default"}, "settings_sha256": {"docling": "old"}, "route_sha256": "r1"}
     (folder / "record.json").write_text(json.dumps(record))
-    monkeypatch.setattr(onboard, "ROOT", tmp_path)
-    monkeypatch.setattr(onboard, "load_settings", lambda name: ({}, "old"))
-    monkeypatch.setattr(onboard.reading, "route_sha", lambda rule: "r1")
+    monkeypatch.setattr(source_intake, "ROOT", tmp_path)
+    monkeypatch.setattr("use_cases.converting.load_settings", lambda name: ({}, "old"))
+    monkeypatch.setattr("use_cases.reading.route_sha", lambda rule: "r1")
     book = DataSource(name="book", declaration={"name": "book"}, raw={"folder": "raw/book_1"})
-    assert onboard.conversion_drift(book) == {}
-    monkeypatch.setattr(onboard, "load_settings", lambda name: ({}, "new"))
-    assert onboard.conversion_drift(book)["edited"] == ["docling"]
-    monkeypatch.setattr(onboard.reading, "route_sha", lambda rule: "r2")
-    assert onboard.conversion_drift(book)["route"] is True
+    assert source_intake.conversion_drift(book) == {}
+    monkeypatch.setattr("use_cases.converting.load_settings", lambda name: ({}, "new"))
+    assert source_intake.conversion_drift(book)["edited"] == ["docling"]
+    monkeypatch.setattr("use_cases.reading.route_sha", lambda rule: "r2")
+    assert source_intake.conversion_drift(book)["route"] is True
     tree = DataSource(name="md", raw={"folder": "raw/md_1", "root_kind": "tree"})
-    assert onboard.conversion_drift(tree) is None
+    assert source_intake.conversion_drift(tree) is None
 
     # a settings file the job itself chose is the run's own choice, not a move of the source
-    monkeypatch.setattr(onboard.reading, "route_sha", lambda rule: "r1")
-    monkeypatch.setattr(onboard, "load_settings", lambda name: ({}, "old"))
+    monkeypatch.setattr("use_cases.reading.route_sha", lambda rule: "r1")
+    monkeypatch.setattr("use_cases.converting.load_settings", lambda name: ({}, "old"))
     chosen = {"docling": "docling/pypdfium2"}
     record = {**record, "settings": chosen, "settings_override": chosen}
     (folder / "record.json").write_text(json.dumps(record))
-    assert onboard.conversion_drift(book) == {}
+    assert source_intake.conversion_drift(book) == {}
 
 
 # an ok verdict walks straight to accepted when the stand says so, and waits at raw when it does not
@@ -842,7 +842,7 @@ def test_an_unchanged_url_source_says_its_inbox_was_not_fetched_again(tmp_path, 
         target.write_text("## Notes\n\nA short note on snapshots and branches.")
         return True
 
-    monkeypatch.setattr(source_intake.fetch, "download", download)
+    monkeypatch.setattr(intake_fetch.fetch, "download", download)
     monkeypatch.setattr(
         onboard.reading, "convert_piece",
         lambda file, *a, **kw: {"markdown": file.read_text(), "seconds": 0.0, "status": None, "structure": None},
@@ -874,7 +874,7 @@ def test_a_site_whose_release_moved_fetches_its_pages_anew(tmp_path, monkeypatch
         return DataSource(name="site", kind="pages", declaration=declared)
 
     releases = (None, "1.0", "1.0", "1.1")
-    states = [source_intake.gather(source(r), tmp_path / "inbox", tmp_path)[2] for r in releases]
+    states = [intake_fetch.gather(source(r), tmp_path / "inbox", tmp_path).fetched for r in releases]
 
     assert fetched == ["https://x/a.html"] * 3, "the first release declared over kept pages fetches them too"
     assert ["fetched_at" in state for state in states] == [True, True, False, True], "what the record calls refetched"
@@ -883,7 +883,7 @@ def test_a_site_whose_release_moved_fetches_its_pages_anew(tmp_path, monkeypatch
 
 # a fresh run reads every piece by its tool: the kept reading is passed over, and the flag is gone after the job
 def test_a_fresh_reading_passes_the_kept_one_over(monkeypatch, tmp_path):
-    from job_handlers import converting
+    from use_cases import converting
 
     monkeypatch.setattr(converting, "READINGS", tmp_path)
     monkeypatch.setattr(converting, "reading_key", lambda *a: "ab" + "0" * 62)
@@ -894,6 +894,7 @@ def test_a_fresh_reading_passes_the_kept_one_over(monkeypatch, tmp_path):
     fresh = {"markdown": "new", "status": "success", "errors": [], "seconds": 1}
     monkeypatch.setitem(converting.PIECE, converting.Tool("docling"), lambda *a: read.append(1) or fresh)
     assert converting.convert(None, "docling", tmp_path / "f.pdf", [], None, 10)["markdown"] == "old"
-    with converting.reading_fresh(True):
+    hold = converting.CardHold(lambda spec: None, lambda spec: None)
+    with converting.reading_fresh(True), converting.card_hold(hold):
         assert converting.convert(None, "docling", tmp_path / "f.pdf", [], None, 10)["markdown"] == "new"
     assert read == [1] and converting._FRESH.get() is False

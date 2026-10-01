@@ -54,6 +54,14 @@ def test_the_door_takes_only_a_reader_the_stand_has():
         EnginePatchRequest(balance_reader="bogus")
 
 
+# the door and the seed refuse a reader on a local engine by one rule: nothing would ever ask it
+def test_a_reader_off_the_cloud_is_refused_by_the_door_and_the_seed_alike():
+    with pytest.raises(ValueError, match="only a cloud"):
+        balances.refuse_off_the_cloud(EngineKind.vllm, "gonka_key")
+    balances.refuse_off_the_cloud(EngineKind.vllm, balances.NO_READER)
+    balances.refuse_off_the_cloud(EngineKind.openai_compatible, "gonka_key")
+
+
 CLOUD = engines.EngineSpec(8, "gonka", EngineKind.openai_compatible, "GONKA", Placement.remote)
 
 

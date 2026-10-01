@@ -3,14 +3,13 @@ from pathlib import Path
 
 import config
 import job_queue
-from evals import section_questions
+from evals import question_sets, section_questions
 from models.eval import CANDIDATE, Question, text_hash
 from orm.sync_db import Session
 from sqlalchemy import select
 from use_cases import section_export
 
 from .base import Final, register
-from .questions import write_pairs
 
 # a generated set beside its sources: generated once, poured back on a later intake without asking anyone again
 SAVED = Path(config.beside_config("sources")) / "questions"
@@ -53,7 +52,7 @@ def load_questions(options: dict) -> dict | None:
             continue
         here.append({**q, "text_hash": text_hash(q["original_text"]), "set_name": set_name, "status": CANDIDATE,
                      "anchors": anchored_in(rows[key])(q["original_text"])})
-    written, repeats = write_pairs(here)
+    written, repeats = question_sets.write_pairs(here)
     if written:
         job_queue.enqueue("embed_questions", {})
     return {"source": source, "set_name": set_name, "questions_written": written, "pairs_dropped_as_repeats": repeats,

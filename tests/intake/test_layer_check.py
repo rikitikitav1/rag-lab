@@ -1,4 +1,4 @@
-from use_cases import layer_check
+from use_cases import heading_rules, layer_check
 
 
 def _totals(rows):
@@ -84,8 +84,8 @@ def test_a_caption_heading_inside_code_is_not_counted():
 
 # the checker reads a fence as the repairs do: an indented fence is code, and a heading inside it is not counted
 def test_a_heading_inside_an_indented_fence_is_code_to_the_checker_as_to_the_repairs():
-    from use_cases import layer_check, piece_join
+    from use_cases import layer_check
 
     markdown = "## Figure 1 a caption\n\n  ```\n## Figure 2 not a heading\n  ```\n"
     assert [kind for _, kind in layer_check.heading_defects(markdown, [])] == ["caption_headings"]
-    assert piece_join.demote_caption_headings(markdown)[1] == 1
+    assert heading_rules.demote_caption_headings(markdown)[1] == 1
