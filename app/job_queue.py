@@ -198,7 +198,7 @@ def requeue_stale(queues: list[str]) -> list[int]:
             job.options = reclaimed(job.options)
             if job.options["reclaims"] > MAX_RECLAIMS:
                 job.status = JobStatus.error
-                job.error = {"error": f"the worker stopped under this job {MAX_RECLAIMS + 1} times in a row",
+                job.error = {"error": f"the worker stopped under this job {MAX_RECLAIMS + 1} times",
                              "kind": FailKind.worker_died, "attempts": job.options["attempts"]}
                 died.append(job.id)
                 continue

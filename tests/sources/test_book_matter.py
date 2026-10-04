@@ -95,3 +95,34 @@ def test_a_cut_back_index_is_named_in_the_matter_left_out(tmp_path):
     docs = source.documents(config.settings.corpus.policy("clean_1024"))
     assert not any("durability" in d.content for d in docs)
     assert [s for _, s in source.left_out_as_matter if s.startswith("Index (lines")]
+
+
+def test_a_run_of_leader_lines_is_cut_whatever_its_heading_says():
+    from book_matter import leader_spans
+
+    contents = [f"{n}.{k} Section title {'.' * 12} {n * 10 + k}" for n in range(1, 4) for k in range(1, 4)]
+    lines = ["# Book", "Some prose before.", "", "## Part II", *contents, "", "## Chapter 1", "Prose again."]
+    assert leader_spans(lines, 8) == [(4, 13)], "a contents row the converter made a heading is bridged, not an end"
+    interleaved = contents[:5] + ["A preface paragraph a reader needs.", "It goes on."] + contents[5:]
+    assert leader_spans(interleaved, 8) == [(0, 5), (7, 11)], "prose between contents rows stays"
+    assert leader_spans(lines, 0) == [], "0 is off"
+    assert leader_spans(lines, 10) == [], "nine leader lines are not a run of ten"
+
+
+def test_a_contents_table_is_a_run_and_one_leader_line_in_prose_is_not():
+    from book_matter import leader_spans
+
+    table = ["| Глава | Стр. |", "|---|---|"] + [f"| Глава {n} {'. ' * 6}{n * 7} |" for n in range(1, 10)]
+    prose = ["See the table ........ 12 for details.", "A paragraph.", "Another one.", "And more.", "Still prose."]
+    assert leader_spans(table, 8) == [(2, 11)]
+    assert leader_spans(prose * 3, 8) == [], "leader lines far apart in prose never make a run"
+
+
+def test_the_cut_drops_contents_runs_only_when_the_variant_asks():
+    import ingest
+
+    contents = "\n".join(f"Chapter {n} {'.' * 10} {n}" for n in range(1, 10))
+    text = f"# Book\n\n{contents}\n\n## One\n\nThe text of chapter one."
+    assert "Chapter 3" in ingest.without_index(text, "book.md")
+    kept = ingest.without_index(text, "book.md", contents_runs_from=8)
+    assert "Chapter 3" not in kept and "The text of chapter one." in kept

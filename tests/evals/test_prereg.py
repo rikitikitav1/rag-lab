@@ -460,3 +460,21 @@ def test_hit_at_5_counts_a_sections_copies_once():
     assert columns.read("hit_at_5", row(copies)) == 1.0, "seven chunks, five distinct pairs, the gold the fifth"
     assert columns.read("hit_at_5", row(["pg/a.md", "pg/b.md", "pg/c.md", "pg/d.md", "pg/e.md", "pg/gold.md"])) == 0.0
     assert columns.read("hit_at_5", SimpleNamespace(question=None, chunks=[], sources=None)) is None
+
+
+# a twin is the evidence's text in a served chunk of another file; strict hits and rows without evidence read as before
+def test_twin_hit_counts_the_evidence_in_another_file_among_the_five():
+    def row(sources, texts, evidence="The limit is 20 by default."):
+        question = SimpleNamespace(gold={"file": "pg/gold.md", "section": "Gold > Part"}, marked_sources=[],
+                                   evidence=evidence)
+        chunks = [{"source": s, "section": f"{s} > S"} for s in sources]
+        return SimpleNamespace(question=question, chunks=chunks, contexts=texts, sources=None)
+
+    others = ["pg/a.md", "pg/b.md", "pg/c.md", "pg/d.md", "pg/e.md", "pg/twin.md"]
+    plain = ["text"] * 6
+    assert columns.read("twin_hit_at_5", row(others[:5], ["x", "the  limit is 20\nby default.", "x", "x", "x"])) == 1.0
+    assert columns.read("twin_hit_at_5", row(others, plain[:5] + ["The limit is 20 by default."])) == 0.0, (
+        "a twin past the fifth pair is a miss"
+    )
+    assert columns.read("twin_hit_at_5", row(["pg/gold.md"], ["x"])) == 1.0
+    assert columns.read("twin_hit_at_5", row(others[:5], plain[:5], evidence=None)) == 0.0

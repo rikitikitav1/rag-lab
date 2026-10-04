@@ -996,6 +996,7 @@ def test_a_page_the_site_no_longer_serves_is_left_out_not_the_source(tmp_path, m
 # a source's skipped paths change on its row in place: deleting and declaring it again would drop its chunks
 def test_skip_paths_are_set_on_the_row_and_refused_for_a_seeded_or_busy_source(monkeypatch):
     monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
     row = DataSource(name="docs", seeded=False, declaration={"name": "docs", "folder": "inbox/docs", "licence": "MIT"})
     source_intake.set_fields(row, {"skip_paths": ["release-notes/*"]})
     assert row.declaration["skip_paths"] == ["release-notes/*"] and row.declaration["folder"] == "inbox/docs"
@@ -1006,12 +1007,17 @@ def test_skip_paths_are_set_on_the_row_and_refused_for_a_seeded_or_busy_source(m
     monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: 42)
     with pytest.raises(Final, match="42"):
         source_intake.set_fields(row, {"skip_paths": ["a/*"]})
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: 43)
+    with pytest.raises(Final, match="43"):
+        source_intake.set_fields(row, {"skip_paths": ["a/*"]})
 
 
 def test_declared_fields_are_set_together_refused_by_name_and_checked_whole(monkeypatch):
     from errors import Refusal
 
     monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
     row = DataSource(name="book", seeded=False, declaration={"name": "book", "folder": "inbox/book", "licence": "MIT"})
     source_intake.set_fields(row, {"section_root_by_path": {"*": "The Book"}})
     source_intake.set_fields(row, {"markup": "hugo", "markup_values": {"version": "v1.37"}})
@@ -1024,3 +1030,17 @@ def test_declared_fields_are_set_together_refused_by_name_and_checked_whole(monk
     with pytest.raises(Refusal) as raised:
         source_intake.set_fields(row, {"markup": "latex"})
     assert raised.value.kind == "invalid"
+
+def test_onboarding_reads_the_knobs_of_a_source_file_over_a_row_seeded_before_them(monkeypatch):
+    from types import SimpleNamespace
+
+    from job_handlers import onboard
+    from sources.declaration import SourceFile
+
+    pinned = SourceFile(name="book", language="ru", licence="x", folder="datasets/book",
+                        intake={"settings": {"docling": "docling/pypdfium2_cells"}})
+    monkeypatch.setattr(onboard.files, "source_files", lambda: {"book": pinned})
+    row = SimpleNamespace(name="book", declaration={"name": "book", "folder": "datasets/book"})
+    assert onboard._knobs_of(row)["intake"]["settings"] == {"docling": "docling/pypdfium2_cells"}
+    monkeypatch.setattr(onboard.files, "source_files", lambda: {})
+    assert onboard._knobs_of(row) == row.declaration, "a source with no file keeps its row"

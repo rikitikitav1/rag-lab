@@ -128,6 +128,7 @@ def trail(name: str) -> dict | None:
         "reasons": _top(said["reasons"], 6),
         "skipped_by_reason": dict(Counter(str(why) for why in (raw.get("skipped") or {}).values()).most_common(8)),
         "accepted_by": (row.raw or {}).get("accepted_by"),
+        "accepted_despite": (row.raw or {}).get("accepted_despite"),
         "candidate_waits": bool((row.raw or {}).get("candidate")),
         "chunks_by_variant": per_variant,
         "drift": files.drift(row.name, row.indexed_with, row.declaration).get("moved"),

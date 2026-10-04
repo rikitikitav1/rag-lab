@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import config
 import logging_setup
-from book_matter import index_spans, is_matter
+from book_matter import index_spans, is_matter, leader_spans
 from corpus_keys import SECTION_SEP, leaf_of
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from use_cases.markup import CHUNKER_FENCE_INDENT, fence_scan
@@ -160,20 +160,24 @@ def _all_headings(lines: list[str]) -> list[tuple[int, int, str]]:
     ]
 
 
-# a book's back index is cut out before the sections are, so its letters never become sections of their own
-def without_index(content: str, file: str) -> str:
+def _index_and_contents(lines: list[str], file: str, contents_runs_from: int) -> list[tuple[int, int]]:
+    return sorted(index_spans(file, _all_headings(lines), len(lines)) + leader_spans(lines, contents_runs_from))
+
+
+# a book's back index and its contents runs are cut out before the sections are, so they never become sections
+def without_index(content: str, file: str, contents_runs_from: int = 0) -> str:
     lines = content.split("\n")
-    spans = index_spans(file, _all_headings(lines), len(lines))
+    spans = _index_and_contents(lines, file, contents_runs_from)
     if not spans:
         return content
     return "\n".join(line for i, line in enumerate(lines) if not any(a <= i < b for a, b in spans))
 
 
 # what the index cut takes, named for the report beside the sections left out by their heading
-def index_left_out(content: str, file: str) -> list[str]:
+def index_left_out(content: str, file: str, contents_runs_from: int = 0) -> list[str]:
     lines = content.split("\n")
-    spans = index_spans(file, _all_headings(lines), len(lines))
-    return [f"{lines[a].lstrip('#').strip()} (lines {a + 1}-{b})" for a, b in spans]
+    spans = _index_and_contents(lines, file, contents_runs_from)
+    return [f"{lines[a].lstrip('#').strip()[:80]} (lines {a + 1}-{b})" for a, b in spans]
 
 
 # the line ranges the index never reads: the back index by position and every `##` section that is matter

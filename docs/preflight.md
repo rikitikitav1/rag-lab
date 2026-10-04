@@ -194,7 +194,7 @@ double-weight that original in every paired comparison.
 ### Are the switches the switches the last run used
 
 **`keyword_switches_match_the_worker`** compares the keyword-leg switches the config on the worker's
-disk declares (`retrieval.keyword`: `query`, `rank`, `norm`, `query_lang`, and the resolved depth)
+disk declares (`retrieval.keyword`: `query`, `rank`, `norm`, `query_lang`, `translation`, and the resolved depth)
 against the switches recorded in the most recent answer log. It runs `python -c` inside the worker
 container, which reads the config files fresh, so it sees the file rather than the memory of the
 process that is actually serving: a worker running yesterday's code is caught by

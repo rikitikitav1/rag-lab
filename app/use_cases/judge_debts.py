@@ -97,7 +97,7 @@ def guest_rows_of(run_name: str) -> int:
 def refuse_guest_pass(run_name: str, sample: int | None = None, said_as: str = "") -> None:
     if not guests_available():
         raise Refusal("conflict", f"{said_as}this runtime carries no `ragas`, the guest axes cannot be scored")
-    # a typo in the name used to be a job over nothing
+    # a typo in the name would queue a job over nothing
     owed = guest_rows_of(run_name)
     if not owed:
         raise Refusal("missing", f"{said_as}run {run_name} owes no guest axis")

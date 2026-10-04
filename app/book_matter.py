@@ -61,6 +61,51 @@ def _is_index(text: str) -> bool:
     return bool(_INDEX.fullmatch(_LEADING_NUMBER.sub("", text).strip(" .:")))
 
 
+# a contents or index line: a dot leader and the page it points to, in a table row too
+_LEADER_LINE = re.compile(r"(\.\s?){4,}\s*\d{1,4}(\s*\|)?\s*$|(\.{4,}|(\.\s){4,})\s*\d{1,4}\b")
+_HEADING_LINE = re.compile(r"^#{1,6}\s")
+_PAGE_ROW = re.compile(r"^\s*\|.*\d{1,4}\s*\|?\s*$")
+# prose lines a run of leader lines bridges: a part title or a wrapped entry, not a paragraph
+_PROSE_BRIDGED = 3
+
+
+# contents and indexes by their lines, not their heading: a converter drops the heading or makes a contents row one
+def leader_spans(lines: list[str], runs_from: int) -> list[tuple[int, int]]:
+    if runs_from <= 0:
+        return []
+    leader = [bool(_LEADER_LINE.search(line)) for line in lines]
+    rows, k = [], 0
+    while k < len(lines):
+        if not leader[k]:
+            k += 1
+            continue
+        last, count, prose, run = k, 0, 0, []
+        for j in range(k, len(lines)):
+            if leader[j] or _PAGE_ROW.match(lines[j]):
+                run.append(j)
+                if leader[j]:
+                    last, count, prose = j, count + 1, 0
+            elif lines[j].strip() and not _HEADING_LINE.match(lines[j]):
+                prose += 1
+                if prose > _PROSE_BRIDGED:
+                    break
+        # only the contents rows go: a book that interleaves its preface with its contents keeps the preface
+        if count >= runs_from:
+            rows += [j for j in run if j <= last]
+        k = last + 1
+    return _ranges(rows)
+
+
+def _ranges(rows: list[int]) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for row in rows:
+        if spans and spans[-1][1] == row:
+            spans[-1] = (spans[-1][0], row + 1)
+        else:
+            spans.append((row, row + 1))
+    return spans
+
+
 # a back index stands in the book's last quarter: a LaTeX manual's «12.5. Предметный указатель» is a chapter on indexes
 BACK_SHARE = 0.75
 

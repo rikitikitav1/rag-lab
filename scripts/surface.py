@@ -53,8 +53,10 @@ def orchestration() -> list[str]:
         f"`experiment` orchestrates arms and aggregates them: kinds {[k.value for k in ExperimentKind]}",
         "`try_aggregate_for_run` fires the next step when a run's judging finishes",
         "a report that needs no model is a script, not a job: it does not compete for the card",
-        "wait for jobs with `scripts/wait_jobs.py <id...>` in the worker: it listens, it does not poll",
-        "restart the worker with `scripts/restart_worker.sh`: it holds the line, waits out what runs, releases it",
+        "wait for jobs with `scripts/wait_jobs.py <id...>` or `--line` (whole queue) in the worker:"
+        " it listens, it does not poll",
+        "restart the worker with `scripts/restart_worker.sh [--then-queue jobs.jsonl]`: it holds the line, waits out"
+        " what runs, releases it and queues what you give it; never a hand-written waiter after it",
         "hold, release and cancel in bulk with POST /v1/job/pause|resume|cancel or MCP pause_jobs, resume_jobs,"
         " cancel_jobs; dry_run=true names the ids first",
         "a job queued by a handler names it in parent_id: list_jobs(parent_id=...) finds a job's children",

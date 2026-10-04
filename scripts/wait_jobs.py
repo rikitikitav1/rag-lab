@@ -6,9 +6,14 @@ import sys
 import time
 
 import job_queue
-from models import Job
+from models import Job, JobStatus
 from orm.sync_db import Session, engine
 from sqlalchemy import select
+
+
+def known(ids: set[int]) -> set[int]:
+    with Session() as session:
+        return set(session.scalars(select(Job.id).where(Job.id.in_(ids))))
 
 
 def finished_now(ids: set[int]) -> dict[int, str]:
@@ -45,10 +50,19 @@ def wait(ids: set[int], timeout: float | None, recheck: float = 30) -> dict[int,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("ids", type=int, nargs="+")
+    parser.add_argument("ids", type=int, nargs="*")
+    parser.add_argument("--line", action="store_true", help="also wait for every job active when the wait starts")
     parser.add_argument("--timeout", type=float, default=None, help="seconds before giving up")
     args = parser.parse_args()
-    ids = set(args.ids)
+    # a paused job finishes only when someone resumes it, so the line waits for what can still run
+    line = job_queue.live_ids(statuses=(JobStatus.new, JobStatus.running)) if args.line else []
+    ids = set(args.ids) | set(line)
+    if not ids:
+        parser.error("name job ids or pass --line")
+    unknown = sorted(ids - known(ids))
+    if unknown:
+        print(json.dumps({"no_such_job": unknown}), flush=True)
+        return 2
     seen = wait(ids, args.timeout)
     missing = sorted(ids - set(seen))
     if missing:

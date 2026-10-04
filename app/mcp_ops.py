@@ -314,7 +314,6 @@ def experiment_results(
         Field(description="Only this pair, as it is named in the report."),
     ] = None,
 ) -> dict:
-    from errors import Refusal
     from use_cases import experiment_report
 
     with Session() as session:
@@ -458,7 +457,7 @@ def job(id: Annotated[int, Field(description="Job id.")]) -> dict:
     description=(
         "Queue a job of any type with its options, checked as at POST /v1/job. dry_run=true queues nothing and "
         "returns the options as the handler would read them and the lane. An eval_run is refused here: it is "
-        "queued by POST /v1/eval/run, whose name and question checks this door does not run."
+        "queued by POST /v1/eval/run or POST /v1/job, whose name and question checks this door does not run."
     ),
 )
 def enqueue_job(
@@ -655,7 +654,6 @@ def add_source(
         "The declaration, field for field as `sources/<name>.yaml` writes it, e.g. {'name': 'nginx-org-en', "
         "'licence': 'BSD-2', 'pages': [...], 'site': {'main': 'div#content'}, 'categories': ['nginx']}."))],
 ) -> dict:
-    from errors import Refusal
     from pydantic import ValidationError
     from sources.declaration import Declaration
     from use_cases import source_intake
@@ -859,7 +857,6 @@ def set_source_fields(
     name: Annotated[str, Field(description="The source's name.")],
     fields: Annotated[dict, Field(description="The fields to set, e.g. {'markup': 'hugo', 'markup_values': {...}}.")],
 ) -> dict:
-    from errors import Refusal
     from use_cases import source_intake
 
     with Session() as session:

@@ -100,11 +100,11 @@ Each piece is also compared with its own text layer. The report records word F1,
 
 ## Knobs of a source
 
-A source can set its own values over the stand's in `config/intake.yaml`, by `PUT /v1/source/{id}/intake`, the MCP tool `set_source_intake`, or an `intake:` block in its source file, which the seed writes onto its row (the door then refuses that row's knobs). Each knob that is off by default exists because one or two books needed it. A knob is tried first on a few pages with the MCP tool `probe_intake`, which reads them with and without it and gives the checker's counts of both.
+A source can set its own values over the stand's in `config/intake.yaml`, by `PUT /v1/source/{id}/intake`, the MCP tool `set_source_intake`, or an `intake:` block in its source file, which the seed writes onto its row (the door then refuses that row's knobs) and onboarding reads before the row, so a knob added to the file reaches the next onboarding. Each knob that is off by default exists because one or two books needed it. A knob is tried first on a few pages with the MCP tool `probe_intake`, which reads them with and without it and gives the checker's counts of both.
 
 | knob | what it does | default | needed by |
 |---|---|---|---|
-| `settings` | a Docling or MinerU settings file of its own | the stand's | Erickson, PostgreSQL Internals |
+| `settings` | a Docling or MinerU settings file of its own | the stand's | Erickson, PostgreSQL Internals and Cloud Native Docker and Kubernetes (Docling's default backend glues their Russian words) |
 | `reread_settings`, `reread_below_layer_f1` | the second reading and its threshold | `docling/pypdfium2_cells`, 0.95 | |
 | `reread_cells_slack` | the share of table cells the second reading may lose and still be taken | 0 | Coulouris (third chapter: a reading that lost two table cells read far closer to the layer) |
 | `splice_tables` | a second reading refused for table cells alone keeps its prose and takes back, matched by page, the first reading's tables where they keep more cells and its formulas where they keep more operators; a second reading taken whole takes back those formulas too, each on its own line in reading order | on | a source whose second reading loses on cells (Coulouris, goalkicker, van Steen); van Steen's computer networks turns it off |

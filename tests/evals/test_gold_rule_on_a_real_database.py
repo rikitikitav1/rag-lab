@@ -133,6 +133,7 @@ def test_golds_follow_their_leaf_to_the_new_root(db, monkeypatch):
         "file_gone": ("d/gone.md", "Old > Setup", None),
         "leaf_gone": ("d/a.md", "Old > Missing", None),
         "evidence_gone": ("d/a.md", "Old > Other", "words no chunk holds"),
+        "respelled": ("d/a.md", "Old > Set up", "install it"),
     }
     with db.connect() as c:
         c.execute(text("TRUNCATE data_sources CASCADE"))
@@ -158,8 +159,14 @@ def test_golds_follow_their_leaf_to_the_new_root(db, monkeypatch):
 
     assert gold_reanchor.reanchor("s", "v", dry=True)["moved"] == 2
     summary = gold_reanchor.reanchor("s", "v")
-    assert {k: summary[k] for k in ("moved", "file_gone", "leaf_gone")} == {"moved": 2, "file_gone": 1, "leaf_gone": 2}
+    assert {k: summary[k] for k in ("moved", "moved_by_evidence", "file_gone", "leaf_gone")} == {
+        "moved": 2, "moved_by_evidence": 1, "file_gone": 1, "leaf_gone": 2}
     with sessionmaker(bind=db)() as session:
         sections = {q.original_text: q.gold["section"] for q in session.scalars(select(Question))}
+        named = {q.id: q.original_text for q in session.scalars(select(Question))}
+    left = {(e["file"], e["section"], e["why"], tuple(named[i] for i in e["question_ids"])) for e in summary["left"]}
+    assert left == {("d/gone.md", "Old > Setup", "file_gone", ("file_gone",)),
+                    ("d/a.md", "Old > Missing", "leaf_gone", ("leaf_gone",)),
+                    ("d/a.md", "Old > Other", "leaf_gone", ("evidence_gone",))}
     assert sections == {"moved": "Title > Setup", "by_evidence": "Y > Run", "file_gone": "Old > Setup",
-                        "leaf_gone": "Old > Missing", "evidence_gone": "Old > Other"}
+                        "leaf_gone": "Old > Missing", "evidence_gone": "Old > Other", "respelled": "Title > Setup"}

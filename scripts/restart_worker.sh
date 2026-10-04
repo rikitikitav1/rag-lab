@@ -3,6 +3,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# `--then-queue FILE` queues the jobs of a JSON lines file ({"type", "options"} each) once the new worker is up
+then_queue=""
+if [ "${1:-}" = "--then-queue" ]; then
+  then_queue="${2:?--then-queue takes a file}"
+  [ -f "$then_queue" ] || { echo "no such file: $then_queue" >&2; exit 2; }
+fi
+
 API="${API:-http://localhost:8000}"
 held=""
 
@@ -47,3 +54,21 @@ if [ -n "$left" ]; then
 fi
 
 docker compose restart worker
+release
+held=""
+
+# after the release: the held jobs keep their older ids, so the queued ones line up behind them
+if [ -n "$then_queue" ]; then
+  python3 - "$API" "$then_queue" <<'PY'
+import json, sys, urllib.request
+api, path = sys.argv[1], sys.argv[2]
+ids = []
+for line in open(path):
+    if line.strip():
+        job = json.loads(line)
+        body = json.dumps({"type": job["type"], "options": job.get("options", {})}).encode()
+        req = urllib.request.Request(f"{api}/v1/job", method="POST", headers={"Content-Type": "application/json"}, data=body)
+        ids.append(json.load(urllib.request.urlopen(req))["id"])
+print("queued", len(ids), f"{ids[0]}-{ids[-1]}" if ids else "")
+PY
+fi

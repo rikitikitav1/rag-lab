@@ -18,6 +18,7 @@ from evals import measurements
 from models.corpus import DataSource, Stage
 from orm.sync_db import Session
 from paths import FETCHED, RAW, ROOT
+from sources import files
 from sources.declaration import site_of
 from sqlalchemy import select
 from use_cases import converting, intake_fetch, raw_quality, reading, route, rule_counts, source_intake
@@ -298,6 +299,12 @@ def _onboard(options: dict) -> dict | None:
     return _finish(run)
 
 
+# the file is read before the row: a row seeded before its file gained a knob holds the older declaration
+def _knobs_of(source) -> dict | None:
+    declared = files.source_files().get(source.name)
+    return declared.model_dump(mode="json", exclude_none=True) if declared is not None else source.declaration
+
+
 # the source, its rule and settings, its files fetched and fingerprinted; the accepted run's twin stops here unchanged
 def _set_up(options: dict):
     with Session() as session:
@@ -308,7 +315,7 @@ def _set_up(options: dict):
             raise Final(refusal)
         session.expunge(source)
     # the job's own settings over the source's knobs over the stand's; the knobs from its file, else its row
-    rule, names = source_intake.intake_rule(source_intake.intake_block(source.declaration))
+    rule, names = source_intake.intake_rule(source_intake.intake_block(_knobs_of(source)))
     names = {**names, **(options.get("settings") or {})}
     settings = {tool: load_settings(name) for tool, name in names.items()}
     arm_hash = hashlib.sha256(json.dumps({t: s[1] for t, s in sorted(settings.items())}).encode()).hexdigest()[:8]

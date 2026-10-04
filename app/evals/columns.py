@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 
 import outcomes
@@ -138,6 +139,12 @@ REGISTRY: dict[str, Column] = {
              " a section's copy in another version is one pair, and a row without a gold has none; it reads the chunks"
              " the gate kept, where a run's `hit_at_k` reads its sources and the ones the gate dropped",
     ),
+    "twin_hit_at_5": Column(
+        reads="retrieval",
+        says="hit_at_5, or a chunk of those five pairs holds the question's evidence verbatim, spaces and case aside,"
+             " from any source: the same text kept in another source or file counts; a row with no evidence reads as"
+             " hit_at_5",
+    ),
     "left_for_judge": Column(
         reads="acceptance", source=MEASUREMENT,
         says="the question's pair was neither accepted nor refused by the reader and waits for the judge",
@@ -159,6 +166,7 @@ _READERS = {
     "evidence_held": lambda row: None if not row["answerable"] else float(row["why"] is None),
     "left_for_judge": lambda row: float(row["outcome"] == "undecided"),
     "hit_at_5": lambda ql: _hit_at(ql, TOP),
+    "twin_hit_at_5": lambda ql: _twin_hit_at(ql, TOP),
     "shares_heading_word": lambda ql: (
         None if getattr(ql.question, "gold", None) is None
         else float(shares_heading_word(ql.question.original_text, ql.question.gold.get("section")))
@@ -180,6 +188,30 @@ def _hit_at(ql, k: int) -> float | None:
         return None
     pairs = section_ids([c for c in (ql.chunks or []) if c and not c["source"].startswith("mcp:")])[:k]
     return float(any(gold.holds_file(source) for source, _ in pairs))
+
+
+_SPACES = re.compile(r"\s+")
+
+
+# stricter than corpus_keys.spaceless_key, which drops markup too: the twin is the evidence as served
+def _spaceless(text: str) -> str:
+    return _SPACES.sub("", text).casefold()
+
+
+# a twin is the evidence's text where the gold is not: two sites of one manual, a book and the docs it retells
+def _twin_hit_at(ql, k: int) -> float | None:
+    from gold_match import section_ids
+
+    strict = _hit_at(ql, k)
+    evidence = getattr(ql.question, "evidence", None)
+    if strict is None or strict == 1.0 or not evidence:
+        return strict
+    served = [(c, text) for c, text in zip(ql.chunks or [], ql.contexts or [], strict=False)
+              if c and not c["source"].startswith("mcp:")]
+    top = set(section_ids([c for c, _ in served])[:k])
+    wanted = _spaceless(evidence)
+    return float(any(wanted in _spaceless(text or "") for c, text in served
+                     if section_ids([c])[0] in top))
 
 
 def known() -> list[str]:

@@ -34,6 +34,8 @@
   dev = ["pytest>=8", "pytest-xdist>=3", "ruff>=0.16"]
   # community pinned back because 0.4.2 dropped chat_models.vertexai, which ragas imports
   eval = ["ragas==0.4.3", "langchain-community<0.4"]
+  # third-party corpus filters, for a flag-only probe over the chunks; never in the stand image
+  data = ["datatrove>=0.6", "datasketch>=1.6", "spacy>=3.7"]
 
 [tool.pytest.ini_options]
   testpaths = ["tests"]

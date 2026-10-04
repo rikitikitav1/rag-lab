@@ -6,6 +6,7 @@ import job_queue
 import llm
 import pytest
 import search_scope
+import structlog
 from models.registry import EngineKind, Placement
 
 LOCAL = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
@@ -27,6 +28,14 @@ def test_a_call_counts_into_every_open_scope_and_only_a_carried_pool_thread_coun
     assert row.record() == {"judging": [_entry(10, 3, 1, max_prompt=10)]}
     assert job.record() == {"judging": [_entry(14, 7, 5, max_prompt=10)]}
     assert llm.Tally().record() is None, "a job that called nothing writes nothing"
+
+
+def test_a_carried_pool_thread_logs_with_the_job_it_works_for():
+    with structlog.contextvars.bound_contextvars(job_id=7, job_type="judge_answers"):
+        with ThreadPoolExecutor(2) as pool:
+            fields = list(pool.map(llm.carried(lambda i: structlog.contextvars.get_contextvars()), range(2)))
+    assert fields == [{"job_id": 7, "job_type": "judge_answers"}] * 2
+    assert structlog.contextvars.get_contextvars() == {}
 
 
 def _embedder(monkeypatch, usage):

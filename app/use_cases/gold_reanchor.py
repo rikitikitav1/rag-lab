@@ -45,9 +45,13 @@ def _by_evidence(candidates: list[str], sections: dict[str, list[str]], evidence
     return [s for s in candidates if any(k and k in body for k in keys for body in sections[s])]
 
 
+def _left(file: str, section: str, why: str, questions: list) -> dict:
+    return {"file": file, "section": section, "why": why, "question_ids": sorted(q.id for q in questions)}
+
+
 # golds whose section the index no longer names are moved to the section of the same file and leaf
 def reanchor(set_name: str, variant: str, dry: bool = False) -> dict:
-    counted, moved = Counter(), []
+    counted, moved, left = Counter(), [], []
     with engine.connect() as conn, Session() as session:
         for file, section, version in _unheld(conn, set_name, variant):
             questions = [q for q in session.scalars(select(Question).where(
@@ -57,17 +61,25 @@ def reanchor(set_name: str, variant: str, dry: bool = False) -> dict:
             sections = _sections_of(conn, file, version, variant)
             if not sections:
                 counted["file_gone"] += len(questions)
+                left.append(_left(file, section, "file_gone", questions))
                 continue
             # the evidence must sit there even for one candidate: a removed section shares its leaf with another
-            found = _by_evidence(_candidates(section, sections), sections, [q.evidence for q in questions])
+            evidence = [q.evidence for q in questions]
+            found = _by_evidence(_candidates(section, sections), sections, evidence)
+            how = "moved"
+            # a file read again spells its headings anew, with spaces put back: the evidence alone names the section
+            if not found:
+                found, how = _by_evidence(list(sections), sections, evidence), "moved_by_evidence"
             if len(found) != 1:
-                counted["leaf_gone" if not found else "ambiguous"] += len(questions)
+                why = "leaf_gone" if not found else "ambiguous"
+                counted[why] += len(questions)
+                left.append(_left(file, section, why, questions))
                 continue
-            moved.append({"file": file, "from": section, "to": found[0], "questions": len(questions)})
-            counted["moved"] += len(questions)
+            moved.append({"file": file, "from": section, "to": found[0], "questions": len(questions), "by": how})
+            counted[how] += len(questions)
             if not dry:
                 for q in questions:
                     q.gold = {**q.gold, "section": found[0]}
         if not dry:
             session.commit()
-    return {"set_name": set_name, "variant": variant, "dry": dry, **counted, "sections": moved}
+    return {"set_name": set_name, "variant": variant, "dry": dry, **counted, "sections": moved, "left": left}

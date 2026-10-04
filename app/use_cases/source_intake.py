@@ -158,8 +158,11 @@ def set_fields(source: DataSource, fields: dict) -> None:
 
     if unknown := sorted(set(fields) - SETTABLE_FIELDS):
         raise Refusal("invalid", f"not settable in place: {unknown}; settable: {sorted(SETTABLE_FIELDS)}")
-    if refusal := intake_refusal(source, _onboard_waiting(source.name)):
-        raise Final(refusal)
+    # the fields move the cut, so a queued index of the source would cut by what the door is changing
+    if queued := _onboard_waiting(source.name) or index_waiting(source.name):
+        raise Final(f"{source.name} has job {queued} queued or running")
+    if source.seeded:
+        raise Final(f"{source.name} has a source file; set {sorted(fields)} there")
     declared = {k: v for k, v in (source.declaration or {}).items() if k not in fields}
     declared |= {k: v for k, v in fields.items() if v}
     try:

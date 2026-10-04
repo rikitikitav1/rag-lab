@@ -51,7 +51,8 @@ def cuts_of(content: str, root: str | None, policy: dict, file: str):
     ceiling = policy.get("max_chunk_size")
     cut_by = ingest.cut_structured if policy.get("chunker") == STRUCTURED else ingest.cut_with_root
     on = policy.get("ceiling_on", ingest.BODY)
-    cuts = cut_by(ingest.without_index(content, file), root, ceiling=ceiling, ceiling_on=on, file=file)
+    content = ingest.without_index(content, file, policy.get("contents_runs_from", 0))
+    cuts = cut_by(content, root, ceiling=ceiling, ceiling_on=on, file=file)
     for cut in ingest.merge_tiny_sections(cuts, policy.get("merge_tiny_sections_under", 0), ceiling, on):
         yield cut.prefix + cut.body, cut.body, cut.section, root, cut.cut_by
 
@@ -290,7 +291,8 @@ class Base(ABC):
     def _cuts(self, file, parsed, policy):
         root = self.section_root_for(file, parsed)
         source = f"{self.spelled_as}/{self.rel_of(file)}"
-        self._index_left.update((source, left) for left in ingest.index_left_out(parsed.content, str(file)))
+        left_out = ingest.index_left_out(parsed.content, str(file), (policy or {}).get("contents_runs_from", 0))
+        self._index_left.update((source, left) for left in left_out)
         return cuts_of(parsed.content, root, policy, str(file))
 
     # a share-of-symbols rule caught nothing: ascii art reads as prose to every ratio we tried

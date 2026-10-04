@@ -54,7 +54,7 @@ def test_the_seed_rows_unroll_a_family_and_keep_a_folder(found):
     import seed
 
     rows = {r["name"]: r for r in seed._source_rows(found)}
-    assert len(rows) == 8 + 173
+    assert len(rows) == 9 + 173
     assert rows["arangodb-docs"]["kind"] == "local" and rows["arangodb-docs"]["path"].endswith("arangodb/3.12")
     assert rows["nginx-org-ru"]["kind"] == "pages" and rows["nginx-org-ru"]["language"] == "ru"
     assert rows["eloquent-javascript"]["kind"] == "urls" and rows["eloquent-javascript"]["git_url"] is None

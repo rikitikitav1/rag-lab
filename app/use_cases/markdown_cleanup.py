@@ -73,7 +73,12 @@ def inline_pictures(markdown: str, pages: tuple[int, int] | None) -> tuple[str, 
 
 
 _MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.S)
-_MDX_MODULE_LINE = re.compile(r"^(?:import\s.+?\sfrom\s+['\"][^'\"]+['\"];?|export\s.*)$", re.M)
+# only the forms MDX exports take: a prose line that opens with the word "export" stays
+_MDX_MODULE_LINE = re.compile(
+    r"^(?:import\s.+?\sfrom\s+['\"][^'\"]+['\"];?"
+    r"|export\s+(?:const|let|var|function|async|default|class|type|interface|\{|\*).*)$",
+    re.M,
+)
 _COMPONENT_START = re.compile(r"</?[A-Z][\w.]*")
 
 

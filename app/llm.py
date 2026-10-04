@@ -12,6 +12,7 @@ from typing import Any
 import config
 import engines
 import logging_setup
+import structlog
 import token_fields
 from engines import answer_parsers, card
 from engines import vllm as vllm_engine
@@ -238,14 +239,15 @@ def accounting(tally: Tally | None = None):
         _tallies.reset(token)
 
 
-# a pool thread starts with an empty context, so the task takes the caller's tallies and key along
+# a pool thread starts with an empty context, so the task takes the caller's tallies, key and log fields along
 def carried(fn):
-    tallies, key = _tallies.get(), _cache_key.get()
+    tallies, key, logged = _tallies.get(), _cache_key.get(), structlog.contextvars.get_contextvars()
 
     def run(*args, **kwargs):
         counted, keyed = _tallies.set(tallies), _cache_key.set(key)
         try:
-            return fn(*args, **kwargs)
+            with structlog.contextvars.bound_contextvars(**logged):
+                return fn(*args, **kwargs)
         finally:
             _cache_key.reset(keyed)
             _tallies.reset(counted)

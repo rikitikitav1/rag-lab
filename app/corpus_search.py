@@ -2,6 +2,7 @@ from typing import NamedTuple
 
 import config
 import logging_setup
+import query_translation
 import search_depth
 import search_scope
 import text_language
@@ -31,15 +32,17 @@ class Hit(NamedTuple):
     section: str | None
     # the releases the chunk stands for, so a gold's version is read on the row the search returned
     versions: tuple = ()
+    # the rank by the question's English words, when the translation is on and the question is Russian
+    translated_rank: int | None = None
 
 
-def _keyword_query_sql(mode: str) -> str:
+def _keyword_query_sql(mode: str, text_param: str = "question", config_param: str = "ts_config") -> str:
     if mode == "or":
         # cast, not to_tsquery: a second pass would stem and drop stopwords twice
-        return """CAST(nullif(replace(
-                    plainto_tsquery(CAST(:ts_config AS regconfig), :question)::text,
+        return f"""CAST(nullif(replace(
+                    plainto_tsquery(CAST(:{config_param} AS regconfig), :{text_param})::text,
                     ' & ', ' | '), '') AS tsquery)"""
-    return "plainto_tsquery(CAST(:ts_config AS regconfig), :question)"
+    return f"plainto_tsquery(CAST(:{config_param} AS regconfig), :{text_param})"
 
 
 class ForeignVectors(StandFault):
@@ -216,6 +219,22 @@ def filtered_scan(scope: Scope, configured: str, older_held: bool = False) -> st
     return configured
 
 
+# the third ranking RRF reads: the keyword search over the question's English words, the same shape as the first
+def _translated_branch(mode: str, rank_fn: str, cat_filter: str, src_filter: str) -> str:
+    query = _keyword_query_sql(mode, "translated", "translated_config")
+    return f""",
+                keyword_translated AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               ORDER BY {rank_fn}(content_tsv, q, :keyword_norm) DESC, id
+                           ) AS rank
+                    FROM data_chunks, {query} q
+                    WHERE content_tsv @@ q {cat_filter} {src_filter}
+                    ORDER BY rank
+                    LIMIT :limit_keyword
+                )"""
+
+
 def hybrid_search(
     question,
     embedding,
@@ -238,6 +257,7 @@ def hybrid_search(
     if rank_fn not in RANK_FUNCTIONS:
         raise ValueError(f"keyword_rank must be one of {sorted(RANK_FUNCTIONS)}")
     keyword_query = _keyword_query_sql(retrieval.keyword.query)
+    translated = query_translation.keyword_translation(question)
     scope = as_scope(scope)
     refuse_bad_scope(scope, variant)
     cat_filter, cat_params = _scope_filter(scope)
@@ -265,17 +285,19 @@ def hybrid_search(
                     WHERE content_tsv @@ q {cat_filter} {src_filter}
                     ORDER BY rank
                     LIMIT :limit_keyword
-                )
+                ){_translated_branch(retrieval.keyword.query, rank_fn, cat_filter, src_filter) if translated else ""}
                 , fused AS (
                     SELECT d.id, d.source_id, d.content, d.source, d.category, d.chunk_index,
                            CASE WHEN {SHARED_BODY_SQL.replace("c.", "d.")} THEN d.content_hash END AS content_hash,
                            v.rank AS vector_rank, k.rank AS keyword_rank, v.distance AS distance,
-                        COALESCE(1.0/(:rrf_k + v.rank), 0) + COALESCE(1.0/(:rrf_k + k.rank), 0) AS score,
-                           d.section, d.versions
+                        COALESCE(1.0/(:rrf_k + v.rank), 0) + COALESCE(1.0/(:rrf_k + k.rank), 0)
+                        {"+ COALESCE(1.0/(:rrf_k + t.rank), 0)" if translated else ""} AS score,
+                           d.section, d.versions, {"t.rank" if translated else "NULL::int"} AS translated_rank
                     FROM data_chunks d
                     LEFT JOIN vector_search v ON d.id = v.id
                     LEFT JOIN keyword_search k ON d.id = k.id
-                    WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                    {"LEFT JOIN keyword_translated t ON d.id = t.id" if translated else ""}
+                    WHERE v.id IS NOT NULL OR k.id IS NOT NULL {"OR t.id IS NOT NULL" if translated else ""}
                 ), ranked AS (
                     SELECT *, row_number() OVER (
                         PARTITION BY source_id, coalesce(content_hash, id::text) ORDER BY score DESC, id
@@ -283,7 +305,7 @@ def hybrid_search(
                     FROM fused
                 )
                 SELECT content, source, category, chunk_index, vector_rank, keyword_rank, distance, score,
-                       section, versions
+                       section, versions, translated_rank
                 FROM ranked
                 {copies}
                 -- RRF ties are structural (best by vector and best by keyword both score
@@ -304,6 +326,8 @@ def hybrid_search(
         "ts_config": text_language.ts_config(question),
         "keyword_norm": retrieval.keyword.norm,
     }
+    if translated:
+        params |= {"translated": translated, "translated_config": text_language.ts_config(translated)}
     params |= cat_params
     # an argument that names a switch and does not throw it labelled a run exact at 40
     depth = None if exact else search_depth.resolve(variant, ef_search)

@@ -31,12 +31,19 @@ class RoleCfg(_Strict):
         return samplers.check(v)
 
 
+# a Russian question's words in English beside it, so the English text it asks about is in the keyword search's reach
+class KeywordTranslationCfg(_Strict):
+    enabled: bool = False
+    model_dir: str = "datasets/models/opus-mt-ru-en-ctranslate2"
+
+
 # named as a run's record names them, so nothing translates between the two
 class KeywordCfg(_Strict):
     query: str
     rank: str
     norm: int
     query_lang: QueryLanguageRule
+    translation: KeywordTranslationCfg = KeywordTranslationCfg()
 
 
 class RetrievalCfg(_Strict):
@@ -126,6 +133,8 @@ class PolicyCfg(_Strict):
     drop_boilerplate: bool = False
     # a whole section with a body shorter than this joins its file's previous chunk, or the next; 0 is off
     merge_tiny_sections_under: int = Field(default=0, ge=0)
+    # a run of at least this many dot-leader lines is a table of contents or an index and is cut out; 0 is off
+    contents_runs_from: int = Field(default=0, ge=0)
 
 
 class CorpusCfg(_Strict):

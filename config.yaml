@@ -83,6 +83,7 @@ corpus:
       max_chunk_size: 1024      # characters
       ceiling_on: body
       merge_tiny_sections_under: 60   # characters of body; a heading with a line under it is not a chunk alone
+      contents_runs_from: 8           # dot-leader lines in a run; a contents table or an index, whatever its heading says
     # variants that lost are gone; their policy rides in the entry that measured them
 
 fts:

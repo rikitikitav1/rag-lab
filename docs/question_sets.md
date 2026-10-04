@@ -15,7 +15,7 @@ A question set is what a retrieval or answer measurement asks. Each question com
 
 Every refusal is counted by reason in the set's report under `datasets/measurements/`, and the generator's replies are kept, so `reparse_questions` reads them again under changed checks without asking anew.
 
-**Pairs written outside.** A set written by hand or by an agent is a file `sources/questions/<set>.jsonl` (`save_questions` writes the same format from a generated set), poured in by `load_questions`. Each row names its gold section; a pair whose section the source no longer holds is counted, not written. `big_corpus_v1` came this way: Sonnet agents read each source's sections and wrote ten pairs per source.
+**Pairs written outside.** A set written by hand or by an agent is a file `sources/questions/<set>.jsonl` (`save_questions` writes the same format from a generated set), poured in by `load_questions`. Each row names its gold section; a pair whose section the source no longer holds is counted, not written. `big_corpus_v1` came this way: Sonnet agents read each source's sections and wrote the pairs, then topped every source up toward twenty on the final cut (2225 pairs over 87 sources, up to 36 a source).
 
 Either way, every row enters as a candidate and goes through the same sieve.
 
@@ -39,12 +39,12 @@ A pair the judge accepts is not proof the question is fair: a question built on 
 
 `anchor_questions` gives each row the identifiers it names by their shape (`snake_case`, `dotted.names`, `call()`, `--flags`, backticks) that its gold section holds, with the number of the source's sections holding each. A question anchored by an identifier is easier for keyword search than one that is not, so `run_metrics` reports the closing columns split by `anchored_by_identifier`, `shares_heading_word` (a word of the gold heading in the question) and `reference_page` (the gold is a reference entry, such as one function's page), as well as by language.
 
-A cleanup that renames a page's root (a title read from frontmatter, a declared book title) leaves the gold sections written before it unnamed by the index. `reanchor_questions` moves each such gold to the section of the same file with the same leaf heading that holds the question's evidence; a gold whose file left the index, whose leaf is gone, or whose leaf matches several sections is counted and left as it was.
+A cleanup that renames a page's root (a title read from frontmatter, a declared book title) leaves the gold sections written before it unnamed by the index. `reanchor_questions` moves each such gold to the section of the same file with the same leaf heading that holds the question's evidence; where no leaf matches (a file read again spells its headings anew), the one section of the file holding the evidence takes it; a gold whose file left the index, whose leaf is gone, or whose leaf matches several sections is left as it was, counted and named with its question ids.
 
 ## Where to look
 
-- `question_sets` (MCP): each set by source, with accepted, refused and open pairs.
-- `questions` (MCP): the rows themselves, filtered by set, source, status.
+- `question_sets` (MCP): each set with its pools and languages and, for a generated set, accepted, refused and open pairs by language.
+- `questions` (MCP): the rows themselves, filtered by set, language and pool.
 - The set's report in `datasets/measurements/question_set_<set>_<source>_<date>.json` (a dash in a name reads as an underscore): sections asked, pairs kept and lost by reason, the replies.
 
 The jobs and their options are in [api.md](api.md), the jobs table; adding the source a set is asked about is [add_a_source.md](add_a_source.md).

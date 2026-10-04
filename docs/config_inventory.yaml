@@ -40,6 +40,11 @@ config:
     class: setting
   retrieval.keyword.query_lang:
     class: setting
+  retrieval.keyword.translation.enabled:
+    class: setting
+    how: off until its A/B on Russian questions; the Russian-sources row must not fall
+  retrieval.keyword.translation.model_dir:
+    class: setting
   retrieval.ef_search:
     class: setting
   retrieval.filtered_scan:
@@ -289,6 +294,9 @@ config:
   corpus.variants.clean_1024.merge_tiny_sections_under:
     class: setting
     how: owner decision 03.10, threshold 60 after the gate on 31 sources lost no gold section
+  corpus.variants.clean_1024.contents_runs_from:
+    class: setting
+    how: the gate on 261 sources 03.10, six books lost only contents rows, gold sections lost 0, prose kept
   corpus.variants.clean_big_1024.chunker:
     class: setting
   corpus.variants.clean_big_1024.max_chunk_size:
@@ -300,6 +308,9 @@ config:
   corpus.variants.clean_big_1024.merge_tiny_sections_under:
     class: setting
     how: owner decision 03.10, threshold 60 after the gate on 31 sources lost no gold section
+  corpus.variants.clean_big_1024.contents_runs_from:
+    class: setting
+    how: the gate on 261 sources 03.10, six books lost only contents rows, gold sections lost 0, prose kept
   repos_dir:
     class: setting
   prompts_dir:
@@ -798,6 +809,8 @@ constant:
   app/evals/columns.py:SCHEMA:
     class: code
     note: the shape of a stored record
+  app/evals/columns.py:_SPACES:
+    class: code
   app/evals/columns.py:_READERS:
     class: code
   app/evals/compare.py:SCHEMA:
@@ -950,6 +963,10 @@ constant:
   app/outcomes.py:RULE:
     class: code
     note: the outcome rule a stored row is read by
+  app/query_translation.py:_KEPT:
+    class: code
+  app/query_translation.py:_CYRILLIC:
+    class: code
   app/redaction.py:_NAMES:
     class: code
   app/redaction.py:_MIN:
@@ -1246,6 +1263,14 @@ constant:
   app/book_matter.py:BACK_SHARE:
     class: setting
     note: the share of a book a back index starts after; every index of the saved PDF books starts past 0.86, a LaTeX manual's index chapter at 0.48
+  app/book_matter.py:_LEADER_LINE:
+    class: code
+  app/book_matter.py:_HEADING_LINE:
+    class: code
+  app/book_matter.py:_PAGE_ROW:
+    class: code
+  app/book_matter.py:_PROSE_BRIDGED:
+    class: cap
   app/use_cases/section_export.py:BLOCK_CHARS:
     class: setting
     note: not measured; the index's chunks joined to about 1300 words, one window of acceptance (1500 words)
