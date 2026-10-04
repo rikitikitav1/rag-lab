@@ -13,7 +13,7 @@ Every such comparison is an experiment: several variants of the system that diff
 
 </details>
 
-> In Russian: [docs/README_ru.md](docs/README_ru.md) · Turning books into a corpus: [docs/intake.md](docs/intake.md) · Hands-on scenarios: [docs/use_cases.md](docs/use_cases.md) · Experiments log: [docs/experiments.md](docs/experiments.md) · What the preflight refuses: [docs/preflight.md](docs/preflight.md) · What each role requires of a model: [docs/model_requirements.md](docs/model_requirements.md)
+> In Russian: [docs/README_ru.md](docs/README_ru.md) · Turning books into a corpus: [docs/intake.md](docs/intake.md) · Adding a source, step by step: [docs/add_a_source.md](docs/add_a_source.md) · Question sets: [docs/question_sets.md](docs/question_sets.md) · Hands-on scenarios: [docs/use_cases.md](docs/use_cases.md) · Experiments log: [docs/experiments.md](docs/experiments.md) · What the preflight refuses: [docs/preflight.md](docs/preflight.md) · What each role requires of a model: [docs/model_requirements.md](docs/model_requirements.md)
 
 ## Why a bench
 
@@ -43,23 +43,9 @@ Who does not need this: a product with one model that nobody plans to replace. T
 - **An outcome for every question, scored by group.** Each answer is marked: answered with sources, answered without any source, refused, ran out of steps. Questions from the corpus, outside it and off topic are scored separately. That is how an agent that never refused anything was caught. [Entry](docs/experiments/2026-08-25_the-gate-that-fires-and-the-refusal-that.md)
 - **A run records its instruments.** Models, prompts, engine settings and the corpus variant are saved with every run. That is how a rewritten agent was checked: recorded runs were replayed through the new code without calling the model again, and every replayable row matched. [Entry](docs/experiments/2026-09-07_the-phases-split-and-the-replay-that-checked-it.md)
 - **A run says what it promised before it starts.** A closing run names a preregistration, a record in the database of its population, arms, closing columns and guards, and the queue refuses a name it does not hold. The closing number is then computed from that record through the ops MCP server, so a column picked after seeing the numbers cannot be reported as the result. [Tools](docs/mcp.md)
+- **A number outlives the corpus it was measured on.** Rebuilding the corpus wipes the runs measured on the old one from the database, so a number from before it is read from its journal entry and its measurement file under `datasets/measurements/`, not from the bench. The question sets stay; the sieve refuses a pair whose section the new corpus no longer holds, so a run never asks it.
 - **What two arms must share.** Before a difference is read, the comparison checks that both arms were measured by one instrument, and names the field that differs when they were not. [The table](docs/api.md#what-two-arms-must-share)
-
-How much each instrument moves on its own, measured by running it twice on the same material. A verdict is one judge score on one axis of one answer; a reload is the model unloaded from its server and loaded again.
-
-| Instrument | Moved between two passes | Entry |
-|---|---|---|
-| judge Qwen2.5-7B on ollama, across a reload | 14% of scores, 58% of reason texts | [entry](docs/experiments/2026-09-07_what-the-standard-was-worth.md) |
-| judge Qwen2.5-7B-AWQ on vLLM, across a reload | 0 of 388 verdicts | [entry](docs/experiments/2026-09-09_what-batch-invariance-costs-on-an-awq-judge.md) |
-| the same judge in one load, JSON without free whitespace | 0 of 275 verdicts | [entry](docs/experiments/2026-09-13_the-judge-that-looped-on-whitespace.md) |
-| DeepSeek-V4-Flash as a judge, passes hours apart | 154 of 573 verdicts, 27% | [entry](docs/experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md) |
-| generator Qwen2.5-7B-AWQ on vLLM, two runs | 78 of 285 verdicts, 27%; 8 of 100 answers equal | [entry](docs/experiments/2026-09-13_the-same-generator-on-two-engines.md) |
-| generator qwen2.5:7b on ollama, two runs | 101 of 300 verdicts, 34%; 2 of 100 answers equal | [entry](docs/experiments/2026-09-13_the-same-generator-on-two-engines.md) |
-| generator llama3.1:8b on ollama, two runs | about a point per row; 4% of answers equal | [entry](docs/experiments/2026-09-13_a-bigger-model-at-the-same-retrieval.md) |
-| generator DeepSeek-V4-Flash, two runs | 0 of 50 answers equal; faithfulness moved on 18 of 44 | [entry](docs/experiments/2026-09-13_a-bigger-model-at-the-same-retrieval.md) |
-| a human rater (the author), the same pairs a day later | the same choice in 5 of 7 | [entry](docs/experiments/2026-09-13_fifteen-pairs-the-owner-judged.md) |
-
-A difference smaller than its instrument's own movement is read as noise.
+- **Each instrument's own noise is measured.** Judges, generators and a human rater were run twice on the same material; a difference smaller than the instrument's own movement is read as noise. The local judge on vLLM repeats its verdicts exactly, a cloud judge moved 27% of them. [The table](docs/measurement.md#how-much-each-instrument-moves-on-its-own)
 
 ## What's inside
 
@@ -67,12 +53,12 @@ Under the bench is an ordinary RAG system: it answers technical questions from p
 
 - **Corpus variants.** The same corpus can be cut in several ways at once, each cut with its own index, so re-cutting it is something you compare rather than a step you cannot take back. [Entry](docs/experiments/2026-08-26_a-corpus-you-can-keep-two-of.md)
 - **Hybrid search.** Vector search (pgvector) and full-text search (Postgres FTS with stemming per language, a chunk's language taken from its own alphabet, so English SQL in a Russian book is stemmed as English) are merged by RRF. Results can be filtered by category or tag, by source and by version, and a distance threshold lets the system say "the corpus has nothing on this" instead of guessing.
-- **Models by role.** There are eight roles: six of our own (generation, embeddings, judging, paraphrasing, reranking, grading) and two for the RAGAS guest judge, its model and its embedder. Which model serves a role is stored in the database and can be changed without a restart. Each role sits on an engine: ollama or vLLM, on the GPU or on the CPU, or a cloud API.
-- **Several sources, one category tree.** 173 interview-question repositories in English, three documentation sources (`system-design-primer`, `redis-doc`, `cheatsheets`) and two example books, `eloquent-javascript` in English and `postgresql-internals-18` in Russian, each with its own rules for what counts as a heading and what is junk.
+- **Models by role.** Each model has a role: generation, embeddings, judging, paraphrasing, reranking, grading the retrieved chunks, writing and reading question sets, and two for the RAGAS guest judge, its model and its embedder ([the list](app/models/registry.py)). Which model serves a role is stored in the database and can be changed without a restart. Each role sits on an engine: ollama or vLLM, on the GPU or on the CPU, or a cloud API.
+- **Several sources, one category tree.** 173 interview-question repositories in English, documentation sources (`system-design-primer`, `redis-doc`, `cheatsheets`, `arangodb-docs`, `nginx-org-en`, `nginx-org-ru`) and two example books, `eloquent-javascript` in English and `postgresql-internals-18` in Russian, each with its own rules for what counts as a heading and what is junk.
 - **Adding a source.** A new source is declared: its name, where its files come from (URLs, a folder, a git repository or pages of a site) and, optionally, its language and licence. A language left out is read from the source's own text, and a source with no text layer at all needs it declared. Then it is turned into a raw source, markdown that is not indexed yet, with a suitability report and no gold to compare against. Routing depends on the kind of file: markdown stays as it is, a PDF page without a text layer or an image goes to MinerU, HTML, a PDF page with a text layer and office files go to Docling, and any other file (a stylesheet, a font) is skipped and named in the report. An EPUB is skipped and named in the report unless the source turns on reading it as chapters in reading order (one EPUB seen so far). Each converter is a separate engine and gets the GPU in its turn. The report then checks quality: it compares the conversion with the file's own text layer a page range at a time, and runs the chunker's gates a chapter at a time. If the breaching share of text passes a declared bound, the source is marked bad with its reasons. It is not stopped. Why two converters: [entry](docs/experiments/2026-09-25_two-converters-one-per-regime.md)
 - **Five quality measures.** Retrieval (did the right file and the right section come back) and, scored by an LLM judge, faithfulness (is the answer supported by the context), relevance, completeness against a reference answer, and whether the system refuses when it should. Scores are kept separately for questions from the corpus, outside it and off topic, and every question gets an outcome. When the system refuses, or answers without any source, the judge leaves the row unscored; such rows are counted by their outcome instead.
 - **A job queue.** Heavy work (pulling models, indexing, running and judging question sets) goes through a queue in Postgres, processed by a worker. The app itself depends only on Postgres: if a model server goes away, jobs wait and the app does not crash; the compose stand starts the API only after the model servers are up.
-- **Reranking.** A cross-encoder (`bge-reranker-v2-m3`) can re-order search results before they reach the generator. It is off by default because it does not fit on the GPU next to the agent's generator. A run can turn it on once its server is up. The chat cannot, since the reranker and the generator would be two engines on the GPU at once. What it does to ranking and answers is in the questions above.
+- **Reranking.** A cross-encoder (`bge-reranker-v2-m3`) can re-order search results before they reach the generator. It is off by default (`rerank.enabled`) because it does not fit on the GPU next to the agent's generator. A run can turn it on once its server is up. The chat cannot, since the reranker and the generator would be two engines on the GPU at once. What it does to ranking and answers is in the questions above.
 - **An agent on LangGraph.** The model decides when to search, may rephrase the question and search again, then answers. The rules around it (when retrieval counts as weak, when a question is off topic, which tools it may call) are ours and measured. Any set of questions can be run through the agent or through a single retrieve-and-answer pass, and the two compared.
 - **Everything through the API.** Building question sets (paraphrasing and translating interview questions), importing your own, running and judging them are API calls that go through the queue; every request and every job is logged with its timing.
 
@@ -93,7 +79,7 @@ Retrieval, the queue, the eval bench and the corpus policies are project code. T
 
 ## Models and prompts architecture
 
-- Which model serves each of the eight roles is a row in the database, switched at runtime; a model is asked whether it can do its role's job before it is seated ([docs/model_requirements.md](docs/model_requirements.md)).
+- Which model serves each role is a row in the database, switched at runtime; a model is asked whether it can do its role's job before it is seated ([docs/model_requirements.md](docs/model_requirements.md)).
 - Prompts are versioned in the database from files in `prompts/`, one active version per purpose, and a new version is switched on deliberately.
 - Every answer records the models and prompt versions that produced and judged it, so two runs are compared on what actually ran rather than on what was asked for.
 
@@ -103,7 +89,7 @@ The data model, the reranker's server and what bootstrap does on start: [docs/de
 
 Each kind of setting has one home:
 
-- `config.yaml` and the files under `config/` (mounted into the container), read as one config. `config.yaml` is the base: retrieval, reranking, the agent, ingestion, text search, corpus variants, the engines. Each file under `config/` belongs to one process: `roles.yaml` the roles, their models and the prompt versions a fresh database starts on (`roles.cpu.yaml` replaces them for the stand without a GPU), `intake.yaml` how a source is added (the route by file, the report's bounds, each converter's engine and settings), `ingest_quality.yaml` the gates a cut passes, `evals.yaml` the verdict sets and the thresholds of the statistics. A section written in two files refuses to load. A value chosen by measurement carries its reason and its measurement file beside it, and every run records the values it used in its snapshot.
+- `config.yaml` and the files under `config/` (mounted into the container), read as one config. `config.yaml` is the base: retrieval, reranking, the agent, ingestion, text search, corpus variants, the engines. Each file under `config/` belongs to one process: `roles.yaml` the roles, their models and the prompt versions a fresh database starts on (`roles.cpu.yaml` replaces them for the stand without a GPU), `intake.yaml` how a source is added (the route by file, the report's bounds, each converter's engine and settings), `ingest_quality.yaml` the gates a cut passes, `evals.yaml` the verdict sets and the thresholds of the statistics, `categories.yaml` the category tree. A section written in two files refuses to load. A value chosen by measurement carries its reason and its measurement file beside it, and every run records the values it used in its snapshot.
 - `.env`: what depends on the machine or must stay out of the repo (timeouts, shares of GPU memory, keys); [`.env.example`](.env.example) lists every variable with its default.
 - the database: which model serves a role, prompt versions and engine rows, switched at runtime through the API.
 - `datasets/`: the question banks, the corpus sources and the raw sources a conversion writes (`datasets/raw_sources/`, out of git). A pass writes its measurement and its frozen candidate pool here too, and those stay out of git: a number reaches a reader as the table in its journal entry, with the file name and the job id as its address.
@@ -133,7 +119,7 @@ curl -X POST localhost:8000/v1/chat/question \
 
 No authentication by design (REST, `/mcp`, `/mcp-ops` are all open): this is a local lab bound to 127.0.0.1. Do not expose it to a network as is.
 
-The first `up` pulls the models of the roles (on ollama about 15 GiB: `llama3.1:8b`, `gemma2:9b`, `bge-m3` and `qwen2.5:7b` for the RAGAS guest; the judge on vLLM about 5.2 GiB) and the vLLM image (about 21.5 GB of disk). The seed declares the sources of `sources/` and queues their onboarding; the index reads accepted sources only, so the corpus fills after they are accepted (`POST /v1/source/{id}/accept`, or by onboarding itself for an `ok` verdict when `intake.quality.auto_accept_ok` is on) and indexed by an `index_data` job (watch `docker compose logs -f worker`). The server waits for `bootstrap`, which waits for `vllm` to report healthy (up to an hour on a first start, while it downloads the judge) and for ollama; it does **not** wait for the pulls, the onboarding and the indexing those steps queue, so the first requests may refuse until the corpus fills up.
+The first `up` pulls the models of the roles (`config/roles.yaml`) and the vLLM image. The seed declares the sources of `sources/` and queues their onboarding; the index reads accepted sources only, so the corpus fills after they are accepted (`POST /v1/source/{id}/accept`, or by onboarding itself for an `ok` verdict when `intake.quality.auto_accept_ok` is on) and indexed by an `index_data` job (watch `docker compose logs -f worker`). The server waits for `bootstrap`, which waits for `vllm` to report healthy (up to its healthcheck's `start_period` on a first start, while it downloads the judge) and for ollama; it does **not** wait for the pulls, the onboarding and the indexing those steps queue, so the first requests may refuse until the corpus fills up.
 
 Hands-on scenarios (mini-eval to numbers, reranking A/B, importing your own questions, browsing logs, adding a source): **[docs/use_cases.md](docs/use_cases.md)**. It is a walkthrough of ten scenarios, not a route index; the complete reference is Swagger at `/docs`, which is generated from the code and cannot fall behind it.
 
@@ -145,9 +131,9 @@ Your first comparison: [scenario 2](docs/use_cases.md#scenario-2-mini-eval-from-
 
 The stand was built and measured on one machine: a laptop RTX 4070 with 8 GB of video memory, 32 processor threads and 62 GB of RAM. Nothing weaker was tried. The stand leans on that one GPU in many places: the generator, the embedder, the judge and the converters take turns on it, and the queue hands it between them. This is a known limit of a bench made for one machine, and it stays. The way around it is the processor mode, slower but without a GPU.
 
-- GPU: NVIDIA with 8 GB, given through CDI. With less, only `scripts/up.sh --cpu` runs, every role on the processor with a timeout of 600 s ([stand_modes.md](docs/stand_modes.md), mode 8).
+- GPU: NVIDIA with 8 GB, given through CDI. With less, only `scripts/up.sh --cpu` runs, every role on the processor with its own timeout (`LLM_TIMEOUT_CPU`) ([stand_modes.md](docs/stand_modes.md), mode 8).
 - Memory: the sleeping judge keeps about 13 GB of host memory; `vllm-cpu`, when it is up, holds its whole model there, about 19 GB for a 7B.
-- Disk: about 50 GB for the default stand (the vLLM image 21.5 GB, ollama 4.8 GB, the app about 1 GB, the role models about 15 GB on ollama and 5.2 GB for the judge; the ollama volume grows with every pull and holds 61 GB here after a month of experiments); the profile `convert` adds about 39 GB (the MinerU image 28.1 GB, Docling 10.6 GB).
+- Disk: about 50 GB for the default stand and about 39 GB more for the profile `convert` (read by hand in September 2026); the ollama volume grows with every pull.
 - Processor: Docling's OCR on scanned pages and the processor mode run on it.
 
 ## Architecture
@@ -173,8 +159,8 @@ Diagrams in `docs/diagrams/` are of two kinds. Structural and behavioural views 
 | `bootstrap` | prepares models, roles and indexing jobs, runs to completion before the rest; waits for `vllm` and puts it to sleep before ollama loads a role |
 | `rag-lab` | FastAPI server (uvicorn) |
 | `repos-owner` | hands the `repos_data` volume to the host's user before the worker starts, runs once |
-| `worker` | processes the job queue as the host's user, nineteen types listed with what each one takes in [docs/api.md](docs/api.md#the-queue) |
-| `ollama` | local inference on GPU: the generator, the embedder, the paraphraser and the RAGAS guest's model |
+| `worker` | processes the job queue as the host's user, its job types listed with what each one takes in [docs/api.md](docs/api.md#the-queue) |
+| `ollama` | local inference on GPU: the generator, the embedder, the paraphraser, the grader, the sieve's reader and the RAGAS guest's model |
 | `ollama-cpu` | a second ollama on the processor, for a role that should not take the GPU (the RAGAS guest's embedder by default); always up, since ollama loads a model on the first call and gives the memory back after its keep-alive |
 | `vllm` | the judge (`Qwen/Qwen2.5-7B-Instruct-AWQ`); takes the GPU first at start and is put to sleep whenever another engine needs it; its port is not published on the host |
 | `converter-docling`, `converter-mineru` | under the compose profile `convert`: Docling and MinerU, each behind a supervisor that runs its tool only while it holds the GPU; a conversion takes the GPU for the engine whose tool it needs, and images are pinned with the models they use baked in |

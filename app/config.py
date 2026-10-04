@@ -116,19 +116,11 @@ class FtsCfg(_Strict):
 
 # typed like the gates that judge it: a typo fails the start, not the cut
 class PolicyCfg(_Strict):
-    chunker: Literal["legacy", "rooted", "structured"]
+    chunker: Literal["rooted", "structured"]
     max_chunk_size: int = Field(gt=0)
     ceiling_on: Literal["body", "content"] = "body"
     # off by default: it changes the cut, so it is a corpus variant of its own
     drop_boilerplate: bool = False
-
-    # derived, not declared: two keys deciding one thing is how they came to disagree
-    @property
-    def header_prefix(self) -> bool:
-        return self.chunker != "legacy"
-
-    def model_dump(self, **kw) -> dict:
-        return {**super().model_dump(**kw), "header_prefix": self.header_prefix}
 
 
 class CorpusCfg(_Strict):
@@ -232,8 +224,6 @@ class RouteCfg(_Strict):
     demote_caption_headings: bool
     drop_running_headings: bool
     join_split_words: bool
-    join_wrapped_identifiers: bool
-    join_continued_rows: bool
     epub_chapters: bool
 
 

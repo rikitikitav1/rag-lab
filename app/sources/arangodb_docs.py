@@ -2,6 +2,7 @@ import re
 
 import frontmatter
 from sources.base import Base, Parsed
+from use_cases import markdown_cleanup
 
 # Hugo shortcodes: `{{< name args >}}` and `{{% name args %}}`, a closing one with a slash before the name
 _COMMENT = re.compile(r"\{\{([<%])\s*comment\s*[>%]\}\}.*?\{\{[<%]\s*/comment\s*[>%]\}\}", re.S)
@@ -35,6 +36,7 @@ class ArangoDocsSource(Base):
     def read(self, file, rel, policy=None):
         post = frontmatter.loads(self.text_of(file))
         lead = " ".join(str(post.metadata.get("description") or "").split())
-        text = (f"{lead}\n\n" if lead else "") + without_shortcodes(post.content)
+        body = markdown_cleanup.without_table_padding(without_shortcodes(post.content))
+        text = (f"{lead}\n\n" if lead else "") + body
         title = post.metadata.get("title") or self.title_from(text)
         return Parsed(text, self.category_for(rel), title, [], self.tags_for(rel))

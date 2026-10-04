@@ -105,6 +105,7 @@ CUT_RULES = (
     "category_by_path",
     "versions",
     "skip",
+    "skip_paths",
     "drop_docs_containing",
 )
 

@@ -14,7 +14,7 @@ This guide walks through ten practical rag-lab scenarios. Each includes commands
 curl -sX POST localhost:8000/v1/chat/question -H 'Content-Type: application/json' \
   -d '{"text":"What is a hash table?"}' | python3 -m json.tool
 ```
-The response includes the answer, retrieved sources with vector and keyword ranks and scores, and token and timing metrics. Reranking is off by default because the agent's generator already uses the available GPU memory. In the default layout, a chat request with `"rerank": true` returns 409 because the reranker and generator use separate GPU engines. Eval runs can use reranking after the `rerank` profile is started ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)). On the GPU, scoring takes 86 ms per question.
+The response includes the answer, retrieved sources with vector and keyword ranks and scores, and token and timing metrics. Reranking is off by default because the agent's generator already uses the available GPU memory. In the default layout, a chat request with `"rerank": true` returns 409 because the reranker and generator use separate GPU engines. Eval runs can use reranking after the `rerank` profile is started ([stand mode 2](stand_modes.md#2-with-reranking), [scenario 3](#scenario-3-reranking-ab)). On the GPU, scoring takes 86 ms per question on an idle card and 156 ms on a busy one ([the entry](experiments/2026-08-29_generator-grid-4b-against-8b.md)).
 
 ## Scenario 2: mini-eval from scratch to numbers
 
@@ -42,7 +42,7 @@ curl -sX POST localhost:8000/v1/eval/guest-axes -H 'Content-Type: application/js
   -d '{"run_name":"demo_run","sample":100,"seed":0}'
 ```
 
-The guest pass costs between six and eight times our three axes a row, so `sample` is what makes it a
+The guest pass costs several times our three axes a row, so `sample` is what makes it a
 calibration rather than an axis. Its two context axes need a reference answer on the question and
 abstain without one; `question_sets` says which sets carry them before a run is spent finding out.
 
@@ -62,7 +62,7 @@ docker compose exec rag-lab python -m evals.retrieval_metrics demo_rerank
 docker compose exec rag-lab python -m evals.generation_metrics demo_rerank
 # compare hit@k / MRR / faithfulness vs demo_run
 ```
-The `paraphrased_ru` set (cross-lingual: ru question over en corpus, where keyword FTS misses and retrieval is vector-only) is where reranking shows the most effect.
+The `paraphrased_ru` set (cross-lingual: ru question over en corpus, where keyword FTS misses and retrieval is vector-only) is where reranking shows the most effect ([the entry](experiments/2026-08-28_reranking-and-the-language-of-the-question.md)).
 
 ## Scenario 4: bring your own questions
 
@@ -83,7 +83,7 @@ curl -sX POST localhost:8000/v1/questions/import \
 curl -s "localhost:8000/v1/question-log?run_name=demo_run&faithfulness=0&faithfulness=1&faithfulness=2" | python3 -m json.tool
 # filters: question_id, text (substring), set_name, run_name, pipeline, answered,
 #          faithfulness, relevance, completeness, created_from, created_to,
-#          limit, offset, sort_by, sort_order
+#          limit, offset, sort_by, sort_order, and the snapshot's own (Swagger lists all)
 
 # retrieval misses for a run: in-corpus questions where the expected source was not retrieved
 curl -s "localhost:8000/v1/eval/misses?run_name=demo_run&limit=20" | python3 -m json.tool
@@ -98,7 +98,7 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=elapsed&sort_order=desc" | 
 ## Scenario 6: engines, models and roles
 
 ```bash
-# what the seed registered: every engine under `engines:` in config.yaml, six of them
+# what the seed registered: every engine under `engines:` in config.yaml
 curl -s localhost:8000/v1/engine | python3 -m json.tool
 # POST is for an engine the seed does not know, a cloud broker for one (stand_modes.md, "A cloud engine");
 # a name or a prefix already taken is a 409, and the address comes from the environment, never from the row
@@ -148,7 +148,7 @@ Caveat: retrieval hit@k/MRR are computed the same way for both pipelines, and th
 
 ## Scenario 9: parameter series (measure a retrieval lever)
 
-`POST /v1/eval/experiment` queues one run per value of a swept parameter, keeping set, pipeline and language fixed for a clean single-variable comparison. Swept params: `k` (retrieval width, chunks fed to the generator), `max_hops` (agent hop cap), `model` (generator model name; a model absent from the registry is created and pulled, the run waits for it), `variant` (which corpus variant the run reads, so a chunking can be swept like any other parameter), and, for the agent pipeline only, `fallback_policy`, `gate_signal`, `weak_distance` (the coverage gate's distance threshold) and `topic_threshold`. Runs are auto-named `<base>_<param>_<value>` and each enqueues its own judge pass; the worker drains them one at a time, so it is fire-and-forget.
+`POST /v1/eval/experiment` queues one run per value of a swept parameter, keeping set, pipeline and language fixed for a clean single-variable comparison. Swept params: `k` (retrieval width, chunks fed to the generator), `model` (generator model name; a model absent from the registry is created and pulled, the run waits for it), `variant` (which corpus variant the run reads, so a chunking can be swept like any other parameter), and, for the agent pipeline only, `max_hops` (agent hop cap), `orchestrator`, `fallback_policy`, `gate_signal`, `weak_distance` (the coverage gate's distance threshold) and `topic_threshold`. Runs are auto-named `<base>_<param>_<value>` and each enqueues its own judge pass; the worker drains them one at a time, so it is fire-and-forget.
 
 A corpus can be pinned as well as swept. `variant` on `POST /v1/eval/run` and on either
 experiment route names the cut every arm reads, and when `variant` is itself the swept
@@ -162,7 +162,7 @@ of axes instead of one swept parameter and carries a `kind`:
 curl -X POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d '{
   "kind": "retrieval", "dataset": "paraphrased_ru", "sample_size": 100,
   "param": "variant",
-  "axes": {"variant": ["baseline", "clean_1024"], "rerank_top": [0, 20]}
+  "axes": {"variant": ["clean_1024", "clean_big_1024"], "rerank_top": [0, 20]}
 }'
 ```
 
@@ -180,7 +180,7 @@ winner on half A and reports on half B can be checked against the record instead
 against somebody's memory.
 
 The corpus itself has two routes of its own. `POST /v1/source/{id}/analyze` runs the coverage report over a source (`mode: dry` cuts it in memory and says what the cut would be, `mode: indexed` reads the rows that are actually served) and `GET /v1/source/{id}/report` reads the history back, per variant, oldest first.
-`GET /v1/source/compare?variants=baseline&variants=clean_1024` puts the latest verdict of
+`GET /v1/source/compare?variants=clean_1024&variants=clean_big_1024` puts the latest verdict of
 each variant beside the other and counts the sources whose verdict moved. In the source
 listing, `chunks` is every variant's rows and `chunks_in_variant` counts only the cut named
 by `ingest_variant`, which is the one the verdict beside it is about. Neither needs embeddings or labelled questions: the metrics come from the text, so a source can be judged the moment it is added and long before anyone writes a question about it.
@@ -196,7 +196,7 @@ curl -s "localhost:8000/v1/job?type=eval_run&sort_by=id&sort_order=desc&limit=6"
 # per-run numbers once a run is judged
 docker compose exec rag-lab python -m evals.generation_metrics paraphrased_ru_agent_<ts>_k_05
 ```
-Every arm takes the generator's sampler (`temperature: 0.1` by default), so the arms differ only in the swept parameter; sampling still moves answers between two runs of one arm, and the floors in the README say by how much. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
+Every arm takes the generator's sampler (the generation role's options in `config/roles.yaml`), so the arms differ only in the swept parameter; sampling still moves answers between two runs of one arm, and the floors in the README say by how much. For the agent, `context_tokens` (peak per-hop prompt size) is logged in each answer's metrics, so a run also reveals how many answers approach the model's context window.
 
 ## Scenario 10: add a source and read its raw report
 
@@ -205,7 +205,7 @@ A source is declared first and converted second. The declaration names where the
 ```bash
 COMPOSE_PROFILES=convert scripts/up.sh
 
-# declare: exactly one of urls, folder, git or pages (pages take the site's `main` element and its `drop` furniture)
+# declare: exactly one origin, urls, folder, git, git_family or pages (pages, or a site's sitemap, take the site's `main` element and its `drop` furniture)
 curl -s -X POST localhost:8000/v1/source -H 'Content-Type: application/json' -d '{
   "name": "ctex-ru", "language": "ru", "licence": "CC BY-SA 3.0",
   "urls": ["https://www.inp.nsk.su/~baldin/LaTeX/ctex.pdf"]
@@ -257,5 +257,5 @@ docker compose exec ollama ollama list
 docker compose down
 
 # Full reset (drop everything, including models): re-pulls and onboards the seeded sources again; they are indexed once accepted
-docker compose down -v && docker compose up -d
+docker compose down -v && scripts/up.sh
 ```

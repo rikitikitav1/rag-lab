@@ -8,7 +8,7 @@ import corpus_keys
 import logging_setup
 from errors import Final
 from models.corpus import DataSource
-from sources.declaration import DEFAULT_INCLUDE, GitFamily, site_of
+from sources.declaration import DEFAULT_INCLUDE, GitFamily, site_of, skipped_path
 from use_cases import fetch, route, site_page
 
 log = logging_setup.get_logger(__name__)
@@ -153,11 +153,20 @@ def _flat(file: Path, inbox: Path, rel: str) -> Path:
 
 # every file under its report name, and what was left out; an EPUB stands for its chapters when the source reads them
 def named_files(
-    root: Path, files: list[Path], inbox: Path, skip=frozenset(), epub: bool = False, generated: list[str] = ()
+    root: Path, files: list[Path], inbox: Path, skip=frozenset(), epub: bool = False, generated: list[str] = (),
+    skip_paths: list[str] = (),
 ) -> tuple[dict[Path, str], dict[str, str]]:
     names, skipped = {}, {}
+    # a docs repository's screenshots are its pages' figures: OCR of nine thousand of them read nothing worth a search
+    beside_documents = any(f.suffix.lower() not in route.IMAGE and f.suffix.lower() in route.READABLE for f in files)
     for file in files:
         rel = str(file.relative_to(root))
+        if beside_documents and file.suffix.lower() in route.IMAGE:
+            skipped[rel] = "a picture beside documents: a page's figure, not a page"
+            continue
+        if pattern := skipped_path(rel, skip_paths):
+            skipped[rel] = f"the declaration skips {pattern}"
+            continue
         page = generated and file.suffix.lower() in route.HTML
         if page and (built := site_page.generated_by(file.read_text(errors="ignore"), generated)):
             skipped[rel] = f"the site builds this page: {built}"

@@ -49,7 +49,7 @@ def fields(settings: dict, language: str) -> list[tuple[str, str]]:
 
 # the markdown with its code blocks' lines from the PDF's layer when the settings ask for it, and what was rebuilt
 def code_lines_of(settings: dict, path: Path, result: dict, rule) -> tuple[str, dict | None]:
-    from use_cases import code_lines, docling_structure, markdown_cleanup, route
+    from use_cases import code_lines, docling_structure, markdown_cleanup, route, rule_counts
 
     spread = rule.mono_spread
 
@@ -58,41 +58,32 @@ def code_lines_of(settings: dict, path: Path, result: dict, rule) -> tuple[str, 
         return markdown, None
     from use_cases import heading_rules, piece_join
 
-    markdown, entities = markdown_cleanup.decode_entities(markdown) if rule.decode_entities else (markdown, 0)
-    markdown, pipes = markdown_cleanup.drop_lone_pipes(markdown) if rule.drop_lone_pipes else (markdown, 0)
+    fired = rule_counts.Fired(rule)
+    markdown = fired.run("decode_entities", markdown, markdown_cleanup.decode_entities)
+    markdown = fired.run("drop_lone_pipes", markdown, markdown_cleanup.drop_lone_pipes)
     rows_by = frozenset(rule.code_row_rules)
     callouts = route.mono_names(rule) if rule.listing_callouts else None
     markdown, counts = code_lines.rebuild(
         markdown, result["structure"], path, spread, callouts, rule.mono_by_step, rows_by
     )
-    counts.update(entities_decoded=entities, pipes_dropped=pipes)
     goes_on = docling_structure.continued(result["structure"])["table"]
-    markdown, counts["tables_joined"], counts["rows_continued"] = piece_join.join_tables(
-        markdown, goes_on, rule.join_continued_rows
-    )
+    markdown, counts["tables_joined"] = piece_join.join_tables(markdown, goes_on)
     outline = route.outline(path)
     titles = [title for _, title, _ in outline]
     markdown, counts["fenced"] = code_lines.fence_mono(
         markdown, result["structure"], path, route.mono_names(rule), titles, spread=spread, rows_by=rows_by
     )
-    counts["relevelled"] = counts["numbered_levels"] = 0
-    if outline and rule.outline_levels:
-        markdown, counts["relevelled"] = heading_rules.relevel(
-            markdown, result["structure"], outline, rule.headings_by_number
-        )
-    elif not outline and rule.numbered_levels:
-        markdown, counts["numbered_levels"] = heading_rules.relevel(markdown, result["structure"], [], by_number=True)
-    markdown, counts["paragraphs_joined"] = piece_join.join_paragraphs(markdown, result["structure"])
-    counts["pictures_addressed"] = 0
-    if rule.picture_addresses:
-        markdown, counts["pictures_addressed"] = code_lines.picture_addresses(markdown, result["structure"])
-    counts["formulas_from_layer"] = 0
-    if rule.formula_text:
-        markdown, counts["formulas_from_layer"] = code_lines.formula_text(markdown, result["structure"])
-    counts["man_page_titles"] = 0
-    if rule.man_page_titles:
-        markdown, counts["man_page_titles"] = heading_rules.man_page_titles(markdown)
-    return markdown, counts
+    structure = result["structure"]
+    if outline:
+        by_number = rule.headings_by_number
+        markdown = fired.run("outline_levels", markdown, heading_rules.relevel, structure, outline, by_number)
+    else:
+        markdown = fired.run("numbered_levels", markdown, heading_rules.relevel, structure, [], True)
+    markdown, counts["paragraphs_joined"] = piece_join.join_paragraphs(markdown, structure)
+    markdown = fired.run("picture_addresses", markdown, code_lines.picture_addresses, structure)
+    markdown = fired.run("formula_text", markdown, code_lines.formula_text, structure)
+    markdown = fired.run("man_page_titles", markdown, heading_rules.man_page_titles)
+    return markdown, {**counts, **fired.counts}
 
 
 def ceiling(settings: dict) -> float:

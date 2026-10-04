@@ -108,6 +108,22 @@ def test_a_page_the_site_builds_is_left_out_by_its_pattern(tmp_path):
     assert skipped == {"api.html": "the site builds this page: ^.*auto-generated"}
 
 
+# a declared path pattern leaves a whole folder out with the pattern named, where every page is called `index`
+def test_a_declared_path_leaves_its_folder_out(tmp_path):
+    from use_cases import intake_fetch
+
+    root = tmp_path / "site"
+    for rel in ("releasenotes/26.3/index.html", "guide/index.html"):
+        (root / rel).parent.mkdir(parents=True)
+        (root / rel).write_text("<p>text</p>")
+
+    files = sorted(root.rglob("*.html"))
+    names, skipped = intake_fetch.named_files(root, files, tmp_path / "inbox", skip_paths=["releasenotes/*"])
+
+    assert list(names.values()) == ["guide/index.html"]
+    assert skipped == {"releasenotes/26.3/index.html": "the declaration skips releasenotes/*"}
+
+
 # highlighting is flat in any HTML, a page from `urls` too, and the fetched file is left as it came
 def test_any_html_reaches_the_tool_with_its_highlighting_flat(tmp_path):
     from use_cases import intake_fetch
@@ -197,3 +213,22 @@ def test_a_stalled_page_is_asked_again(monkeypatch, tmp_path):
     with pytest.raises(requests.ConnectTimeout):
         fetch.download("https://a/q.html", tmp_path / "q.html")
     assert not (tmp_path / "q.html").exists()
+
+
+# a folder of documents reads them and names the screenshots beside them as left out; a scan folder reads its images
+def test_a_docs_folder_leaves_its_pictures_and_a_scan_folder_keeps_them(tmp_path):
+    from use_cases.intake_fetch import named_files, stand_folder
+
+    docs = tmp_path / "docs"
+    (docs / "media").mkdir(parents=True)
+    (docs / "page.md").write_text("# Page\n")
+    (docs / "media" / "shot.png").write_bytes(b"\x89PNG")
+    scans = tmp_path / "scans"
+    scans.mkdir()
+    (scans / "p1.png").write_bytes(b"\x89PNG")
+
+    root, files = stand_folder("docs", tmp_path)
+    names, skipped = named_files(root, files, tmp_path / "inbox")
+    assert list(names.values()) == ["page.md"] and list(skipped) == ["media/shot.png"]
+    root, files = stand_folder("scans", tmp_path)
+    assert list(named_files(root, files, tmp_path / "inbox")[0].values()) == ["p1.png"]

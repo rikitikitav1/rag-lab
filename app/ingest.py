@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import config
 import logging_setup
+from book_matter import index_spans, is_matter
 from corpus_keys import SECTION_SEP
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
@@ -49,20 +50,6 @@ BODY, CONTENT = "body", "content"
 
 def _budget(ceiling: int, prefix: str, ceiling_on: str) -> int:
     return ceiling if ceiling_on == BODY else max(1, ceiling - len(prefix))
-
-
-# from the variant's policy: the constant let a frozen variant declare a ceiling nothing read
-def chunk_markdown(content, separator="\n## ", *, ceiling):
-    if not content.strip():
-        return []
-
-    parts = content.split(separator)
-
-    intro = parts[0]
-    h1 = content.splitlines()[0]
-    chunks = [intro] + [h1 + separator + part for part in parts[1:]]
-
-    return split_all_by_size(chunks, ceiling)
 
 
 def split_all_by_size(chunks, ceiling):
@@ -165,6 +152,46 @@ def _headings_of(lines: list[str]) -> list[tuple[int, str, str]]:
 # the parser drops non-printables, so both sides are compared the same way
 def _printable(text: str) -> str:
     return "".join(c for c in text if c.isprintable()).strip()
+
+
+_ANY_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t#]*$")
+
+
+# headings of every level outside fences, as (line, level, text)
+def _all_headings(lines: list[str]) -> list[tuple[int, int, str]]:
+    inside, _ = _fence_scan(lines)
+    return [
+        (i, len(found.group(1)), found.group(2).strip())
+        for i, line in enumerate(lines)
+        if i not in inside and (found := _ANY_HEADING.match(line))
+    ]
+
+
+# a book's back index is cut out before the sections are, so its letters never become sections of their own
+def without_index(content: str, file: str) -> str:
+    lines = content.split("\n")
+    spans = index_spans(file, _all_headings(lines), len(lines))
+    if not spans:
+        return content
+    return "\n".join(line for i, line in enumerate(lines) if not any(a <= i < b for a, b in spans))
+
+
+# what the index cut takes, named for the report beside the sections left out by their heading
+def index_left_out(content: str, file: str) -> list[str]:
+    lines = content.split("\n")
+    spans = index_spans(file, _all_headings(lines), len(lines))
+    return [f"{lines[a].lstrip('#').strip()} (lines {a + 1}-{b})" for a, b in spans]
+
+
+# the line ranges the index never reads: the back index by position and every `##` section that is matter
+def matter_lines(content: str, file: str) -> list[tuple[int, int]]:
+    lines = content.split("\n")
+    spans = index_spans(file, _all_headings(lines), len(lines))
+    tops = [(i, h) for i, level, h in _heading_marks(content, file) if level == "##"]
+    for n, (line, heading) in enumerate(tops):
+        if is_matter(file, heading):
+            spans.append((line, tops[n + 1][0] if n + 1 < len(tops) else len(lines)))
+    return sorted(spans)
 
 
 # heading, whole body, the head before the first subheading, and the subsections
@@ -324,11 +351,3 @@ def _merge_slivers(pieces, path, ceiling: int, ceiling_on: str) -> list[Cut]:
         for split in [split_by_size(cut.body, max_size=_budget(ceiling, cut.prefix, ceiling_on))]
         for piece in split
     ]
-
-
-# the same rule the backfill migration used, so re-indexing baseline does not lose the axis
-def heading_path(chunk: str) -> str | None:
-    lines = chunk.split("\n", 2)
-    if len(lines) < 2 or not lines[0].startswith("# ") or not lines[1].startswith("## "):
-        return None
-    return SECTION_SEP.join(re.sub(r"^#+\s*", "", line) for line in lines[:2])

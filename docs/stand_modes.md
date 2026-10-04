@@ -8,14 +8,14 @@ page gives only the constants of the device and orders of magnitude.
 
 | Mode | Up beyond postgres, API, worker | Holds the GPU | Where the roles sit |
 |---|---|---|---|
-| 1. Default | `ollama`, `ollama-cpu`, `vllm` | `vllm` for the judge, `ollama` for the rest, handed through the queue | generation, embedding, paraphrasing, ragas: `ollama`; judging: `vllm`; ragas_embedding: `ollama-cpu`; reranking seated, its service down |
-| 2. With reranking | + `vllm-rerank`, 0.3 of GPU memory | as 1, and the reranker for one scoring pass | reranking: `vllm-rerank`; the rest as 1 |
+| 1. Default | `ollama`, `ollama-cpu`, `vllm` | `vllm` for the judge, `ollama` for the rest, handed through the queue | generation, embedding, paraphrasing, grading, accepting, ragas: `ollama`; judging: `vllm`; ragas_embedding: `ollama-cpu`; questioning: a cloud broker; reranking seated, its service down |
+| 2. With reranking | + `vllm-rerank`, its share of GPU memory in `VLLM_RERANK_GPU_UTIL` | as 1, and the reranker for one scoring pass | reranking: `vllm-rerank`; the rest as 1 |
 | 3. The embedder on vLLM | + `vllm-embed` | as 1, and `vllm-embed` for each embedding call; the chat answers 409 | embedding: `vllm-embed`, with its own corpus variant; the rest as 1 |
 | 4. On the processor | + `vllm-cpu`, its whole model in host memory: `free` first | a role on the processor never takes it | the moved role: `vllm-cpu` or `ollama-cpu`; the rest as 1 |
 | 5. Generation on vLLM | as 1 | `vllm`: generator and judge in one process; `ollama` for the embedder; the chat answers 409 | generation: `vllm`; the rest as 1 |
 | 6. The judge on ollama | as 1 | `ollama`; the judge's residency restarts at every judging pass | judging: `qwen2.5:7b` on `ollama`; the rest as 1 |
 | Converting a source | + `converter-docling`, `converter-mineru` under the profile `convert` | a converter from its job's first piece until another engine takes the GPU, handed through the queue like any other holder; its supervisor answers `/health` with no tool running | no role moves: the converters are engines of the `onboard_source` and `convert_source` jobs |
-| 8. Without a GPU | `ollama-cpu` only, no `ollama`, no `vllm` | nobody | every role on `ollama-cpu`; no reranker; a timeout of 600 s |
+| 8. Without a GPU | `ollama-cpu` only, no `ollama`, no `vllm` | nobody | the roles of `config/roles.cpu.yaml` on `ollama-cpu`, the others unseated; no reranker; its own timeout (`LLM_TIMEOUT_CPU`) |
 | A cloud engine | nothing: a remote broker | the cloud role never takes it | generation, judging or ragas on the broker; the rest as 1 |
 
 Mode 7, the GPU is stuck, is a failure rather than a layout; its signs and fixes are in its section.
@@ -59,11 +59,10 @@ the processor for the `cpu` profile. Every other variable is the same in every m
 scripts/up.sh
 ```
 
-The generator (`llama3.1:8b`), the embedder (`bge-m3`) and the paraphraser (`gemma2:9b`) sit on
-`ollama` on the GPU; the judge (`Qwen/Qwen2.5-7B-Instruct-AWQ`) on `vllm`, which takes the GPU first
+The generator, the embedder and the paraphraser (their models in `config/roles.yaml`) sit on
+`ollama` on the GPU; the judge on `vllm`, which takes the GPU first
 at start and is put to sleep by the bootstrap before ollama loads a role. A run and its judging pass
-hand the GPU between the two: to vLLM in about a second, back to ollama in a few seconds with the
-load. The reranking role is seated on `vllm-rerank` but its service is down until mode 2; that is
+hand the GPU between the two: waking vLLM is quick, and ollama's way back costs its model's load. The reranking role is seated on `vllm-rerank` but its service is down until mode 2; that is
 not counted as a fault while no run asks for reranking.
 
 What the record says: the judge's axes carry `engine_name: vllm` and a residency read off the
@@ -78,7 +77,7 @@ docker compose --profile rerank up -d vllm-rerank
 
 The role is already seated by the bootstrap from `config/roles.yaml`. A run asks for it with `"rerank":
 true`, and the agent's gate uses it at `gate_signal: cross_encoder` or `either`. The server takes a
-0.3 share of GPU memory (`VLLM_RERANK_GPU_UTIL`). In a phased run the embedder answers first, the
+share of GPU memory set by `VLLM_RERANK_GPU_UTIL`. In a phased run the embedder answers first, the
 reranker takes the GPU for one scoring pass, and the GPU goes back to ollama for generation.
 
 What the record says: the run snapshot names the reranking role's engine among the engines per role.
@@ -125,8 +124,7 @@ docker compose --profile cpu up -d vllm-cpu
 ```
 
 A role on a processor engine never takes the GPU. The price is host memory, not GPU memory:
-`vllm-cpu` holds its whole model there (`Qwen/Qwen2.5-7B-Instruct` in fp16 is about 15 GB of
-weights), and the sleeping judge keeps about 13 GB of host memory too. Before starting it, unload
+`vllm-cpu` holds its whole model there in fp16, and the sleeping judge keeps its own share of host memory too. Before starting it, unload
 the models of `ollama-cpu` and keep free at least twice the weights plus room for the desktop; a
 start without that check once took the whole session down.
 
@@ -167,7 +165,7 @@ journal.
 
 What the record says: `engine_name: ollama` and a residency read off `ollama /api/ps and the queue`.
 
-Leave it: seat `judging` back on `Qwen/Qwen2.5-7B-Instruct-AWQ` on `vllm`.
+Leave it: seat `judging` back on its model in `config/roles.yaml` on `vllm`.
 
 ## 7. The GPU is stuck
 
@@ -204,7 +202,7 @@ curl -s "localhost:8000/v1/job?type=hand_card&status=error&limit=5" | python3 -m
   piece takes the GPU again. `converter-mineru: <reason>` comes at once, without the 60 s: the
   supervisor says it cannot start, usually because its image lacks a model it is set to use.
 - `vllm` neither dies nor turns healthy: the bootstrap waits for it up to its healthcheck's
-  `start_period`, an hour (the first start downloads the weights); `docker compose logs vllm` says why.
+  `start_period` (the first start downloads the weights); `docker compose logs vllm` says why.
 
 Back to the default: `POST /v1/model/{id of the judge}/load` hands the GPU to the judge through the
 queue, and the next job that needs ollama takes it back the same way.
@@ -217,15 +215,15 @@ scripts/up.sh --cpu
 
 `docker-compose.cpu.yml` goes over the main file: no service reserves the GPU, `ollama` and `vllm`
 are left out, and the roles come from `config/roles.cpu.yaml`, every one on `ollama-cpu`, with
-`LLM_TIMEOUT_CPU` (600 s) as the timeout. `scripts/up.sh` without the flag checks `docker info` for
+`LLM_TIMEOUT_CPU` as the timeout. `scripts/up.sh` without the flag checks `docker info` for
 the GPU first, and on a host without one says why the stand would not start and gives this command.
 
 A bare `docker compose` reads the main file alone, so `docker compose up -d worker` in this mode would
-recreate the worker with the GPU and the two-minute timeout. Put
+recreate the worker with the GPU and its own timeout (`LLM_TIMEOUT`). Put
 `COMPOSE_FILE=docker-compose.yml:docker-compose.cpu.yml` in `.env` while the stand runs this way.
 
 The layer seats roles only on an empty database. A stand that already has roles keeps them, so seat
-each one with `PUT /v1/role` on its model on `ollama-cpu`, by the ids the model list gives; a model
+each one with `PUT /v1/role/{role}` on its model on `ollama-cpu`, by the ids the model list gives; a model
 the list does not have there, as `llama3.1:8b` and `gemma2:9b`, comes first through `POST /v1/model`.
 From a stand running on the GPU, `scripts/up.sh --cpu` stops `ollama` and `vllm` before it starts.
 
@@ -236,10 +234,9 @@ vLLM, and the next `up` re-embeds every question of every set in place, and agai
 No reranker: ollama scores no pairs, so `"rerank": true` and the agent's gate at `gate_signal:
 cross_encoder` or `either` do not work in this mode.
 
-The first `up` builds the index on the processor: about 2 chunks a second against about 33 on the
-GPU, so the index that takes about five minutes with a GPU takes about an hour and a half here.
+The first `up` builds the index on the processor, an order of magnitude slower than on the GPU.
 
-A mode for running, not for measuring: `ollama-cpu` unloads a model after ten idle minutes
+A mode for running, not for measuring: `ollama-cpu` unloads a model after `OLLAMA_CPU_KEEP_ALIVE` idle
 (`OLLAMA_CPU_KEEP_ALIVE`), so the judge's residency starts again often, and `compare` refuses a pair
 against a run judged on the GPU. Numbers from this mode do not go to the journal.
 
@@ -254,7 +251,7 @@ its virtual machine needs room for two 7-8b models and the embedder at once, and
 image that is not for it.
 
 Leave it on a host with a GPU: `scripts/up.sh` first (drop `COMPOSE_FILE` from `.env`), then seat
-each role back on its GPU engine with `PUT /v1/role`. The other order fails: with the GPU engines
+each role back on its GPU engine with `PUT /v1/role/{role}`. The other order fails: with the GPU engines
 not started the door refuses the seat with 503.
 
 ## A cloud engine
@@ -263,15 +260,16 @@ not started the door refuses the seat with 503.
 # in .env, one pair per engine row, named by its env_prefix; compose reads .env only on `up`
 #   GONKA_BASE_URL=...   GONKA_API_KEY=...
 docker compose up -d worker rag-lab
-curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
-  -d '{"name":"gonka","kind":"openai_compatible","env_prefix":"GONKA","placement":"remote"}'
+# gonka, neuraldeep and groq are seeded from `engines:`; a broker not listed there is registered once:
+# curl -sX POST localhost:8000/v1/engine -H 'Content-Type: application/json' \
+#   -d '{"name":"mybroker","kind":"openai_compatible","env_prefix":"MYBROKER","placement":"remote"}'
 curl -sX POST localhost:8000/v1/model -H 'Content-Type: application/json' \
   -d '{"name":"deepseek-ai/DeepSeek-V4-Flash-0731","engine":"gonka"}'
 ```
 
 A model whose answers carry a thinking trace or call markup gets its parser on the model row,
 `PATCH /v1/model/{id}` with `answer_parser`, one of the parsers the stand has. Then use it: seat a role
-with `PUT /v1/role`, or name it in one arm only, as the generator of a `generation` arm, the `judge_model`
+with `PUT /v1/role/{role}`, or name it in one arm only, as the generator of a `generation` arm, the `judge_model`
 of a rejudge or the `guest_model` of a guest pass.
 
 <details>
@@ -289,16 +287,16 @@ A cloud role never takes the GPU, and a call answers in seconds. What differs fr
   the broker: the ops MCP tool `broker_balances`, and each job's balance before and after. The balance
   belongs to the key, so anything else spent on that key lands in it too.
 - A failure stops the run instead of failing one row: a refused key (401, 403), a quota or a rate limit
-  (402, 429), a 5xx after the client's own four retries.
-- At gonka a 429 has two causes. One is a daily cap counted by UTC (on 2026-09-13 it came after about 1.7
-  million tokens on one key); the other is a throttle on the rate of calls, which came after about
-  twenty calls on 2026-09-14 and did not care which key made them. A 429 that names its pause in
-  `Retry-After` (up to 600 s) is waited and the call asked again, up to five times in a row, and the
-  wait lands on the job as `paced` and `paced_seconds` beside its tokens (the stand's own waits: the client's retries under them are not counted). A 429 without a pause, with a
-  longer one, or past the fifth wait stops the run; it is queued again by hand, after 00:00 UTC for
-  the cap, and a guest pass queued again answers only the rows it still owes. Every 429 writes the
-  broker's rate headers to the worker's log. On 2026-09-14 gonka's 429 named a pause of 5 s and sent no
-  `x-ratelimit-*` headers: its throttle is a short pause, and the rule waits it out.
+  (402, 429), a 5xx after the client's own retries (`CLOUD_RETRIES`).
+- At gonka a 429 has two causes. One is a daily cap counted by UTC; the other is a throttle on the rate
+  of calls, which did not care which key made them. A 429 that names its pause in `Retry-After` (up to
+  `PACE_CEILING_SECONDS`) is waited and the call asked again, up to `PACE_TRIES` times in a row, and the
+  wait lands on the job as `paced` and `paced_seconds` beside its tokens (the stand's own waits: the
+  client's retries under them are not counted). A 429 without a pause, with a longer one, or past the
+  last allowed wait stops the run; it is queued again by hand, after 00:00 UTC for the cap, and a guest
+  pass queued again answers only the rows it still owes. Every 429 writes the broker's rate headers to
+  the worker's log. Gonka's 429 named a short pause and sent no `x-ratelimit-*` headers: its throttle is
+  a short pause, and the rule waits it out.
 - The broker decides the weights, their precision and the node. A cloud judge moved 27% of its
   verdicts between two passes in different hours
   ([the entry](experiments/2026-09-14_a-cloud-judge-on-the-same-answers.md)), so a floor is measured in

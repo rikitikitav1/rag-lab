@@ -8,7 +8,7 @@ intake:
     min_raster_run: 3
     # not measured: a page with fewer words gives no share worth reading for the suspect-layer signals
     suspect_min_words: 50
-    # tuned: file=datasets/converter_gold/reread_rule.json
+    # tuned: file=datasets/converter_gold/reread_rule_20261002.json
     reread_below_layer_f1: 0.95
     reread_settings: docling/pypdfium2_cells
     # the share of table cells the second reading may lose and still be taken; a source knob, 0 for the stand
@@ -65,10 +65,6 @@ intake:
     drop_running_headings: true
     # a word split by a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole; 14 sources
     join_split_words: true
-    # an identifier wrapped after its underscore is joined back where the layer keeps the wrap; off until its gate
-    join_wrapped_identifiers: false
-    # a table row a page break cut, whose next row starts with an empty cell, is finished by it; off until its gate
-    join_continued_rows: false
     # an EPUB read as its chapters; one EPUB seen so far, so off and the file is skipped with its reason
     epub_chapters: false
   # tuned: file=datasets/converter_gold/raw_band.json

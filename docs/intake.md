@@ -31,7 +31,7 @@ The first version is two blocks, each on one line. A chunker cuts it anywhere, a
 
 ## What it depends on
 
-Docling and MinerU produce the text. Intake selects a converter for each file and cleans up its output. The quality checks use signals from the source itself, so they do not need a separate reference copy. For PDFs with a text layer, the report also compares the converted text with that layer. Both converters use a GPU. MinerU takes about eight seconds per scanned page; Docling takes about two seconds per page for a text PDF.
+Docling and MinerU produce the text. Intake selects a converter for each file and cleans up its output. The quality checks use signals from the source itself, so they do not need a separate reference copy. For PDFs with a text layer, the report also compares the converted text with that layer. Both converters use a GPU. MinerU is the slower of the two per page.
 
 | engine | version | licence |
 |---|---|---|
@@ -42,7 +42,7 @@ docling-parse is pinned at 7.20.0: 7.21.0 glued the words of LaTeX and Sphinx bo
 
 ## Quick start
 
-A source is declared, onboarded and accepted through the stand's API (full list in [api.md](api.md), the same doors in MCP, [mcp.md](mcp.md)):
+The whole path, with who decides at each step and what to do with a dirty source, is in [add_a_source.md](add_a_source.md). A source is declared, onboarded and accepted through the stand's API (full list in [api.md](api.md), the same doors in MCP, [mcp.md](mcp.md)):
 
 ```bash
 # declare a folder of books
@@ -70,11 +70,11 @@ The engine is chosen by the file, never declared:
 | PDF without one (a scan) | MinerU with OCR |
 | image | MinerU |
 | HTML, DOCX, PPTX, XLSX, ODT, RTF | Docling |
-| markdown, text | as it is |
+| markdown (`.md`, and `.mdx` with its imports, comments and component tags dropped), text | as it is |
 
-A PDF has a *text layer* when the words are stored as text in the file, not only drawn as pictures of letters. The layer also records each letter's font and position, and most of what follows reads it. A book that mixes both kinds of pages goes to Docling, which reads its few scanned pages with OCR, and the report counts them.
+A PDF has a *text layer* when the words are stored as text in the file, not only drawn as pictures of letters. The layer also records each letter's font and position, and most of what follows reads it. A book that mixes both kinds of pages is split by page kind: a run of scanned pages shorter than `intake.route.min_raster_run` stays with Docling, which reads it with OCR, and a longer run goes to MinerU; the report counts them.
 
-The output goes to the source's raw folder. It contains one markdown file per input file, the intermediate pieces used to build it, and a report. The source is not searchable until it is accepted, indexed and turned on.
+The output goes to the source's raw folder. It contains one markdown file per input file, the intermediate pieces used to build it, and a report. A folder that holds documents does not read the pictures beside them: they are the pages' figures. The index reads only the files the folder's record names, and a run drops the markdown of a file it no longer reads, so a source whose origin moved from a folder to a link is not read twice. The source is not searchable until it is accepted, indexed and turned on.
 
 ![A source's stages, and a piece inside onboarding: converter status and quality are two separate checks](diagrams/source_states.drawio.svg)
 
@@ -106,7 +106,7 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 |---|---|---|---|
 | `settings` | a Docling or MinerU settings file of its own | the stand's | Erickson, PostgreSQL Internals |
 | `reread_settings`, `reread_below_layer_f1` | the second reading and its threshold | `docling/pypdfium2_cells`, 0.95 | |
-| `reread_cells_slack` | the share of table cells the second reading may lose and still be taken | 0 | Coulouris (third chapter: layer F1 0.69 against 0.97 at 42 of 44 cells) |
+| `reread_cells_slack` | the share of table cells the second reading may lose and still be taken | 0 | Coulouris (third chapter: a reading that lost two table cells read far closer to the layer) |
 | `splice_tables` | a second reading refused for table cells alone keeps its prose and takes back, matched by page, the first reading's tables where they keep more cells and its formulas where they keep more operators; a second reading taken whole takes back those formulas too, each on its own line in reading order | on | a source whose second reading loses on cells (Coulouris, goalkicker, van Steen); van Steen's computer networks turns it off |
 | `mono_faces`, `mono_spread` | what counts as a monospace font | a list of names, 0.1 | |
 | `mono_by_step` | spaces by glyph positions, for a code font whose boxes are wider than its advance | off | Object Pascal Handbook |
@@ -120,8 +120,6 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `drop_lone_pipes` | a paragraph that is only `\|` dropped | on | |
 | `unescape_bullets` | a list marker MinerU escapes (`\- item`) unescaped | on | |
 | `join_split_words` | a word the converter split with a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole and one half is no word of the layer | on | |
-| `join_wrapped_identifiers` | an identifier the layer wraps after its underscore (`reviews_` then `dataset.csv`) joined where the converter read the wrap as a space | off until its gate | |
-| `join_continued_rows` | a table row a page break cut is finished by the next row when that row starts with an empty cell; a real row may start empty, so it waits for its gate | off until its gate | |
 | `picture_addresses` | a Docling picture's placeholder becomes `![caption](picture:p<page>-<n>)`, its page and place on the page, caption empty when it has none; a MinerU picture inlined as base64 becomes `![](picture:pages<a>-<b>-<n>)`, by the piece's pages, since MinerU does not give a picture's page | on | |
 | `formula_text` | a formula Docling could not decode (`<!-- formula-not-decoded -->`) gets the text the layer holds under it, flattened to one line, private-use glyphs of the math font dropped; searchable, not typeset | on | |
 | `demote_caption_headings` | a heading that is a figure, listing or table caption (`Figure 2.6`, `Listing 2.4`, `Таблица 8.4`) goes back to a line of text, outside code fences, so it does not cut a section in two | on | |
@@ -130,14 +128,14 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `join_broken_words` | a word the converter left broken at its hyphenation joined when the layer has it whole | on | |
 | `restore_dashes` | a dash the converter dropped at a line end put back from the layer | on | |
 | `join_layer_hyphens` | a word the layer breaks with a hyphen mark at a line end joined for the word rules (dashes, broken words); the reread's layer F1 reads the layer as PDFium gives it | on | |
-| `seam_window`, `seam_margin` | a piece's end moves off a page break that code runs over | 0 (off) | |
+| `seam_window`, `seam_margin` | a piece's end moves off a page break that code runs over | window 0 (off) | |
 | `html_one_title` | HTML chapter headings one level down under the page title | off | |
 | `epub_chapters` | an EPUB read as its chapters in reading order; off, the file is skipped and named in the report | off | Kubernetes Patterns (since removed) |
 | `epub_skip` | EPUB page types skipped as front and back matter | none | |
 
 ## How a default is chosen
 
-A fix seen on one or two books becomes a knob of those books. It becomes a default only after a run over the whole gate set shows no book worse on the declared columns, with every book that did get worse named and explained. The gate sets are 111 sections cut from seven documents (six books and documentation sets in English and Russian, and one paper), each with a hand-checked reference text and labelled code, prose or table; and the second chapter of every PDF document in the store, 45 documents, 760 pages. The full rule and its reasons are in [experiments.md](experiments.md#methodology).
+A fix seen on one or two books becomes a knob of those books. It becomes a default only after a run over the whole gate set shows no book worse on the declared columns, with every book that did get worse named and explained. The gate sets are sections cut from seven documents (six books and documentation sets in English and Russian, and one paper), each with a hand-checked reference text and labelled code, prose or table (`datasets/converter_gold/gold.json`); and the second chapter of every PDF document in the store (`datasets/converter_gold/chapter_set.yaml`). The full rule and its reasons are in [experiments.md](experiments.md#methodology).
 
 ## Limits
 
@@ -145,10 +143,10 @@ What is known today, each with a book that shows it:
 
 - Scans: MinerU's heading levels in a scan do not follow the outline, and man pages lose the command name under `NAME` (the 4.3BSD reference, a scan). No knob.
 - Two columns: whether a two-column paper reads better through MinerU is open: shown on one paper (ARES), not tested on a second.
-- Formulas: Docling's formula enrichment is off, because it turned `psql` sessions and Russian code comments into formulas. The text around a formula is kept (on Erickson's most mathematical pages 97% of the layer's words against 94% with enrichment on), but the formula itself is a placeholder.
+- Formulas: Docling's formula enrichment is off, because it turned `psql` sessions and Russian code comments into formulas. The text around a formula is kept, but the formula itself is a placeholder.
 - Levels at a piece boundary: in a file without an outline, heading levels restart in each 50-page piece.
 - Piece ends: moving a piece's end off a page break that code runs over is off: never measured on its own.
-- The second reading on long pieces: how often it fires on 50-page pieces is not known yet; it was tuned on 2 to 5 page sections, and it cost one heading on one of them (Baldin, a LaTeX book).
+- The second reading on long pieces: how often it fires on 50-page pieces is not known yet; it was tuned on 2 to 5 page sections, and it cost a heading on one of them (Baldin, a LaTeX book).
 - Converter defects: Kafka's parameter names come as seventh-level headings, which the intake turns into bold lines; FreePascal's outline puts record types at the top level (knob `headings_by_number`); the Object Pascal Handbook sets code in a second font whose boxes are wider than its advance (knob `mono_by_step`).
 
 This list will be replaced by one ranked by how many books show each defect, after every book in the store has been read on the current defaults.
@@ -157,4 +155,4 @@ This list will be replaced by one ranked by how many books show each defect, aft
 
 Code rebuilt from the text layer, on the gold sections, against Docling alone (rescored on 27 September 2026, after the scorer stopped reading a `#` inside a code block as a heading): code blocks matching the reference exactly rose from 11 to 17 of 32 in English, 1 to 5 of 17 in Russian, 6 to 8 of 20 in the Russian PostgreSQL documentation, and Cyrillic comments in code survive. The run, its tables and the choice of engine per kind of file are in [which converter for each kind of document](experiments/2026-09-25_two-converters-one-per-regime.md). The intake as a whole gets its own entry after every book in the store has been read on the current defaults.
 
-The thresholds come from files: the second reading's 0.95 from `datasets/converter_gold/reread_rule.json`, the layer bounds of the report from `datasets/converter_gold/raw_band.json`.
+The thresholds come from files: the second reading's 0.95 from `datasets/converter_gold/reread_rule_20261002.json` (re-tuned on the readings with the layer rules applied first; the first tuning is `reread_rule.json`), the layer bounds of the report from `datasets/converter_gold/raw_band.json`.

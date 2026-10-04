@@ -153,7 +153,10 @@ def onboard_options(name: str, settings: dict | None, fresh: bool = False) -> di
 
 
 # the queued work that reads a source by name: removing it under a running job leaves the job writing into nothing
-SOURCE_JOBS = ("onboard_source", "analyze_source", "index_data", "probe_intake")
+SOURCE_JOBS = (
+    "onboard_source", "analyze_source", "index_data", "probe_intake", "generate_questions", "load_questions",
+    "accept_questions", "judge_questions", "anchor_questions", "reparse_questions",
+)
 # an eval_run naming no variant runs on the searched one, which is refused anyway
 VARIANT_JOBS = ("index_data", "analyze_source", "eval_run", "build_vector_index")
 
@@ -249,9 +252,8 @@ def veto_reading(variant: str) -> int | None:
 
     found = job_queue.pending_listing("build_veto_set", "variants", variant)
     found = found or job_queue.pending_of_type("build_veto_set", cut_from=variant)
-    if variant in ("baseline", VETO_CUT_FROM):
-        found = found or job_queue.pending_of_type("build_veto_set", variants=None)
     if variant == VETO_CUT_FROM:
+        found = found or job_queue.pending_of_type("build_veto_set", variants=None)
         found = found or job_queue.pending_of_type("build_veto_set", cut_from=None)
     return found
 

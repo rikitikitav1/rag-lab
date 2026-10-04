@@ -96,17 +96,3 @@ def join_split_words(markdown: str, layer: str | None) -> tuple[str, int]:
             lines[n] = "".join(parts)
     return "\n".join(lines), count
 
-
-# one underscore after a letter or digit: a dunder name (`__repr__`) ends a word, the next line is not its tail
-_WRAPPED_UNDERSCORE = re.compile(r"(?<!\w)(\w*[^\W_]_)\r?\n[ \t]*(\w[\w.]*)")
-
-
-# an identifier wrapped after its underscore: the converter reads the line end as a space, the layer keeps the wrap
-def join_wrapped_identifiers(markdown: str, layer: str | None) -> tuple[str, int]:
-    if not layer:
-        return markdown, 0
-    pairs = {f"{a} {b}": f"{a}{b}" for a, b in _WRAPPED_UNDERSCORE.findall(layer)}
-    if not pairs:
-        return markdown, 0
-    pattern = re.compile(r"(?<!\w)(" + "|".join(map(re.escape, sorted(pairs, key=len, reverse=True))) + r")(?![\w])")
-    return pattern.subn(lambda m: pairs[m.group(0)], markdown)

@@ -24,10 +24,10 @@ def test_no_reader_of_the_corpus_can_forget_which_variant_it_reads():
 def test_a_run_against_an_empty_variant_stops_instead_of_answering_from_nothing(monkeypatch):
     monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: True)
     monkeypatch.setattr(
-        runner.db, "corpus_variants", lambda: [{"variant": "baseline", "chunks": 1}]
+        runner.db, "corpus_variants", lambda: [{"variant": "clean_big_1024", "chunks": 1}]
     )
     with pytest.raises(RuntimeError, match="typo|empty"):
-        runner.run("run", set_name="curated", variant="baseline")
+        runner.run("run", set_name="curated", variant="clean_big_1024")
 
 
 def test_a_run_against_a_variant_with_no_declared_policy_stops_before_the_first_question():
@@ -41,8 +41,8 @@ def test_the_single_shot_snapshot_names_the_variant_it_read(monkeypatch):
     monkeypatch.setattr(run_snapshot.db, "corpus_fingerprint", lambda *, variant: {"chunks": 7})
     monkeypatch.setattr("engines.ollama.context_length", lambda model, spec=None: None)
     stub_engines(monkeypatch, run_snapshot)
-    snapshot = chat._config_snapshot(False, 5, True, 0.55, None, "baseline")
-    assert snapshot["variant"] == "baseline"
+    snapshot = chat._config_snapshot(False, 5, True, 0.55, None, "clean_big_1024")
+    assert snapshot["variant"] == "clean_big_1024"
     assert snapshot["corpus_fingerprint"] == {"chunks": 7}
 
 
@@ -58,7 +58,7 @@ def test_an_empty_named_variant_is_not_a_reason_to_index(monkeypatch):
     enqueued = []
     monkeypatch.setattr(bootstrap.job_queue, "enqueue", lambda *a, **kw: enqueued.append(a))
     monkeypatch.setattr(
-        "db.corpus_variants", lambda: [{"variant": "baseline", "chunks": 13068}]
+        "db.corpus_variants", lambda: [{"variant": "clean_big_1024", "chunks": 13068}]
     )
     monkeypatch.setattr("db.is_empty", lambda *, variant: True)
     bootstrap._ensure_index()
@@ -232,18 +232,18 @@ def test_a_search_refuses_vectors_another_embedder_wrote(monkeypatch):
     import db
 
     with pytest.raises(db.ForeignVectors, match="bge-m3@ollama.*embeds with bge-m3@vllm"):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "baseline", "bge-m3@vllm")
+        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@vllm")
     # a variant half reindexed holds both, and is refused as well
     with pytest.raises(db.ForeignVectors):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "baseline", "bge-m3@vllm")
+        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "clean_big_1024", "bge-m3@vllm")
     seen = _Seen(["bge-m3@vllm"])
-    db.refuse_foreign_vectors(seen, "baseline", "bge-m3@vllm")
-    assert seen.asked == [{"variant": "baseline"}]
+    db.refuse_foreign_vectors(seen, "clean_big_1024", "bge-m3@vllm")
+    assert seen.asked == [{"variant": "clean_big_1024"}]
     # a question embedded earlier carries its own embedder, and that one decides
-    db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "baseline", "bge-m3@ollama")
+    db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@ollama")
     # a vector nobody marked is a ruler nobody named, refused rather than passed
     with pytest.raises(db.ForeignVectors, match="no recorded embedder"):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", None]), "baseline", "bge-m3@ollama")
+        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", None]), "clean_big_1024", "bge-m3@ollama")
 
 
 def test_no_search_asks_the_role_registry_on_its_own_connection():
@@ -277,7 +277,7 @@ def test_the_index_and_the_questions_write_which_embedder_made_their_vectors(mon
             pass
 
     chunks = [SimpleNamespace(content="a"), SimpleNamespace(content="b")]
-    index._replace_chunks(_Session(), 1, "baseline", chunks, embed_size=1)
+    index._replace_chunks(_Session(), 1, "clean_big_1024", chunks, embed_size=1)
     assert [c.embedded_by for c in chunks] == ["bge-m3@ollama"] * 2
 
 
@@ -305,10 +305,10 @@ def test_every_vector_search_passes_the_guard_first(monkeypatch):
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn([]))
     with pytest.raises(_Refused):
-        db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="x@y")
+        db.hybrid_search("q", "[0]", None, variant="clean_big_1024", exact=True, embedded_by="x@y")
     with pytest.raises(_Refused):
-        db.nearest_distance([0.0], variant="baseline", embedded_by="a@b")
-    assert guarded == [("baseline", "x@y"), ("baseline", "a@b")]
+        db.nearest_distance([0.0], variant="clean_big_1024", embedded_by="a@b")
+    assert guarded == [("clean_big_1024", "x@y"), ("clean_big_1024", "a@b")]
 
 
 def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monkeypatch):
@@ -322,7 +322,7 @@ def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monk
             return []
 
     question = {"original_text": "q", "emb": "[0]", "embedded_by": "bge-m3@ollama"}
-    retrieval_compare.ranked_lists(_Db(), question, "baseline")
+    retrieval_compare.ranked_lists(_Db(), question, "clean_big_1024")
     assert seen["embedded_by"] == "bge-m3@ollama"
 
 
@@ -333,7 +333,7 @@ def test_the_depth_script_searches_with_the_embedder_of_each_question(monkeypatc
     monkeypatch.setattr(ef_latency.db, "hybrid_search", lambda *a, **kw: seen.append(kw))
     monkeypatch.setattr(ef_latency.llm, "embedder_label", lambda: "bge-m3@ollama")
 
-    ef_latency.timings([("q", "[0]", "bge-m3@vllm-embed"), ("q", "[0]", None)], "baseline", 100)
+    ef_latency.timings([("q", "[0]", "bge-m3@vllm-embed"), ("q", "[0]", None)], "clean_big_1024", 100)
 
     assert [kw["embedded_by"] for kw in seen] == ["bge-m3@vllm-embed", "bge-m3@ollama"]
     assert "embedded_by" in ef_latency.SAMPLE
@@ -345,6 +345,7 @@ def test_a_cancelled_index_reports_and_builds_for_the_sources_it_did_cut(monkeyp
 
     import job_handlers.indexing as indexing
     import sources.factory
+    import use_cases.dedup
     import use_cases.index
 
     built = [SimpleNamespace(name="a"), SimpleNamespace(name="b"), SimpleNamespace(name="c")]

@@ -1,8 +1,10 @@
 import copy
+import fnmatch
 import re
 from typing import ClassVar, Literal
 
 from config import SOURCE_KNOBS, RouteCfg
+from models.corpus import Trust
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 from tool_names import settings_refusal
 
@@ -13,7 +15,7 @@ KINDS = {"urls": "urls", "folder": "local", "git": "git", "git_family": "git", "
 
 
 # what a repository or a folder gives the index when a source names no files of its own
-DEFAULT_INCLUDE = ["**/*.md"]
+DEFAULT_INCLUDE = ["**/*.md", "**/*.mdx"]
 
 
 class _Strict(BaseModel):
@@ -26,6 +28,11 @@ class GitOrigin(_Strict):
     ref: str | None = None
     path: str | None = None
     include: list[str] = DEFAULT_INCLUDE
+
+
+# the first pattern a path under the root matches; `*` crosses folders, so `blog/*` takes the whole blog
+def skipped_path(rel: str, patterns) -> str | None:
+    return next((p for p in patterns if fnmatch.fnmatchcase(rel, p)), None)
 
 
 # where a site keeps its own text, what inside it is the site's furniture, which pages it builds itself
@@ -142,9 +149,11 @@ class Declaration(_Strict):
     intake: IntakeOverride | None = None
     # the class that parses what the rules cannot say; none reads plain markdown
     reader: str | None = None
-    # stems skipped always, and by the hygienic cut only with a reason; `fnmatch` patterns, so `[` and `?` match
+    # stems skipped, the second list with a reason for each; `fnmatch` patterns, so `[` and `?` match
     skip: list[str] = []
     skip_when_hygienic: dict[str, str] = {}
+    # paths under the source's root skipped whole, where a stem cannot tell a folder: a site's pages are all `index`
+    skip_paths: list[str] = []
     drop_docs_containing: list[str] = []
     veto_families: list[VetoFamily] = []
     # a folder that moves on its own, so its fingerprint drifting is not a fault
@@ -157,6 +166,8 @@ class Declaration(_Strict):
     questions: list[DeclaredQuestion] = []
     # a leaf pattern that names this source's reference pages where the leaf has no code shape (a command in capitals)
     reference_leaf: str | None = None
+    # over the default read from the origin, when a source is not what its origin suggests
+    trust: Trust | None = None
 
     # a site read from its sitemap comes from pages though it lists none
     def _origins(self) -> list[str]:

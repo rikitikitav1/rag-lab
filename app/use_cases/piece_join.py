@@ -24,50 +24,34 @@ def _heal_fence(before: str, after: str) -> tuple[str, str, bool]:
 
 
 # a table the break cut in two: the second half's header is either the first half's again or a row read as a header
-def _join_table(before: str, after: str, continued_rows: bool = False) -> tuple[str, str, bool, bool]:
+def _join_table(before: str, after: str) -> tuple[str, str, bool]:
     head = before.rstrip("\n").splitlines()
     tail = after.lstrip("\n").splitlines()
     if len(head) < 2 or len(tail) < 2 or not head[-1].strip().startswith("|") or not _separator(tail[1]):
-        return before, after, False, False
+        return before, after, False
     top = len(head) - 1
     while top > 0 and head[top - 1].strip().startswith("|"):
         top -= 1
     header = head[top]
     if _cells(tail[0]) != _cells(header):
-        return before, after, False, False
+        return before, after, False
     rest = tail[2:] if tail[0].split() == header.split() else [tail[0], *tail[2:]]
-    head_text = before.rstrip("\n")
-    # a row the page break cut goes on in a row whose first cell is empty: its cells finish the row above
-    merged = _continued_row(head[-1], rest[0]) if continued_rows and rest else None
-    if merged:
-        head_text, rest = "\n".join([*before.rstrip("\n").splitlines()[:-1], merged]), rest[1:]
-    return head_text, "\n".join(rest), True, bool(merged)
-
-
-def _continued_row(above: str, row: str) -> str | None:
-    if _separator(above) or not row.strip().startswith("|"):
-        return None
-    top, low = above.strip().strip("|").split("|"), row.strip().strip("|").split("|")
-    if len(top) != len(low) or low[0].strip() or not any(cell.strip() for cell in low):
-        return None
-    cells = [f"{a.strip()} {b.strip()}".strip() for a, b in zip(top, low, strict=True)]
-    return "| " + " | ".join(cells) + " |"
+    return before.rstrip("\n"), "\n".join(rest), True
 
 
 # a file's pieces joined in page order, with what the joins healed
-def join(parts: list[str], continued_rows: bool = False) -> tuple[str, dict]:
-    healed = {"fences": 0, "tables": 0, "rows_continued": 0}
+def join(parts: list[str]) -> tuple[str, dict]:
+    healed = {"fences": 0, "tables": 0}
     if not parts:
         return "", healed
     whole = parts[0]
     for part in parts[1:]:
         whole, part, fence = _heal_fence(whole, part)
-        table = row = False
+        table = False
         if not fence:
-            whole, part, table, row = _join_table(whole, part, continued_rows)
+            whole, part, table = _join_table(whole, part)
         healed["fences"] += fence
         healed["tables"] += table
-        healed["rows_continued"] += row
         whole = whole + ("\n" if fence or table else "\n\n") + part
     return whole, healed
 
@@ -88,23 +72,22 @@ def table_spans(lines: list[str]) -> list[tuple[int, int]]:
 
 
 # tables the structure says go on over a page break, joined when only blank lines lie between them in the markdown
-def join_tables(markdown: str, goes_on: list[bool], continued_rows: bool = False) -> tuple[str, int, int]:
+def join_tables(markdown: str, goes_on: list[bool]) -> tuple[str, int]:
     lines = markdown.split("\n")
     tables = table_spans(lines)
     if len(tables) != len(goes_on):
-        return markdown, 0, 0
-    joined = rows = 0
+        return markdown, 0
+    joined = 0
     for k in range(len(tables) - 2, -1, -1):
         (start, end), (next_start, next_end) = tables[k], tables[k + 1]
         if not goes_on[k] or any(line.strip() for line in lines[end + 1 : next_start]):
             continue
         first, second = "\n".join(lines[start : end + 1]), "\n".join(lines[next_start : next_end + 1])
-        before, after, merged, row = _join_table(first, second, continued_rows)
+        before, after, merged = _join_table(first, second)
         if merged:
             lines[start : next_end + 1] = (before + ("\n" + after if after else "")).split("\n")
             joined += 1
-            rows += row
-    return "\n".join(lines), joined, rows
+    return "\n".join(lines), joined
 
 
 _ENDS = ".!?…:;"

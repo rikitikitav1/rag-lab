@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from config import settings
+from corpus_keys import file_stem
 from job_handlers import onboard
 from job_handlers.base import Final
 from models.corpus import DataSource
@@ -178,7 +179,7 @@ def test_the_job_turns_a_declared_folder_into_a_raw_source(tmp_path, monkeypatch
     assert "conversion.partial" in record["units"]["b.pdf#101-120"]["breached"], "a partial piece is kept and said"
     assert record["units"]["b.pdf#1-50"]["engine"] == "docling"
     assert record["units"]["b.pdf#1-50"]["layer_f1"] > 0.95
-    whole = (folder / "files" / f"{onboard._stem('b.pdf')}.md").read_text()
+    whole = (folder / "files" / f"{file_stem('b.pdf')}.md").read_text()
     assert whole.index("## Pages 1") < whole.index("## Pages 51") < whole.index("## Pages 101")
     assert source.stage == Stage.raw
     assert source.raw["verdict"] == "bad" and source.raw["reasons"]["conversion.failed"] == 1
@@ -191,7 +192,7 @@ def test_the_job_turns_a_declared_folder_into_a_raw_source(tmp_path, monkeypatch
 
     # a piece whose markdown left the folder is converted again
     calls.clear()
-    (folder / "pieces" / f"{onboard._stem('b.pdf#1-50')}.md").unlink()
+    (folder / "pieces" / f"{file_stem('b.pdf#1-50')}.md").unlink()
     onboard.onboard_source({"source": "demo"})
     assert calls == [("b.pdf", (1, 50)), ("b.pdf", (51, 100))]
 
@@ -272,7 +273,7 @@ def test_an_accepted_source_is_accepted_again_only_with_a_new_run_waiting():
 
 
 def test_two_keys_never_share_a_file():
-    assert onboard._stem("docs/a.pdf#1-10") != onboard._stem("docs_a.pdf#1-10")
+    assert file_stem("docs/a.pdf#1-10") != file_stem("docs_a.pdf#1-10")
 
 
 def test_two_urls_ending_alike_are_two_files(tmp_path, monkeypatch):
@@ -553,7 +554,7 @@ def test_a_low_piece_is_read_again_and_the_better_reading_stays(tmp_path, monkey
     row = json.loads((folder / "record.json").read_text())["units"]["b.pdf#1-1"]
     assert calls == ["default", "pypdfium2"]
     assert row["reread"]["taken"] and row["settings"] == config.settings.intake.route.reread_settings
-    assert "brown fox" in (folder / "pieces" / f"{onboard._stem('b.pdf#1-1')}.md").read_text()
+    assert "brown fox" in (folder / "pieces" / f"{file_stem('b.pdf#1-1')}.md").read_text()
 
     calls.clear()
     onboard.onboard_source({"source": "demo"})
@@ -898,3 +899,46 @@ def test_a_fresh_reading_passes_the_kept_one_over(monkeypatch, tmp_path):
     with converting.reading_fresh(True), converting.card_hold(hold):
         assert converting.convert(None, "docling", tmp_path / "f.pdf", [], None, 10)["markdown"] == "new"
     assert read == [1] and converting._FRESH.get() is False
+
+
+# a file the run no longer reads (its origin moved from a folder to a link) leaves the folder with its markdown
+def test_a_run_drops_the_markdown_of_a_file_it_no_longer_reads(tmp_path):
+    import config
+    from job_handlers import onboard
+
+    (tmp_path / "files").mkdir()
+    (tmp_path / "pieces").mkdir()
+    rel = "b8472833/notes.md"
+    key = f"{rel}#1-1"
+    (tmp_path / "pieces" / f"{file_stem(key)}.md").write_text("## A\n\ntext")
+    stale = tmp_path / "files" / f"{file_stem('notes.md')}.md"
+    stale.write_text("## A\n\nold")
+    record = {"units": {key: {"key": key, "file": rel, "pages": None, "route": None}}}
+
+    onboard._assemble([Path(rel)], {Path(rel): rel}, record, tmp_path, set(), config.settings.intake.route, {})
+
+    assert sorted(p.name for p in (tmp_path / "files").iterdir()) == [f"{file_stem(rel)}.md"]
+
+
+# the board says who moves a source next: a person for a run that is not ok, a door for the plain next step
+def test_the_next_step_of_a_source_names_who_moves_it():
+    from types import SimpleNamespace
+
+    from models.corpus import Stage
+    from use_cases.intake_board import next_step
+
+    def row(stage, raw=None, active=False):
+        return SimpleNamespace(stage=stage, raw=raw or {}, active=active)
+
+    assert next_step(row(Stage.declared), 0, []) == ("a door", "onboard it (onboard_source)")
+    who, step = next_step(row(Stage.raw, {"verdict": "dirty"}), 0, [])
+    assert who == "a person" and step.startswith("a person decides on a dirty run")
+    assert next_step(row(Stage.raw, {"verdict": "ok"}), 0, ["onboard_source"]) == (
+        "the queue", "waits for its queued onboard_source")
+    waiting = row(Stage.accepted, {"verdict": "ok", "candidate": {"verdict": "ok"}})
+    assert next_step(waiting, 10, [])[0] == "a person"
+    assert next_step(row(Stage.accepted, {"verdict": "ok"}), 0, [])[1] == "index it into a variant (index_data)"
+    assert next_step(row(Stage.accepted, {"verdict": "ok"}, active=True), 5, []) == (None, "nothing waits")
+    # a source whose every chunk another, more trusted source keeps waits for nothing, not for an index
+    copied = row(Stage.accepted, {"verdict": "ok", "copies_kept_by": {"v": {"pg-docs": 3}}})
+    assert next_step(copied, 0, [], "v")[0] is None

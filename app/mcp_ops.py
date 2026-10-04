@@ -665,6 +665,42 @@ def sources(
 
 
 @mcp_ops.tool(
+    name="intake_board",
+    description=(
+        "The intake at a glance for one corpus variant: sources counted by stage and verdict, the chunks the variant "
+        "holds, and the sources that wait, grouped by who moves them next: a person (a dirty or bad run, with its "
+        "breaching share and top reasons), a door (onboard, accept, index, turn on) or the queue (a job of theirs is "
+        "queued or running). Read this first when tracking a corpus build."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def intake_board(
+    variant: Annotated[str | None, Field(description="The corpus variant; the served one when left out.")] = None,
+) -> dict:
+    from use_cases import intake_board as boards
+
+    return boards.board(variant or config.settings.corpus.variant)
+
+
+@mcp_ops.tool(
+    name="source_trail",
+    description=(
+        "One source in a screen: stage, trust, origin, the run's verdict with its breaching share and reasons, what "
+        "it skipped counted by suffix, chunks per variant, drift, its last jobs (onboard, index, report, questions) "
+        "with their result in a line, and the step that waits next. The compact companion of `source`."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def source_trail(name: Annotated[str, Field(description="The source's name.")]) -> dict:
+    from use_cases import intake_board as boards
+
+    found = boards.trail(name)
+    if found is None:
+        raise ToolError(f"no source named {name}")
+    return found
+
+
+@mcp_ops.tool(
     name="onboard_source",
     description=(
         "Convert a declared source to a raw one: the job routes every file to its engine (markdown as it is, a "

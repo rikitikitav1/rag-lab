@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 import config
 import ingest
 import logging_setup
-import sources.base
 from corpus_keys import SECTION_SEP
 from ingest import BOILERPLATE_MIN_FILES
 from models.corpus import DataChunk, DataSource, Verdict
@@ -121,7 +120,7 @@ def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:
     return sum(1 for s in samples if s.body in wide)
 
 
-def measure(samples: list[Sample], ceiling: int, records_sections: bool = True) -> Metrics:
+def measure(samples: list[Sample], ceiling: int) -> Metrics:
     total = len(samples)
     files = len({s.file for s in samples})
     tiny_below = ceiling * TINY_SHARE_OF_CEILING
@@ -141,7 +140,7 @@ def measure(samples: list[Sample], ceiling: int, records_sections: bool = True) 
     return Metrics(
         chunks=total,
         files=files,
-        section_coverage=(_share(sum(1 for s in samples if _under_a_heading(s)), total) if records_sections else None),
+        section_coverage=_share(sum(1 for s in samples if _under_a_heading(s)), total),
         prefix_dominates=_share(sum(1 for s, p in bodied if len(p) > len(s.body)), len(bodied)),
         dup_in_file=_share(sum(_repeats(_count(t)) for t in text.values()), n),
         dup_in_source=_share(_repeats(_count(bodies)), n),
@@ -301,12 +300,7 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         collect_dry(source_name, variant=variant) if mode == "dry"
         else (collect_indexed(source_name, variant=variant), None)
     )
-    # the legacy cut records a section only where the file opens H1 then H2
-    metrics = measure(
-        samples,
-        ceiling=policy["max_chunk_size"],
-        records_sections=sources.base.hygienic(policy),
-    )
+    metrics = measure(samples, ceiling=policy["max_chunk_size"])
     metrics.score = score(metrics, cfg.weights)
     hard, soft, judged, said = gates_of(metrics, cfg)
     entry = {

@@ -4,11 +4,13 @@ from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import config
 import ingest
 import logging_setup
 from book_matter import is_matter
 from corpus_keys import language_by_alphabet
-from sources.declaration import DEFAULT_INCLUDE
+from sources.declaration import DEFAULT_INCLUDE, skipped_path
+from use_cases import markdown_cleanup
 
 log = logging_setup.get_logger(__name__)
 
@@ -18,14 +20,7 @@ MAX_FILE_BYTES = 8 * 1024 * 1024
 HEADING = re.compile(r"^#{1,6}[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 
 
-ROOTED = "rooted"
 STRUCTURED = "structured"
-HYGIENIC_CHUNKERS = frozenset({ROOTED, STRUCTURED})
-
-
-# one explicit key decides the cut: a side effect would hand an odd mix a cut nobody asked
-def hygienic(policy) -> bool:
-    return bool(policy) and policy.get("chunker") in HYGIENIC_CHUNKERS
 
 
 # the only carrier of its section stays: on this corpus that saved six gold sections
@@ -53,19 +48,9 @@ def first_heading(content) -> str | None:
 # one file's text as the variant's chunker cuts it, for the index and for a raw report alike
 def cuts_of(content: str, root: str | None, policy: dict, file: str):
     ceiling = policy.get("max_chunk_size")
-    if not hygienic(policy):
-        # naming the H1 copy is what lets the same body metrics run on baseline
-        head = content.lstrip().split("\n", 1)[0]
-        h1 = f"{head}\n" if head.startswith("# ") else ""
-        section = None
-        for i, chunk in enumerate(ingest.chunk_markdown(content, ceiling=ceiling)):
-            section = ingest.heading_path(chunk) or section
-            body = chunk[len(h1) :] if h1 and i and chunk.startswith(h1) else chunk
-            yield chunk, body, section, None, None
-        return
     cut_by = ingest.cut_structured if policy.get("chunker") == STRUCTURED else ingest.cut_with_root
     on = policy.get("ceiling_on", ingest.BODY)
-    for cut in cut_by(content, root, ceiling=ceiling, ceiling_on=on, file=file):
+    for cut in cut_by(ingest.without_index(content, file), root, ceiling=ceiling, ceiling_on=on, file=file):
         yield cut.prefix + cut.body, cut.body, cut.section, root, cut.cut_by
 
 
@@ -123,6 +108,7 @@ class Base(ABC):
 
         self.root = root
         self.left_out_as_matter: list[tuple] = []
+        self._index_left: set[tuple[str, str]] = set()
         self.settings = settings or files.of_reader(self.reader)
         self.name = name or self.settings.name
         self.version = version
@@ -143,13 +129,16 @@ class Base(ABC):
             seen.update((f, None) for f in self.root.glob(pattern) if f.is_file())
         return iter(seen)
 
-    # baseline is intact because the file says which rules the hygienic cut adds
     def _skipped(self, stem: str, policy=None) -> bool:
-        rules = [*self.settings.skip, *(self.settings.skip_when_hygienic if hygienic(policy) else [])]
+        rules = [*self.settings.skip, *self.settings.skip_when_hygienic]
         return any(fnmatch.fnmatchcase(stem, rule) for rule in rules)
 
     def discover(self, policy=None):
-        return (f for f in self.files() if not self._skipped(f.stem, policy) and self._inside_root(f))
+        return (f for f in self.files() if not self._skipped(f.stem, policy) and not self._path_skipped(f)
+                and self._inside_root(f))
+
+    def _path_skipped(self, file) -> bool:
+        return bool(self.settings.skip_paths) and skipped_path(self.rel_of(file), self.settings.skip_paths) is not None
 
     # a .md symlink out of the corpus reads whatever the worker can, and it ends up quoted
     def _inside_root(self, file) -> bool:
@@ -182,26 +171,17 @@ class Base(ABC):
 
     # a byte order mark hides the frontmatter fence and the first heading: one redis page had one
     def text_of(self, file) -> str:
-        return self.legacy_text_of(file).lstrip("\ufeff")
-
-    def read(self, file, rel, policy=None):
-        content = self.text_of(file) if hygienic(policy) else self.legacy_text_of(file)
-        title = self.title_from(content) if hygienic(policy) else self.legacy_title_from(content)
-        return Parsed(content, self.category_for(rel), title, [], self.tags_for(rel))
-
-    def title_from(self, content):
-        return first_heading(content)
-
-    def legacy_text_of(self, file) -> str:
         if file.stat().st_size > MAX_FILE_BYTES:
             log.warning("source.file_too_large", file=str(file), bytes=file.stat().st_size)
             return ""
-        return file.read_text(encoding="utf-8", errors="ignore")
+        return markdown_cleanup.markdown_of(file).lstrip("\ufeff")
 
-    def legacy_title_from(self, content):
-        if not (content or "").strip():
-            return None
-        return content.splitlines()[0].lstrip("#").strip() or None
+    def read(self, file, rel, policy=None):
+        content = markdown_cleanup.as_indexed(self.text_of(file))
+        return Parsed(content, self.category_for(rel), self.title_from(content), [], self.tags_for(rel))
+
+    def title_from(self, content):
+        return first_heading(content)
 
     # where the heading path starts: markdown for most, but a source may declare it anywhere
     def section_root_for(self, file, parsed) -> str | None:
@@ -211,20 +191,21 @@ class Base(ABC):
 
     # the one door onto a source's files, for the index, the quality report and the digest
     def documents(self, policy=None):
-        policy = policy or {}
+        policy = policy or config.settings.corpus.policy()
         found = list(self.discover(policy))
         self._refuse_uncategorised(found)
         docs, matter = [], set()
+        self._index_left = set()
         for file in found:
             for doc in self.to_documents(file, policy):
                 if is_matter(doc.source, doc.section):
                     matter.add((doc.source, doc.section))
                 else:
                     docs.append(doc)
-        # a section left out by its heading alone is named, so a report can show what the rule took
-        self.left_out_as_matter = sorted(matter)
-        if matter:
-            log.info("source.book_matter_left_out", source=self.name, sections=len(matter),
+        # a section left out by its heading and a back index cut by position are named, so a report shows what went
+        self.left_out_as_matter = sorted(matter | self._index_left)
+        if self.left_out_as_matter:
+            log.info("source.book_matter_left_out", source=self.name, sections=len(self.left_out_as_matter),
                      first=[f"{f} # {s}" for f, s in self.left_out_as_matter[:5]])
         return drop_wide_boilerplate(docs, policy)
 
@@ -271,13 +252,15 @@ class Base(ABC):
             )
 
     def _cuts(self, file, parsed, policy):
-        root = self.section_root_for(file, parsed) if hygienic(policy) else None
+        root = self.section_root_for(file, parsed)
+        source = f"{self.spelled_as}/{self.rel_of(file)}"
+        self._index_left.update((source, left) for left in ingest.index_left_out(parsed.content, str(file)))
         return cuts_of(parsed.content, root, policy, str(file))
 
     # a share-of-symbols rule caught nothing: ascii art reads as prose to every ratio we tried
     def postprocess(self, docs: list[Doc], policy: dict | None = None) -> list[Doc]:
         dropped = self.settings.drop_docs_containing
-        if not (hygienic(policy) and dropped):
+        if not dropped:
             return docs
         kept = [d for d in docs if not any(text in d.content for text in dropped)]
         for i, doc in enumerate(kept):

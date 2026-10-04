@@ -141,7 +141,7 @@ def test_a_generation_experiment_can_sweep_the_corpus():
     from api.v1.experiment import ExperimentCreate
 
     ExperimentCreate(
-        dataset="s", param="variant", param_values=["baseline", "clean_1024"]
+        dataset="s", param="variant", param_values=["clean_big_1024", "clean_1024"]
     )
     # and the gate still gates
     with _pytest.raises(ValueError, match="param must be one of"):
@@ -162,10 +162,10 @@ def test_a_swept_variant_is_not_overwritten_by_the_pinned_one(monkeypatch):
         monkeypatch,
         {
             "dataset": "s", "param": "variant",
-            "param_values": ["baseline", "clean_1024"], "variant": "baseline",
+            "param_values": ["clean_big_1024", "clean_1024"], "variant": "clean_big_1024",
         },
     )
-    assert [o["variant"] for o in seen] == ["baseline", "clean_1024"]
+    assert [o["variant"] for o in seen] == ["clean_big_1024", "clean_1024"]
 
 
 def test_a_grid_over_the_cap_is_refused_at_the_door(client):
@@ -174,7 +174,7 @@ def test_a_grid_over_the_cap_is_refused_at_the_door(client):
         "/v1/experiment",
         json={
             "kind": "retrieval", "dataset": "s", "param": "ef_search",
-            "axes": {"variant": ["baseline"], "ef_search": list(range(1, 34))},
+            "axes": {"variant": ["clean_big_1024"], "ef_search": list(range(1, 34))},
         },
     )
     assert r.status_code == 422, r.text
@@ -199,7 +199,7 @@ def test_arms_that_share_a_name_are_refused_at_the_door(client):
         "/v1/experiment",
         json={
             "kind": "retrieval", "dataset": "s", "param": "variant",
-            "axes": {"variant": ["baseline", "baseline"]},
+            "axes": {"variant": ["clean_big_1024", "clean_big_1024"]},
         },
     )
     assert r.status_code == 422, r.text

@@ -69,15 +69,16 @@ corpus:
   # tuned: file=docs/experiments/2026-08-30_the-ceiling-that-changed-nothing.md
   variant: clean_1024
   variants:
-  # every key here is read by the code; `header_prefix` is derived from `chunker`
-    baseline:
-      chunker: legacy
-      max_chunk_size: 1024      # characters
-  # point zero of the ceiling grid: hygiene isolated from the change of splitter
+    # every key here is read by the code
     clean_1024:
       chunker: rooted
       max_chunk_size: 1024      # characters
       # what the ceiling counts, said out loud rather than inherited from a default
+      ceiling_on: body
+    # the big corpus cut by clean_1024's policy beside it; the old one goes once everything has moved over
+    clean_big_1024:
+      chunker: rooted
+      max_chunk_size: 1024      # characters
       ceiling_on: body
     # variants that lost are gone; their policy rides in the entry that measured them
 

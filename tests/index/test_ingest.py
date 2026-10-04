@@ -5,19 +5,6 @@ import pytest
 CEILING = 1024
 
 
-def test_chunk_markdown_empty():
-    assert ingest.chunk_markdown("", ceiling=CEILING) == []
-    assert ingest.chunk_markdown("   \n ", ceiling=CEILING) == []
-
-
-def test_chunk_markdown_keeps_h1_on_each_section():
-    md = "# Title\nintro\n## A\nbody a\n## B\nbody b"
-    chunks = ingest.chunk_markdown(md, ceiling=CEILING)
-    assert chunks[0].startswith("# Title\nintro")
-    assert any(c.startswith("# Title\n## A") for c in chunks)
-    assert any(c.startswith("# Title\n## B") for c in chunks)
-
-
 def test_split_by_size_short_is_untouched():
     assert ingest.split_by_size("short text", max_size=CEILING) == ["short text"]
 
@@ -135,16 +122,6 @@ def test_a_source_of_two_files_is_left_alone():
     docs = [_doc(f"f{i}.md", nav, "topic") for i in range(2)]
     docs += [_doc(f"f{i}.md", f"answer {i}", "topic", 1) for i in range(2)]
     assert _dropped(docs) == []
-
-
-def test_the_legacy_cut_honours_the_ceiling_its_variant_declares():
-    # falling through to the constant let `baseline` declare a ceiling nothing read
-    from ingest import chunk_markdown
-
-    body = "x" * 900
-    content = f"# T\n{body}\n## S\n{body}"
-    assert all(len(c) <= 300 for c in chunk_markdown(content, ceiling=300))
-    assert any(len(c) > 300 for c in chunk_markdown(content, ceiling=2000))
 
 
 def test_a_source_is_replaced_in_one_transaction_or_not_at_all(monkeypatch):

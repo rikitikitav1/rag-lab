@@ -4,6 +4,7 @@ import config
 import llm
 import logging_setup
 from corpus_keys import body_hash, check_variant, vector_index_name
+from errors import StandFault
 from models.corpus import DataChunk, DataSource, Stage
 from orm.sync_db import Session
 from sources import files
@@ -29,6 +30,8 @@ class IndexResult:
     refused: dict[str, str] = field(default_factory=dict)
     # the sources a cancel left uncut, in the order they would have come
     left: list[str] = field(default_factory=list)
+    # {source: {the more trusted source that keeps the text: chunks}}, the copies this cut took out
+    lower_copies_dropped: dict[str, dict[str, int]] = field(default_factory=dict)
     model: str = field(default_factory=lambda: llm.resolve_name("embedding"))
 
     def __str__(self) -> str:
@@ -137,10 +140,26 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True, stop=
             merged = getattr(source, "merged", None)
             log.info("index.committed", source=source.name, chunks=len(buffer), total=total, merged=merged)
 
+    cut = [s.name for s in sources if s.name not in refused and s.name not in left]
+    dropped = _drop_lower_copies(variant, cut)
     if build_index and not left:
         ensure_vector_index(variant)
     log.info("index.done", chunks=total, variant=variant)
-    return IndexResult(sources=len(sources) - len(refused) - len(left), chunks=total, refused=refused, left=left)
+    return IndexResult(sources=len(sources) - len(refused) - len(left), chunks=total, refused=refused, left=left,
+                       lower_copies_dropped=dropped)
+
+
+# every cut, the job's and the CLI's, keeps one copy of a shared text; a failure here must not cost the embedding
+def _drop_lower_copies(variant: str, names: list[str]) -> dict:
+    from use_cases import dedup
+
+    try:
+        return dedup.drop_lower_copies(variant, names) if names else {}
+    except StandFault:
+        raise
+    except Exception as e:
+        log.error("index.dedup_failed", variant=variant, error=str(e))
+        return {}
 
 
 # the one owner of the name, so the three readers ask here

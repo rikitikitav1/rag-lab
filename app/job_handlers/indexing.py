@@ -49,7 +49,8 @@ def index_data(options: dict) -> dict:
             job_queue.enqueue("build_vector_index", {"variant": variant})
     # a full reindex goes on past a refused source; the refusals stay on the job's row, not only in the log
     cancelled = {"left_by_cancel": result.left} if result.left else {}
-    return {"sources": len(built) - len(result.left), "refused": result.refused, **cancelled}
+    copies = {"lower_copies_dropped": result.lower_copies_dropped} if result.lower_copies_dropped else {}
+    return {"sources": len(built) - len(result.left), "refused": result.refused, **cancelled, **copies}
 
 
 @register("build_vector_index")

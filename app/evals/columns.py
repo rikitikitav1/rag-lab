@@ -16,7 +16,7 @@ def _reference_page(gold: dict | None, leaves: dict) -> float | None:
 
 
 # a column named in a preregistration and nowhere else is a column nobody can compute
-SCHEMA = 3
+SCHEMA = 4
 
 # where a column's rows come from: the question logs of a run, or the rows of a recorded measurement
 RUN, MEASUREMENT = "run", "measurement"
@@ -132,6 +132,12 @@ REGISTRY: dict[str, Column] = {
         says="the question's gold section is a reference page: its leaf names one identifier, or matches its source's"
              " own `reference_leaf`",
     ),
+    "hit_at_5": Column(
+        reads="retrieval",
+        says="the gold's file is among the first five distinct (source, section) pairs the serving arm returned;"
+             " a section's copy in another version is one pair, and a row without a gold has none; it reads the chunks"
+             " the gate kept, where a run's `hit_at_k` reads its sources and the ones the gate dropped",
+    ),
     "left_for_judge": Column(
         reads="acceptance", source=MEASUREMENT,
         says="the question's pair was neither accepted nor refused by the reader and waits for the judge",
@@ -152,6 +158,7 @@ _READERS = {
     "reader_answered": lambda row: 1.0 if row["answerable"] else 0.0,
     "evidence_held": lambda row: None if not row["answerable"] else float(row["why"] is None),
     "left_for_judge": lambda row: float(row["outcome"] == "undecided"),
+    "hit_at_5": lambda ql: _hit_at(ql, TOP),
     "shares_heading_word": lambda ql: (
         None if getattr(ql.question, "gold", None) is None
         else float(shares_heading_word(ql.question.original_text, ql.question.gold.get("section")))
@@ -161,6 +168,17 @@ _READERS = {
         None if getattr(ql.question, "anchors", None) is None else float(anchored(ql.question.anchors))
     ),
 }
+
+
+# a version's copy of a section is one candidate: counted apart, close copies would make hit@5 a hit@2
+def _hit_at(ql, k: int) -> float | None:
+    from evals.retrieval_metrics import gold_of, section_ids
+
+    gold = gold_of(ql)
+    if gold is None:
+        return None
+    pairs = section_ids([c for c in (ql.chunks or []) if c and not c["source"].startswith("mcp:")])[:k]
+    return float(any(gold.holds_file(source) for source, _ in pairs))
 
 
 def known() -> list[str]:

@@ -22,6 +22,13 @@ class Stage(StrEnum):
     accepted = "accepted"
 
 
+# how far a copy of a text is trusted when two sources hold it word for word, highest first
+class Trust(StrEnum):
+    official = "official"
+    book = "book"
+    notes = "notes"
+
+
 class DataSource(Base):
     __tablename__ = "data_sources"
 

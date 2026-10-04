@@ -19,7 +19,7 @@ from orm.sync_db import Session
 from paths import FETCHED, RAW, ROOT
 from sources.declaration import site_of
 from sqlalchemy import select
-from use_cases import converting, intake_fetch, raw_quality, reading, route, source_intake
+from use_cases import converting, intake_fetch, raw_quality, reading, route, rule_counts, source_intake
 from use_cases.converting import load_settings, pieces
 
 from .base import Final, register
@@ -139,8 +139,9 @@ def _read_unit(unit, folder: Path, shas: dict, loaded: dict, language: str, laye
 # each file's markdown whole, its pieces in page order as the loader will read it, and the chunker's rows a chapter
 def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: set, rule, layers: dict) -> tuple:
     sections: list[dict] = []
-    joins = Counter({"fences": 0, "tables": 0, "rows_continued": 0, "headings": 0, "running_heads": 0})
+    joins = Counter({"fences": 0, "tables": 0, "headings": 0, "running_heads": 0})
     check: Counter = Counter()
+    written = set()
     for file in files:
         rel = named[file]
         if rel in left:
@@ -152,8 +153,14 @@ def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: 
         whole, healed = reading.whole_file(parts, [r.get("route") for r in mine], rule, layers.get(file))
         joins.update(healed)
         (folder / "files" / f"{_stem(rel)}.md").write_text(whole)
+        written.add(f"{_stem(rel)}.md")
         sections += raw_quality.section_rows(whole, rel)
         check.update(raw_quality.self_check(whole, route.outline_titles(file)))
+    # a file this run no longer reads (its origin moved from a folder to a link) leaves with its markdown
+    for stale in (folder / "files").glob("*.md"):
+        if stale.name not in written:
+            log.info("onboard.stale_markdown_dropped", file=stale.name)
+            stale.unlink()
     return sections, joins, check
 
 
@@ -167,30 +174,7 @@ def _seams_moved(units: list, loaded: dict) -> int:
     return sum(len({end for _, end in cut} - {end for _, end in plain[key]}) for key, cut in runs.items())
 
 
-_CODE_RULES = (
-    "rebuilt",
-    "kept",
-    "joined",
-    "tables_joined",
-    "fenced",
-    "relevelled",
-    "numbered_levels",
-    "paragraphs_joined",
-    "entities_decoded",
-    "pipes_dropped",
-    "rows_run_on",
-    "rows_once",
-    "dashes_restored",
-    "words_joined",
-    "bullets_unescaped",
-    "underscores_unescaped",
-    "pictures_addressed",
-    "formulas_from_layer",
-    "captions_demoted",
-    "running_heads_dropped",
-    "split_words_joined",
-    "duplicates_dropped",
-)
+_CODE_RULES = rule_counts.COUNTERS
 
 
 def _unlisted(code: list[dict]) -> list[str]:
@@ -311,7 +295,7 @@ def _set_up(options: dict):
     site = site_of(origin)
     named, left_out = intake_fetch.named_files(
         root, gathered, FETCHED / source.name, frozenset(rule.epub_skip), rule.epub_chapters,
-        site.generated if site else [],
+        site.generated if site else [], origin.get("skip_paths") or [],
     )
     shas = {file: sha256(file) for file in named}
     fingerprint = _fingerprint(arm_hash, route_sha, {named[f]: sha for f, sha in shas.items()})
@@ -357,27 +341,37 @@ def _plan_run(run: _Run) -> None:
     run.language = intake_fetch.source_language(run.source, run.files, run.layers)
 
 
-# each piece read or kept, the record written after every one; False when a cancel stopped the run between pieces
+# the record is the resume point of a cut-off run; written after every piece, its size made a large source quadratic
+RECORD_EVERY_S = 30
+
+
+# each piece read or kept, the record written now and then and at the end; False when a cancel stopped the run
 def _read_units(run: _Run) -> bool:
-    for unit in run.units:
-        file, rel, _, piece, name = unit
-        key = _key(rel, piece)
-        # a piece whose markdown is gone from the folder, or was written under an older name, is converted again
-        sha = run.loaded[name][1] if name else None
-        kept = not run.fresh and _kept(run.record["units"].get(key), run.shas[file], sha, run.same_route)
-        if kept and (run.folder / "pieces" / f"{_stem(key)}.md").exists():
-            continue
-        # a cancel is read between pieces: a long book otherwise holds the queue and the card after it was called off
-        job_id = run.options.get("_job_id")
-        if job_id is not None and job_queue.is_cancelled(job_id):
-            _write_json(run.record_path, run.record)
-            log.info("onboard.cancelled", source=run.source.name, unit=key)
-            return False
-        started = time.monotonic()
-        run.record["units"][key] = _read_unit(unit, run.folder, run.shas, run.loaded, run.language, run.layers,
-                                              run.rule)
+    written = time.monotonic()
+    # a piece that raises must not cost the pieces read since the last write: the retry would convert them again
+    try:
+        for unit in run.units:
+            file, rel, _, piece, name = unit
+            key = _key(rel, piece)
+            # a piece whose markdown is gone from the folder, or was written under an older name, is converted again
+            sha = run.loaded[name][1] if name else None
+            kept = not run.fresh and _kept(run.record["units"].get(key), run.shas[file], sha, run.same_route)
+            if kept and (run.folder / "pieces" / f"{_stem(key)}.md").exists():
+                continue
+            # a cancel is read between pieces: a long book otherwise holds the queue and the card after the call-off
+            job_id = run.options.get("_job_id")
+            if job_id is not None and job_queue.is_cancelled(job_id):
+                log.info("onboard.cancelled", source=run.source.name, unit=key)
+                return False
+            started = time.monotonic()
+            run.record["units"][key] = _read_unit(unit, run.folder, run.shas, run.loaded, run.language, run.layers,
+                                                  run.rule)
+            if time.monotonic() - written >= RECORD_EVERY_S:
+                _write_json(run.record_path, run.record)
+                written = time.monotonic()
+            log.info("onboard.unit", source=run.source.name, unit=key, seconds=round(time.monotonic() - started, 1))
+    finally:
         _write_json(run.record_path, run.record)
-        log.info("onboard.unit", source=run.source.name, unit=key, seconds=round(time.monotonic() - started, 1))
     return True
 
 

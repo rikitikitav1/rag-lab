@@ -8,10 +8,11 @@ from pathlib import Path
 from tool_names import Tool
 from use_cases import code_lines, markup
 
-MARKDOWN = {".md", ".markdown", ".txt"}
+MARKDOWN = {".md", ".mdx", ".markdown", ".txt"}
 IMAGE = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 HTML = {".html", ".htm", ".xhtml"}
 OFFICE = {".docx", ".pptx", ".xlsx", ".odt", ".rtf"}
+READABLE = MARKDOWN | IMAGE | HTML | OFFICE | {".pdf", ".epub"}
 _WORD = re.compile(r"\w+")
 _BROKEN_WORD = re.compile(markup.HYPHEN_MARK + r"(?:\r?\n)?\f?")
 

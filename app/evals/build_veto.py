@@ -165,8 +165,6 @@ def _already_asked(session, set_name: str) -> set[int]:
     )
 
 
-
-
 def build(
     seed: str,
     set_name: str = "veto_v1",
@@ -176,7 +174,7 @@ def build(
 ) -> dict:
     if not seed:
         raise ValueError(f"set '{set_name}' needs a seed to be reproducible")
-    variants = variants or ["baseline", cut_from]
+    variants = variants or [cut_from]
     rows = plan(seed, variants, cut_from, quotas)
     counted = {"planned": len(rows), "asked": 0, "written": 0}
     with Session() as session:

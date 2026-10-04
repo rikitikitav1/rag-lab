@@ -6,9 +6,10 @@ from dataclasses import asdict, dataclass
 import config
 from book_matter import is_matter
 from corpus_keys import SECTION_SEP, chapter_of
-from sources.base import cuts_of, first_heading, hygienic
+from sources.base import cuts_of, first_heading
 from tool_names import Tool
 from use_cases import ingest_quality as quality
+from use_cases import markdown_cleanup
 from use_cases.markup import FENCE
 from use_cases.route import mixed_share, words
 
@@ -81,8 +82,8 @@ def _policy() -> dict:
 
 # a file's markdown cut whole, as the index will cut it: a piece cut alone takes its own first heading for the root
 def _samples(markdown: str, file: str, policy: dict) -> list:
-    text = markdown.lstrip("\ufeff")
-    root = first_heading(text) if hygienic(policy) else None
+    text = markdown_cleanup.as_indexed(markdown)
+    root = first_heading(text)
     return [
         quality.Sample(file=file, content=content, chunk_index=i, body=body, section=section, root=root, cut_by=cut_by)
         for i, (content, body, section, root, cut_by) in enumerate(cuts_of(text, root, policy, file))
@@ -90,7 +91,7 @@ def _samples(markdown: str, file: str, policy: dict) -> list:
 
 
 def _gates(samples: list, policy: dict) -> dict:
-    metrics = quality.measure(samples, ceiling=policy["max_chunk_size"], records_sections=hygienic(policy))
+    metrics = quality.measure(samples, ceiling=policy["max_chunk_size"])
     hard, soft, _, verdict = quality.gates_of(metrics, config.settings.ingest_quality)
     return {"verdict": verdict, "hard": hard, "soft": soft, "metrics": asdict(metrics)}
 

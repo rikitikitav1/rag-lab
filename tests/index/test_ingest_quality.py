@@ -67,12 +67,6 @@ def test_section_coverage_is_the_share_with_a_heading_path():
     assert m.section_coverage == 0.5
 
 
-def test_a_cut_that_cannot_record_sections_abstains_instead_of_reading_zero():
-    # the legacy cut records a section only where the file opens H1 then H2
-    m = measure([chunk(section=None), chunk(section=None)], CEILING, records_sections=False)
-    assert m.section_coverage is None
-
-
 def test_prefix_dominates_when_the_prefix_outweighs_the_body():
     m = measure(
         [

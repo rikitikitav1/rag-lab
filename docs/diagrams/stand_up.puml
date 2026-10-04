@@ -1,11 +1,12 @@
 @startuml stand_up
+!include style.iuml
 title scripts/up.sh: bringing the stand up
 
 skinparam wrapWidth 220
 
 start
 if (Docker sees the card through CDI?) then (no)
-  :Say why, and offer scripts/up.sh --cpu; <<#fff3cd>>
+  :Say why, and offer scripts/up.sh --cpu; <<#F0FDFA>>
   stop
 else (yes)
 endif

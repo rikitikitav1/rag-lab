@@ -51,7 +51,7 @@ READ_BY_RUNS_SQL = "{q}.status = 'accepted'"
 SECTION_SEP = " > "
 # a chapter is a section path's first two steps, the grain the coverage report reads and a question set is spread over
 CHAPTER_STEPS = 2
-# the variant a veto build cuts its headings from when its job names none; with no variants it reads baseline too
+# the variant a veto build cuts its headings from when its job names none
 VETO_CUT_FROM = "clean_1024"
 
 

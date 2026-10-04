@@ -383,3 +383,17 @@ def test_a_one_arm_bar_refuses_a_guard_at_the_door(monkeypatch):
     guard = {"column": "reader_answered", "must_not": "fall"}
     with pytest.raises(prereg.Refused, match="one-arm bar takes vetoes"):
         prereg.write("p", {"sets": ["smoke"]}, {"arm": "a"}, closing, [guard], {})
+
+
+# hit@5 counts distinct (source, section) pairs: two versions of one section are one candidate, not two
+def test_hit_at_5_counts_a_sections_copies_once():
+    gold = SimpleNamespace(gold={"file": "pg/gold.md", "section": "Gold > Part"}, marked_sources=[])
+
+    def row(sources):
+        chunks = [{"source": s, "section": f"{s} > S"} for s in sources]
+        return SimpleNamespace(question=gold, chunks=chunks, sources=None)
+
+    copies = ["pg/a.md", "pg/a.md", "pg/b.md", "pg/b.md", "pg/c.md", "pg/d.md", "pg/gold.md"]
+    assert columns.read("hit_at_5", row(copies)) == 1.0, "seven chunks, five distinct pairs, the gold the fifth"
+    assert columns.read("hit_at_5", row(["pg/a.md", "pg/b.md", "pg/c.md", "pg/d.md", "pg/e.md", "pg/gold.md"])) == 0.0
+    assert columns.read("hit_at_5", SimpleNamespace(question=None, chunks=[], sources=None)) is None

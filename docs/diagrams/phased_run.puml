@@ -1,4 +1,5 @@
 @startuml phased_run
+!include style.iuml
 title Phases, not a loop: swaps per run, not per question
 
 skinparam wrapWidth 240
@@ -34,7 +35,7 @@ partition "Phase 3, generate" {
 }
 
 :on EVERY exit, not only the last line:
-embedder and generator unloaded; <<#fff3cd>>
+embedder and generator unloaded; <<#F0FDFA>>
 note right
   So a refusal does not leave its own
   generator on the card for the retry.

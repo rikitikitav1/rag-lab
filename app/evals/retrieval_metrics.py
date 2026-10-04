@@ -98,7 +98,7 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
     from orm.sync_db import engine
     from use_cases.retrieval_compare import section_exists
 
-    wanted = [ql for ql in in_corpus if ql.chunks and (_gold(ql).exact or golds.get(ql.question_id))]
+    wanted = [ql for ql in in_corpus if ql.chunks and (gold_of(ql).exact or golds.get(ql.question_id))]
     if not wanted:
         return set()
     try:
@@ -109,7 +109,7 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
                 if section_exists(
                     conn,
                     ((ql.metrics or {}).get("config") or {}).get("variant"),
-                    _gold(ql),
+                    gold_of(ql),
                     golds.get(ql.question_id),
                 )
             }
@@ -121,7 +121,7 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
 
 def evaluate(run_name=None):
     logs = load_logs(run_name)
-    in_corpus = [ql for ql in logs if ql.question and _gold(ql)]
+    in_corpus = [ql for ql in logs if ql.question and gold_of(ql)]
 
     hits, rr_sum, misses = 0, 0.0, []
     rr_in_hop, found_at_hop, hop_unknown, in_hop_n = 0.0, {}, 0, 0
@@ -131,7 +131,7 @@ def evaluate(run_name=None):
     scorable = _scorable_sections(in_corpus, golds)
     per_row = []
     for ql in in_corpus:
-        expected = _gold(ql)
+        expected = gold_of(ql)
         # the section axes see what the gate left; the file axes see what search found, gate aside
         gold_heading = golds.get(ql.question_id)
         section_rank = None
@@ -194,7 +194,7 @@ def evaluate(run_name=None):
     }
 
 
-def _gold(ql) -> Gold | None:
+def gold_of(ql) -> Gold | None:
     return Gold.of_question(ql.question)
 
 

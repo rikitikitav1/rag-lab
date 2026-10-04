@@ -1,0 +1,35 @@
+@startuml question_set
+!include style.iuml
+title A question set: from a source's sections to settled pairs
+
+skinparam sequenceMessageAlign left
+hide footbox
+
+actor Person
+participant "Stand\n(jobs)" as Stand
+participant "Generator\n(questioning, cloud)" as Gen
+participant "Reader\n(accepting, local)" as Reader
+participant "Judge\n(judging)" as Judge
+database "Base\n(question rows)" as Base
+
+Person -> Stand : set name, languages,\na smoke cap first
+alt the stand writes the pairs
+  Stand -> Stand : generate_questions:\nexport the source's sections,\nquota spread by words
+  loop each section, block by block
+    Stand -> Gen : the block and the pairs\nthe section already holds
+    Gen --> Stand : pairs: a question per language\nand its evidence
+    Stand -> Stand : checks in code: evidence is\nthe section's words, language,\nno heading echo, no page reference
+    Stand -> Base : kept pairs as candidates,\neach with its exact gold section
+  end
+else pairs written outside
+  Person -> Stand : sources/questions/<set>.jsonl,\nwritten by a person or an agent
+  Stand -> Base : load_questions:\nevery row a candidate
+end
+Stand -> Reader : accept_questions: each question\nwith its gold section, no answer shown
+Reader --> Stand : a quote from the section, or none
+Stand -> Base : accepted when both quotes hold the evidence,\nrefused when neither answers,\nopen otherwise
+Stand -> Judge : judge_questions: the open pairs\nwith the passage around the evidence
+Judge --> Stand : YES or NO per half
+Stand -> Base : the open pairs settled
+Stand -> Base : anchor_questions: identifiers\nthe question names and its section holds
+@enduml

@@ -68,7 +68,7 @@ def test_a_comparison_must_name_the_axis_it_is_reported_along(client):
         "kind": "retrieval",
         "dataset": "paraphrased_ru",
         "param": "k",
-        "axes": {"variant": ["baseline", "clean_1024"]},
+        "axes": {"variant": ["clean_big_1024", "clean_1024"]},
     }
     out = client.post("/v1/experiment", json=body)
     assert out.status_code == 422
@@ -88,7 +88,7 @@ def test_an_axis_nobody_applies_is_refused_at_the_route(client):
 
 
 def test_a_delta_moves_only_the_axis_of_record():
-    axes = {"variant": ["baseline", "clean_1024"], "rerank_top": [0, 20]}
+    axes = {"variant": ["clean_big_1024", "clean_1024"], "rerank_top": [0, 20]}
     # every arm not at the first value has a reference differing only in the axis of record
     pairs = {
         rc.arm_name(a): rc.arm_name(rc._reference_for(a, "variant", axes))
@@ -96,14 +96,14 @@ def test_a_delta_moves_only_the_axis_of_record():
         if rc._reference_for(a, "variant", axes)
     }
     assert pairs == {
-        "rerank_top=0_variant=clean_1024": "rerank_top=0_variant=baseline",
-        "rerank_top=20_variant=clean_1024": "rerank_top=20_variant=baseline",
+        "rerank_top=0_variant=clean_1024": "rerank_top=0_variant=clean_big_1024",
+        "rerank_top=20_variant=clean_1024": "rerank_top=20_variant=clean_big_1024",
     }, "with two axes one reference for the whole grid would move both at once"
 
 
 def test_an_arm_already_at_the_reference_value_has_no_delta():
-    axes = {"variant": ["baseline", "clean_1024"]}
-    assert rc._reference_for({"variant": "baseline"}, "variant", axes) is None
+    axes = {"variant": ["clean_big_1024", "clean_1024"]}
+    assert rc._reference_for({"variant": "clean_big_1024"}, "variant", axes) is None
 
 
 def test_without_an_axis_of_record_nothing_is_compared():
@@ -115,7 +115,7 @@ def test_an_axis_value_is_checked_as_well_as_its_name(client):
         "kind": "retrieval",
         "dataset": "paraphrased_ru",
         "param": "variant",
-        "axes": {"variant": ["baseline", "no_such_cut"]},
+        "axes": {"variant": ["clean_big_1024", "no_such_cut"]},
     }
     out = client.post("/v1/experiment", json=body)
     assert out.status_code == 400
@@ -185,7 +185,7 @@ class _Exp:
 
         self.id = 1
         self.status = status
-        self.axes = {"variant": ["baseline"]}
+        self.axes = {"variant": ["clean_big_1024"]}
         self.param = "variant"
         self.dataset = "s"
         self.sample_size = None
@@ -324,14 +324,14 @@ def test_a_cancelled_comparison_stops_instead_of_measuring_the_whole_grid(monkey
     monkeypatch.setattr(job_queue, "is_cancelled", lambda job_id: True)
     monkeypatch.setattr(rc, "measure", lambda *a, **kw: pytest.fail("measured after cancel"))
     plan = rc.ComparisonPlan(
-        axes={"variant": ["baseline"]}, param="variant", dataset="s", job_id=7
+        axes={"variant": ["clean_big_1024"]}, param="variant", dataset="s", job_id=7
     )
     with pytest.raises(RuntimeError, match="cancelled"):
         rc.run(plan)
 
 
 def test_the_procedure_of_an_arm_is_the_shape_the_report_writes():
-    arm = {"variant": "baseline", "rerank_top": 20, "ef_search": 100}
+    arm = {"variant": "clean_big_1024", "rerank_top": 20, "ef_search": 100}
     proc = rc.arm_procedure(arm, [{"id": 1}, {"id": 2}], "paraphrased_ru")
     missing = [f for f in rc.COMPARABLE if f not in proc]
     assert missing == [], "a record the comparability check cannot read is not a record"
@@ -354,13 +354,13 @@ def test_the_stored_axes_are_validated_where_a_retry_reads_them():
 
 def test_a_record_says_whether_its_two_arms_were_comparable():
     # the axis of record may differ and nothing else; `ef_search` is named differently
-    base = rc.arm_procedure({"variant": "baseline", "ef_search": 100}, [{"id": 1}], "s")
-    arm = rc.arm_procedure({"variant": "baseline", "ef_search": 200}, [{"id": 1}], "s")
+    base = rc.arm_procedure({"variant": "clean_big_1024", "ef_search": 100}, [{"id": 1}], "s")
+    arm = rc.arm_procedure({"variant": "clean_big_1024", "ef_search": 200}, [{"id": 1}], "s")
     field = rc.AXIS_FIELD.get("ef_search", "ef_search")
     assert rc.comparable({**base, field: None}, {**arm, field: None}) == []
     # and a pair that also moved the candidate pool is not comparable, axis or no axis
     wider = rc.arm_procedure(
-        {"variant": "baseline", "ef_search": 200, "limit_vector": 20}, [{"id": 1}], "s"
+        {"variant": "clean_big_1024", "ef_search": 200, "limit_vector": 20}, [{"id": 1}], "s"
     )
     assert [f for f, _, _ in rc.comparable({**base, field: None}, {**wider, field: None})] == [
         "limit_vector"

@@ -1,0 +1,44 @@
+@startuml source_life
+!include style.iuml
+title A source's life: who moves it
+
+hide empty description
+
+[*] --> declared : person or agent\nPOST /v1/source
+
+declared --> raw : stand\nonboard_source
+
+state raw {
+  state ok
+  state dirty
+  state bad
+}
+
+raw --> accepted : stand, an ok verdict\n(auto_accept_ok)
+raw --> accepted : person, dirty or bad\naccept with a reason
+raw --> raw : person\nset_source_intake,\nonboard again
+
+state accepted {
+  state "run in use" as inuse
+  state "candidate run" as candidate
+  inuse --> candidate : stand\nonboard again
+  candidate --> inuse : stand (ok, no index waiting)\nor person
+}
+
+accepted --> indexed : stand\nindex_data per variant
+indexed --> active : person\nset_source_active
+active --> indexed : person
+
+accepted --> [*] : person\nremove_source
+indexed --> [*] : person\nremove_source
+
+note right of raw
+  The verdict is the stand's,
+  read from the report's gates.
+  An agent reads the report and
+  proposes; a person decides.
+  A new accepted run marks the
+  variants cut from the old one
+  as moved until indexed again.
+end note
+@enduml

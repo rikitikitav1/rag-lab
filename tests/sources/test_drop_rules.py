@@ -1,8 +1,6 @@
 from pathlib import Path
 
-import config
 import pytest
-from sources import base
 from sources.base import Base, Doc
 from sources.cheatsheets import CheatsheetsSource
 from sources.declaration import SourceFile
@@ -25,7 +23,6 @@ def _policy(**kw) -> dict:
 
 
 DROPPING = _policy(chunker="rooted", max_chunk_size=1024)
-KEEPING = _policy(chunker="legacy", max_chunk_size=1024)
 
 
 def doc(content, i=0, body=None):
@@ -56,13 +53,6 @@ def test_a_versioned_cheatsheet_goes_and_the_plain_one_stays(tmp_path):
     assert kept == {"react.md", "101.md"}
 
 
-def test_the_same_cheatsheets_stay_when_the_policy_keeps_them(tmp_path):
-    for name in ("react.md", "react@0.14.md", "vainglory.md"):
-        write(tmp_path, name, "---\ntitle: x\n---\n\n## S\n\nbody\n")
-    kept = {f.name for f in CheatsheetsSource(tmp_path).discover(KEEPING)}
-    assert kept == {"react.md", "react@0.14.md", "vainglory.md"}
-
-
 def test_the_interview_badge_goes_and_the_answers_stay(tmp_path):
     source = InterviewSource(tmp_path, name="ruby-interview-questions")
     docs = [doc("a badge. You can also find all 100 answers here", 0), doc("a real answer", 1)]
@@ -76,8 +66,6 @@ def test_a_hub_of_links_is_skipped_on_ingest_not_on_search(tmp_path):
     write(tmp_path, "real.md", "# Real\n")
     source = _plain(tmp_path)
     assert {f.name for f in source.discover(DROPPING)} == {"real.md"}
-    # and a variant that declares the old cut still sees the file it always saw
-    assert {f.name for f in source.discover(KEEPING)} == {"index.md", "real.md"}
 
 
 def test_a_symlink_out_of_the_corpus_is_not_discovered(tmp_path):
@@ -98,18 +86,6 @@ def test_a_symlink_inside_the_corpus_is_fine(tmp_path):
     assert {f.name for f in _plain(root).discover(DROPPING)} == {"real.md", "link.md"}
 
 
-def test_the_index_shim_never_fires_on_a_variant_that_was_cut_with_the_rule():
-    from use_cases import chat
-
-    for variant in config.settings.corpus.variants:
-        policy = config.settings.corpus.policy(variant)
-        hidden = chat._hidden_by_cut("book/index.md", variant)
-        assert hidden != base.hygienic(policy), variant
-    # every declared variant makes the two exact complements, so the assertion needs more
-    assert base.hygienic({"chunker": "structured"}) is True
-    assert base.hygienic({"chunker": "legacy"}) is False
-
-
 def test_a_missing_index_is_queued_rather_than_built_while_the_stack_waits(monkeypatch):
     # an hnsw build takes tens of minutes and the whole stack waits on bootstrap
     import bootstrap
@@ -125,3 +101,47 @@ def test_a_missing_index_is_queued_rather_than_built_while_the_stack_waits(monke
     monkeypatch.setattr(bootstrap.job_queue, "enqueue", lambda t, o: queued.append((t, o)))
     bootstrap._ensure_vector_indexes()
     assert queued == [("build_vector_index", {"variant": "a"})]
+
+
+# a path pattern leaves a folder out at the index too, where the stems inside it say nothing
+def test_a_declared_path_is_not_discovered(tmp_path):
+    for rel in ("blog/2025/post.md", "learn/state.md"):
+        (tmp_path / rel).parent.mkdir(parents=True)
+        (tmp_path / rel).write_text("# x\n\ntext\n")
+    declared = SourceFile(name="book", language="en", licence="x", folder=str(tmp_path), skip_paths=["blog/*"])
+    source = Base(tmp_path, declared)
+
+    assert [source.rel_of(f) for f in source.discover()] == ["learn/state.md"]
+
+
+# a page's metadata goes, its title and description stay as words under the page's own heading
+def test_frontmatter_is_read_away_and_its_description_kept():
+    from use_cases.markdown_cleanup import without_frontmatter
+
+    page = (
+        "---\ntitle: \"USE\"\ndescription: Changes the database context.\nms.date: 07/15/2025\n"
+        "f1_keywords:\n  - USE\n---\n# USE\n\nBody.\n"
+    )
+    assert without_frontmatter(page) == "# USE\n\nChanges the database context.\n\nBody.\n"
+    toml = "+++\ntitle = \"Pods\"\nweight = 3\n+++\nA pod is a group.\n"
+    assert without_frontmatter(toml) == "# Pods\n\nA pod is a group.\n"
+
+
+# a rule between two lines of prose, or a fence of text that is not a mapping, is the page's own and stays
+def test_a_thematic_break_is_not_frontmatter():
+    from use_cases.markdown_cleanup import without_frontmatter
+
+    for page in ("---\nJust a line.\n---\nMore.\n", "# T\n\n---\nkey: value\n---\n", "---\n\n# T\n"):
+        assert without_frontmatter(page) == page
+
+
+# a table row's padding goes, its cells and a code span inside them stay word for word; a fenced table is code
+def test_table_padding_is_squeezed_outside_code():
+    from use_cases.markdown_cleanup import without_table_padding
+
+    page = "| a        | `x  y`   |\n|----------|----------|\n```\n| keep     | this |\n```\nText  with  spaces.\n"
+    assert without_table_padding(page) == (
+        "| a | `x  y` |\n|----------|----------|\n```\n| keep     | this |\n```\nText  with  spaces.\n"
+    )
+    tilde = "~~~\n| keep     | this |\n```\n| still    | code |\n~~~\n| a      | b |\n"
+    assert without_table_padding(tilde) == tilde.replace("| a      | b |", "| a | b |")
