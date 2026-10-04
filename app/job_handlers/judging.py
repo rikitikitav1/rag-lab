@@ -8,6 +8,7 @@ import limits
 import llm
 import logging_setup
 import token_fields
+import vocabulary
 from engines import card
 from errors import StandFault
 from evals import guest_axes, measurements, sampling
@@ -17,16 +18,12 @@ from orm import dsn
 from orm.sync_db import Session
 from passes import Pass, Seat
 from redaction import redact
-from sqlalchemy import DateTime, and_, cast, func, or_, select, text
-from sqlalchemy.dialects.postgresql import JSONB
-from use_cases import experiment, judge, rejudge
+from sqlalchemy import DateTime, cast, select, text
+from use_cases import experiment, judge, judge_debts, rejudge
 
 from .base import Final, register, require_card, require_model_ready, require_role_ready
 
 log = logging_setup.get_logger(__name__)
-
-# how many times one row may be put to the judge, not how many times the job may retry
-_MAX_JUDGE_ATTEMPTS = 3
 
 # how many times the job may come back: this bounds a counter that cannot be recorded
 _MAX_SWEEPS = 3
@@ -48,80 +45,6 @@ def judge_on_card(model: str | None = None, role: str = "judging") -> bool | Non
     return card.model_on_card(judged_by.engine, judged_by.name)
 
 
-# the runtime image carries no `ragas`, and a pass that cannot score says so before it walks
-def guests_available() -> bool:
-    from importlib.util import find_spec
-
-    return find_spec("ragas") is not None
-
-
-def _not_capped(axis: str):
-    attempts = QuestionLog.metrics[(axis, "attempts")].as_integer()
-    return or_(attempts.is_(None), attempts < _MAX_JUDGE_ATTEMPTS)
-
-
-# a row outside a control sample is not owed that axis, and nobody is coming for it
-def _not_skipped(axis: str):
-    return QuestionLog.metrics[(axis, "skipped")].as_string().is_(None)
-
-
-# the sql spelling of `guest_axes.HAS`; every entry is total, so `NOT` over it counts the rest
-GUEST_MATERIAL = {
-    "question_text": func.coalesce(QuestionLog.question_text, "") != "",
-    "answer": func.coalesce(QuestionLog.answer, "") != "",
-    # no `jsonb_array_length`: it raises on the jsonb scalar 375 rows hold, rather than saying false
-    "contexts": and_(
-        func.coalesce(func.jsonb_typeof(QuestionLog.contexts), "") == "array",
-        QuestionLog.contexts != cast("[]", JSONB),
-    ),
-    "reference": func.coalesce(Question.reference_answer, "") != "",
-}
-
-
-# an abstention is a verdict, so the key's presence ends the debt, not the score's value
-def guest_clauses():
-    return [
-        and_(
-            QuestionLog.metrics[(axis, "abstained")].as_string().is_(None),
-            *[GUEST_MATERIAL[name] for name in guest.needs],
-            _not_capped(axis),
-            _not_skipped(axis),
-        )
-        for axis, guest in guest_axes.AXES.items()
-    ]
-
-
-# the sql half of `_owed`: one rule, and the outcome key is read the same way on both sides
-def _not_refused():
-    said = QuestionLog.metrics["refusal"].astext
-    return func.coalesce(said, "") != "true"
-
-
-# the one predicate for "a verdict is still coming": the second spelling read faithfulness
-def still_to_judge():
-    return and_(_not_refused(), or_(
-        and_(
-            QuestionLog.relevance.is_(None),
-            _not_capped("relevance"),
-            _not_skipped("relevance"),
-        ),
-        and_(
-            QuestionLog.faithfulness.is_(None),
-            QuestionLog.context.isnot(None),
-            QuestionLog.context != "",
-            _not_capped("faithfulness"),
-            _not_skipped("faithfulness"),
-        ),
-        and_(
-            QuestionLog.completeness.is_(None),
-            Question.reference_answer.isnot(None),
-            Question.reference_answer != "",
-            _not_capped("completeness"),
-            _not_skipped("completeness"),
-        ),
-    ))
-
-
 def _target_log_ids(session, options) -> list[int]:
     stmt = select(QuestionLog.id).where(QuestionLog.answered.is_(True))
     if options.get("log_ids"):
@@ -130,7 +53,7 @@ def _target_log_ids(session, options) -> list[int]:
         # the caller's order is kept: the judge's own history of requests is a measured variable
         return [i for i in asked if i in found]
 
-    stmt = stmt.join(Question, QuestionLog.question_id == Question.id).where(still_to_judge())
+    stmt = stmt.join(Question, QuestionLog.question_id == Question.id).where(judge_debts.still_to_judge())
     if options.get("run_name"):
         stmt = stmt.where(QuestionLog.run_name == options["run_name"])
     else:
@@ -225,7 +148,7 @@ def judge_answers(options: dict) -> None:
     width = judge_width(options.get("judge_width"))
     job_id = options.get("_job_id")
     model = bench.model if bench else None
-    walk = Pass(job_id, (Seat(Role.judging, model),), residency=lambda: _residency(job_id, model))
+    walk = Pass(job_id, (Seat(Role.judging, model),), residency=lambda: residency_of(job_id, model))
     judged = 0
 
     def one(log_id):
@@ -291,7 +214,7 @@ def judge_language(options: dict) -> None:
     job_id = options.get("_job_id")
     # the generator may sit on another card engine and give the card back, which is not a spill
     walk = Pass(job_id, (Seat(Role.judging), Seat(Role.generation, spill_from=None)),
-                residency=lambda: _residency(job_id))
+                residency=lambda: residency_of(job_id))
     halted = []
 
     def stop() -> bool:
@@ -319,7 +242,7 @@ def judge_language(options: dict) -> None:
 # by request only: the guests cost 9.6x our own three axes, and no run waits on them
 @register("judge_guest_axes")
 def judge_guest_axes(options: dict) -> None:
-    if not guests_available():
+    if not judge_debts.guests_available():
         raise Final("this runtime carries no `ragas`, the guest axes cannot be scored here")
     model = options.get("guest_model")
     if model:
@@ -330,7 +253,7 @@ def judge_guest_axes(options: dict) -> None:
     if options.get("run_name") and not options.get("log_ids"):
         _refuse_a_second_guest(options["run_name"], model)
     with Session() as session:
-        log_ids = _guest_log_ids(session, options)
+        log_ids = judge_debts.guest_log_ids(session, options)
     # counted over the rows this pass will walk, which is what the REST door counts as well
     if len(log_ids) > limits.MAX_GUEST_ROWS:
         raise Final(
@@ -340,10 +263,10 @@ def judge_guest_axes(options: dict) -> None:
     # drawn once: a sweep that redraws turns a budget of fifty rows into a hundred and fifty
     budget = set(log_ids)
     width = judge_width(options.get("judge_width"))
-    messages = options.get("messages") or guest_axes.MESSAGE_FORMS[0]
+    messages = options.get("messages") or vocabulary.MESSAGE_FORMS[0]
     job_id = options.get("_job_id")
     walk = Pass(job_id, (Seat(Role.ragas, model), Seat(Role.ragas_embedding, spill_from=None)),
-                residency=lambda: _residency(job_id, model, role=Role.ragas))
+                residency=lambda: residency_of(job_id, model, role=Role.ragas))
     # the guest's own stamp names its engine and sampler; ours would hand the row a second spelling of each
     stamp = {
         k: v for k, v in stamp_of(width, walk.get(), model, role=Role.ragas).items()
@@ -369,7 +292,7 @@ def judge_guest_axes(options: dict) -> None:
         walked += len(log_ids)
         scored += _each(log_ids, width, one)
         with Session() as session:
-            still = _guest_log_ids(session, {**options, "sample": None})
+            still = judge_debts.guest_log_ids(session, {**options, "sample": None})
         log_ids = [i for i in still if i in budget]
         if log_ids and not walk.cancelled():
             log.warning("judge_guest_axes.sweeping_again", owed=len(log_ids), sweep=sweep + 1)
@@ -384,52 +307,6 @@ def judge_guest_axes(options: dict) -> None:
         width=width,
         on_card=walk.ended_on_card,
     )
-
-
-# what the door counts before it queues: the same rows the pass would walk
-def guest_rows_of(run_name: str) -> int:
-    with Session() as session:
-        return len(_guest_log_ids(session, {"run_name": run_name}))
-
-
-# what refuses a guest pass before it is queued, at the door and on an experiment's arm alike
-def guest_pass_refusal(run_name: str, sample: int | None = None) -> tuple[int, str] | None:
-    if not guests_available():
-        return 409, "this runtime carries no `ragas`, the guest axes cannot be scored"
-    # a typo in the name used to be a job over nothing
-    owed = guest_rows_of(run_name)
-    if not owed:
-        return 404, f"run {run_name} owes no guest axis"
-    # the pass walks the drawn subsample, so the cap is read over the same rows the handler counts
-    will_walk = min(owed, sample) if sample else owed
-    if will_walk > limits.MAX_GUEST_ROWS:
-        return 400, f"{will_walk} rows would be walked, over the cap of {limits.MAX_GUEST_ROWS}"
-    return None
-
-
-def _guest_log_ids(session, options) -> list[int]:
-    stmt = (
-        select(QuestionLog.id)
-        .outerjoin(Question, QuestionLog.question_id == Question.id)
-        .where(QuestionLog.answered.is_(True), or_(*guest_clauses()))
-    )
-    if options.get("log_ids"):
-        stmt = stmt.where(QuestionLog.id.in_(options["log_ids"]))
-    if options.get("run_name"):
-        stmt = stmt.where(QuestionLog.run_name == options["run_name"])
-    found = list(session.scalars(stmt))
-    return _drawn(found, options.get("sample"), options.get("seed"))
-
-
-# the guests are a calibration on a subsample, not an axis of every run: they cost 35x ours a row
-def _drawn(ids: list[int], sample, seed) -> list[int]:
-    if not sample or len(ids) <= int(sample):
-        return ids
-    import random
-
-    # seeded and over sorted ids, so a sweep redraws the same rows rather than wandering the run
-    picked = random.Random(int(seed or 0)).sample(sorted(ids), int(sample))
-    return sorted(picked)
 
 
 # a row the pass stopped before is None, so the loop ends on the one cancel reading the row itself took
@@ -454,7 +331,7 @@ def _each(log_ids: list[int], width: int, one) -> int:
 
 
 # read, close, score, merge: the lock went and the session stayed open through minutes of calls
-def _score_guests(log_id: int, stamp: dict, messages: str = guest_axes.MESSAGE_FORMS[0], *,
+def _score_guests(log_id: int, stamp: dict, messages: str = vocabulary.MESSAGE_FORMS[0], *,
                   on_card: bool | None = None, model: str | None = None) -> bool:
     with Session() as session:
         ql = session.get(QuestionLog, log_id)
@@ -482,7 +359,7 @@ def _score_guests(log_id: int, stamp: dict, messages: str = guest_axes.MESSAGE_F
             scored[axis] = _errored_metric(metrics, axis, _error_text(e))
             # the same input overflows on every retry: the axis is dropped here, and the row says why
             if _chain_has(e, llm.InputOverWindow):
-                scored[axis] |= {"attempts": _MAX_JUDGE_ATTEMPTS, "input_over_window": True}
+                scored[axis] |= {"attempts": judge_debts.MAX_JUDGE_ATTEMPTS, "input_over_window": True}
     return _merge_guest_scores(log_id, scored) and wrote
 
 
@@ -563,7 +440,7 @@ class Residency:
 
 
 # a residency is read by the instrument its own engine has, and the engines have different ones
-def _residency(job_id, model: str | None = None, role: str = "judging") -> Residency:
+def residency_of(job_id, model: str | None = None, role: str = "judging") -> Residency:
     try:
         judge = llm.resolve_for(role, model)
         engine = judge.engine
@@ -593,7 +470,7 @@ def _loaded_since(prev: int, job_id, judge) -> bool:
     from models.jobs import Job, JobStatus
 
     # `running` and the ones that died after loading evict the judge exactly as `done` ones do
-    ours = {JobStatus.new}
+    ours = {JobStatus.new, JobStatus.paused}
     with Session() as session:
         asked = select(Job.type, Job.options).where(Job.id > prev, Job.status.notin_(ours))
         # `Job.id != None` renders as a no-op, and an ad hoc pass then never inherits a residency
@@ -859,7 +736,7 @@ def _apply_axis(ql, snapshot, axis, v, err, stamp=None) -> bool:
 
 
 def _errored(metrics: dict, axis: str) -> bool:
-    return metrics.get(axis, {}).get("attempts", 0) >= _MAX_JUDGE_ATTEMPTS
+    return metrics.get(axis, {}).get("attempts", 0) >= judge_debts.MAX_JUDGE_ATTEMPTS
 
 
 # an exception's text can carry a whole statement, and `metrics` is returned by the API

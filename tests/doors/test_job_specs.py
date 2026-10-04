@@ -1,5 +1,8 @@
+import corpus_search
 import job_specs
 import pytest
+import search_scope
+from use_cases import judge_debts
 
 
 def test_every_registered_type_is_named_here():
@@ -126,8 +129,8 @@ def test_the_guest_cap_counts_the_rows_the_pass_will_walk():
     from job_handlers import judging
 
     door = inspect.getsource(eval_mod.enqueue_guest_axes)
-    assert "guest_pass_refusal" in door and "request.sample" in door, "the door no longer asks the shared refusal"
-    assert "min(owed, sample)" in inspect.getsource(judging.guest_pass_refusal), "the refusal caps the whole debt"
+    assert "refuse_guest_pass" in door and "request.sample" in door, "the door no longer asks the shared refusal"
+    assert "min(owed, sample)" in inspect.getsource(judge_debts.refuse_guest_pass), "the refusal caps the whole debt"
     assert "MAX_GUEST_ROWS" in inspect.getsource(judging.judge_guest_axes)
 
 
@@ -182,51 +185,52 @@ def test_a_graded_pass_names_a_frozen_pool_and_not_any_path():
 
 
 def test_a_run_takes_the_chat_doors_scope_and_refuses_what_they_refuse(monkeypatch):
-    import db
+    import job_queue
+
 
     held = {"18"}
 
     def unheld(scope, variant):
         if scope.version not in held:
-            raise db.ScopeRefused(f"no searched source holds version {scope.version}")
+            raise search_scope.ScopeRefused(f"no searched source holds version {scope.version}")
 
-    monkeypatch.setattr(db, "refuse_unheld_version", unheld)
-    job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "18"})
+    monkeypatch.setattr(corpus_search, "refuse_unheld_version", unheld)
+    job_queue._check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "18"})
     # a version none holds is refused at the queue's door, as at the MCP door, not when the run's searches start
     with pytest.raises(job_specs.Refused, match="holds version 17"):
-        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "17"})
+        job_queue._check("eval_run", {"run_name": "r", "set_name": "s", "category": "postgresql", "version": "17"})
     with pytest.raises(job_specs.Refused, match="names no category"):
-        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "version": "17"})
+        job_queue._check("eval_run", {"run_name": "r", "set_name": "s", "version": "17"})
     with pytest.raises(job_specs.Refused, match="only supported with pipeline=single_shot"):
-        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "redis", "pipeline": "agent"})
+        job_queue._check("eval_run", {"run_name": "r", "set_name": "s", "category": "redis", "pipeline": "agent"})
     with pytest.raises(job_specs.Refused):
-        job_specs.check("eval_run", {"run_name": "r", "set_name": "s", "category": "databases.redis"})
+        job_queue._check("eval_run", {"run_name": "r", "set_name": "s", "category": "databases.redis"})
 
 
 # whether a source is in search is asked at the queue's door, not again when a queued run is claimed
 def test_a_queued_run_whose_source_left_search_is_not_refused_as_malformed(monkeypatch):
-    import db
+    import job_queue
 
     def out_of_search(names):
-        raise db.ScopeRefused(f"{sorted(names)} are not in search: not accepted or not active")
+        raise search_scope.ScopeRefused(f"{sorted(names)} are not in search: not accepted or not active")
 
-    monkeypatch.setattr(db, "refuse_sources_out_of_search", out_of_search)
+    monkeypatch.setattr(corpus_search, "refuse_sources_out_of_search", out_of_search)
     options = {"run_name": "r", "set_name": "s", "sources": ["book"]}
     with pytest.raises(job_specs.Refused, match="not in search"):
-        job_specs.check("eval_run", options)
+        job_queue._check("eval_run", options)
+    # the worker checks the spec alone: a source that left search since is not a malformed job
     job_specs.check("eval_run", options, from_the_worker=True)
 
 
 def test_the_phased_run_searches_within_its_scope(monkeypatch):
     from evals import runner
 
-    import db
 
     seen = []
     monkeypatch.setattr(runner, "_embed_in_batches", lambda texts: [("bge-m3@ollama", [0.1])] * len(texts))
     monkeypatch.setattr(runner.search_depth, "resolve", lambda variant: 40)
-    monkeypatch.setattr(runner.db, "hybrid_search", lambda text, vector, scope, **kw: seen.append(scope) or [])
-    scope = db.Scope(label="redis", sources=("redis-doc",))
+    monkeypatch.setattr(corpus_search, "hybrid_search", lambda text, vector, scope, **kw: seen.append(scope) or [])
+    scope = search_scope.Scope(label="redis", sources=("redis-doc",))
     runner._phase_retrieve(["q"], runner.RunSpec(variant="clean_1024", k=5, scope=scope))
 
     assert seen == [scope]

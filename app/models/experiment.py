@@ -75,3 +75,23 @@ class Experiment(Base):
 
     def __repr__(self) -> str:
         return f"Experiment(id={self.id!r}, param={self.param!r}, status={self.status!r})"
+
+
+# the kinds whose arms are judged runs: a run cancelled under one leaves it waiting for ever
+JUDGED_KINDS = (ExperimentKind.generation, ExperimentKind.rejudge)
+
+
+# a running experiment waiting on this run fails; the caller commits, and the count says whether any did
+def fail_running_on(session, run_name: str) -> int:
+    from sqlalchemy import update
+
+    return session.execute(
+        update(Experiment)
+        .where(
+            Experiment.kind.in_(JUDGED_KINDS),
+            Experiment.status == ExperimentStatus.running,
+            Experiment.run_names.contains([run_name]),
+        )
+        .values(status=ExperimentStatus.failed)
+    ).rowcount
+

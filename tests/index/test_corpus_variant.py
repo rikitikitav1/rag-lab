@@ -1,7 +1,9 @@
 import inspect
 from types import SimpleNamespace
 
+import corpus_search
 import pytest
+import text_language
 from conftest import stub_engines
 from evals import runner
 from use_cases import agent, chat
@@ -10,8 +12,8 @@ import db
 
 
 def _reads_of_data_chunks():
-    return [db.hybrid_search, db.nearest_distance, db.corpus_fingerprint,
-            db.is_empty, db.list_categories, db.cleanup]
+    return [corpus_search.hybrid_search, corpus_search.nearest_distance, db.corpus_fingerprint,
+            db.is_empty, corpus_search.list_categories]
 
 
 def test_no_reader_of_the_corpus_can_forget_which_variant_it_reads():
@@ -24,10 +26,10 @@ def test_no_reader_of_the_corpus_can_forget_which_variant_it_reads():
 def test_a_run_against_an_empty_variant_stops_instead_of_answering_from_nothing(monkeypatch):
     monkeypatch.setattr(runner.db, "is_empty", lambda *, variant: True)
     monkeypatch.setattr(
-        runner.db, "corpus_variants", lambda: [{"variant": "baseline", "chunks": 1}]
+        runner.db, "corpus_variants", lambda: [{"variant": "clean_big_1024", "chunks": 1}]
     )
     with pytest.raises(RuntimeError, match="typo|empty"):
-        runner.run("run", set_name="curated", variant="baseline")
+        runner.run("run", set_name="curated", variant="clean_big_1024")
 
 
 def test_a_run_against_a_variant_with_no_declared_policy_stops_before_the_first_question():
@@ -41,8 +43,8 @@ def test_the_single_shot_snapshot_names_the_variant_it_read(monkeypatch):
     monkeypatch.setattr(run_snapshot.db, "corpus_fingerprint", lambda *, variant: {"chunks": 7})
     monkeypatch.setattr("engines.ollama.context_length", lambda model, spec=None: None)
     stub_engines(monkeypatch, run_snapshot)
-    snapshot = chat._config_snapshot(False, 5, True, 0.55, None, "baseline")
-    assert snapshot["variant"] == "baseline"
+    snapshot = chat._config_snapshot(False, 5, True, 0.55, None, "clean_big_1024")
+    assert snapshot["variant"] == "clean_big_1024"
     assert snapshot["corpus_fingerprint"] == {"chunks": 7}
 
 
@@ -58,7 +60,7 @@ def test_an_empty_named_variant_is_not_a_reason_to_index(monkeypatch):
     enqueued = []
     monkeypatch.setattr(bootstrap.job_queue, "enqueue", lambda *a, **kw: enqueued.append(a))
     monkeypatch.setattr(
-        "db.corpus_variants", lambda: [{"variant": "baseline", "chunks": 13068}]
+        "db.corpus_variants", lambda: [{"variant": "clean_big_1024", "chunks": 13068}]
     )
     monkeypatch.setattr("db.is_empty", lambda *, variant: True)
     bootstrap._ensure_index()
@@ -121,10 +123,10 @@ def test_exact_search_sets_its_mode_on_the_connection_the_query_uses(monkeypatch
             )
 
     # the language of the question is answered elsewhere and would open its own connection
-    monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
-    db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True, embedded_by="bge-m3@ollama")
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    corpus_search.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True, embedded_by="bge-m3@ollama")
 
     assert seen[0] == "SET LOCAL enable_indexscan = off"
     assert not any("hnsw.ef_search" in s for s in seen), "exact search names no depth"
@@ -165,10 +167,10 @@ def test_a_search_row_is_read_by_name_so_a_moved_column_cannot_change_its_meanin
         def execute(self, statement, *args):
             return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: [scrambled]))
 
-    monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
-    hit, = db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True,
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    hit, = corpus_search.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True,
                             embedded_by="bge-m3@ollama")
 
     assert (hit.content, hit.source, hit.distance, hit.section, hit.versions) == (
@@ -178,8 +180,8 @@ def test_a_search_row_is_read_by_name_so_a_moved_column_cannot_change_its_meanin
 
 def test_the_queries_that_claim_to_read_what_retrieval_reads_filter_the_same_rows():
     # the probe claims the shape `hybrid_search` gives the planner and filtered variant alone
+    import search_depth
     from evals import build_veto
-    from use_cases import search_depth
 
     import db
 
@@ -229,30 +231,28 @@ class _Seen:
 
 def test_a_search_refuses_vectors_another_embedder_wrote(monkeypatch):
     # bge-m3 on two engines reordered the top-20 of 172 questions in 200, under one name
-    import db
 
-    with pytest.raises(db.ForeignVectors, match="bge-m3@ollama.*embeds with bge-m3@vllm"):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "baseline", "bge-m3@vllm")
+    with pytest.raises(corpus_search.ForeignVectors, match="bge-m3@ollama.*embeds with bge-m3@vllm"):
+        corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@vllm")
     # a variant half reindexed holds both, and is refused as well
-    with pytest.raises(db.ForeignVectors):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "baseline", "bge-m3@vllm")
+    with pytest.raises(corpus_search.ForeignVectors):
+        corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "clean_big_1024", "bge-m3@vllm")
     seen = _Seen(["bge-m3@vllm"])
-    db.refuse_foreign_vectors(seen, "baseline", "bge-m3@vllm")
-    assert seen.asked == [{"variant": "baseline"}]
+    corpus_search.refuse_foreign_vectors(seen, "clean_big_1024", "bge-m3@vllm")
+    assert seen.asked == [{"variant": "clean_big_1024"}]
     # a question embedded earlier carries its own embedder, and that one decides
-    db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "baseline", "bge-m3@ollama")
+    corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@ollama")
     # a vector nobody marked is a ruler nobody named, refused rather than passed
-    with pytest.raises(db.ForeignVectors, match="no recorded embedder"):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", None]), "baseline", "bge-m3@ollama")
+    with pytest.raises(corpus_search.ForeignVectors, match="no recorded embedder"):
+        corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama", None]), "clean_big_1024", "bge-m3@ollama")
 
 
 def test_no_search_asks_the_role_registry_on_its_own_connection():
     # the guard resolved the embedder through a second pooled connection per search
     import inspect
 
-    import db
 
-    for fn in (db.refuse_foreign_vectors, db.hybrid_search, db.nearest_distance):
+    for fn in (corpus_search.refuse_foreign_vectors, corpus_search.hybrid_search, corpus_search.nearest_distance):
         assert "llm." not in inspect.getsource(fn), fn.__name__
         assert inspect.signature(fn).parameters["embedded_by"].default is inspect.Parameter.empty
 
@@ -268,7 +268,7 @@ def test_the_index_and_the_questions_write_which_embedder_made_their_vectors(mon
 
     class _Session:
         def execute(self, _stmt):
-            pass
+            return SimpleNamespace(all=lambda: [])
 
         def add_all(self, rows):
             self.rows = rows
@@ -276,8 +276,8 @@ def test_the_index_and_the_questions_write_which_embedder_made_their_vectors(mon
         def commit(self):
             pass
 
-    chunks = [SimpleNamespace(content="a"), SimpleNamespace(content="b")]
-    index._replace_chunks(_Session(), 1, "baseline", chunks, embed_size=1)
+    chunks = [SimpleNamespace(content="a", embedding=None), SimpleNamespace(content="b", embedding=None)]
+    index._replace_chunks(_Session(), 1, "clean_big_1024", chunks, embed_size=1)
     assert [c.embedded_by for c in chunks] == ["bge-m3@ollama"] * 2
 
 
@@ -293,8 +293,8 @@ def test_every_vector_search_passes_the_guard_first(monkeypatch):
         guarded.append((variant, embedded_by))
         raise _Refused
 
-    monkeypatch.setattr(db, "refuse_foreign_vectors", refuse)
-    monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", refuse)
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
 
     class _Conn(_Seen):
         def __enter__(self):
@@ -305,10 +305,10 @@ def test_every_vector_search_passes_the_guard_first(monkeypatch):
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn([]))
     with pytest.raises(_Refused):
-        db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="x@y")
+        corpus_search.hybrid_search("q", "[0]", None, variant="clean_big_1024", exact=True, embedded_by="x@y")
     with pytest.raises(_Refused):
-        db.nearest_distance([0.0], variant="baseline", embedded_by="a@b")
-    assert guarded == [("baseline", "x@y"), ("baseline", "a@b")]
+        corpus_search.nearest_distance([0.0], variant="clean_big_1024", embedded_by="a@b")
+    assert guarded == [("clean_big_1024", "x@y"), ("clean_big_1024", "a@b")]
 
 
 def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monkeypatch):
@@ -322,7 +322,7 @@ def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monk
             return []
 
     question = {"original_text": "q", "emb": "[0]", "embedded_by": "bge-m3@ollama"}
-    retrieval_compare.ranked_lists(_Db(), question, "baseline")
+    retrieval_compare.ranked_lists(_Db(), question, "clean_big_1024")
     assert seen["embedded_by"] == "bge-m3@ollama"
 
 
@@ -330,10 +330,10 @@ def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monk
 def test_the_depth_script_searches_with_the_embedder_of_each_question(monkeypatch, script):
     ef_latency = script("ef_latency")
     seen = []
-    monkeypatch.setattr(ef_latency.db, "hybrid_search", lambda *a, **kw: seen.append(kw))
+    monkeypatch.setattr(corpus_search, "hybrid_search", lambda *a, **kw: seen.append(kw))
     monkeypatch.setattr(ef_latency.llm, "embedder_label", lambda: "bge-m3@ollama")
 
-    ef_latency.timings([("q", "[0]", "bge-m3@vllm-embed"), ("q", "[0]", None)], "baseline", 100)
+    ef_latency.timings([("q", "[0]", "bge-m3@vllm-embed"), ("q", "[0]", None)], "clean_big_1024", 100)
 
     assert [kw["embedded_by"] for kw in seen] == ["bge-m3@vllm-embed", "bge-m3@ollama"]
     assert "embedded_by" in ef_latency.SAMPLE
@@ -345,6 +345,7 @@ def test_a_cancelled_index_reports_and_builds_for_the_sources_it_did_cut(monkeyp
 
     import job_handlers.indexing as indexing
     import sources.factory
+    import use_cases.dedup
     import use_cases.index
 
     built = [SimpleNamespace(name="a"), SimpleNamespace(name="b"), SimpleNamespace(name="c")]
@@ -356,6 +357,8 @@ def test_a_cancelled_index_reports_and_builds_for_the_sources_it_did_cut(monkeyp
         sources=1, chunks=5, refused={}, left=["b", "c"], model="m"))
     monkeypatch.setattr(use_cases.index, "ensure_vector_index", indexed.append)
     monkeypatch.setattr(indexing, "_report_depth", lambda: None)
-    monkeypatch.setattr(indexing.job_queue, "enqueue", lambda kind, opts: queued.append(opts["source"]))
+    monkeypatch.setattr(indexing.job_queue, "enqueue",
+                        lambda kind, opts: queued.append(opts.get("source") or kind))
     out = indexing.index_data({"variant": "v", "_job_id": 1})
-    assert queued == ["a"] and indexed == ["v"] and out["left_by_cancel"] == ["b", "c"] and out["sources"] == 1
+    assert queued == ["a", "count_terms"] and indexed == ["v"]
+    assert out["left_by_cancel"] == ["b", "c"] and out["sources"] == 1

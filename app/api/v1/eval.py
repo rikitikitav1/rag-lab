@@ -1,39 +1,38 @@
-import re
 import time
-from enum import StrEnum
 from typing import Literal
 
-import config
+import gold_match
 import job_queue
 import job_specs
 import limits
 import logging_setup
 from corpus_keys import VARIANT_RE, Gold
 from evals import compare as compare_uc
-from evals.guest_axes import MESSAGE_FORMS
+from evals import retrieval_metrics, run_debts
 from evals.pools import Ambiguous
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from models import Job
-from models.eval import Question, QuestionLog
-from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, refuse_unknown_registry
+from models.eval import QuestionLog
+from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from use_cases import agent_policy, rejudge, retrieval_compare
-from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
+from use_cases import judge_debts, rejudge, retrieval_compare
 from use_cases.chat import resolve_rerank
+from use_cases.eval_runs import (
+    queue_sweep,
+    refuse_a_taken_run,
+    refuse_missing_questions,
+    resumed_options,
+    validate_axis_values,
+    validate_param_values,
+)
+from vocabulary import MESSAGE_FORMS
 
 # a door that queues a job answers with the whole row, the same one `POST /v1/job` answers with
 from api.v1.job import JobResponse as JobEnqueuedResponse
-
-# what a run may ask for is not what a log may hold: both retired arms stay queryable
-RunnableOrchestrator = StrEnum(
-    "RunnableOrchestrator",
-    {o.name: o.value for o in Orchestrator if o not in GONE},
-)
 
 log = logging_setup.get_logger(__name__)
 
@@ -84,7 +83,7 @@ class ParaphraseRequest(BaseModel):
 # the door is the queue's own model with the name made optional: it invents one when none came
 class EvalRunRequest(job_specs.EvalRunFields):
     run_name: str | None = Field(default=None, max_length=limits.MAX_RUN_NAME)
-    orchestrator: RunnableOrchestrator | None = None
+    orchestrator: job_specs.Runnable | None = None
 
 
 class ExperimentRequest(BaseModel):
@@ -106,19 +105,8 @@ class ExperimentRequest(BaseModel):
 
 
 # `safely` returns no counts when the diagnostic itself failed, and the door read them anyway
-def _debts_or_none(run_name: str):
-    from evals.run_debts import safely
-
-    debts = safely(run_name)
-    if "unavailable" in debts:
-        # the handler decides on the rows it finds: a broken diagnostic must not refuse real work
-        log.warning("eval.debts_unavailable", run_name=run_name, why=debts["unavailable"])
-        return None
-    return debts
-
-
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
-    job = job_queue.add_job(session, type, options)
+    job = await job_queue.add_job(session, type, options)
     await commit_and_refresh(session, job)
     return JobEnqueuedResponse.model_validate(job)
 
@@ -182,9 +170,9 @@ async def eval_misses(
         if not gold:
             continue
         in_corpus += 1
-        got = [s["source"] for s in (ql.sources or [])]
-        hit = any(gold.holds_file(g) for g in got)
-        if not hit:
+        # the metric's own reading: an mcp result is not retrieval, a chunk a gate hid from the model is
+        _, _, got = retrieval_metrics.retrieved_sources(ql)
+        if gold_match.rank_of_gold(got, gold) is None:
             items.append(
                 MissItem(
                     question_id=q.id,
@@ -253,144 +241,10 @@ async def eval_compare(
         raise HTTPException(status_code=409, detail=str(e)) from e
 
 
-# rules live beside `measure`, so AXES and the rules cannot name different sets
-def validate_axis_values(axis: str, values: list) -> None:
-    rule = retrieval_compare.AXIS_RULES.get(axis)
-    if rule is None:
-        raise HTTPException(status_code=400, detail=f"no rule for axis {axis!r}")
-    bad = [v for v in values if not rule(v)]
-    if bad:
-        detail = f"{axis} takes {retrieval_compare.AXIS_LIMITS[axis]}, got: {bad}"
-        if axis == "variant":
-            detail += f", declared: {sorted(config.settings.corpus.variants)}"
-        raise HTTPException(status_code=400, detail=detail)
-
-
-def validate_param_values(param: str, values: list, pipeline: Pipeline | None = None) -> None:
-    agent_only = (
-        "fallback_policy", "max_hops", "gate_signal", "weak_distance", "topic_threshold",
-        "orchestrator",
-    )
-    if param in agent_only and pipeline != Pipeline.agent:
-        raise HTTPException(
-            status_code=400, detail=f"{param} only applies to the agent pipeline"
-        )
-    if param == "model":
-        bad = [v for v in values if not isinstance(v, str) or not _known_model(v)]
-        if bad:
-            raise HTTPException(status_code=400, detail=f"invalid model names: {bad}")
-    elif param in ("topic_threshold", "weak_distance"):
-        bad = [v for v in values if not isinstance(v, int | float) or not 0 <= v <= 2]
-        if bad:
-            raise HTTPException(status_code=400, detail=f"{param} must be 0..2: {bad}")
-    elif param == "variant":
-        # inside the chain: outside it every corpus sweep was refused as not an integer
-        validate_axis_values("variant", values)
-    elif param in ("fallback_policy", "gate_signal", "orchestrator"):
-        enums = {
-            "fallback_policy": FallbackPolicy, "gate_signal": GateSignal,
-            "orchestrator": Orchestrator,
-        }
-        allowed = {p.value for p in enums[param]}
-        if param == "orchestrator":
-            allowed -= {o.value for o in GONE}
-        bad = [v for v in values if v not in allowed]
-        if bad:
-            raise HTTPException(
-                status_code=400, detail=f"{param} must be one of {sorted(allowed)}: {bad}"
-            )
-    elif param == "k":
-        bad = [v for v in values if not isinstance(v, int) or not 1 <= v <= limits.MAX_K]
-        if bad:
-            raise HTTPException(status_code=400, detail=f"k must be 1..{limits.MAX_K}: {bad}")
-    elif param == "max_hops":
-        bad = [v for v in values if not isinstance(v, int) or not 1 <= v <= agent_policy.MAX_HOPS]
-        if bad:
-            raise HTTPException(
-                status_code=400, detail=f"max_hops must be 1..{agent_policy.MAX_HOPS}: {bad}"
-            )
-    else:
-        bad = [v for v in values if not isinstance(v, int) or v < 1]
-        if bad:
-            raise HTTPException(
-                status_code=400, detail=f"{param} values must be positive integers"
-            )
-
-
-def _known_model(name: str) -> bool:
-    try:
-        refuse_unknown_registry(name)
-    except ValueError:
-        return False
-    return True
-
-
-def value_suffix(value) -> str:
-    if isinstance(value, int):
-        return f"{value:02d}"
-    return re.sub(r"[^a-zA-Z0-9._-]", "_", str(value))
-
-
-async def _rows_of(session, run_name: str) -> int:
-    return await session.scalar(
-        select(func.count()).select_from(QuestionLog).where(QuestionLog.run_name == run_name)
-    ) or 0
-
-
-async def _question_ids_in(session, ids: list[int]) -> set[int]:
-    return set((await session.scalars(select(Question.id).where(Question.id.in_(ids)))).all())
-
-
-# refused at the door, not an hour in: a run over fewer questions than named reads as the named set
-async def _refuse_missing_questions(session, ids: list[int]) -> None:
-    missing = sorted(set(ids) - await _question_ids_in(session, ids))
-    if missing:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{len(missing)} of {len(ids)} question ids are not in the stand: {missing[:20]}",
-        )
-
-
-async def _eval_runs_named(session, run_name: str) -> list:
-    return list((await session.scalars(
-        select(Job).where(Job.type == "eval_run", Job.options["run_name"].astext == run_name).order_by(Job.id.desc())
-    )).all())
-
-
-# a taken name, by its rows or by a job that stopped before its first row, is resumed, not run twice
-async def refuse_a_taken_run(session, run_name: str) -> None:
-    rows = await _rows_of(session, run_name)
-    jobs = await _eval_runs_named(session, run_name)
-    if rows or jobs:
-        raise HTTPException(
-            status_code=409,
-            detail=f"run {run_name} has {rows} rows and {len(jobs)} eval_run jobs: pass resume"
-            " to answer the rest on its own options, or name a new run",
-        )
-
-
 # a resumed run changes nothing: it runs on the stopped job's own options and asks only the unanswered
 async def _resume(session, request: EvalRunRequest) -> JobEnqueuedResponse:
     extra = sorted(request.model_fields_set - {"run_name", "resume"})
     return await _enqueue(session, "eval_run", await resumed_options(session, request.run_name, extra))
-
-
-# both doors that queue a run resume through here, or /v1/job finished a run on other options
-async def resumed_options(session, run_name: str | None, extra: list[str]) -> dict:
-    if not run_name or extra:
-        raise HTTPException(
-            status_code=422,
-            detail="resume takes run_name alone: a resumed run changes nothing"
-            + (f", and {', '.join(extra)} would" if extra else ""),
-        )
-    jobs = await _eval_runs_named(session, run_name)
-    if not jobs:
-        raise HTTPException(status_code=404, detail=f"no eval_run named {run_name} to resume")
-    if any(job.status in job_queue.ACTIVE for job in jobs):
-        raise HTTPException(status_code=409, detail=f"run {run_name} is still queued or running")
-    # the worker's own bookkeeping belongs to the attempt that stopped, not to the resumed one
-    options = {k: v for k, v in jobs[0].options.items() if k not in job_specs.WORKER_KEYS}
-    return {**options, "resume": True}
 
 
 @router.post("/run", response_model=JobEnqueuedResponse)
@@ -403,7 +257,7 @@ async def enqueue_eval_run(
     if request.run_name:
         await refuse_a_taken_run(session, request.run_name)
     if request.question_ids:
-        await _refuse_missing_questions(session, request.question_ids)
+        await refuse_missing_questions(session, request.question_ids)
     run_name = request.run_name or f"{request.set_name or 'all'}_{int(time.time())}"
     return await _enqueue(
         session,
@@ -442,16 +296,7 @@ async def enqueue_eval_run(
 # copying here rather than in the judge job makes a taken name a 400, not a dead job
 @router.post("/rejudge", response_model=RejudgeResponse)
 def enqueue_rejudge(request: RejudgeRequest):
-    try:
-        copied = rejudge.copy_run(request.source, request.run_name)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    try:
-        job_id = job_queue.enqueue("judge_answers", {"run_name": request.run_name})
-    except BaseException:
-        # the copy is committed and the job is not, under a name no retry can reuse
-        rejudge.delete_runs([request.run_name])
-        raise
+    job_id, copied = rejudge.queue_copy(request.source, request.run_name)
     row = JobEnqueuedResponse.model_validate(job_queue.get(job_id)).model_dump()
     return RejudgeResponse.model_validate({**row, "run_name": request.run_name, "copied": copied})
 
@@ -462,15 +307,7 @@ async def enqueue_judge(
     request: JudgeRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    debts = await run_in_threadpool(_debts_or_none, request.run_name)
-    if debts is not None and not debts["answered_rows"]:
-        raise HTTPException(
-            status_code=404, detail=f"run {request.run_name} holds no answered row"
-        )
-    if debts is not None and not debts["ours_still_to_judge"]:
-        raise HTTPException(
-            status_code=404, detail=f"run {request.run_name} owes our judge nothing"
-        )
+    await run_in_threadpool(run_debts.refuse_judging, request.run_name, owed=True)
     return await _enqueue(
         session,
         "judge_answers",
@@ -484,11 +321,7 @@ async def enqueue_language_probe(
     request: LanguageProbeRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    debts = await run_in_threadpool(_debts_or_none, request.run_name)
-    if debts is not None and not debts["answered_rows"]:
-        raise HTTPException(
-            status_code=404, detail=f"run {request.run_name} holds no answered row"
-        )
+    await run_in_threadpool(run_debts.refuse_judging, request.run_name, owed=False)
     return await _enqueue(
         session,
         "judge_language",
@@ -502,11 +335,7 @@ async def enqueue_guest_axes(
     request: GuestAxesRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    from job_handlers.judging import guest_pass_refusal
-
-    refused = await run_in_threadpool(guest_pass_refusal, request.run_name, request.sample)
-    if refused:
-        raise HTTPException(status_code=refused[0], detail=refused[1])
+    await run_in_threadpool(judge_debts.refuse_guest_pass, request.run_name, request.sample)
     return await _enqueue(
         session,
         "judge_guest_axes",
@@ -528,29 +357,14 @@ async def enqueue_experiment(
         request.run_name
         or f"{request.set_name or 'all'}_{request.pipeline.value}_{int(time.time())}"
     )
-    # what the row claims it filtered by: ids win over the set, as `_target_texts` reads them
-    set_name = request.set_name if not request.question_ids else None
-    rerank = resolve_rerank(request.rerank)
-    names = [f"{base}_{request.param}_{value_suffix(value)}" for value in request.values]
     # all of them before any is queued: a client's retry after a timeout wrote every question twice
-    for name in names:
-        await refuse_a_taken_run(session, name)
-    jobs = []
-    for value, name in zip(request.values, names, strict=True):
-        job = await _enqueue(
-            session,
-            "eval_run",
-            {
-                "run_name": name,
-                "set_name": set_name,
-                "question_ids": request.question_ids,
-                "rerank": rerank,
-                "pipeline": request.pipeline.value,
-                "language": request.language,
-                # the swept value wins: it comes after the pinned one
-                "variant": request.variant,
-                request.param: value,
-            },
-        )
-        jobs.append(job)
-    return jobs
+    jobs = await queue_sweep(
+        session, base, request.param, request.values, set_name=request.set_name, question_ids=request.question_ids,
+        rerank=resolve_rerank(request.rerank), pipeline=request.pipeline.value, language=request.language,
+        variant=request.variant,
+    )
+    # one commit: an arm the queue refuses leaves none of the earlier ones running under a taken name
+    await session.commit()
+    for job in jobs:
+        await session.refresh(job)
+    return [JobEnqueuedResponse.model_validate(job) for job in jobs]

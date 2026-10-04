@@ -6,10 +6,11 @@ from dataclasses import asdict, dataclass
 import config
 from book_matter import is_matter
 from corpus_keys import SECTION_SEP, chapter_of
-from sources.base import cuts_of, first_heading, hygienic
+from sources.base import cuts_of, first_heading
 from tool_names import Tool
 from use_cases import ingest_quality as quality
-from use_cases.markup import FENCE
+from use_cases import markdown_cleanup
+from use_cases.markup import FENCE, fence_scan
 from use_cases.route import mixed_share, words
 
 # an HTML tag by its name, on one line; a bare `<` in code (`a < b`, `<%= %>`, JSX) is text and stays
@@ -80,9 +81,9 @@ def _policy() -> dict:
 
 
 # a file's markdown cut whole, as the index will cut it: a piece cut alone takes its own first heading for the root
-def _samples(markdown: str, file: str, policy: dict) -> list:
-    text = markdown.lstrip("\ufeff")
-    root = first_heading(text) if hygienic(policy) else None
+def _samples(markdown: str, file: str, policy: dict, indexed: str | None = None) -> list:
+    text = markdown_cleanup.as_indexed(markdown) if indexed is None else indexed
+    root = first_heading(text)
     return [
         quality.Sample(file=file, content=content, chunk_index=i, body=body, section=section, root=root, cut_by=cut_by)
         for i, (content, body, section, root, cut_by) in enumerate(cuts_of(text, root, policy, file))
@@ -90,7 +91,7 @@ def _samples(markdown: str, file: str, policy: dict) -> list:
 
 
 def _gates(samples: list, policy: dict) -> dict:
-    metrics = quality.measure(samples, ceiling=policy["max_chunk_size"], records_sections=hygienic(policy))
+    metrics = quality.measure(samples, ceiling=policy["max_chunk_size"])
     hard, soft, _, verdict = quality.gates_of(metrics, config.settings.ingest_quality)
     return {"verdict": verdict, "hard": hard, "soft": soft, "metrics": asdict(metrics)}
 
@@ -101,11 +102,15 @@ def chunker_gates(markdown: str, file: str) -> dict:
     return _gates(_samples(markdown, file, policy), policy)
 
 
-# the chunker's gates a chapter of a file, a chapter the second step of the section path; no chapters, one row
-def section_rows(markdown: str, file: str) -> list[dict]:
+# the chunker's gates a chapter of a file (`indexed`: the text a source's own reader gives the index), one row each
+_PAST_SIX = re.compile(r"^#{7,}\s", re.MULTILINE)
+_HEADING = re.compile(r"^#{1,6}\s", re.MULTILINE)
+
+
+def section_rows(markdown: str, file: str, waived: frozenset = frozenset(), indexed: str | None = None) -> list[dict]:
     policy = _policy()
     chapters: dict[str | None, list] = {}
-    for sample in _samples(markdown, file, policy):
+    for sample in _samples(markdown, file, policy, indexed):
         # the index and the questions never read a book's matter, so its sections do not judge the conversion
         if is_matter(file, sample.section):
             continue
@@ -116,19 +121,38 @@ def section_rows(markdown: str, file: str) -> list[dict]:
         # a chapter that is the file's root alone has no heading below it by shape, so coverage measures nothing there
         root_only = chapter is None or SECTION_SEP not in chapter
         hard = [g for g in gates["hard"] if not (root_only and g.startswith("section_coverage."))]
-        verdict = gates["verdict"] if hard == gates["hard"] else quality.verdict(hard, gates["soft"], judged=True)
+        # a line under seven hashes is a heading the chunker read as text; a declaration may waive a gate by shape
+        past_six = sum(len(_PAST_SIX.findall(s.content or "")) for s in samples)
+        # the cut keeps a deeper heading inside its chunk: a chapter's sections are its paths and the headings it holds
+        sections = len({s.section for s in samples}) + sum(
+            len(_HEADING.findall(s.body if s.body is not None else s.content or "")) for s in samples)
+        # a long chapter with next to no section inside lost its headings; long sections under headings are fine
+        rules = config.settings.ingest_quality.measure
+        flat = len(samples) >= rules.flat_min_chunks and sections <= rules.flat_max_sections
+        found = ["headings_past_six.found"] * bool(past_six) + ["structure.flat"] * flat
+        hard, soft = _unwaived(hard, waived), _unwaived(gates["soft"] + found, waived)
+        unread = [g for g in gates["hard"] + gates["soft"] if g.split(".")[0] in waived]
+        changed = hard != gates["hard"] or soft != gates["soft"]
+        verdict = quality.verdict(hard, soft, judged=True) if changed else gates["verdict"]
         rows.append(
             {
                 "file": file,
                 "section": chapter,
                 "words": len(words(" ".join(s.body if s.body is not None else s.content for s in samples))),
                 **gates["metrics"],
+                "headings_past_six": past_six,
+                "sections_in_chapter": sections,
                 "chunker_verdict": verdict,
-                "breached": hard + gates["soft"],
+                "breached": hard + soft,
+                **({"waived": unread} if unread else {}),
                 "coverage_by_shape": root_only,
             }
         )
     return rows
+
+
+def _unwaived(gates: list[str], waived: frozenset) -> list[str]:
+    return [g for g in gates if g.split(".")[0] not in waived]
 
 
 # what the output says against the text the file carried with it; no layer, no layer signals
@@ -199,7 +223,6 @@ def better_reading(first: dict, second: dict, cells_slack: float = 0.0) -> bool:
     return second["layer_f1"] > first["layer_f1"] and second["table_cells"] >= first["table_cells"] * (1 - cells_slack)
 
 
-_FENCE_LINE = re.compile(r"^\s*```", re.M)
 _HEADING = re.compile(r"^#{1,6}\s+(.+)$", re.M)
 
 
@@ -220,7 +243,7 @@ def self_check(markdown: str, outline: list[str]) -> dict:
     return {
         "outline": len(titles),
         "outline_found": sum(_found(t, headings) for t in titles),
-        "fences_unbalanced": len(_FENCE_LINE.findall(markdown)) % 2,
+        "fences_unbalanced": int(fence_scan(markdown.split("\n"))[2] is not None),
         "code_blocks": len(blocks),
         "code_one_line": sum("\n" not in b for b in blocks),
     }

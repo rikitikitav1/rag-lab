@@ -1,7 +1,16 @@
+import contextlib
 import re
 from types import SimpleNamespace
 
 from models.experiment import ExperimentStatus, can_advance
+
+
+# `add_job` is awaited by the doors, so a stand-in answers as a coroutine
+def _staged(fn):
+    async def stage(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return stage
+
 
 
 def test_can_advance_valid():
@@ -110,17 +119,17 @@ def _generation_fan_out(monkeypatch, body) -> list[dict]:
     """The options each arm is queued with, without a database behind the route."""
     from types import SimpleNamespace
 
-    import api.v1.experiment as mod
     from api.v1.experiment import ExperimentCreate
+    from use_cases import experiment_setup as setup
 
     seen: list[dict] = []
     monkeypatch.setattr(
-        mod.job_queue, "add_job", lambda s, t, o: seen.append(o) or SimpleNamespace(id=1)
+        setup.job_queue, "add_job", lambda s, t, o: seen.append(o) or SimpleNamespace(id=1)
     )
     request = ExperimentCreate(**body)
     exp = SimpleNamespace(id=1, run_names=[], status=None, started_at=None)
     for value in request.param_values:
-        mod.job_queue.add_job(
+        setup.job_queue.add_job(
             None,
             "eval_run",
             {
@@ -141,7 +150,7 @@ def test_a_generation_experiment_can_sweep_the_corpus():
     from api.v1.experiment import ExperimentCreate
 
     ExperimentCreate(
-        dataset="s", param="variant", param_values=["baseline", "clean_1024"]
+        dataset="s", param="variant", param_values=["clean_big_1024", "clean_1024"]
     )
     # and the gate still gates
     with _pytest.raises(ValueError, match="param must be one of"):
@@ -162,10 +171,10 @@ def test_a_swept_variant_is_not_overwritten_by_the_pinned_one(monkeypatch):
         monkeypatch,
         {
             "dataset": "s", "param": "variant",
-            "param_values": ["baseline", "clean_1024"], "variant": "baseline",
+            "param_values": ["clean_big_1024", "clean_1024"], "variant": "clean_big_1024",
         },
     )
-    assert [o["variant"] for o in seen] == ["baseline", "clean_1024"]
+    assert [o["variant"] for o in seen] == ["clean_big_1024", "clean_1024"]
 
 
 def test_a_grid_over_the_cap_is_refused_at_the_door(client):
@@ -174,7 +183,7 @@ def test_a_grid_over_the_cap_is_refused_at_the_door(client):
         "/v1/experiment",
         json={
             "kind": "retrieval", "dataset": "s", "param": "ef_search",
-            "axes": {"variant": ["baseline"], "ef_search": list(range(1, 34))},
+            "axes": {"variant": ["clean_big_1024"], "ef_search": list(range(1, 34))},
         },
     )
     assert r.status_code == 422, r.text
@@ -199,7 +208,7 @@ def test_arms_that_share_a_name_are_refused_at_the_door(client):
         "/v1/experiment",
         json={
             "kind": "retrieval", "dataset": "s", "param": "variant",
-            "axes": {"variant": ["baseline", "baseline"]},
+            "axes": {"variant": ["clean_big_1024", "clean_big_1024"]},
         },
     )
     assert r.status_code == 422, r.text
@@ -207,7 +216,7 @@ def test_arms_that_share_a_name_are_refused_at_the_door(client):
 
 
 def test_value_suffix_formats():
-    from api.v1.eval import value_suffix
+    from use_cases.eval_runs import value_suffix
 
     assert value_suffix(5) == "05"
     assert value_suffix("llama3.1:70b") == "llama3.1_70b"
@@ -396,6 +405,7 @@ def test_a_bulk_cancel_takes_each_run_judge_with_it(monkeypatch):
     import job_queue
     from models import JobStatus
 
+    monkeypatch.setattr(job_queue, "fail_running_on", lambda session, run: 0)
     jobs = [
         SimpleNamespace(id=1, type="eval_run", options={"run_name": "a"}, status=JobStatus.new, tokens=None),
         SimpleNamespace(
@@ -428,6 +438,9 @@ def test_a_bulk_cancel_takes_each_run_judge_with_it(monkeypatch):
         def commit(self):
             pass
 
+        def begin_nested(self):
+            return contextlib.nullcontext()
+
     monkeypatch.setattr(job_queue, "Session", _Session)
 
     assert sorted(job_queue.cancel([1])) == [1, 9], "the judge of a cancelled run goes too"
@@ -437,10 +450,8 @@ def test_cancelling_an_arm_does_not_leave_its_experiment_running(monkeypatch):
     # a cancelled arm strands the row in `running` unless something fails it
     import job_queue
     from models import JobStatus
-    from use_cases import experiment as uc
-
     failed = []
-    monkeypatch.setattr(uc, "mark_failed_for_run", lambda run: failed.append(run))
+    monkeypatch.setattr(job_queue, "fail_running_on", lambda session, run: failed.append(run) or 1)
 
     jobs = [
         SimpleNamespace(id=1, type="eval_run", options={"run_name": "a"}, status=JobStatus.new, tokens=None),
@@ -469,6 +480,9 @@ def test_cancelling_an_arm_does_not_leave_its_experiment_running(monkeypatch):
         def commit(self):
             pass
 
+        def begin_nested(self):
+            return contextlib.nullcontext()
+
     monkeypatch.setattr(job_queue, "Session", _Session)
     assert job_queue.cancel([1, 2, 3]) == [1, 2, 3]
     assert [j.status for j in jobs] == [JobStatus.cancelled] * 3
@@ -482,7 +496,7 @@ def test_every_kind_of_report_declares_its_schema():
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (6, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 20)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (9, 7, 20)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
@@ -562,9 +576,10 @@ def test_every_swept_parameter_takes_a_value_of_its_own_kind():
     import typing
 
     import config
-    from api.v1.eval import ExperimentRequest, validate_param_values
+    from api.v1.eval import ExperimentRequest
     from models.registry import Pipeline
-    from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
+    from use_cases.eval_runs import validate_param_values
+    from vocabulary import GONE, FallbackPolicy, GateSignal, Orchestrator
 
     live = sorted({o.value for o in Orchestrator} - {o.value for o in GONE})
     good = {
@@ -591,6 +606,7 @@ def test_an_arm_added_later_is_built_the_way_the_arms_before_it_were(monkeypatch
 
     from api.v1 import experiment as door
     from models.experiment import ExperimentKind, ExperimentStatus
+    from use_cases import experiment_setup as setup
 
     exp = SimpleNamespace(
         id=1, kind=ExperimentKind.rejudge, status=ExperimentStatus.aggregated,
@@ -614,26 +630,26 @@ def test_an_arm_added_later_is_built_the_way_the_arms_before_it_were(monkeypatch
             pass
 
     seen = {}
-    monkeypatch.setattr(door.rejudge, "judges_not_ready", lambda arms: [])
-    monkeypatch.setattr(door.rejudge, "unseeded_prompt_versions", lambda axes: [])
-    monkeypatch.setattr(door.rejudge, "refuse_unpaired_rejudge", lambda *a: None)
-    monkeypatch.setattr(door.rejudge, "paired_arms", lambda e: [])
-    monkeypatch.setattr(door.rejudge, "stored_arms", lambda pairs: [])
+    monkeypatch.setattr(setup.rejudge, "judges_not_ready", lambda arms: [])
+    monkeypatch.setattr(setup.rejudge, "unseeded_prompt_versions", lambda axes: [])
+    monkeypatch.setattr(setup.rejudge, "refuse_unpaired_rejudge", lambda *a: None)
+    monkeypatch.setattr(setup.rejudge, "paired_arms", lambda e: [])
+    monkeypatch.setattr(setup.rejudge, "stored_arms", lambda pairs: [])
     monkeypatch.setattr(
-        door.rejudge, "refuse_oversized_fanout",
+        setup.rejudge, "refuse_oversized_fanout",
         lambda src, n, existing=0, question_ids=None: seen.update(fanout=question_ids),
     )
     monkeypatch.setattr(
-        door.rejudge, "copy_runs",
+        setup.rejudge, "copy_runs",
         lambda src, names, question_ids=None: seen.update(copied=question_ids) or {},
     )
     monkeypatch.setattr(
-        door.rejudge, "arm_options",
+        setup.rejudge, "arm_options",
         lambda arm, run_name, control_sample=None, control_seed=0: seen.update(
             control=control_sample, seed=control_seed
         ) or {},
     )
-    monkeypatch.setattr(door.job_queue, "add_job", lambda session, type, options: None)
+    monkeypatch.setattr(setup.job_queue, "add_job", _staged(lambda session, type, options: None))
 
     import asyncio
 
@@ -652,8 +668,9 @@ def test_the_arm_that_cannot_be_merged_gives_its_copied_rows_back(monkeypatch, c
 
     import pytest
     from api.v1 import experiment as door
-    from fastapi import HTTPException
+    from errors import Refusal
     from models.experiment import ExperimentKind, ExperimentStatus
+    from use_cases import experiment_setup as setup
 
     exp = SimpleNamespace(
         id=1, kind=ExperimentKind.rejudge, status=ExperimentStatus.aggregated,
@@ -675,30 +692,30 @@ def test_the_arm_that_cannot_be_merged_gives_its_copied_rows_back(monkeypatch, c
             pass
 
     deleted = []
-    monkeypatch.setattr(door.rejudge, "judges_not_ready", lambda arms: [])
-    monkeypatch.setattr(door.rejudge, "unseeded_prompt_versions", lambda axes: [])
-    monkeypatch.setattr(door.rejudge, "refuse_unpaired_rejudge", lambda *a: None)
-    monkeypatch.setattr(door.rejudge, "refuse_oversized_fanout", lambda *a, **kw: None)
-    monkeypatch.setattr(door.rejudge, "paired_arms", lambda e: [])
-    monkeypatch.setattr(door.rejudge, "stored_arms", lambda pairs: [])
-    monkeypatch.setattr(door.rejudge, "copy_runs", lambda *a, **kw: {})
-    monkeypatch.setattr(door.rejudge, "arm_options", lambda *a, **kw: {})
-    monkeypatch.setattr(door.rejudge, "delete_runs", lambda names: deleted.extend(names))
-    monkeypatch.setattr(door.job_queue, "add_job", lambda session, type, options: None)
+    monkeypatch.setattr(setup.rejudge, "judges_not_ready", lambda arms: [])
+    monkeypatch.setattr(setup.rejudge, "unseeded_prompt_versions", lambda axes: [])
+    monkeypatch.setattr(setup.rejudge, "refuse_unpaired_rejudge", lambda *a: None)
+    monkeypatch.setattr(setup.rejudge, "refuse_oversized_fanout", lambda *a, **kw: None)
+    monkeypatch.setattr(setup.rejudge, "paired_arms", lambda e: [])
+    monkeypatch.setattr(setup.rejudge, "stored_arms", lambda pairs: [])
+    monkeypatch.setattr(setup.rejudge, "copy_runs", lambda *a, **kw: {})
+    monkeypatch.setattr(setup.rejudge, "arm_options", lambda *a, **kw: {})
+    monkeypatch.setattr(setup.rejudge, "delete_runs", lambda names: deleted.extend(names))
+    monkeypatch.setattr(setup.job_queue, "add_job", _staged(lambda session, type, options: None))
 
-    with pytest.raises(HTTPException) as raised:
+    with pytest.raises(Refusal) as raised:
         asyncio.run(
             door.add_arms(1, door.ArmsAdd(arms=[{"judge_relevance": 3}]), _Session())
         )
 
-    assert raised.value.status_code == 409
+    assert raised.value.kind == "conflict"
     assert deleted == ["r_judge_relevance=3"], "the refusal takes the copied rows back"
 
 
 def test_every_kind_of_report_answers_the_reader_with_the_same_keys():
     # the reading tool projected the rejudge shape by hand, so generation read back empty
-    from mcp_ops import READING
     from models.experiment import READING_KEYS, ExperimentKind
+    from use_cases.experiment_report import READING
 
     assert set(READING) == set(ExperimentKind), "a kind of experiment has no reader"
     for kind, reader in READING.items():
@@ -838,7 +855,7 @@ def test_the_holm_door_returns_the_tests_it_promises_not_their_count():
 
 
 def test_a_hop_budget_is_bounded_at_every_door_that_takes_one(client):
-    from use_cases.agent_policy import MAX_HOPS
+    from vocabulary import MAX_HOPS
 
     over = MAX_HOPS + 1
     assert client.post("/v1/agent/question", json={"text": "q", "max_hops": over}).status_code == 422
@@ -891,3 +908,26 @@ def test_a_run_holding_a_question_twice_is_not_copied():
 
     with pytest.raises(ValueError, match="more than once"):
         rejudge._refuse_repeated_questions(_Session(), "tester_ss_k_05")
+
+
+# a broken row, one out of hops and a false refusal support nothing; an off-domain refusal does
+def test_supported_rate_counts_no_failure_and_no_false_refusal(monkeypatch):
+    from types import SimpleNamespace
+
+    from evals import generation_metrics
+    from outcomes import Outcome
+
+    kinds = {"answered": Outcome.answered, "error": Outcome.error, "exhausted": Outcome.exhausted,
+             "refused": Outcome.refused, "off": Outcome.refused}
+    rows = {k: SimpleNamespace(kind=k) for k in kinds}
+    monkeypatch.setattr(generation_metrics, "_outcome", lambda ql: kinds[ql.kind])
+    in_corpus = {id(rows[k]) for k in ("answered", "error", "exhausted", "refused")}
+    assert [k for k, ql in rows.items() if generation_metrics._supported(ql, in_corpus)] == ["answered", "off"]
+
+
+# a set is not removed under a job that writes it: every job type that names a set holds the door
+def test_every_job_that_names_a_set_holds_its_removal():
+    from use_cases.question_set_removal import set_jobs
+
+    writers = {"generate_questions", "load_questions", "accept_questions", "judge_questions", "eval_run"}
+    assert writers <= set(set_jobs())

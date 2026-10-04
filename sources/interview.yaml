@@ -180,6 +180,11 @@ git_family:
   - xml-interview-questions
   include:
   - README.md
-reader: interview
+# the topic is the repository's name, one bank per repository
+tags:
+- interview
+tag_from_name: -interview-questions
 drop_docs_containing:
 - You can also find all
+# hand-written notes: an official page holding the same text wins over this one
+trust: notes

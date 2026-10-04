@@ -1,14 +1,15 @@
 """How often the query-language rules disagree: the numbers under `query_lang` in the config."""
 
+import typing
 
 import config
+import text_language
 from orm.sync_db import engine
 from sqlalchemy import text
-
-import db
+from vocabulary import QueryLanguageRule
 
 BUCKETS = ((0, 40), (40, 80), (80, 10_000))
-RULES = ("langdetect", "cyrillic_ratio", "function_words")
+RULES = typing.get_args(QueryLanguageRule)
 QUESTIONS = "SELECT set_name, original_text FROM questions WHERE original_text <> ''"
 
 
@@ -23,8 +24,8 @@ with engine.connect() as conn:
     against_default: dict[str, list[int]] = {rule: [0, 0] for rule in RULES}
 
     for set_name, question in conn.execute(text(QUESTIONS)):
-        default = db.detect_language(question)
-        verdicts = {rule: db.detect_language(question, rule) for rule in RULES}
+        default = text_language.detect_language(question)
+        verdicts = {rule: text_language.detect_language(question, rule) for rule in RULES}
         for rule, verdict in verdicts.items():
             against_default[rule][0] += verdict != default
             against_default[rule][1] += 1

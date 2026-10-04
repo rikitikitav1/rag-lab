@@ -4,12 +4,17 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+import gold_match
 import logging_setup
-from errors import Final
-from models.corpus import DataSource, Stage
+from corpus_keys import HAS_GOLD_SQL, Gold, vector_index_name
+from errors import Final, Refusal
+from models.corpus import DataChunk, DataSource, Stage
+from orm.sync_db import engine
 from paths import FETCHED, RAW, ROOT
 from sources import files
 from sources.declaration import Declaration
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from use_cases.intake_fetch import stand_folder
 
 log = logging_setup.get_logger(__name__)
@@ -62,7 +67,8 @@ def accepted_raw(source: DataSource, reason: str | None) -> dict:
 def promote(source: DataSource, reason: str | None, by: str | None = None) -> str | None:
     raw = source.raw or {}
     earlier = raw.get("folder") if raw.get("candidate") else None
-    source.raw = {**accepted_raw(source, reason), **({"accepted_by": by} if by else {})}
+    knobs = {"accepted_after_knobs": raw["knobs_tried"]} if raw.get("knobs_tried") else {}
+    source.raw = {**accepted_raw(source, reason), **({"accepted_by": by} if by else {}), **knobs}
     source.stage = Stage.accepted
     source.language = source.raw.get("language") or source.language
     # a variant cut from the run this one replaces reads as moved until it is cut again
@@ -83,9 +89,10 @@ def take_run(row: DataSource, run: dict) -> list[str]:
             gone.append(earlier)
         row.raw = {**(row.raw or {}), "candidate": run}
     else:
+        tried = (row.raw or {}).get("knobs_tried")
         row.stage = Stage.raw
         row.language = run["language"]
-        row.raw = run
+        row.raw = {**run, **({"knobs_tried": tried} if tried else {})}
     # the door's refusals bar it, the onboard job that calls this aside
     if run["verdict"] == "ok" and config.settings.intake.quality.auto_accept_ok:
         indexing = index_waiting(row.name) if row.stage == Stage.accepted else None
@@ -125,10 +132,10 @@ def _onboard_waiting(name: str) -> int | None:
 
 
 # each transition checks and changes the row, or raises Final with why not; the door commits and answers
-def accept(source: DataSource, reason: str | None) -> str | None:
+def accept(source: DataSource, reason: str | None, by: str | None = None) -> str | None:
     if refusal := accept_refusal(source, reason, _onboard_waiting(source.name), index_waiting(source.name)):
         raise Final(refusal)
-    return promote(source, reason)
+    return promote(source, reason, by=by)
 
 
 def set_active(source: DataSource, active: bool) -> None:
@@ -138,9 +145,73 @@ def set_active(source: DataSource, active: bool) -> None:
 
 
 def set_intake(source: DataSource, block: dict) -> None:
-    if refusal := intake_refusal(source, _onboard_waiting(source.name)):
+    if refusal := intake_refusal(source, _onboard_waiting(source.name)) or knob_refusal(source):
         raise Final(refusal)
     source.declaration = with_intake(source.declaration, block)
+    _note_knob(source, {"intake": block})
+
+
+def _knob_rounds(raw: dict) -> set:
+    return {k.get("run") for k in raw.get("knobs_tried", [])}
+
+
+# past the agent's rounds a person approves a new knob or refuses the source
+def knob_refusal(source: DataSource) -> str | None:
+    import config
+
+    limit = config.settings.intake.quality.agent_knob_rounds
+    raw = source.raw or {}
+    rounds = _knob_rounds(raw)
+    if raw.get("folder") not in rounds and len(rounds) >= limit:
+        return f"{source.name} had {limit} rounds of knobs; a person approves a new knob or refuses the source"
+    return None
+
+
+# an ok the stand accepts after an agent turned knobs says so on the row: the gate went quiet, nobody looked
+def _note_knob(source: DataSource, knob: dict) -> None:
+    raw = source.raw or {}
+    if not raw:
+        return
+    tried = [*raw.get("knobs_tried", []), {**knob, "run": raw.get("folder"), "verdict_before": raw.get("verdict")}]
+    source.raw = {**raw, "knobs_tried": tried}
+
+
+# the fields of a declaration a door may set in place; the rest go through the source file or a new declaration
+KNOB_FIELDS = frozenset({"skip_paths", "markup", "markup_values", "section_root_by_path"})
+# what the agent guessed when it declared, mended before the source is cut: a wrong language picks the wrong OCR
+GUESSED_FIELDS = frozenset({"language", "licence", "categories"})
+SETTABLE_FIELDS = KNOB_FIELDS | GUESSED_FIELDS
+
+
+# declared fields set on the row for its next onboarding or index; an empty value clears one, the declaration checks all
+def set_fields(source: DataSource, fields: dict) -> None:
+    from pydantic import ValidationError
+
+    if unknown := sorted(set(fields) - SETTABLE_FIELDS):
+        raise Refusal("invalid", f"not settable in place: {unknown}; settable: {sorted(SETTABLE_FIELDS)}")
+    # the fields move the cut, so a queued index of the source would cut by what the door is changing
+    if queued := _onboard_waiting(source.name) or index_waiting(source.name):
+        raise Final(f"{source.name} has job {queued} queued or running")
+    if source.seeded:
+        raise Final(f"{source.name} has a source file; set {sorted(fields)} there")
+    knobs = {k: v for k, v in fields.items() if k in KNOB_FIELDS}
+    if knobs and (refusal := knob_refusal(source)):
+        raise Final(refusal)
+    if set(fields) & GUESSED_FIELDS and source.indexed_with:
+        raise Final(f"{source.name} is cut in {sorted(source.indexed_with)}; its language, licence and categories "
+                    "are mended by removing it and declaring it again")
+    declared = {k: v for k, v in (source.declaration or {}).items() if k not in fields}
+    declared |= {k: v for k, v in fields.items() if v}
+    try:
+        checked = Declaration.model_validate(declared)
+    except ValidationError as e:
+        raise Refusal("invalid", str(e)) from e
+    if refusal := files.index_refusal(checked):
+        raise Refusal("invalid", refusal)
+    source.declaration = declared
+    source.language, source.licence = checked.language, checked.licence
+    if knobs:
+        _note_knob(source, {"fields": knobs})
 
 
 def check_onboard(source: DataSource) -> None:
@@ -153,7 +224,10 @@ def onboard_options(name: str, settings: dict | None, fresh: bool = False) -> di
 
 
 # the queued work that reads a source by name: removing it under a running job leaves the job writing into nothing
-SOURCE_JOBS = ("onboard_source", "analyze_source", "index_data", "probe_intake")
+SOURCE_JOBS = (
+    "onboard_source", "analyze_source", "index_data", "probe_intake", "generate_questions", "load_questions",
+    "accept_questions", "judge_questions", "anchor_questions", "reparse_questions",
+)
 # an eval_run naming no variant runs on the searched one, which is refused anyway
 VARIANT_JOBS = ("index_data", "analyze_source", "eval_run", "build_vector_index")
 
@@ -216,15 +290,13 @@ def remove_source(source: DataSource, raw: Path) -> dict:
 
     import job_queue
 
-    import db
-
     # a whole-corpus index names no source and reads every file-defined one, so it counts as reading this one too
     queued = next((j for t in SOURCE_JOBS if (j := job_queue.pending_of_type(t, source=source.name))), None)
     queued = queued or whole_corpus_index()
-    if refusal := removal_refusal(source, queued, db.questions_marking(source.id)):
+    if refusal := removal_refusal(source, queued, _questions_marking(source.id)):
         raise Final(refusal)
     own = stand_files(source, raw)
-    chunks = db.remove_source(source.id)
+    chunks = _drop_source_row(source.id)
     for folder in own:
         shutil.rmtree(folder)
     return {"source": source.name, "chunks": chunks, "folders": [p.name for p in own]}
@@ -233,13 +305,11 @@ def remove_source(source: DataSource, raw: Path) -> dict:
 def remove_variant(variant: str, live: str) -> dict:
     import job_queue
 
-    import db
-
     queued = next((j for t in VARIANT_JOBS if (j := job_queue.pending_of_type(t, variant=variant))), None)
     queued = queued or veto_reading(variant)
     if refusal := variant_refusal(variant, live, queued):
         raise Final(refusal)
-    return {"variant": variant, "chunks": db.remove_variant(variant)}
+    return {"variant": variant, "chunks": _drop_variant_rows(variant)}
 
 
 # a pending veto build that reads the variant, by name or through its defaults (no variants, no cut_from)
@@ -249,9 +319,8 @@ def veto_reading(variant: str) -> int | None:
 
     found = job_queue.pending_listing("build_veto_set", "variants", variant)
     found = found or job_queue.pending_of_type("build_veto_set", cut_from=variant)
-    if variant in ("baseline", VETO_CUT_FROM):
-        found = found or job_queue.pending_of_type("build_veto_set", variants=None)
     if variant == VETO_CUT_FROM:
+        found = found or job_queue.pending_of_type("build_veto_set", variants=None)
         found = found or job_queue.pending_of_type("build_veto_set", cut_from=None)
     return found
 
@@ -280,7 +349,7 @@ def view(source: DataSource, chunks: int, in_variant: int) -> dict:
         "raw": source.raw or {},
         "raw_verdict": run_under_review(source).get("verdict"),
         # the variants cut by another version of this row's declaration
-        "drift": files.drift(source.name, source.indexed_with, source.declaration),
+        "drift": files.drift(source.name, source.indexed_with, source.declaration, source.indexed_rules),
     }
 
 
@@ -363,6 +432,8 @@ def conversion_drift(source: DataSource) -> dict | None:
     hashes = record.get("settings_sha256") or {}
     edited = sorted(t for t, name in was.items() if _settings_sha(name) != hashes.get(t))
     moved = {"chosen": chosen, "edited": edited, "route": record.get("route_sha256") != reading.route_sha(rule)}
+    if moved["route"] and "route" in record:
+        moved["route_knobs"] = files.changed_fields(record["route"], reading.route_rules(rule))
     return moved if chosen or edited or moved["route"] else {}
 
 
@@ -377,3 +448,120 @@ def drifting_rows() -> list[str]:
     return sorted(name for name, declaration in rows if (declaration or {}).get("drifts"))
 
 
+# the list's fields of one source, the same at the REST list and the MCP one
+def line(source: DataSource, chunks: int, in_variant: int) -> dict:
+    return {
+        "id": source.id,
+        "name": source.name,
+        "kind": source.kind,
+        "active": source.active,
+        "chunks": chunks,
+        "chunks_in_variant": in_variant,
+        "ingest_quality": source.ingest_quality,
+        "ingest_variant": source.ingest_variant,
+        "ingest_checked_at": source.ingest_checked_at,
+        "stage": source.stage,
+        "language": source.language,
+        "raw_verdict": run_under_review(source).get("verdict"),
+    }
+
+
+# a source's chunks, all and those of the variant it was last indexed as
+def chunk_counts(session, source: DataSource) -> tuple[int, int]:
+    from sqlalchemy import func, select
+
+    count = select(func.count()).select_from(DataChunk).where(DataChunk.source_id == source.id)
+    chunks = session.scalar(count) or 0
+    in_variant = session.scalar(count.where(DataChunk.variant == source.ingest_variant)) if source.ingest_variant else 0
+    return chunks, in_variant or 0
+
+
+# a page of sources by name, each with its counts; `ingest_variant`, so two numbers side by side describe one cut
+def listed(session, stage: Stage | None, limit: int, offset: int) -> list[dict]:
+    from sqlalchemy import func, select
+
+    stmt = select(DataSource).order_by(DataSource.name).limit(limit).offset(offset)
+    if stage is not None:
+        stmt = stmt.where(DataSource.stage == stage)
+    found = list(session.scalars(stmt))
+    ids = [s.id for s in found]
+    per_variant = {
+        (source_id, variant): n
+        for source_id, variant, n in session.execute(
+            select(DataChunk.source_id, DataChunk.variant, func.count())
+            .where(DataChunk.source_id.in_(ids))
+            .group_by(DataChunk.source_id, DataChunk.variant)
+        )
+    }
+    totals: dict[int, int] = {}
+    for (source_id, _), n in per_variant.items():
+        totals[source_id] = totals.get(source_id, 0) + n
+    return [line(s, totals.get(s.id, 0), per_variant.get((s.id, s.ingest_variant), 0)) for s in found]
+
+
+# a declared row written for both doors; two declarations of one name at once meet the unique name at commit
+def declare(session, declaration: Declaration) -> DataSource:
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+
+    if refusal := declaration_refusal(declaration, ROOT):
+        raise Refusal("malformed", refusal)
+    if session.scalar(select(DataSource.id).where(DataSource.name == declaration.name)):
+        raise Refusal("taken", name_taken(declaration.name))
+    source = declared_row(declaration)
+    session.add(source)
+    try:
+        session.commit()
+    except IntegrityError as e:
+        session.rollback()
+        raise Refusal("taken", name_taken(declaration.name)) from e
+    session.refresh(source)
+    return source
+
+
+def _drop_variant(conn, variant) -> int:
+    dropped = conn.execute(text("DELETE FROM data_chunks WHERE variant = :variant"), {"variant": variant}).rowcount
+    # an empty partial index left behind makes the next index of the name insert row by row
+    conn.execute(text(f"DROP INDEX IF EXISTS {vector_index_name(variant)}"))
+    # a row kept by another variant must not say this one was cut by some file
+    conn.execute(
+        text(
+            "UPDATE data_sources SET indexed_with = indexed_with - :variant, indexed_rules = indexed_rules - :variant"
+        ),
+        {"variant": variant},
+    )
+    return dropped
+
+
+def _drop_variant_rows(variant) -> int:
+    with engine.begin() as conn:
+        return _drop_variant(conn, variant)
+
+
+# the row and its chunks in every variant; the chunks go by the foreign key's cascade
+def _drop_source_row(source_id: int) -> int:
+    try:
+        with engine.begin() as conn:
+            chunks = conn.execute(
+                text("SELECT count(*) FROM data_chunks WHERE source_id = :id"), {"id": source_id}
+            ).scalar()
+            conn.execute(text("DELETE FROM data_sources WHERE id = :id"), {"id": source_id})
+    except IntegrityError as e:
+        raise Final(f"source {source_id} was taken by another row while it was being removed; nothing removed") from e
+    return chunks
+
+
+# questions whose gold lies in the source, by the stand's own predicate: a mark is a file or a folder prefix
+def _questions_marking(source_id: int) -> int:
+    with engine.connect() as conn:
+        files = (
+            conn.execute(text("SELECT DISTINCT source FROM data_chunks WHERE source_id = :id"), {"id": source_id})
+            .scalars()
+            .all()
+        )
+        if not files:
+            return 0
+        rows = conn.execute(
+            text(f"SELECT marked_sources, gold FROM questions q WHERE {HAS_GOLD_SQL.format(q='q')}")
+        ).all()
+    return gold_match.count_marking(files, [Gold.of(marks, gold) for marks, gold in rows])

@@ -1,10 +1,13 @@
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 import config
 import logging_setup
-from corpus_keys import SECTION_SEP
+from book_matter import index_spans, is_matter, leader_spans
+from corpus_keys import SECTION_SEP, leaf_of
 from langchain_text_splitters import MarkdownHeaderTextSplitter
+from use_cases.markup import CHUNKER_FENCE_INDENT, fence_scan
 
 log = logging_setup.get_logger(__name__)
 
@@ -34,7 +37,6 @@ def parser_version() -> str:
     return f"{PARSER}/{version('langchain-text-splitters')}"
 
 
-FENCE_LINE = re.compile(r"^\s{0,3}(```|~~~)")
 # the heading lines the parser splits on, spelled from its own list
 HEADING_LINE = re.compile(rf"^({'|'.join(sorted((re.escape(mark) for mark, _ in HEADERS), key=len, reverse=True))}) ")
 # the same share the coverage report calls "tiny": one number, declared once
@@ -49,20 +51,6 @@ BODY, CONTENT = "body", "content"
 
 def _budget(ceiling: int, prefix: str, ceiling_on: str) -> int:
     return ceiling if ceiling_on == BODY else max(1, ceiling - len(prefix))
-
-
-# from the variant's policy: the constant let a frozen variant declare a ceiling nothing read
-def chunk_markdown(content, separator="\n## ", *, ceiling):
-    if not content.strip():
-        return []
-
-    parts = content.split(separator)
-
-    intro = parts[0]
-    h1 = content.splitlines()[0]
-    chunks = [intro] + [h1 + separator + part for part in parts[1:]]
-
-    return split_all_by_size(chunks, ceiling)
 
 
 def split_all_by_size(chunks, ceiling):
@@ -123,15 +111,7 @@ def _without_leading_h1(text: str) -> str:
 
 # which lines sit inside a fence, and where a fence that never closed was opened
 def _fence_scan(lines: list[str]) -> tuple[set[int], int | None]:
-    token, opened, inside = None, None, set()
-    for i, line in enumerate(lines):
-        found = FENCE_LINE.match(line)
-        if found and token is None:
-            token, opened = found.group(1), i
-        elif found and found.group(1) == token:
-            token, opened = None, None
-        elif token is not None:
-            inside.add(i)
+    _, inside, opened = fence_scan(lines, CHUNKER_FENCE_INDENT)
     return inside, opened
 
 
@@ -165,6 +145,50 @@ def _headings_of(lines: list[str]) -> list[tuple[int, str, str]]:
 # the parser drops non-printables, so both sides are compared the same way
 def _printable(text: str) -> str:
     return "".join(c for c in text if c.isprintable()).strip()
+
+
+_ANY_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t#]*$")
+
+
+# headings of every level outside fences, as (line, level, text)
+def _all_headings(lines: list[str]) -> list[tuple[int, int, str]]:
+    inside, _ = _fence_scan(lines)
+    return [
+        (i, len(found.group(1)), found.group(2).strip())
+        for i, line in enumerate(lines)
+        if i not in inside and (found := _ANY_HEADING.match(line))
+    ]
+
+
+def _index_and_contents(lines: list[str], file: str, contents_runs_from: int) -> list[tuple[int, int]]:
+    return sorted(index_spans(file, _all_headings(lines), len(lines)) + leader_spans(lines, contents_runs_from))
+
+
+# a book's back index and its contents runs are cut out before the sections are, so they never become sections
+def without_index(content: str, file: str, contents_runs_from: int = 0) -> str:
+    lines = content.split("\n")
+    spans = _index_and_contents(lines, file, contents_runs_from)
+    if not spans:
+        return content
+    return "\n".join(line for i, line in enumerate(lines) if not any(a <= i < b for a, b in spans))
+
+
+# what the index cut takes, named for the report beside the sections left out by their heading
+def index_left_out(content: str, file: str, contents_runs_from: int = 0) -> list[str]:
+    lines = content.split("\n")
+    spans = _index_and_contents(lines, file, contents_runs_from)
+    return [f"{lines[a].lstrip('#').strip()[:80]} (lines {a + 1}-{b})" for a, b in spans]
+
+
+# the line ranges the index never reads: the back index by position and every `##` section that is matter
+def matter_lines(content: str, file: str) -> list[tuple[int, int]]:
+    lines = content.split("\n")
+    spans = index_spans(file, _all_headings(lines), len(lines))
+    tops = [(i, h) for i, level, h in _heading_marks(content, file) if level == "##"]
+    for n, (line, heading) in enumerate(tops):
+        if is_matter(file, heading):
+            spans.append((line, tops[n + 1][0] if n + 1 < len(tops) else len(lines)))
+    return sorted(spans)
 
 
 # heading, whole body, the head before the first subheading, and the subsections
@@ -326,9 +350,30 @@ def _merge_slivers(pieces, path, ceiling: int, ceiling_on: str) -> list[Cut]:
     ]
 
 
-# the same rule the backfill migration used, so re-indexing baseline does not lose the axis
-def heading_path(chunk: str) -> str | None:
-    lines = chunk.split("\n", 2)
-    if len(lines) < 2 or not lines[0].startswith("# ") or not lines[1].startswith("## "):
-        return None
-    return SECTION_SEP.join(re.sub(r"^#+\s*", "", line) for line in lines[:2])
+def _headed(cut: Cut) -> str:
+    return f"### {_one_line(leaf_of(cut.section))}\n{cut.body}" if SECTION_SEP in (cut.section or "") else cut.body
+
+
+# a whole section shorter than this joins a neighbour of its file under its own heading, so it is not a chunk alone
+def merge_tiny_sections(cuts: list[Cut], under: int, ceiling: int, ceiling_on: str = BODY) -> list[Cut]:
+    if not under:
+        return cuts
+    alone = Counter(cut.section for cut in cuts)
+    out: list[Cut] = []
+    carried = ""
+    for i, cut in enumerate(cuts):
+        # a section carried in keeps its heading, and the text after it is put back under its own
+        carried_in, carried = carried, ""
+        body = f"{carried_in}\n\n{_headed(cut)}" if carried_in else cut.body
+        if alone[cut.section] != 1 or len(cut.body.strip()) >= under:
+            out.append(Cut(cut.prefix, body, cut.section, cut.cut_by))
+            continue
+        own = f"{carried_in}\n\n{_headed(cut)}" if carried_in else _headed(cut)
+        nxt = cuts[i + 1] if i + 1 < len(cuts) else None
+        if out and len(joined := f"{out[-1].body}\n\n{own}") <= _budget(ceiling, out[-1].prefix, ceiling_on):
+            out[-1] = Cut(out[-1].prefix, joined, out[-1].section, out[-1].cut_by)
+        elif nxt and len(f"{own}\n\n{_headed(nxt)}") <= _budget(ceiling, nxt.prefix, ceiling_on):
+            carried = own
+        else:
+            out.append(Cut(cut.prefix, body, cut.section, cut.cut_by))
+    return out

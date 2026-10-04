@@ -18,6 +18,10 @@ class Converted(Base):
     def _include(self) -> list[str]:
         return ["files/*.md"]
 
+    # a markdown the record does not name is a file an earlier run read, and the index must not read it twice
+    def files(self):
+        return (f for f in super().files() if f.stem in self._originals)
+
     # a file's markdown is named by a slug of its path; the record gives the path back
     @cached_property
     def _originals(self) -> dict[str, str]:

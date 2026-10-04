@@ -1,60 +1,15 @@
 from dataclasses import dataclass
-from enum import StrEnum
 
-# the ceiling a hop budget may name, on every door that takes one
-MAX_HOPS = 10
+from vocabulary import (
+    FallbackPolicy,
+    FallbackReason,
+    GateSignal,
+)
 
 TOOL_CALL_NUDGE = (
     "You described a tool call instead of issuing one. Call the tool for real now, "
     "with the arguments its schema lists, or answer without it."
 )
-
-
-class FallbackPolicy(StrEnum):
-    corpus_first = "corpus_first"
-    corpus_first_weak = "corpus_first_weak"
-    agent_choice = "agent_choice"
-
-
-class GateSignal(StrEnum):
-    cross_encoder = "cross_encoder"
-    distance = "distance"
-    either = "either"
-
-
-class Orchestrator(StrEnum):
-    # gone, and the values stay queryable: 422 logs carry one arm and 222 the other
-    handrolled = "agent"
-    langgraph_middleware = "langgraph_middleware"
-    langgraph_ported = "langgraph_ported"
-    langgraph_idiomatic = "langgraph_idiomatic"
-    # measured and refused: it filled a reasoning schema instead of calling a tool
-    schema_guided = "schema_guided"
-
-
-# retired implementations, declared here so a fourth retirement is one line, not three
-GONE = frozenset(
-    {Orchestrator.handrolled, Orchestrator.langgraph_middleware, Orchestrator.schema_guided}
-)
-
-
-class FallbackReason(StrEnum):
-    none = "none"
-    empty = "empty"
-    weak = "weak"
-    off_topic = "off_topic"
-    # the grader threw out every chunk: the search found something, so this is not `empty`
-    graded_out = "graded_out"
-
-
-# which edge ended the graph: `final` meant three things, and the reader re-derived one of them
-class FinishedBy(StrEnum):
-    answer = "answer"
-    hops_exhausted = "hops_exhausted"
-    # the loop stopped without the model producing text, and the ceiling was not the reason
-    no_answer = "no_answer"
-    # a bare `create_agent` has no edge of ours; the emptiness is named rather than silent
-    unrecorded = "unrecorded"
 
 
 @dataclass

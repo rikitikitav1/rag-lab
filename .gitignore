@@ -55,3 +55,5 @@ datasets/converter_gold/files/
 datasets/inbox/
 datasets/raw_sources/
 datasets/readings/
+# model weights a CPU step reads from the repo mount: copied from the host cache, never committed
+datasets/models/

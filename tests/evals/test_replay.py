@@ -481,8 +481,7 @@ def test_a_span_is_compared_without_the_id_and_without_a_drop_the_row_never_kept
 
 def test_the_two_section_rankers_spell_one_metric():
     # `run_metrics.section_mrr` and the comparison report ranked over lists of different lengths
-    from evals.retrieval_metrics import section_ids
-    from use_cases.retrieval_compare import heading_text
+    from gold_match import heading_text, section_ids
 
     chunks = [
         {"source": "a.md", "section": "# Logging"},

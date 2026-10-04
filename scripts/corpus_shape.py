@@ -33,14 +33,14 @@ QUERIES = {
         SELECT count(*) AS duplicate_groups, sum(n) AS chunks_in_groups, sum(n - 1) AS redundant
         FROM (
             SELECT count(*) AS n FROM data_chunks dc WHERE {ACTIVE}
-            GROUP BY md5(content) HAVING count(*) > 1
+            GROUP BY content_hash HAVING count(*) > 1
         ) g
     """,
     "duplicates spanning several sources": f"""
         SELECT count(*) AS groups, sum(srcs) AS source_slots
         FROM (
             SELECT count(DISTINCT dc.source) AS srcs FROM data_chunks dc WHERE {ACTIVE}
-            GROUP BY md5(content) HAVING count(DISTINCT dc.source) > 1
+            GROUP BY content_hash HAVING count(DISTINCT dc.source) > 1
         ) g
     """,
     "orphans: chunk does not start with a heading": f"""

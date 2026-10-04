@@ -1,4 +1,5 @@
 @startuml architecture
+!include style.iuml
 !include <C4/C4_Container>
 
 LAYOUT_TOP_DOWN()

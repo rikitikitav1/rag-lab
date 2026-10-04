@@ -128,40 +128,6 @@ def _row(q) -> dict:
     }
 
 
-# the jobs that read a set by name
-SET_JOBS = ("eval_run", "paraphrase_questions", "build_veto_set")
-
-
-def removal_refusal(set_name: str, holds: dict, named_in_config: bool, queued: int | None) -> str | None:
-    if not holds["questions"]:
-        return f"no question set named {set_name}"
-    if named_in_config:
-        return f"{set_name} is named in config/evals.yaml"
-    if queued:
-        return f"{set_name} has job {queued} queued or running"
-    if holds["answered"]:
-        return f"{holds['answered']} answer logs hold questions of {set_name}"
-    if holds["drawn_from"]:
-        return f"{holds['drawn_from']} questions of other sets are drawn from {set_name}"
-    return None
-
-
-def remove(set_name: str) -> dict:
-    import config
-    import job_queue
-    from errors import Final
-
-    import db
-
-    verdict = config.settings.verdict
-    named = set_name in {*verdict.criterion_sets, *verdict.veto_sets}
-    # a job may name its set by default or read it through another key, so any job that reads sets holds the door
-    queued = next((j for t in (*SET_JOBS, "embed_questions") if (j := job_queue.pending_of_type(t))), None)
-    if refusal := removal_refusal(set_name, db.question_set_holds(set_name), named, queued):
-        raise Final(refusal)
-    return {"set_name": set_name, "questions": db.remove_question_set(set_name)}
-
-
 # a pair is written whole or not at all: a question already in the base, or twice in the batch, would leave a lone half
 def write_pairs(rows: list[dict]) -> tuple[int, int]:
     pairs: dict[str, list] = {}

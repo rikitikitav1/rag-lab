@@ -1,0 +1,229 @@
+# aliases lower case; unsure rows stay out of the search; seen_in tags: own, wikt-slang, wiki-ru-slang, codemu-slang
+aliases:
+  postgresql:
+    canonical: PostgreSQL
+    aliases: [postgres, pg, пг, постгрес, постгря, постгресс, постгре, постгрескуль, pgsql, psql]
+    seen_in: [own, codemu-slang]
+    unsure: [psql]
+  mssql:
+    canonical: Microsoft SQL Server
+    aliases: [mssql, ms sql, мс скл, мсскл, sql server, сиквел сервер, мссикль, тсикль, tsql, t-sql, мсск]
+    seen_in: [own]
+    unsure: [мсск, мссикль]  # сиквел alone is generic SQL, not added
+  clickhouse:
+    canonical: ClickHouse
+    aliases: [ch, кх, clickhouse, клик, кликхаус, клик хаус, кликхауз, кликхус, клико]
+    seen_in: [own]
+    unsure: [клик, ch, кх, клико]  # клик is an ordinary word (click); ch is a common abbreviation of other things
+  mongodb:
+    canonical: MongoDB
+    aliases: [mongo, монго, монга, монгодб, монгадб, mongodb, мангодб]
+    seen_in: [own]
+    unsure: [монга, мангодб]
+  arangodb:
+    canonical: ArangoDB
+    aliases: [arango, арандж, арангодб, арангу, арангодиби]
+    seen_in: [own]
+    unsure: [арангу, арандж]
+  qdrant:
+    canonical: Qdrant
+    aliases: [кдрант, квадрант, кюдрант, кьюдрант, кудрант, qdrnt]
+    seen_in: [own]
+    unsure: [квадрант, кудрант, qdrnt]  # квадрант is an ordinary word
+  tarantool:
+    canonical: Tarantool
+    aliases: [тарантул, тарантол, тарантулл, тт, tnt]
+    seen_in: [own]
+    unsure: [тарантул, тт, tnt]  # тарантул is the spider
+  redis:
+    canonical: Redis
+    aliases: [редис, редиска, редька, редюс, редус, рэдис]
+    seen_in: [own]
+    unsure: [редиска, редька, редюс, редус]  # редиска/редька are vegetables
+  rabbitmq:
+    canonical: RabbitMQ
+    aliases: [rabbit, rmq, кроль, rabbitmq, кролик, рэббит, реббит, рэббитмк, раббит, рэббитэмкью]
+    seen_in: [own]
+    unsure: [кролик]  # the animal, but joke usage is real in chats
+  kafka:
+    canonical: Apache Kafka
+    aliases: [кафка, кафка-стрим, kfk]
+    seen_in: [own]
+    unsure: [кафка-стрим, kfk]  # кафка also the surname/writer
+  go:
+    canonical: Go
+    aliases: [golang, го, голанг, гоу, гошка, гоша, гошный, гопхер, gopher, гофер]
+    seen_in: [own]
+    unsure: [го, гоу, гоша, гофер]  # го is a particle ("го!" = lets go), гоша is a name
+  ruby:
+    canonical: Ruby
+    aliases: [руби, рубин, рубях, рубист, рубишник, рубасы]
+    seen_in: [own]
+    unsure: [рубин, рубях, рубист]  # рубин is the gem
+  lua:
+    canonical: Lua
+    aliases: [луа, лу, луашка, люа, луашный]
+    seen_in: [own]
+    unsure: [лу, люа]
+  python:
+    canonical: Python
+    aliases: [py, питон, пайтон, питонить, пито, питончик, py3, python3, питонщик, путон, петухон, питухон]
+    seen_in: [own, wiki-ru-slang, codemu-slang]
+    unsure: [py, пито, питончик, питонщик]  # пых is also PHP slang (пыха), do not map to python
+  delphi:
+    canonical: Delphi and Free Pascal
+    aliases: [дельфи, делфи, дельфин, паскаль, pascal, фрипаскаль, фри паскаль, free pascal, fpc, freepascal, лазарус, lazarus, object pascal, дэльфи, делфя, паскалина, delphi]
+    seen_in: [own, wikt-slang, codemu-slang]
+    unsure: [дельфин, паскаль, лазарус, делфя, паскалина, дэльфи, pascal]  # дельфин is the animal, Паскаль is a name and a unit; ообъектный is a typo guess
+  bash:
+    canonical: Bash
+    aliases: [баш, башка, башик, башскрипт, bash, шелл, shell, sh, башрс, bashrc, башрц]
+    seen_in: [own]
+    unsure: [баш, башка, шелл, sh, башик, shell]  # баш is also "bash.org" jokes and a word; башка is "head"; sh is too short
+  javascript:
+    canonical: JavaScript
+    aliases: [js, джс, джаваскрипт, жс, жабаскрипт, джаваскрипт, яваскрипт, ecmascript, es6, ts, typescript, тайпскрипт, тс, ts-ка]
+    seen_in: [own, wikt-slang, codemu-slang]
+    unsure: [жс, ts, тс, ts-ка, typescript, тайпскрипт, es6]  # TypeScript is a separate technology, mapped here only because the stand has no category for it
+  gin:
+    canonical: Gin (Go web framework)
+    aliases: [gin-gonic, gin gonic, джин, джин гоник, gin framework, джин-гоник]
+    seen_in: [own]
+    unsure: [джин, джин гоник, джин-гоник]  # джин is the drink and the genie
+  rails:
+    canonical: Ruby on Rails
+    aliases: [rails, рельсы, ror, рор, ruby on rails, рэйлс, рейлс, рельса, рубиоррельс, activerecord, ар]
+    seen_in: [own]
+    unsure: [рельсы, рельса, рор, ар]  # рельсы are railway rails, ар is two letters
+  django:
+    canonical: Django
+    aliases: [джанго, джанга, джанговский, джанг, дж, джанго-проект]
+    seen_in: [own]
+    unsure: [джанг, дж, джанго-проект]  # Django Unchained, a name, also fine in chat
+  fastapi:
+    canonical: FastAPI
+    aliases: [фастапи, фастапай, фаст апи, fast api, фастапишка, фастапи-проект, fapi, фастэпиай]
+    seen_in: [own]
+    unsure: [fapi, фастапи-проект, фастэпиай]
+  nodejs:
+    canonical: Node.js
+    aliases: [node, нода, нодежс, нод жс, node js, nodejs, нодейс, нодовый, ноде, нодка, npm, нпм, нодыжс]
+    seen_in: [own]
+    unsure: [нода, ноде, нодка, нодыжс, npm, node]  # node and нода also mean a cluster node; npm is a package manager, kept as a close neighbour
+  react:
+    canonical: React
+    aliases: [реакт, reactjs, react js, реактжс, реактовый, реактище, реактик, jsx]
+    seen_in: [own]
+    unsure: [реакт, реактик, jsx]  # "реакт" can be the Russian verb stem in some sentences, rare
+  openresty:
+    canonical: OpenResty
+    aliases: [openresty, опенрести, опенресты, опенресть, нжинкс луа, resty]
+    seen_in: [own]
+    unsure: [опенресть, нжинкс луа, resty]
+  sqlalchemy:
+    canonical: SQLAlchemy
+    aliases: [sqlalchemy, алхимия, алхимик, склалхимия, эсклуэлькемия, sqla, sa, сква, склалхеми, эскьюэль алхимия, алхимии]
+    seen_in: [own]
+    unsure: [алхимия, алхимик, алхимии, sa, сква]  # алхимия is an ordinary word, sa is two letters
+  sequel_ruby:
+    canonical: Sequel
+    aliases: [sequel, сиквел гем, секвел, sequel orm, сиквел орм, секвел гем]
+    seen_in: [own]
+    unsure: [секвел, сиквел гем]  # сиквел also means a film sequel and SQL, never map bare сиквел here
+  git:
+    canonical: Git
+    aliases: [гит, гитик, гитовый, gitflow, гитфлоу, ребейз, rebase, мерж, merge, пулл реквест, pr, мр, mr, гитхаб, github, гитлаб, gitlab, коммитить, закоммитить, пушить, форс пуш, cherry-pick, черрипик, стэш, stash]
+    seen_in: [own, codemu-slang]
+    unsure: [pr, мр, mr, ребейз, rebase, мерж, merge, пулл реквест, коммитить, закоммитить, пушить, стэш, stash, гитик, гитовый, gitflow, гитфлоу, гитхаб, github, гитлаб, gitlab, форс пуш, cherry-pick, черрипик]  # git subcommands and GitHub/GitLab are not git itself; kept for retrieval recall; мр collides with other abbreviations
+  docker:
+    canonical: Docker
+    aliases: [докер, докерфайл, dockerfile, докеризировать, задокерить, докерный, докерить, контейнер, докерхаб, dockerhub, docker hub, образ]
+    seen_in: [own, codemu-slang]
+    unsure: [контейнер, образ, докерить, dockerfile, докерфайл, докерхаб, dockerhub, docker hub]  # контейнер and образ are ordinary words
+  docker_compose:
+    canonical: Docker Compose
+    aliases: [docker compose, docker-compose, докер компоуз, докер композ, композ, компоуз, композник, compose, докеркомпоуз]
+    seen_in: [own]
+    unsure: [композ, compose]  # композ is a rare shortening of композиция, low risk
+  kubernetes:
+    canonical: Kubernetes
+    aliases: [k8s, к8с, k8, к8, куб, кубер, кубешник, кубернетес, кубернетис, кубернетить, кубик, кубс, kube, кубекубер, кубовый, кубовый кластер, k8c, кубернет, кубернетика]
+    seen_in: [own, codemu-slang]
+    unsure: [куб, кубик, кубс, кубернетика, кубовый, кубовый кластер, k8c, k8, к8]  # куб and кубик are ordinary words (cube, dice), к8/k8 may be a model code
+  kubectl:
+    canonical: kubectl
+    aliases: [kubectl, кубктл, кубкутл, кубкатл, кубкотл, кубсиэтель, кубсиэль, kubecuddle, кубкудл, кубектл, kctl, k]
+    seen_in: [own]
+    unsure: [kctl, k, кубсиэль]  # the single letter k is a common shell alias for kubectl but collides with everything
+  helm:
+    canonical: Helm
+    aliases: [helm, хелм, хельм, хелмчарт, helm chart, чарт, чарты, хелмик, helmfile, хелмфайл]
+    seen_in: [own]
+    unsure: [чарт, чарты, хелмик, helm chart]  # чарт also means a chart, a music chart
+  systemd:
+    canonical: systemd
+    aliases: [systemd, систем д, системд, системди, systemctl, системктл, юнит, unit, journalctl, journald, журналкотл, джорналктл, systemd unit, сервис юнит, сервис]
+    seen_in: [own]
+    unsure: [юнит, unit, сервис, сервис юнит, systemctl, journalctl]  # юнит and сервис are ordinary words
+  pgbouncer:
+    canonical: PgBouncer
+    aliases: [pgbouncer, пгбаунсер, пг баунсер, пгбоунсер, баунсер, бонсер, pgb, pg bouncer, пгбонсер, пуллер, pgpool, пгпул]
+    seen_in: [own]
+    unsure: [пуллер, pgb, pgpool, пгпул, баунсер]  # pgpool is a different product, пуллер is generic
+  linux:
+    canonical: Linux
+    aliases: [линукс, линух, линуха, линуксовый, нуль, ubuntu, убунта, убунту, дебиан, debian, centos, центос, арч, arch linux, rhel, ядро, ядрышко, пингвин, линя, линь, лин]
+    seen_in: [own, wiki-ru-slang, wikt-slang, codemu-slang]
+    unsure: [нуль, ядро, ядрышко, пингвин, линя, линь, лин, арч, убунта, убунту, debian, ubuntu, centos, rhel, дебиан]  # distributions are separate products but kept as neighbours; линь is a fish, ядро is a nucleus or core
+  http:
+    canonical: HTTP
+    aliases: [http, https, хттп, хттпс, аштитипи, аштитипиэс, хтипи, хтп, rest, рест, ресты, запрос, get запрос, post запрос, статус код, status code, 404, 500, 502, 503, хедер, хедеры, header, headers, кукис, куки, cookie, cookies, тело запроса, curl, курл, каел, постман, postman]
+    seen_in: [own]
+    unsure: [rest, рест, ресты, запрос, статус код, 404, 500, 502, 503, хедер, хедеры, куки, кукис, curl, курл, каел, постман, postman, тело запроса, status code, get запрос, post запрос, header, headers, cookie, cookies]  # a mix of protocol parts and clients; рест collides with the verb stem in "отрестартить"? rare; запрос and куки are ordinary words
+  nginx:
+    canonical: nginx
+    aliases: [nginx, нжинкс, энжинкс, нгинкс, энджинкс, нгикс, нгинкс, нжинкс, энджин икс, ингинкс, нгинх, нгник]
+    seen_in: [own]
+    unsure: [нгикс, нгинх, нгник, ингинкс]
+  prometheus:
+    canonical: Prometheus
+    aliases: [prometheus, прометей, прометеус, прометеус, прометея, прометее, prom, пром, промик, промка, promql, промкюэль, promtool, alertmanager, алертменеджер, алертменджер, алерты]
+    seen_in: [own]
+    unsure: [пром, prom, промик, промка, алерты, прометей, promql]  # пром is "industrial" and a prefix, прометей is the myth hero, алерты is generic
+  opentelemetry:
+    canonical: OpenTelemetry
+    aliases: [opentelemetry, otel, отел, опентелеметри, опен телеметри, отелька, otlp, отлп, otel collector, коллектор, телеметрия, трейсинг, трейсы, tracing, трассировка]
+    seen_in: [own]
+    unsure: [отел, отелька, коллектор, телеметрия, трейсинг, трейсы, tracing, трассировка, отлп]  # отел is "hotel" misspelled / "calved", the rest are generic topic words
+  grpc:
+    canonical: gRPC
+    aliases: [grpc, грпс, джирписи, джирписи, гйрпс, грпц, гэрпэцэ, гррпс, rpc, рпс, ргс, grpc-web, grpc gateway, грпц-шлюз]
+    seen_in: [own]
+    unsure: [rpc, рпс, ргс, гррпс, грпс, грпц-шлюз, гйрпс, grpc gateway]  # rpc is generic, рпс means requests per second; грпс can be a gRPC typo only
+  protobuf:
+    canonical: Protocol Buffers
+    aliases: [protobuf, proto, протобаф, протобуф, протобафф, протобуфер, протик, проты, protoc, протоc, proto3, прото, прото3, .proto, пробуф, protocol buffers, buf, баф]
+    seen_in: [own]
+    unsure: [proto, прото, протик, проты, пробуф, buf, баф, протобафф, протобуфер, protoc]  # прото is a prefix, баф is a game buff, buf is a separate tool
+  opensearch:
+    canonical: OpenSearch
+    related: [elasticsearch]  # forked from Elasticsearch 7.10
+    aliases: [opensearch, опенсерч, опенсёрч, опен серч, os, ос, оси, опенсерчь, опенсерч-кластер]
+    seen_in: [own]
+    unsure: [os, ос, оси, опенсерчь]  # os is operating system, ос is Russian for it
+  elasticsearch:
+    canonical: Elasticsearch
+    related: [opensearch]  # a fork, not a synonym: their APIs drifted, so a search must not merge them
+    aliases: [elasticsearch, elastic, эластик, эластиксерч, эластиксёрч, эластика, es, ес, елк, elk, эластичный, эластикс, эластисерч, эластичсерч, кибана, kibana, логстеш, logstash, лукин, lucene, люсин, лусин]
+    seen_in: [own]
+    unsure: [es, ес, эластичный, эластикс, эластика, кибана, kibana, логстеш, logstash, lucene, люсин, лусин, елк, elk, лукин]  # эластичный is an adjective, es collides with ES6 and Spanish, kibana and logstash are separate products
+  langchain:
+    canonical: LangChain
+    aliases: [langchain, лангчейн, ленгчейн, лэнгчейн, лангчеин, лангчайн, ленчейн, лч, лч-агент, langgraph, лангграф, ленграф, лангграфт, langsmith, лангсмит]
+    seen_in: [own]
+    unsure: [лч, лч-агент, ленчейн, langgraph, лангграф, ленграф, лангграфт, langsmith, лангсмит]  # langgraph and langsmith are separate products from the same vendor
+  huggingface:
+    canonical: Hugging Face
+    aliases: [huggingface, hugging face, hf, хаггингфейс, хагингфейс, хаггинг фейс, хагинг фейс, хаггингфэйс, хф, обнимашки, обнимающее лицо, хаб, hf hub, transformers, трансформеры, транформерс, трансформерс, hf transformers, хаггинг, хагинг, хугингфейс, хуггингфейс]
+    seen_in: [own]
+    unsure: [hf, хф, обнимашки, обнимающее лицо, хаб, трансформеры, хаггинг, хагинг, hf hub]  # хаб is an ordinary word, трансформеры are also the film and electrical devices, hf is high frequency

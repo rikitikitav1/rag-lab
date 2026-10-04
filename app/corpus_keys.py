@@ -35,6 +35,14 @@ def vector_index_name(variant: str) -> str:
     return f"{VECTOR_INDEX_PREFIX}{check_variant(variant)}_idx"
 
 
+# term_frequencies keeps no word rarer than this, so a share set below it would read every word as rare
+TERM_SHARE_FLOOR = 0.001
+# a body this short is a heading's echo, a "See also" or a bare fence: its meaning is the path above it, not a copy
+SHARED_TEXT_MIN_CHARS = 200
+# one text held twice, the same test for the dedup and the quality report: the stored `content_hash`, long enough
+SHARED_BODY_SQL = f"length(c.content) - coalesce(c.prefix_len, 0) >= {SHARED_TEXT_MIN_CHARS}"
+
+
 def body_hash(body: str) -> str:
     normalised = re.sub(r"\s+", " ", body).strip().encode()
     # a content fingerprint for deduplication, never a credential
@@ -51,7 +59,7 @@ READ_BY_RUNS_SQL = "{q}.status = 'accepted'"
 SECTION_SEP = " > "
 # a chapter is a section path's first two steps, the grain the coverage report reads and a question set is spread over
 CHAPTER_STEPS = 2
-# the variant a veto build cuts its headings from when its job names none; with no variants it reads baseline too
+# the variant a veto build cuts its headings from when its job names none
 VETO_CUT_FROM = "clean_1024"
 
 
@@ -216,3 +224,18 @@ def shares_heading_word(question: str, section: str | None) -> bool:
         return False
     stems = {w.casefold()[:5] for w in _WORDS.findall(leaf_of(section))}
     return any(w.casefold()[:5] in stems for w in _WORDS.findall(question))
+
+
+# a fenced code block whole, opening to closing fence
+CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
+
+
+# how much of a text is fenced code
+def code_fraction(text: str) -> float:
+    return sum(len(m) for m in CODE_BLOCK.findall(text or "")) / len(text) if text else 0.0
+
+
+# the source a file key or a mark names: its first path step
+def source_name_of(key: str) -> str:
+    return key.split("/", 1)[0]
+

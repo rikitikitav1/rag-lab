@@ -8,7 +8,7 @@ intake:
     min_raster_run: 3
     # not measured: a page with fewer words gives no share worth reading for the suspect-layer signals
     suspect_min_words: 50
-    # tuned: file=datasets/converter_gold/reread_rule.json
+    # tuned: file=datasets/converter_gold/reread_rule_20261002.json
     reread_below_layer_f1: 0.95
     reread_settings: docling/pypdfium2_cells
     # the share of table cells the second reading may lose and still be taken; a source knob, 0 for the stand
@@ -37,6 +37,8 @@ intake:
     code_row_rules: [run_on, once]
     # heading levels from the PDF's outline, the outline's shallowest on ##; the remedy for levels restarting per piece
     outline_levels: true
+    # a PDF with no bookmarks takes its printed contents (dot-leader lines) as the outline; seen on one book, so off
+    contents_outline: false
     # HTML chapter headings one level down under the page title; seen on one book, so off
     html_one_title: false
     # a numbered heading («2.1.3») takes its level from its number where a file has no outline; off: 6 gold losers
@@ -65,10 +67,10 @@ intake:
     drop_running_headings: true
     # a word split by a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole; 14 sources
     join_split_words: true
-    # an identifier wrapped after its underscore is joined back where the layer keeps the wrap; off until its gate
-    join_wrapped_identifiers: false
-    # a table row a page break cut, whose next row starts with an empty cell, is finished by it; off until its gate
-    join_continued_rows: false
+    # an inherited member's docs a Sphinx autodoc site repeats under every subclass, cut to its pointer; one site
+    drop_inherited_members: false
+    # a code block a page prints again word for word (a tutorial's sample data in every example) kept once; one source
+    drop_repeated_code: false
     # an EPUB read as its chapters; one EPUB seen so far, so off and the file is skipped with its reason
     epub_chapters: false
   # tuned: file=datasets/converter_gold/raw_band.json
@@ -85,6 +87,10 @@ intake:
     bad_share: 0.2
     # an ok raw source becomes accepted with no person; dirty and bad wait for one
     auto_accept_ok: true
+    # rounds of the agent's own knobs on one source, then a person approves a new knob or refuses the source
+    agent_knob_rounds: 3
+    # hit@5 of a source's own set clamped to it and open over the corpus, read from this many questions at least
+    source_gate: { clamped_min: 0.85, open_min: 0.75, min_questions: 40 }
   # the engine each tool runs on; its supervisor is asked only whether it is up
   engines: { docling: converter-docling, mineru: converter-mineru }
   # each engine's settings file when a run names none; a loop passes its own as options

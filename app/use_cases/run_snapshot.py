@@ -2,6 +2,7 @@ import config
 import engines
 import llm
 import logging_setup
+import search_scope
 import version
 from engines import answer_parsers, card
 from errors import StandFault
@@ -24,6 +25,7 @@ KEYS = (
     "phased",
     "variant",
     "keyword",
+    "term_counts",
     "ef_search",
     "variant_policy",
     "corpus",
@@ -180,6 +182,8 @@ def of_run(
         "k": k,
         "variant": variant,
         "keyword": config.keyword_switches(),
+        # the live chunks the rare cut's shares were read over: two counts under one switch are two searches
+        "term_counts": _term_counts(variant),
         "ef_search": ef_search,
         # a variant in the table and absent from the config is possible, and raising kills an answer
         "variant_policy": config.settings.corpus.policy_or_none(variant),
@@ -208,6 +212,18 @@ def of_run(
     return {key: None for key in KEYS} | common | filled
 
 
+def _term_counts(variant: str | None) -> dict | None:
+    if not config.settings.retrieval.keyword.max_term_share or not variant:
+        return None
+    import term_frequencies
+
+    try:
+        return term_frequencies.counted(variant)
+    except Exception:
+        # a row is answered even when the count cannot be read; the stamp then says nothing rather than lying
+        return None
+
+
 # single_shot records rows returned, `config.k` in 9414 of 9415; the agent records sources
 RETRIEVAL_KEYS = ("results_count", "min_distance", "top_rerank_score", "dropped_sources")
 # `question-log?max_distance` filters on this, so the two pipelines must round it alike
@@ -216,9 +232,8 @@ DISTANCE_DIGITS = 3
 
 # a search's scope as the record keeps it; a whole-corpus search keeps none
 def scope_of(scope) -> dict | None:
-    import db
 
-    scope = db.as_scope(scope)
+    scope = search_scope.as_scope(scope)
     return {"label": scope.label, "sources": list(scope.sources), "version": scope.version} if scope.narrowed else None
 
 

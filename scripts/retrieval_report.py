@@ -7,7 +7,7 @@ from pathlib import Path
 import config
 
 # the measuring lives in the app; the CLI, the artifacts and the file comparison stay here
-from use_cases import search_depth
+import search_depth
 from use_cases.retrieval_compare import (
     CANDIDATES,
     DEPTH,
@@ -32,10 +32,10 @@ def vector_plan(conn, variant: str, ef: int) -> str:
     return "index" if search_depth.uses_index(conn, variant, ef) else "sort"
 
 
-def recall_against_exact(db, conn, set_name, variant, limit, ef=None):
+def recall_against_exact(searcher, conn, set_name, variant, limit, ef=None):
     """The agent and the interactive path go through hnsw, so its recall is a run-level fact."""
-    exact = {r["id"]: r for r in measure(db, conn, set_name, variant, limit, True)}
-    approx = measure(db, conn, set_name, variant, limit, False, ef)
+    exact = {r["id"]: r for r in measure(searcher, conn, set_name, variant, limit, True)}
+    approx = measure(searcher, conn, set_name, variant, limit, False, ef)
     scores = []
     for row in approx:
         gold = {tuple(s) for s in exact[row["id"]]["sections"]}
@@ -51,7 +51,8 @@ def ef_ladder() -> tuple[int, ...]:
     return tuple(search_depth.ladder())
 
 
-KEYWORD_FLAGS = ("keyword_query", "keyword_rank", "keyword_norm", "query_lang")
+# a flag per switch it sets; the switches it leaves alone (translation, aliases, the rare cut) keep the config's value
+KEYWORD_FLAGS = {"query": "keyword_query", "rank": "keyword_rank", "norm": "keyword_norm", "query_lang": "query_lang"}
 
 def recall_gate() -> float:
     return config.settings.verdict.search_depth.recall_gate
@@ -66,9 +67,9 @@ def lost_questions_gate() -> int:
 
 
 # a neighbour lost at rank 18 does not move where the right section lands
-def index_cost(db, conn, set_name, variant, limit, ef):
-    exact = measure(db, conn, set_name, variant, limit, True)
-    approx = measure(db, conn, set_name, variant, limit, False, ef)
+def index_cost(searcher, conn, set_name, variant, limit, ef):
+    exact = measure(searcher, conn, set_name, variant, limit, True)
+    approx = measure(searcher, conn, set_name, variant, limit, False, ef)
     out = {}
     for level in ("section", "file"):
         out[level] = paired_delta(exact, approx, level)
@@ -174,7 +175,7 @@ def main() -> int:
         "are read; 0 leaves the fusion alone",
     )
     ap.add_argument("--ef", type=int, default=None, help="hnsw.ef_search for the index runs")
-    ap.add_argument("--keyword-query", choices=("and", "or"))
+    ap.add_argument("--keyword-query", choices=config.KEYWORD_QUERY_MODES)
     ap.add_argument("--limit-keyword", type=int, default=CANDIDATES)
     ap.add_argument("--limit-vector", type=int, default=CANDIDATES)
     ap.add_argument("--distance-threshold", type=float, default=NO_THRESHOLD)
@@ -211,6 +212,7 @@ def main() -> int:
                 print(json.dumps(compare_half(before["rows"], after["rows"], level, which)))
         return 0
 
+    import corpus_search
     from corpus_keys import check_variant
     from orm.sync_db import engine
 
@@ -222,7 +224,7 @@ def main() -> int:
         args.ef = search_depth.resolve(variant_for_depth)
 
     # the flags keep their names; the config names the switches as the record does
-    for switch, flag in zip(config.KEYWORD_SWITCHES, KEYWORD_FLAGS, strict=True):
+    for switch, flag in KEYWORD_FLAGS.items():
         chosen = getattr(args, flag)
         if chosen is not None:
             setattr(config.settings.retrieval.keyword, switch, chosen)
@@ -243,7 +245,7 @@ def main() -> int:
                 if plan != "index":
                     print(f"variant={variant} ef_search={ef} refused: no index in the plan")
                     continue
-                cost = index_cost(db, conn, args.set_name, variant, args.limit, ef)
+                cost = index_cost(corpus_search, conn, args.set_name, variant, args.limit, ef)
                 costs[ef] = cost
                 # `paired_delta` answers with an error and no interval, and reading `ci95` off that crashed
                 if "error" in cost["section"]:
@@ -300,7 +302,7 @@ def main() -> int:
                         f"table at this depth, so recall would compare exact with exact"
                     )
                     continue
-                score = recall_against_exact(db, conn, args.set_name, variant, args.limit, ef)
+                score = recall_against_exact(corpus_search, conn, args.set_name, variant, args.limit, ef)
                 by_ef[ef] = score
                 print(f"variant={variant} ef_search={ef} recall@{DEPTH} vs exact: {score}")
                 if required is None and score is not None and score >= recall_gate():
@@ -330,7 +332,7 @@ def main() -> int:
             return 0
 
         if args.recall:
-            score = recall_against_exact(db, conn, args.set_name, variant, args.limit, args.ef)
+            score = recall_against_exact(corpus_search, conn, args.set_name, variant, args.limit, args.ef)
             print(f"variant={variant} set={args.set_name} ef_search={args.ef} "
                   f"hnsw recall@{DEPTH} vs exact: {score}")
             if args.out:
@@ -341,7 +343,7 @@ def main() -> int:
                 print(f"wrote {args.out}")
             return 0
         rows = measure(
-            db, conn, args.set_name, variant, args.limit, exact, ef=args.ef,
+            corpus_search, conn, args.set_name, variant, args.limit, exact, ef=args.ef,
             limit_keyword=args.limit_keyword, limit_vector=args.limit_vector,
             distance_threshold=args.distance_threshold, rerank_top=args.rerank_top,
         )

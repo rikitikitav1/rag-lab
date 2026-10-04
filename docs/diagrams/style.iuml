@@ -1,0 +1,45 @@
+' one look for every PlantUML picture: grey lines, near-white boxes, one teal accent; a white sheet reads in both GitHub themes
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Helvetica
+skinparam defaultFontColor #1F2328
+skinparam ArrowColor #57606A
+skinparam ArrowFontColor #424A53
+skinparam ArrowThickness 1.5
+skinparam roundCorner 12
+skinparam shadowing false
+skinparam TitleFontSize 15
+skinparam NoteBackgroundColor #FFFFFF
+skinparam NoteBorderColor #AFB8C1
+skinparam NoteFontColor #57606A
+skinparam state {
+  BackgroundColor #F6F8FA
+  BorderColor #57606A
+  BackgroundColor<<accent>> #F0FDFA
+  BorderColor<<accent>> #0F766E
+}
+skinparam activity {
+  BackgroundColor #F6F8FA
+  BorderColor #57606A
+  DiamondBackgroundColor #FFFFFF
+  DiamondBorderColor #57606A
+  StartColor #1F2328
+  EndColor #1F2328
+}
+skinparam partition {
+  BorderColor #AFB8C1
+  FontColor #57606A
+}
+skinparam sequence {
+  ParticipantBackgroundColor #F6F8FA
+  ParticipantBorderColor #57606A
+  ActorBackgroundColor #F6F8FA
+  ActorBorderColor #57606A
+  LifeLineBorderColor #AFB8C1
+  GroupBorderColor #AFB8C1
+  GroupBackgroundColor #F6F8FA
+  BoxBorderColor #AFB8C1
+}
+skinparam database {
+  BackgroundColor #F6F8FA
+  BorderColor #57606A
+}

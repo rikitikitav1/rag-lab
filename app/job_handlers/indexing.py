@@ -47,9 +47,13 @@ def index_data(options: dict) -> dict:
         # the same dedup bootstrap does: three retries would queue three builds on one lane
         if not job_queue.pending_of_type("build_vector_index", variant=variant):
             job_queue.enqueue("build_vector_index", {"variant": variant})
+    # the rare cut reads shares of what search serves, so a new cut is counted again; a count takes seconds
+    job_queue.enqueue("count_terms", {"variant": variant})
     # a full reindex goes on past a refused source; the refusals stay on the job's row, not only in the log
     cancelled = {"left_by_cancel": result.left} if result.left else {}
-    return {"sources": len(built) - len(result.left), "refused": result.refused, **cancelled}
+    copies = {"lower_copies_dropped": result.lower_copies_dropped} if result.lower_copies_dropped else {}
+    return {"sources": len(built) - len(result.left), "refused": result.refused, **cancelled, **copies,
+            "phases": result.phases}
 
 
 @register("build_vector_index")
@@ -60,11 +64,18 @@ def build_vector_index(options: dict) -> None:
     _report_depth()
 
 
+@register("count_terms")
+def count_terms(options: dict) -> dict:
+    import term_frequencies
+
+    return term_frequencies.refresh(options.get("variant") or config.settings.corpus.variant)
+
+
 # indexing moves the depth, and a person runs the preflight, so it is read here
 def _report_depth() -> None:
+    import search_depth
     from orm.sync_db import engine
     from sqlalchemy import text
-    from use_cases import search_depth
 
     # the plan and reltuples move on ANALYZE: right answer to a stale question otherwise
     with engine.connect() as conn:

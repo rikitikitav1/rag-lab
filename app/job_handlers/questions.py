@@ -11,7 +11,7 @@ from models.eval import Question
 from models.registry import Purpose, Role
 from orm.sync_db import Session
 from sqlalchemy import select
-from use_cases import section_export
+from use_cases import gold_reanchor, section_export
 
 from .base import register, reported, require_role_ready, stamp
 
@@ -212,6 +212,15 @@ def anchor_questions(options: dict) -> dict | None:
     summary = {"source": source, "set_name": set_name, **counted}
     log.info("questions.anchored", **summary)
     return summary
+
+
+# a set's golds moved to the section of the same file and leaf after a cleanup renamed the page's root
+@register("reanchor_questions")
+def reanchor_questions(options: dict) -> dict | None:
+    variant = options.get("variant") or config.settings.corpus.variant
+    summary = gold_reanchor.reanchor(options["set_name"], variant, dry=options.get("dry", False))
+    log.info("questions.reanchored", **{k: v for k, v in summary.items() if k != "sections"})
+    return {**summary, "record": measurements.record("question_reanchor", options["set_name"], summary)}
 
 
 # the pairs a set already holds, by section, as the generator keeps them: a pair on their evidence is the same fact

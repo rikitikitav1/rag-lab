@@ -9,7 +9,7 @@ from evals.pools import by_question, in_corpus_and_answered
 from evals.stats import ALPHA, SEED, annotate_holm, deltas_over, score_of
 from evals.stats import delta_stats as _delta_stats
 from models.eval import Question, QuestionLog
-from models.experiment import Experiment, ExperimentKind, ExperimentStatus, can_advance
+from models.experiment import JUDGED_KINDS, Experiment, ExperimentKind, ExperimentStatus, can_advance, fail_running_on
 from orm.sync_db import Session
 from sqlalchemy import func, select, update
 from use_cases import rejudge
@@ -23,7 +23,7 @@ _COMPOSITE_AXES = (*_AXES, "off_domain_refusal_rate", "supported_rate")
 
 # the judge's own predicate: counting faithfulness-with-context read a run as fully judged
 def _run_pending(session, run_name: str) -> int:
-    from job_handlers.judging import still_to_judge
+    from use_cases.judge_debts import still_to_judge
 
     return (
         session.scalar(
@@ -261,22 +261,12 @@ def record_report(experiment_id: int, results: dict, started_at) -> bool:
 
 
 # a rejudge arm is a judge job like a generation arm's, and advances the same way
-_JUDGED_KINDS = (ExperimentKind.generation, ExperimentKind.rejudge)
 
 
 # a run out of attempts leaves the experiment `running` for ever; this traverses it
 def mark_failed_for_run(run_name: str) -> None:
     with Session() as session:
-        won = session.execute(
-            update(Experiment)
-            .where(
-                Experiment.kind.in_(_JUDGED_KINDS),
-                Experiment.status == ExperimentStatus.running,
-                Experiment.run_names.contains([run_name]),
-            )
-            .values(status=ExperimentStatus.failed)
-        ).rowcount
-        if won:
+        if fail_running_on(session, run_name):
             session.commit()
             log.warning("experiment.failed", run_name=run_name)
         else:
@@ -316,7 +306,7 @@ def try_aggregate_for_run(run_name: str) -> None:
         ids = list(
             session.scalars(
                 select(Experiment.id).where(
-                    Experiment.kind.in_(_JUDGED_KINDS),
+                    Experiment.kind.in_(JUDGED_KINDS),
                     # `failed` too: cancelling one arm fails the row, and a sibling would finish into it
                     Experiment.status.in_((ExperimentStatus.running, ExperimentStatus.failed)),
                     Experiment.run_names.contains([run_name]),

@@ -5,6 +5,7 @@ import re
 import statistics
 
 import config
+from corpus_keys import code_fraction
 from evals.loaders import load_logs
 from evals.pools import (
     JOINS_BOTH_JUDGES,
@@ -16,7 +17,6 @@ from evals.pools import outcome as _outcome
 from evals.stats import BOOTSTRAP_N, score_of, to_unit
 from outcomes import Outcome
 from scipy.stats import spearmanr
-from use_cases.ingest_quality import code_fraction
 
 # 3 rho carries its band; 2 was the corpus pool alone; 1 was every row that carried both scores
 SCHEMA = 5

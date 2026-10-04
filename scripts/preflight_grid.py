@@ -167,7 +167,8 @@ def roles_match_the_config() -> tuple[bool, str]:
 def sources_match_their_files() -> tuple[bool, str]:
     out = _in_worker(
         "import json; from orm.sync_db import Session; from models.corpus import DataSource; from sources import files;"
-        " rows = Session().query(DataSource.name, DataSource.indexed_with, DataSource.declaration).all();"
+        " rows = Session().query(DataSource.name, DataSource.indexed_with, DataSource.declaration,"
+        " DataSource.indexed_rules).all();"
         " print(json.dumps(files.drift_report([tuple(r) for r in rows])))"
     )
     if not out.startswith("{"):
@@ -176,7 +177,11 @@ def sources_match_their_files() -> tuple[bool, str]:
 
 
 def source_files_verdict(seen: dict) -> tuple[bool, str]:
-    bad = [f"{source}: {', '.join(variants)}" for source, variants in seen["moved"].items()]
+    fields = seen.get("fields") or {}
+    bad = [
+        f"{source}: {', '.join(variants)}" + (f" (by {', '.join(fields[source])})" if source in fields else "")
+        for source, variants in seen["moved"].items()
+    ]
     if seen["orphaned"]:
         bad.append(f"rows indexed with no declaration: {', '.join(seen['orphaned'])}")
     if bad:
@@ -254,9 +259,9 @@ def seeded_rows_verdict(orphans: list[str]) -> tuple[bool, str]:
 def newest_versions_are_searchable() -> tuple[bool, str]:
     # what a search reads, through the search's own rows and newest: an inactive source's version answers nothing
     out = _in_worker(
-        "import json, config, db;"
-        " held = db.versions_held(config.settings.corpus.variant);"
-        " print(json.dumps({'held': held, 'newest': dict(zip(*db.newest()))}))"
+        "import json, config, corpus_search;"
+        " held = corpus_search.versions_held(config.settings.corpus.variant);"
+        " print(json.dumps({'held': held, 'newest': dict(zip(*corpus_search.newest()))}))"
     )
     if not out.startswith("{"):
         return False, f"versions: cannot read them ({out[:60] or 'no answer'})"
@@ -546,6 +551,22 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
     return ok, f"keyword switches: worker {live}, last run {logged}"
 
 
+# the rare cut reads each word's share of the variant's chunks; counted before a reindex, it cuts by stale shares
+def term_frequencies_are_current() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, config, term_frequencies;"
+        " k = config.settings.retrieval.keyword; v = config.settings.corpus.variant;"
+        " s = k.max_term_share;"
+        " print(json.dumps({'share': s, 'stale': term_frequencies.stale(v) if s else None}))"
+    )
+    said = json.loads(out) if out.startswith("{") else None
+    if said is None:
+        return False, "term frequencies: cannot read"
+    if not said["share"]:
+        return True, "term frequencies: the rare cut is off"
+    return said["stale"] is None, f"term frequencies: {said['stale'] or 'current'} (max_term_share {said['share']})"
+
+
 # asked of the worker rather than written twice; `marks_are_reachable` blocks on these sets
 @lru_cache(maxsize=1)
 def criterion_sets() -> tuple[str, ...]:
@@ -641,6 +662,7 @@ CHECKS = (
     one_question_per_original,
     every_variant_cuts_into_its_own_rows,
     keyword_switches_match_the_worker,
+    term_frequencies_are_current,
     marks_are_reachable,
     index_is_alive,
 )

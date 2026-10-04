@@ -1,6 +1,8 @@
 import config
+import corpus_search
 import pytest
-from use_cases import search_depth
+import search_depth
+import text_language
 
 
 # the suite runs without a stack: these hand `resolve` a connection it never opens
@@ -138,10 +140,10 @@ def test_an_exact_search_resolves_no_depth(monkeypatch):
             return _R()
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
     # the question's language is cached across the suite; alone, its lookup would read this fake connection
-    monkeypatch.setattr(db, "detect_language", lambda text_, mode=None: "en")
-    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
+    monkeypatch.setattr(text_language, "detect_language", lambda text_, mode=None: "en")
+    corpus_search.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
     assert not any("hnsw.ef_search" in q for q in issued)
 
 
@@ -171,9 +173,9 @@ def test_an_exact_search_turns_the_index_off_on_its_own_connection(monkeypatch):
             return _R()
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
     # the question's language is cached across the suite; alone, its lookup would read this fake connection
-    monkeypatch.setattr(db, "detect_language", lambda text_, mode=None: "en")
-    db.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
+    monkeypatch.setattr(text_language, "detect_language", lambda text_, mode=None: "en")
+    corpus_search.hybrid_search("q", "[0]", None, variant="baseline", exact=True, embedded_by="bge-m3@ollama")
     assert any("enable_indexscan = off" in q for q in issued)
     assert not any("hnsw.ef_search" in q for q in issued)

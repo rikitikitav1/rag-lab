@@ -6,6 +6,14 @@ import pytest
 from models.registry import Engine, EngineKind, Model, Placement, Status
 
 
+# `add_job` is awaited by the doors, so a stand-in answers as a coroutine
+def _staged(fn):
+    async def stage(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return stage
+
+
+
 def _engine(engine_id=1, name="ollama", kind=EngineKind.ollama):
     return Engine(id=engine_id, name=name, kind=kind, env_prefix=name.upper(),
                   placement=Placement.gpu)
@@ -253,7 +261,7 @@ def test_the_delete_door_asks_the_worker_s_rule_on_shared_weights_before_the_row
     import job_queue
 
     asked, queued = [], []
-    monkeypatch.setattr(job_queue, "add_job", lambda s, t, o, **kw: queued.append(t))
+    monkeypatch.setattr(job_queue, "add_job", _staged(lambda s, t, o, **kw: queued.append(t)))
 
     def shared(name, engine_id):
         asked.append((name, engine_id))
@@ -385,7 +393,7 @@ def test_a_vllm_model_is_deleted_through_the_door_unless_a_server_reads_it(door,
     from api.v1 import llm_model
 
     queued = []
-    monkeypatch.setattr(job_queue, "add_job", lambda s, t, o, **kw: queued.append((t, o)))
+    monkeypatch.setattr(job_queue, "add_job", _staged(lambda s, t, o, **kw: queued.append((t, o))))
     monkeypatch.setattr("use_cases.weights_rules.refuse_if_the_weights_are_shared",
                         lambda n, engine_id: None)
     serving = [True]

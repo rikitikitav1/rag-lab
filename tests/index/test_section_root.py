@@ -2,11 +2,7 @@ from pathlib import Path
 
 import pytest
 from sources.base import Base
-from sources.cheatsheets import CheatsheetsSource
 from sources.declaration import SourceFile
-from sources.interview import InterviewSource
-from sources.redis_docs import RedisDocsSource
-from sources.system_design_primer import SystemDesignPrimerSource
 
 PRIMER = """*[English](README.md) ∙ [日本語](README-ja.md) ∙ [简体中文](README-zh-Hans.md)
 
@@ -49,6 +45,14 @@ NOTE = """# Notes, база знаний
 Хаб, отсюда расходятся темы.
 """
 
+# a source read the way its file declares it, with no reader class of its own
+def _declared(file, root, **kw):
+    from sources import files
+    from sources.base import Base
+
+    return Base(root, settings=files.source_files()[file], **kw)
+
+
 
 # the declared root is a rule of the hygienic cut, so these ask under that policy
 
@@ -79,31 +83,31 @@ def write(base: Path, rel: str, text: str) -> Path:
 
 
 def test_interview_root_is_the_h1_of_the_readme(tmp_path):
-    source = InterviewSource(tmp_path, name="ruby-interview-questions")
+    source = _declared("interview", tmp_path, name="ruby-interview-questions")
     file = write(tmp_path, "README.md", INTERVIEW)
     assert root_of(source, file) == "100 Core Ruby Interview Questions in 2026"
 
 
 def test_redis_docs_root_comes_from_frontmatter(tmp_path):
-    source = RedisDocsSource(tmp_path)
+    source = _declared("redis-doc", tmp_path)
     file = write(tmp_path, "docs/data-types/streams.md", REDIS_DOC)
     assert root_of(source, file) == "Redis Streams"
 
 
 def test_redis_command_root_is_the_file_name_because_there_is_no_heading(tmp_path):
-    source = RedisDocsSource(tmp_path)
+    source = _declared("redis-doc", tmp_path)
     file = write(tmp_path, "commands/acl-cat.md", REDIS_COMMAND)
     assert root_of(source, file) == "ACL CAT"
 
 
 def test_cheatsheet_root_is_its_frontmatter_title(tmp_path):
-    source = CheatsheetsSource(tmp_path)
+    source = _declared("cheatsheets", tmp_path)
     file = write(tmp_path, "react.md", CHEATSHEET)
     assert root_of(source, file) == "React"
 
 
 def test_primer_root_skips_the_translation_banner(tmp_path):
-    source = SystemDesignPrimerSource(tmp_path)
+    source = _declared("system-design-primer", tmp_path)
     file = write(tmp_path, "README.md", PRIMER)
     assert root_of(source, file) == "The System Design Primer"
 
@@ -115,7 +119,7 @@ def test_a_plain_file_s_root_is_its_markdown_heading(tmp_path):
 
 
 def test_a_byte_order_mark_does_not_hide_the_frontmatter(tmp_path):
-    source = RedisDocsSource(tmp_path)
+    source = _declared("redis-doc", tmp_path)
     file = write(tmp_path, "docs/get-started/_index.md", "\ufeff" + REDIS_DOC)
     assert root_of(source, file) == "Redis Streams"
 
@@ -128,7 +132,7 @@ def test_a_file_without_a_heading_has_no_root(tmp_path, text):
 
 
 def test_a_numeric_frontmatter_title_is_still_text(tmp_path):
-    source = CheatsheetsSource(tmp_path)
+    source = _declared("cheatsheets", tmp_path)
     file = write(tmp_path, "101.md", "---\ntitle: 101\ncategory: JavaScript libraries\n---\n\n## Usage\n")
     assert root_of(source, file) == "101"
 
@@ -171,3 +175,14 @@ def test_a_chunk_takes_the_language_of_its_own_text(tmp_path):
     file = write(tmp_path, "book.md", text)
     languages = {doc.section: doc.language for doc in source.to_documents(file, HYGIENIC)}
     assert "ru" in languages.values() and "en" in languages.values(), languages
+
+
+# a converter reads cover text as a book's first heading; a declared root by file glob stands in for it
+def test_declared_root_by_path_replaces_the_cover_heading(tmp_path):
+    roots = {"rtl.pdf*": "Run-Time Library", "*": "The Book"}
+    declared = SourceFile(name="book", language="en", licence="x", folder=str(tmp_path), section_root_by_path=roots)
+    source = Base(tmp_path, declared)
+    cover = "## MdLAHeH 97 1588380\n\ntitle page\n\n## Chapter\n\ntext\n"
+    assert root_of(source, write(tmp_path, "rtl.pdf.md", cover)) == "Run-Time Library"
+    assert root_of(source, write(tmp_path, "other.md", cover)) == "The Book"
+    assert root_of(_plain(tmp_path), write(tmp_path, "plain.md", cover)) == "MdLAHeH 97 1588380"

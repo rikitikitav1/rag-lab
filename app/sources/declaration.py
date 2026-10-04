@@ -1,19 +1,20 @@
 import copy
+import fnmatch
 import re
 from typing import ClassVar, Literal
 
-from config import SOURCE_KNOBS, RouteCfg
+from config import SOURCE_KNOBS, MetricGatesCfg, RouteCfg
+from models.corpus import Trust
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 from tool_names import settings_refusal
+from vocabulary import SOURCE_NAME, Language, Markup
 
-Language = Literal["en", "ru"]
-SOURCE_NAME = r"^[a-z0-9][a-z0-9_-]{0,62}$"
 # one vocabulary for the kind column: a folder is `local`, as the code-defined sources already say
 KINDS = {"urls": "urls", "folder": "local", "git": "git", "git_family": "git", "pages": "pages"}
 
 
 # what a repository or a folder gives the index when a source names no files of its own
-DEFAULT_INCLUDE = ["**/*.md"]
+DEFAULT_INCLUDE = ["**/*.md", "**/*.mdx"]
 
 
 class _Strict(BaseModel):
@@ -26,6 +27,11 @@ class GitOrigin(_Strict):
     ref: str | None = None
     path: str | None = None
     include: list[str] = DEFAULT_INCLUDE
+
+
+# the first pattern a path under the root matches; `*` crosses folders, so `blog/*` takes the whole blog
+def skipped_path(rel: str, patterns) -> str | None:
+    return next((p for p in patterns if fnmatch.fnmatchcase(rel, p)), None)
 
 
 # where a site keeps its own text, what inside it is the site's furniture, which pages it builds itself
@@ -127,6 +133,11 @@ class DeclaredQuestion(_Strict):
 
 
 # a source as the stand keeps it in its row, from the door or the seed: where it comes from and the rules only it needs
+class TagByPath(_Strict):
+    prefix: str = Field(min_length=1)
+    step: int = Field(ge=0)
+
+
 class Declaration(_Strict):
     ORIGINS: ClassVar[tuple[str, ...]] = ("urls", "folder", "git", "git_family", "pages")
     name: str = Field(pattern=SOURCE_NAME)
@@ -142,9 +153,13 @@ class Declaration(_Strict):
     intake: IntakeOverride | None = None
     # the class that parses what the rules cannot say; none reads plain markdown
     reader: str | None = None
-    # stems skipped always, and by the hygienic cut only with a reason; `fnmatch` patterns, so `[` and `?` match
+    # stems skipped, the second list with a reason for each; `fnmatch` patterns, so `[` and `?` match
     skip: list[str] = []
     skip_when_hygienic: dict[str, str] = {}
+    # chunker gates this source's shape breaks by nature, as a reference manual's one-line entries; named in its report
+    waived_gates: list[Literal[tuple(MetricGatesCfg.model_fields)]] = []
+    # paths under the source's root skipped whole, where a stem cannot tell a folder: a site's pages are all `index`
+    skip_paths: list[str] = []
     drop_docs_containing: list[str] = []
     veto_families: list[VetoFamily] = []
     # a folder that moves on its own, so its fingerprint drifting is not a fault
@@ -157,6 +172,24 @@ class Declaration(_Strict):
     questions: list[DeclaredQuestion] = []
     # a leaf pattern that names this source's reference pages where the leaf has no code shape (a command in capitals)
     reference_leaf: str | None = None
+    # tags in place of the file's folders: fixed ones, the row's name less a suffix, a path step under a prefix
+    tags: list[str] = []
+    tag_from_name: str | None = None
+    tags_by_path: list[TagByPath] = []
+    # tags read from the page's frontmatter keys, in order; a scalar is one tag, a list is several
+    tags_from_frontmatter: list[str] = []
+    # a page whose frontmatter key holds this value is not read: a sheet the site itself hides
+    skip_when_frontmatter: dict[str, str] = {}
+    # the folder whose pages carry no heading: a page there is rooted at its file name in capitals
+    section_root_from_filename: str | None = None
+    # a book's root by its file's glob, where the converter read cover text as its first heading
+    section_root_by_path: dict[str, str] = {}
+    # the markup family the site writes beside markdown, rendered by its table before the cut
+    markup: Markup | None = None
+    # the site parameters its markup prints, as the site's own config sets them: `{{< param "version" >}}`
+    markup_values: dict[str, str] = {}
+    # over the default read from the origin, when a source is not what its origin suggests
+    trust: Trust | None = None
 
     # a site read from its sitemap comes from pages though it lists none
     def _origins(self) -> list[str]:

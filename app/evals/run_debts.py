@@ -77,12 +77,7 @@ def _answered_it(axis: str):
 
 
 def _columns() -> dict:
-    from job_handlers.judging import (
-        GUEST_MATERIAL,
-        _not_capped,
-        guest_clauses,
-        still_to_judge,
-    )
+    from use_cases.judge_debts import GUEST_MATERIAL, guest_clauses, not_capped, still_to_judge
 
     clauses = dict(zip(guest_axes.AXES, guest_clauses(), strict=True))
     columns = {"population": func.count(), "ours": func.count().filter(still_to_judge())}
@@ -98,7 +93,7 @@ def _columns() -> dict:
         )
         # a fourth bucket, or the guard reads False on the ordinary row that failed three times
         columns[f"capped__{axis}"] = func.count().filter(
-            and_(*[GUEST_MATERIAL[n] for n in guest.needs], not_(_not_capped(axis)))
+            and_(*[GUEST_MATERIAL[n] for n in guest.needs], not_(not_capped(axis)))
         )
         # priced by this run's own rows: a guess from another pool made the 9.6 an upper bound
         columns[f"seconds__{axis}"] = func.avg(
@@ -156,3 +151,18 @@ def safely(run_name: str) -> dict:
     except Exception as e:
         log.error("run_debts.unavailable", run_name=run_name, error=str(e))
         return {"unavailable": f"{type(e).__name__}: {redact(str(e))}"}
+
+
+# what the judging doors refuse before they queue; a broken diagnostic refuses nothing, the handler then decides
+def refuse_judging(run_name: str, *, owed: bool) -> None:
+    from errors import Refusal
+
+    debts = safely(run_name)
+    if "unavailable" in debts:
+        log.warning("run_debts.unavailable_at_the_door", run_name=run_name, why=debts["unavailable"])
+        return
+    if not debts["answered_rows"]:
+        raise Refusal("missing", f"run {run_name} holds no answered row")
+    if owed and not debts["ours_still_to_judge"]:
+        raise Refusal("missing", f"run {run_name} owes our judge nothing")
+

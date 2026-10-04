@@ -58,7 +58,7 @@ def _one_hop(monkeypatch, said, sources, **kwargs):
 
 
 def _hit(source: str, content: str):
-    from db import Hit
+    from corpus_search import Hit
 
     return Hit(content, source, "cat", 0, 1, None, 0.2, 0.5, None)
 
@@ -241,7 +241,6 @@ def test_the_direct_path_filters_through_the_same_grader(monkeypatch):
     from use_cases import chat, grading
 
     rows = [_hit("src/mvcc.md", "mvcc keeps versions"), _hit("src/kafka.md", "kafka partitions")]
-    monkeypatch.setattr(chat, "_hidden_by_cut", lambda source, variant: False)
     monkeypatch.setattr(chat, "_log_answer", lambda *a, **kw: kept.update(kw) or None)
     monkeypatch.setattr(chat.prompt_repo, "active_template", lambda purpose: "tpl")
     monkeypatch.setattr(chat.llm, "resolve_name", lambda role: "stub-model")
@@ -272,7 +271,6 @@ def test_the_direct_path_does_not_grade_unless_the_run_asks(monkeypatch):
     from use_cases import chat
 
     rows = [_hit("src/mvcc.md", "mvcc")]
-    monkeypatch.setattr(chat, "_hidden_by_cut", lambda source, variant: False)
     monkeypatch.setattr(chat, "_log_answer", lambda *a, **kw: kept.update(kw) or None)
     monkeypatch.setattr(chat.prompt_repo, "active_template", lambda purpose: "tpl")
     monkeypatch.setattr(chat.llm, "resolve_name", lambda role: "stub-model")

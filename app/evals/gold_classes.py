@@ -1,7 +1,7 @@
 """Three classes of a candidate chunk: the gold section, its neighbour in the gold file, a stranger."""
 
 from corpus_keys import Gold
-from use_cases.retrieval_compare import clean_gold, heading_text
+from gold_match import clean_gold, heading_text
 
 SCHEMA = 1
 

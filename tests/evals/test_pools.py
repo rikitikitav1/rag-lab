@@ -28,6 +28,8 @@ def test_without_a_kind_the_marked_sources_decide():
 def test_an_in_corpus_question_with_nothing_marked_cannot_be_scored_against_the_corpus():
     split = pools.split([_log(kind="in_corpus")])
     assert split["in_corpus"] == []
+    # the language probe and the set inventory read `kind`, so they leave it out the same way
+    assert pools.kind(_log(kind="in_corpus")) == "out_of_corpus"
     assert len(split["out_of_corpus"]) == 1
 
 

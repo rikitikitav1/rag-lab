@@ -5,8 +5,7 @@ from datetime import UTC, datetime
 import config
 import ingest
 import logging_setup
-import sources.base
-from corpus_keys import SECTION_SEP
+from corpus_keys import CODE_BLOCK, SECTION_SEP, SHARED_BODY_SQL
 from ingest import BOILERPLATE_MIN_FILES
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
@@ -67,7 +66,6 @@ PROSE_WORD_LETTERS = config.settings.ingest_quality.measure.prose_word_letters
 # every other metric is a defect: more is worse
 HIGHER_IS_BETTER = frozenset({"section_coverage"})
 
-FENCE = re.compile(r"```.*?```", re.DOTALL)
 PROSE_WORD = re.compile(rf"[^\W\d_]{{{PROSE_WORD_LETTERS},}}", re.UNICODE)
 NOT_ALNUM_OR_SPACE = re.compile(r"[^\w\s]", re.UNICODE)
 OPENS_WITH_HEADING = re.compile(r"^\s*#")
@@ -108,12 +106,7 @@ def _is_soup(text: str) -> bool:
 
 
 def _is_code_only(text: str) -> bool:
-    return not PROSE_WORD.search(FENCE.sub(" ", text))
-
-
-# how much of a chunk is fenced code: `_is_code_only` answers a different question
-def code_fraction(text: str) -> float:
-    return sum(len(m) for m in FENCE.findall(text or "")) / len(text) if text else 0.0
+    return not PROSE_WORD.search(CODE_BLOCK.sub(" ", text))
 
 
 def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:
@@ -121,7 +114,7 @@ def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:
     return sum(1 for s in samples if s.body in wide)
 
 
-def measure(samples: list[Sample], ceiling: int, records_sections: bool = True) -> Metrics:
+def measure(samples: list[Sample], ceiling: int) -> Metrics:
     total = len(samples)
     files = len({s.file for s in samples})
     tiny_below = ceiling * TINY_SHARE_OF_CEILING
@@ -141,7 +134,7 @@ def measure(samples: list[Sample], ceiling: int, records_sections: bool = True) 
     return Metrics(
         chunks=total,
         files=files,
-        section_coverage=(_share(sum(1 for s in samples if _under_a_heading(s)), total) if records_sections else None),
+        section_coverage=_share(sum(1 for s in samples if _under_a_heading(s)), total),
         prefix_dominates=_share(sum(1 for s, p in bodied if len(p) > len(s.body)), len(bodied)),
         dup_in_file=_share(sum(_repeats(_count(t)) for t in text.values()), n),
         dup_in_source=_share(_repeats(_count(bodies)), n),
@@ -301,12 +294,7 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
         collect_dry(source_name, variant=variant) if mode == "dry"
         else (collect_indexed(source_name, variant=variant), None)
     )
-    # the legacy cut records a section only where the file opens H1 then H2
-    metrics = measure(
-        samples,
-        ceiling=policy["max_chunk_size"],
-        records_sections=sources.base.hygienic(policy),
-    )
+    metrics = measure(samples, ceiling=policy["max_chunk_size"])
     metrics.score = score(metrics, cfg.weights)
     hard, soft, judged, said = gates_of(metrics, cfg)
     entry = {
@@ -346,13 +334,13 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
     return entry
 
 
-# bodies held by more than one source of the same cut, by their exact text
-_SHARED = """
+# bodies held by more than one source of the same cut, by the key the dedup reads
+_SHARED = f"""
     WITH bodies AS (
-        SELECT s.name, md5(substr(c.content, coalesce(c.prefix_len, 0) + 1)) AS h
+        SELECT s.name, CASE WHEN {SHARED_BODY_SQL} THEN c.content_hash END AS h
         FROM data_chunks c JOIN data_sources s ON s.id = c.source_id
         WHERE c.variant = :variant
-    ), shared AS (SELECT h FROM bodies GROUP BY h HAVING count(DISTINCT name) > 1)
+    ), shared AS (SELECT h FROM bodies WHERE h IS NOT NULL GROUP BY h HAVING count(DISTINCT name) > 1)
 """
 
 

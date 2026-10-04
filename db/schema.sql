@@ -119,6 +119,7 @@ CREATE TABLE public.data_sources (
     origin jsonb,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
     indexed_with jsonb DEFAULT '{}'::jsonb NOT NULL,
+    indexed_rules jsonb DEFAULT '{}'::jsonb NOT NULL,
     declaration jsonb,
     seeded boolean DEFAULT false NOT NULL
 );
@@ -248,7 +249,8 @@ CREATE TABLE public.jobs (
     balances jsonb,
     code jsonb,
     prereg text,
-    result jsonb
+    result jsonb,
+    parent_id integer
 );
 
 
@@ -376,7 +378,8 @@ CREATE TABLE public.preregistrations (
     guards jsonb DEFAULT '[]'::jsonb NOT NULL,
     declared jsonb DEFAULT '{}'::jsonb NOT NULL,
     closed_with jsonb,
-    vetoes jsonb DEFAULT '[]'::jsonb NOT NULL
+    vetoes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    attempts jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 
@@ -541,6 +544,32 @@ ALTER SEQUENCE public.questions_id_seq OWNED BY public.questions.id;
 
 CREATE TABLE public.schema_migrations (
     version character varying NOT NULL
+);
+
+
+--
+-- Name: term_frequencies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.term_frequencies (
+    variant text NOT NULL,
+    lexeme text NOT NULL,
+    chunks integer NOT NULL,
+    share real NOT NULL,
+    newest_chunk integer NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: term_frequency_counts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.term_frequency_counts (
+    variant text NOT NULL,
+    chunks integer NOT NULL,
+    newest_chunk integer NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -829,6 +858,22 @@ ALTER TABLE ONLY public.weights
 
 
 --
+-- Name: term_frequencies term_frequencies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.term_frequencies
+    ADD CONSTRAINT term_frequencies_pkey PRIMARY KEY (variant, lexeme);
+
+
+--
+-- Name: term_frequency_counts term_frequency_counts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.term_frequency_counts
+    ADD CONSTRAINT term_frequency_counts_pkey PRIMARY KEY (variant);
+
+
+--
 -- Name: weights weights_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -920,6 +965,13 @@ CREATE INDEX idx_jobs_queue_status_apply_since ON public.jobs USING btree (queue
 
 
 --
+-- Name: jobs_parent_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX jobs_parent_id_idx ON public.jobs USING btree (parent_id) WHERE (parent_id IS NOT NULL);
+
+
+--
 -- Name: idx_question_logs_pipeline; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -953,6 +1005,14 @@ CREATE TRIGGER data_chunks_content_tsv_trg BEFORE INSERT OR UPDATE ON public.dat
 
 ALTER TABLE ONLY public.data_chunks
     ADD CONSTRAINT data_chunks_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.data_sources(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jobs jobs_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jobs
+    ADD CONSTRAINT jobs_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.jobs(id) ON DELETE SET NULL;
 
 
 --
@@ -1077,4 +1137,9 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260929000010'),
     ('20260930000011'),
     ('20260930000012'),
-    ('20260930000013');
+    ('20260930000013'),
+    ('20261002000014'),
+    ('20261003000015'),
+    ('20261003000016'),
+    ('20261004000017'),
+    ('20261004000018');

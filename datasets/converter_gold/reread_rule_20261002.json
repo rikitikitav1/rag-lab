@@ -1,0 +1,1463 @@
+{
+ "second": "docling_pypdfium2_cells",
+ "en_cuts": {
+  "cuts": [
+   {
+    "cut": "django_en_code_00",
+    "layer_f1": [
+     0.9087,
+     0.9137
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_code_01",
+    "layer_f1": [
+     0.9573,
+     0.9603
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_code_02",
+    "layer_f1": [
+     0.9233,
+     0.9264
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_code_03",
+    "layer_f1": [
+     0.919,
+     0.9238
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_code_04",
+    "layer_f1": [
+     0.9325,
+     0.9388
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_prose_00",
+    "layer_f1": [
+     0.98,
+     0.98
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_prose_01",
+    "layer_f1": [
+     0.9398,
+     0.9398
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_prose_02",
+    "layer_f1": [
+     0.9725,
+     0.9733
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_prose_03",
+    "layer_f1": [
+     0.9755,
+     0.9755
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_prose_04",
+    "layer_f1": [
+     0.9866,
+     0.9866
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "django_en_table_00",
+    "layer_f1": [
+     0.9781,
+     0.9812
+    ],
+    "table_cells": [
+     14,
+     14
+    ]
+   },
+   {
+    "cut": "django_en_table_01",
+    "layer_f1": [
+     0.9189,
+     0.9237
+    ],
+    "table_cells": [
+     15,
+     15
+    ]
+   },
+   {
+    "cut": "django_en_table_02",
+    "layer_f1": [
+     0.9781,
+     0.9812
+    ],
+    "table_cells": [
+     14,
+     14
+    ]
+   },
+   {
+    "cut": "postgres_en_code_00",
+    "layer_f1": [
+     0.982,
+     0.982
+    ],
+    "table_cells": [
+     26,
+     16
+    ]
+   },
+   {
+    "cut": "postgres_en_code_01",
+    "layer_f1": [
+     0.8668,
+     0.8694
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_code_02",
+    "layer_f1": [
+     0.9754,
+     0.9758
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_code_03",
+    "layer_f1": [
+     0.9133,
+     0.8501
+    ],
+    "table_cells": [
+     32,
+     83
+    ]
+   },
+   {
+    "cut": "postgres_en_code_04",
+    "layer_f1": [
+     0.9535,
+     0.9656
+    ],
+    "table_cells": [
+     18,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_prose_00",
+    "layer_f1": [
+     0.9919,
+     0.9919
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_prose_01",
+    "layer_f1": [
+     0.9839,
+     0.9828
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_prose_02",
+    "layer_f1": [
+     1.0,
+     1.0
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_prose_03",
+    "layer_f1": [
+     0.9964,
+     0.994
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_prose_04",
+    "layer_f1": [
+     0.9746,
+     0.9768
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_en_table_00",
+    "layer_f1": [
+     0.9877,
+     0.9947
+    ],
+    "table_cells": [
+     76,
+     151
+    ]
+   },
+   {
+    "cut": "postgres_en_table_01",
+    "layer_f1": [
+     0.9978,
+     0.9978
+    ],
+    "table_cells": [
+     36,
+     57
+    ]
+   },
+   {
+    "cut": "postgres_en_table_02",
+    "layer_f1": [
+     0.9613,
+     0.9613
+    ],
+    "table_cells": [
+     38,
+     48
+    ]
+   },
+   {
+    "cut": "postgres_en_table_03",
+    "layer_f1": [
+     0.9069,
+     0.8942
+    ],
+    "table_cells": [
+     86,
+     97
+    ]
+   },
+   {
+    "cut": "postgres_en_table_04",
+    "layer_f1": [
+     0.8343,
+     0.8124
+    ],
+    "table_cells": [
+     81,
+     106
+    ]
+   },
+   {
+    "cut": "progit_en_code_00",
+    "layer_f1": [
+     0.9847,
+     0.9847
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_code_01",
+    "layer_f1": [
+     0.9943,
+     0.9943
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_code_02",
+    "layer_f1": [
+     0.9925,
+     0.9918
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_code_03",
+    "layer_f1": [
+     0.9828,
+     0.9839
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_code_04",
+    "layer_f1": [
+     0.9735,
+     0.9746
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_prose_00",
+    "layer_f1": [
+     0.9996,
+     0.9992
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_prose_01",
+    "layer_f1": [
+     0.9986,
+     0.9973
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_prose_02",
+    "layer_f1": [
+     0.9977,
+     0.9977
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_prose_03",
+    "layer_f1": [
+     0.9981,
+     0.9961
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_prose_04",
+    "layer_f1": [
+     0.9978,
+     0.9987
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_en_table_00",
+    "layer_f1": [
+     0.9964,
+     0.9699
+    ],
+    "table_cells": [
+     91,
+     113
+    ]
+   },
+   {
+    "cut": "python_en_code_00",
+    "layer_f1": [
+     0.8563,
+     0.8642
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_code_01",
+    "layer_f1": [
+     0.9503,
+     0.9503
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_code_02",
+    "layer_f1": [
+     0.9653,
+     0.9653
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_code_03",
+    "layer_f1": [
+     0.9347,
+     0.9347
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_code_04",
+    "layer_f1": [
+     0.9536,
+     0.9536
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_prose_00",
+    "layer_f1": [
+     0.977,
+     0.9764
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_prose_01",
+    "layer_f1": [
+     0.9808,
+     0.9808
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_prose_02",
+    "layer_f1": [
+     0.9755,
+     0.9745
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_prose_03",
+    "layer_f1": [
+     0.8873,
+     0.8778
+    ],
+    "table_cells": [
+     24,
+     24
+    ]
+   },
+   {
+    "cut": "python_en_prose_04",
+    "layer_f1": [
+     0.9776,
+     0.9776
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "python_en_table_00",
+    "layer_f1": [
+     0.9191,
+     0.9191
+    ],
+    "table_cells": [
+     6,
+     8
+    ]
+   },
+   {
+    "cut": "python_en_table_01",
+    "layer_f1": [
+     0.9899,
+     0.9944
+    ],
+    "table_cells": [
+     24,
+     36
+    ]
+   },
+   {
+    "cut": "python_en_table_02",
+    "layer_f1": [
+     0.9639,
+     0.9631
+    ],
+    "table_cells": [
+     20,
+     24
+    ]
+   },
+   {
+    "cut": "python_en_table_03",
+    "layer_f1": [
+     0.931,
+     0.9348
+    ],
+    "table_cells": [
+     12,
+     54
+    ]
+   },
+   {
+    "cut": "python_en_table_04",
+    "layer_f1": [
+     0.9934,
+     0.9879
+    ],
+    "table_cells": [
+     8,
+     8
+    ]
+   }
+  ],
+  "0.9": {
+   "taken": [
+    "postgres_en_code_01",
+    "python_en_code_00"
+   ],
+   "recovered": {
+    "98": 17,
+    "95": 25,
+    "90": 34
+   },
+   "code": {
+    "code_exact": 17,
+    "code_whitespace": 21,
+    "code_blocks": 32
+   }
+  },
+  "0.92": {
+   "taken": [
+    "django_en_code_00",
+    "django_en_code_03",
+    "django_en_table_01",
+    "postgres_en_code_01",
+    "python_en_code_00"
+   ],
+   "recovered": {
+    "98": 17,
+    "95": 25,
+    "90": 34
+   },
+   "code": {
+    "code_exact": 17,
+    "code_whitespace": 21,
+    "code_blocks": 32
+   }
+  },
+  "0.95": {
+   "taken": [
+    "django_en_code_00",
+    "django_en_code_02",
+    "django_en_code_03",
+    "django_en_code_04",
+    "django_en_table_01",
+    "postgres_en_code_01",
+    "python_en_code_00",
+    "python_en_table_03"
+   ],
+   "recovered": {
+    "98": 17,
+    "95": 25,
+    "90": 35
+   },
+   "code": {
+    "code_exact": 17,
+    "code_whitespace": 21,
+    "code_blocks": 32
+   }
+  }
+ },
+ "ru_cuts": {
+  "cuts": [
+   {
+    "cut": "haskell_kholomiev_ru_code_00",
+    "layer_f1": [
+     0.9752,
+     0.9818
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_code_01",
+    "layer_f1": [
+     0.9878,
+     0.9878
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_code_02",
+    "layer_f1": [
+     0.9831,
+     0.9807
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_code_03",
+    "layer_f1": [
+     0.9861,
+     0.9889
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_code_04",
+    "layer_f1": [
+     0.9867,
+     0.9862
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_prose_00",
+    "layer_f1": [
+     0.9831,
+     0.9835
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_prose_01",
+    "layer_f1": [
+     0.9823,
+     0.9808
+    ],
+    "table_cells": [
+     2,
+     2
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_prose_02",
+    "layer_f1": [
+     0.9845,
+     0.9786
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_prose_03",
+    "layer_f1": [
+     0.9614,
+     0.9638
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_prose_04",
+    "layer_f1": [
+     0.9911,
+     0.9864
+    ],
+    "table_cells": [
+     3,
+     3
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_table_00",
+    "layer_f1": [
+     0.9888,
+     0.9888
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "haskell_kholomiev_ru_table_01",
+    "layer_f1": [
+     0.9822,
+     0.9819
+    ],
+    "table_cells": [
+     2,
+     2
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_code_00",
+    "layer_f1": [
+     0.8822,
+     0.9577
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_code_01",
+    "layer_f1": [
+     0.8933,
+     0.963
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_code_02",
+    "layer_f1": [
+     0.9398,
+     0.9694
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_code_03",
+    "layer_f1": [
+     0.9421,
+     0.9608
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_code_04",
+    "layer_f1": [
+     0.846,
+     0.9561
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_prose_00",
+    "layer_f1": [
+     0.9321,
+     0.9655
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_prose_01",
+    "layer_f1": [
+     0.9214,
+     0.9571
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_prose_02",
+    "layer_f1": [
+     0.9466,
+     0.9689
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_prose_03",
+    "layer_f1": [
+     0.7284,
+     0.896
+    ],
+    "table_cells": [
+     0,
+     34
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_prose_04",
+    "layer_f1": [
+     0.924,
+     0.9711
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_table_00",
+    "layer_f1": [
+     0.9443,
+     0.9554
+    ],
+    "table_cells": [
+     15,
+     17
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_table_01",
+    "layer_f1": [
+     0.9276,
+     0.946
+    ],
+    "table_cells": [
+     34,
+     34
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_table_02",
+    "layer_f1": [
+     0.8737,
+     0.9508
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_table_03",
+    "layer_f1": [
+     0.9384,
+     0.9535
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "latex_baldin_ru_table_04",
+    "layer_f1": [
+     0.9644,
+     0.9703
+    ],
+    "table_cells": [
+     8,
+     9
+    ]
+   },
+   {
+    "cut": "progit_ru_code_00",
+    "layer_f1": [
+     0.9903,
+     0.989
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_code_01",
+    "layer_f1": [
+     0.9601,
+     0.949
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_code_02",
+    "layer_f1": [
+     0.993,
+     0.9921
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_code_03",
+    "layer_f1": [
+     0.9968,
+     0.9968
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_code_04",
+    "layer_f1": [
+     0.9562,
+     0.9553
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_prose_00",
+    "layer_f1": [
+     0.9833,
+     0.9797
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_prose_01",
+    "layer_f1": [
+     0.9971,
+     0.9933
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_prose_02",
+    "layer_f1": [
+     0.9908,
+     0.9938
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_prose_03",
+    "layer_f1": [
+     1.0,
+     0.9972
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_prose_04",
+    "layer_f1": [
+     1.0,
+     0.9977
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "progit_ru_table_00",
+    "layer_f1": [
+     0.9967,
+     0.9907
+    ],
+    "table_cells": [
+     42,
+     53
+    ]
+   }
+  ],
+  "0.9": {
+   "taken": [
+    "latex_baldin_ru_code_00",
+    "latex_baldin_ru_code_01",
+    "latex_baldin_ru_code_04",
+    "latex_baldin_ru_prose_03",
+    "latex_baldin_ru_table_02"
+   ],
+   "recovered": {
+    "98": 6,
+    "95": 17,
+    "90": 25
+   },
+   "code": {
+    "code_exact": 5,
+    "code_whitespace": 9,
+    "code_blocks": 17
+   }
+  },
+  "0.92": {
+   "taken": [
+    "latex_baldin_ru_code_00",
+    "latex_baldin_ru_code_01",
+    "latex_baldin_ru_code_04",
+    "latex_baldin_ru_prose_03",
+    "latex_baldin_ru_table_02"
+   ],
+   "recovered": {
+    "98": 6,
+    "95": 17,
+    "90": 25
+   },
+   "code": {
+    "code_exact": 5,
+    "code_whitespace": 9,
+    "code_blocks": 17
+   }
+  },
+  "0.95": {
+   "taken": [
+    "latex_baldin_ru_code_00",
+    "latex_baldin_ru_code_01",
+    "latex_baldin_ru_code_02",
+    "latex_baldin_ru_code_03",
+    "latex_baldin_ru_code_04",
+    "latex_baldin_ru_prose_00",
+    "latex_baldin_ru_prose_01",
+    "latex_baldin_ru_prose_02",
+    "latex_baldin_ru_prose_03",
+    "latex_baldin_ru_prose_04",
+    "latex_baldin_ru_table_00",
+    "latex_baldin_ru_table_01",
+    "latex_baldin_ru_table_02",
+    "latex_baldin_ru_table_03"
+   ],
+   "recovered": {
+    "98": 9,
+    "95": 20,
+    "90": 28
+   },
+   "code": {
+    "code_exact": 5,
+    "code_whitespace": 9,
+    "code_blocks": 17
+   }
+  }
+ },
+ "postgres_ru_cuts": {
+  "cuts": [
+   {
+    "cut": "postgres_ru_code_00",
+    "layer_f1": [
+     0.9221,
+     0.9221
+    ],
+    "table_cells": [
+     82,
+     64
+    ]
+   },
+   {
+    "cut": "postgres_ru_code_01",
+    "layer_f1": [
+     0.8149,
+     0.8141
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_code_02",
+    "layer_f1": [
+     0.9028,
+     0.902
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_code_03",
+    "layer_f1": [
+     0.9703,
+     0.9703
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_code_04",
+    "layer_f1": [
+     0.9386,
+     0.9386
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_prose_00",
+    "layer_f1": [
+     0.8809,
+     0.8809
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_prose_01",
+    "layer_f1": [
+     0.9017,
+     0.9028
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_prose_02",
+    "layer_f1": [
+     0.8728,
+     0.8728
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_prose_03",
+    "layer_f1": [
+     0.8897,
+     0.8864
+    ],
+    "table_cells": [
+     12,
+     16
+    ]
+   },
+   {
+    "cut": "postgres_ru_prose_04",
+    "layer_f1": [
+     0.9689,
+     0.9689
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "postgres_ru_table_00",
+    "layer_f1": [
+     0.971,
+     0.9705
+    ],
+    "table_cells": [
+     66,
+     69
+    ]
+   },
+   {
+    "cut": "postgres_ru_table_01",
+    "layer_f1": [
+     0.9712,
+     0.9729
+    ],
+    "table_cells": [
+     18,
+     21
+    ]
+   },
+   {
+    "cut": "postgres_ru_table_02",
+    "layer_f1": [
+     0.9518,
+     0.9576
+    ],
+    "table_cells": [
+     26,
+     30
+    ]
+   },
+   {
+    "cut": "postgres_ru_table_03",
+    "layer_f1": [
+     0.8975,
+     0.9242
+    ],
+    "table_cells": [
+     29,
+     46
+    ]
+   },
+   {
+    "cut": "postgres_ru_table_04",
+    "layer_f1": [
+     0.9495,
+     0.955
+    ],
+    "table_cells": [
+     72,
+     81
+    ]
+   }
+  ],
+  "0.9": {
+   "taken": [
+    "postgres_ru_table_03"
+   ],
+   "recovered": {
+    "98": 13,
+    "95": 14,
+    "90": 14
+   },
+   "code": {
+    "code_exact": 8,
+    "code_whitespace": 17,
+    "code_blocks": 20
+   }
+  },
+  "0.92": {
+   "taken": [
+    "postgres_ru_prose_01",
+    "postgres_ru_table_03"
+   ],
+   "recovered": {
+    "98": 13,
+    "95": 14,
+    "90": 14
+   },
+   "code": {
+    "code_exact": 8,
+    "code_whitespace": 17,
+    "code_blocks": 20
+   }
+  },
+  "0.95": {
+   "taken": [
+    "postgres_ru_prose_01",
+    "postgres_ru_table_03",
+    "postgres_ru_table_04"
+   ],
+   "recovered": {
+    "98": 12,
+    "95": 14,
+    "90": 14
+   },
+   "code": {
+    "code_exact": 8,
+    "code_whitespace": 17,
+    "code_blocks": 20
+   }
+  }
+ },
+ "ares_cuts": {
+  "cuts": [
+   {
+    "cut": "ares_en_prose_00",
+    "layer_f1": [
+     0.943,
+     0.9352
+    ],
+    "table_cells": [
+     133,
+     138
+    ]
+   },
+   {
+    "cut": "ares_en_prose_01",
+    "layer_f1": [
+     0.9314,
+     0.9314
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "ares_en_prose_02",
+    "layer_f1": [
+     0.9514,
+     0.9514
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "ares_en_prose_03",
+    "layer_f1": [
+     0.9486,
+     0.9518
+    ],
+    "table_cells": [
+     0,
+     0
+    ]
+   },
+   {
+    "cut": "ares_en_prose_04",
+    "layer_f1": [
+     0.9217,
+     0.8929
+    ],
+    "table_cells": [
+     133,
+     138
+    ]
+   }
+  ],
+  "0.9": {
+   "taken": [],
+   "recovered": {
+    "98": 1,
+    "95": 2,
+    "90": 3
+   },
+   "code": {
+    "code_exact": 0,
+    "code_whitespace": 0,
+    "code_blocks": 0
+   }
+  },
+  "0.92": {
+   "taken": [],
+   "recovered": {
+    "98": 1,
+    "95": 2,
+    "90": 3
+   },
+   "code": {
+    "code_exact": 0,
+    "code_whitespace": 0,
+    "code_blocks": 0
+   }
+  },
+  "0.95": {
+   "taken": [
+    "ares_en_prose_03"
+   ],
+   "recovered": {
+    "98": 2,
+    "95": 3,
+    "90": 4
+   },
+   "code": {
+    "code_exact": 0,
+    "code_whitespace": 0,
+    "code_blocks": 0
+   }
+  }
+ }
+}

@@ -144,12 +144,49 @@ def test_create_rejects_bad_name_and_url(client):
     assert bad_url.status_code == 422
 
 
-def test_update_rejects_unreachable_status(client):
-    r = client.put(
-        "/v1/mcp_integration/1",
-        json={"url": "https://a.com/mcp", "status": "unreachable"},
-    )
-    assert r.status_code == 422
+def _row(**kwargs):
+    defaults = {"url": "https://a.com/mcp", "status": McpStatus.active, "allowed_tools": ["search"],
+                "timeout_s": 30, "max_result_chars": 4000, "tool_schemas": {"search": {}},
+                "auth": {"type": "bearer", "token_env": "SOME_TOKEN"}}
+    return SimpleNamespace(**{**defaults, **kwargs})
+
+
+def test_an_update_keeps_what_the_body_leaves_out():
+    from api.v1.mcp_integration import McpIntegrationUpdateRequest, apply_update
+
+    row = _row()
+    apply_update(row, McpIntegrationUpdateRequest(status="disabled"))
+    assert row.status == McpStatus.disabled
+    assert row.auth == {"type": "bearer", "token_env": "SOME_TOKEN"}
+    assert row.allowed_tools == ["search"]
+    assert row.tool_schemas == {"search": {}}
+
+
+def test_the_body_get_returned_goes_back_unchanged():
+    from api.v1.mcp_integration import McpIntegrationUpdateRequest, apply_update
+
+    row = _row(status=McpStatus.unreachable, auth=None)
+    apply_update(row, McpIntegrationUpdateRequest(url="https://a.com/mcp", status="unreachable", timeout_s=60))
+    assert row.status == McpStatus.unreachable
+    assert row.timeout_s == 60
+
+
+def test_a_new_url_drops_the_old_servers_tool_schemas():
+    from api.v1.mcp_integration import McpIntegrationUpdateRequest, apply_update
+
+    row = _row(auth=None)
+    apply_update(row, McpIntegrationUpdateRequest(url="https://b.com/mcp"))
+    assert row.url == "https://b.com/mcp"
+    assert row.tool_schemas == {}
+
+
+def test_a_row_with_a_secret_keeps_its_host():
+    from api.v1.mcp_integration import McpIntegrationUpdateRequest, apply_update
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as caught:
+        apply_update(_row(), McpIntegrationUpdateRequest(url="https://b.com/mcp"))
+    assert caught.value.status_code == 409
 
 
 def test_create_rejects_double_underscore_name(client):

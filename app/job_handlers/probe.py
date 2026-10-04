@@ -13,7 +13,7 @@ from .card import converter_hold
 
 
 def _file(source: DataSource, wanted: str | None):
-    root, gathered, _, _ = intake_fetch.gather(source, FETCHED / source.name, ROOT)
+    root, gathered, *_ = intake_fetch.gather(source, FETCHED / source.name, ROOT)
     named, _ = intake_fetch.named_files(root, gathered, FETCHED / source.name)
     pdfs = {rel: file for file, rel in named.items() if file.suffix.lower() == ".pdf"}
     if wanted:

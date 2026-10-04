@@ -22,6 +22,15 @@ class Preregistration(Base):
     # floor, veto, stop rules, price, expectations: kept verbatim, not parsed
     declared: Mapped[dict] = mapped_column(JSONB, default=dict)
     closed_with: Mapped[dict | None] = mapped_column(JSONB, default=None)
+    # every close asked before the promise was settled, refused ones included
+    attempts: Mapped[list] = mapped_column(JSONB, default=list)
 
     def __repr__(self) -> str:
         return f"Preregistration(name={self.name!r})"
+
+
+def preregistered(session, name: str) -> bool:
+    from sqlalchemy import select
+
+    return session.scalar(select(Preregistration.id).where(Preregistration.name == name)) is not None
+

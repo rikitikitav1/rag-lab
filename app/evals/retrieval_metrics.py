@@ -3,57 +3,15 @@ import sys
 import logging_setup
 from corpus_keys import Gold
 from evals.loaders import load_logs, reference_leaves
+from gold_match import rank_of_gold, rank_of_gold_section
 from models.registry import Pipeline
 from sqlalchemy.exc import SQLAlchemyError
 
 log = logging_setup.get_logger(__name__)
 
 
-# an older mark is a path fragment and matches by containment, an exact gold by its file: hit@k stands on this
-def rank_of_gold(sources, gold) -> int | None:
-    gold = Gold.coerce(gold)
-    return next((i for i, s in enumerate(sources, 1) if gold.holds_file(s)), None)
-
-
 # 6 scores a section only where the corpus has one; 5 added the axes; 4 added `file_precision`
 SCHEMA = 7
-
-
-# the pair the standard takes as an id, collapsed as `ranked_lists` does: one metric, one spelling
-def section_ids(chunks) -> list[tuple[str, str | None]]:
-    from use_cases.retrieval_compare import heading_text
-
-    out = []
-    for c in (chunks or []):
-        if not c:
-            continue
-        key = (c["source"], heading_text(c.get("section")))
-        if key not in out:
-            out.append(key)
-    return out
-
-
-# the gold section by its own rank, so a chunk of the right file in the wrong section is not a hit
-def rank_of_gold_section(chunks, gold, gold_heading=None) -> int | None:
-    from use_cases.retrieval_compare import rank_of_section
-
-    gold = Gold.coerce(gold)
-    if not gold.exact:
-        return rank_of_section(section_ids(chunks), gold, gold_heading)
-    return rank_of_exact_section([c for c in (chunks or []) if c], gold)
-
-
-# an exact gold ranks the distinct sections by their whole path, a sub-section of the gold counting as it
-def rank_of_exact_section(chunks, gold: Gold) -> int | None:
-    seen = []
-    for c in chunks:
-        key = (c["source"], c.get("section"))
-        if key in seen:
-            continue
-        seen.append(key)
-        if gold.holds_section(key[0], key[1], c.get("versions")):
-            return len(seen)
-    return None
 
 
 # what share of the files retrieval reached were gold; the same population `hit@k` ranks
@@ -96,9 +54,10 @@ def _gold_headings(logs) -> dict[int, str]:
 # scorable where the corpus has that section, keyed by the python object and not by a column
 def _scorable_sections(in_corpus, golds) -> set[int]:
     from orm.sync_db import engine
-    from use_cases.retrieval_compare import section_exists
 
-    wanted = [ql for ql in in_corpus if ql.chunks and (_gold(ql).exact or golds.get(ql.question_id))]
+    from db import section_exists
+
+    wanted = [ql for ql in in_corpus if ql.chunks and (gold_of(ql).exact or golds.get(ql.question_id))]
     if not wanted:
         return set()
     try:
@@ -109,7 +68,7 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
                 if section_exists(
                     conn,
                     ((ql.metrics or {}).get("config") or {}).get("variant"),
-                    _gold(ql),
+                    gold_of(ql),
                     golds.get(ql.question_id),
                 )
             }
@@ -121,7 +80,7 @@ def _scorable_sections(in_corpus, golds) -> set[int]:
 
 def evaluate(run_name=None):
     logs = load_logs(run_name)
-    in_corpus = [ql for ql in logs if ql.question and _gold(ql)]
+    in_corpus = [ql for ql in logs if ql.question and gold_of(ql)]
 
     hits, rr_sum, misses = 0, 0.0, []
     rr_in_hop, found_at_hop, hop_unknown, in_hop_n = 0.0, {}, 0, 0
@@ -131,7 +90,7 @@ def evaluate(run_name=None):
     scorable = _scorable_sections(in_corpus, golds)
     per_row = []
     for ql in in_corpus:
-        expected = _gold(ql)
+        expected = gold_of(ql)
         # the section axes see what the gate left; the file axes see what search found, gate aside
         gold_heading = golds.get(ql.question_id)
         section_rank = None
@@ -194,7 +153,7 @@ def evaluate(run_name=None):
     }
 
 
-def _gold(ql) -> Gold | None:
+def gold_of(ql) -> Gold | None:
     return Gold.of_question(ql.question)
 
 

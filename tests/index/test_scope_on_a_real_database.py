@@ -1,17 +1,18 @@
+import corpus_search
+import search_scope
+import text_language
 from real_db import pytestmark  # noqa: F401
 from sqlalchemy import text
 
 
 # the scope is a sql predicate, so its versions and sources are read against rows, not against its text
 def _count(conn, scope) -> int:
-    import db as stand
 
-    clause, params = stand._scope_filter(scope)
+    clause, params = corpus_search._scope_filter(scope)
     return conn.execute(text(f"SELECT count(*) FROM data_chunks WHERE variant = 'v' {clause}"), params).scalar()
 
 
 def test_no_version_reads_the_newest_and_a_version_reads_only_its_own(db):
-    import db as stand
 
     with db.connect() as c:
         c.execute(text("TRUNCATE data_sources CASCADE"))
@@ -25,10 +26,11 @@ def test_no_version_reads_the_newest_and_a_version_reads_only_its_own(db):
                 {"s": source, "i": i, "vs": versions},
             )
     with db.connect() as c:
-        assert _count(c, stand.Scope()) == 2, "18 with 17 and the rolling book; the 17-only row waits for a version"
-        assert _count(c, stand.Scope(label="postgresql", version="18")) == 2, "18 and the rolling book"
-        assert _count(c, stand.Scope(label="postgresql", version="17")) == 3
-        assert _count(c, stand.Scope(sources=("book",))) == 1
+        said = "18 with 17 and the rolling book; the 17-only row waits for a version"
+        assert _count(c, search_scope.Scope()) == 2, said
+        assert _count(c, search_scope.Scope(label="postgresql", version="18")) == 2, "18 and the rolling book"
+        assert _count(c, search_scope.Scope(label="postgresql", version="17")) == 3
+        assert _count(c, search_scope.Scope(sources=("book",))) == 1
 
 
 def test_the_index_cuts_no_row_that_is_not_accepted_and_empties_no_source_that_yields_nothing(db, monkeypatch):
@@ -83,7 +85,9 @@ def test_a_mark_no_searched_chunk_holds_is_named_and_a_folder_mark_is_held(db, m
                 " VALUES (1, 'pg/docs/locks.md', 'c', 0, 'en', 'v')"
             )
         )
-    monkeypatch.setattr(stand, "engine", db)
+    engine = db
+    monkeypatch.setattr(stand, "engine", engine)
+    monkeypatch.setattr(corpus_search, "engine", engine)
 
     assert stand.unreachable_marks(["pg/docs", "pg/docs/locks.md", "pg/nope.md"], variant="v") == ["pg/nope.md"]
 
@@ -108,9 +112,11 @@ def test_the_versions_held_are_the_ones_an_active_source_holds(db, monkeypatch):
                 ),
                 {"s": source, "vs": versions},
             )
-    monkeypatch.setattr(stand, "engine", db)
+    engine = db
+    monkeypatch.setattr(stand, "engine", engine)
+    monkeypatch.setattr(corpus_search, "engine", engine)
 
-    assert stand.versions_held("v") == {"postgresql": ["17"]}
+    assert corpus_search.versions_held("v") == {"postgresql": ["17"]}
 
 
 # a scan cut at ef_search sees only the big source's neighbours; a search narrowed to the small one still finds its own
@@ -149,13 +155,15 @@ def test_a_search_narrowed_to_one_source_finds_its_vectors_past_the_scans_depth(
             c.execute(text(f'ALTER DATABASE "{db.url.database}" SET {setting} = off'))
     db.dispose()
     # the stand's search sets its scan with SET LOCAL, which an autocommit connection would drop at once
-    monkeypatch.setattr(stand, "engine", db.execution_options(isolation_level="READ COMMITTED"))
-    monkeypatch.setattr(stand, "_ts_config", lambda *a, **kw: "english")
+    engine = db.execution_options(isolation_level="READ COMMITTED")
+    monkeypatch.setattr(stand, "engine", engine)
+    monkeypatch.setattr(corpus_search, "engine", engine)
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
     query = [1.0, 0.0, *([0.0] * 1022)]
 
     try:
-        hits = stand.hybrid_search(
-            "zzzq", str(query), stand.Scope(sources=("small",)), variant="v", ef_search=10, embedded_by="m",
+        hits = corpus_search.hybrid_search(
+            "zzzq", str(query), search_scope.Scope(sources=("small",)), variant="v", ef_search=10, embedded_by="m",
             distance_threshold=0.5, limit_vector=5, limit=5,
         )
     finally:
@@ -170,7 +178,6 @@ def test_a_search_narrowed_to_one_source_finds_its_vectors_past_the_scans_depth(
 def test_a_carried_over_tag_in_capitals_is_found_by_its_label_after_the_migration(db):
     from pathlib import Path
 
-    import db as stand
 
     migration = next((Path(__file__).resolve().parents[2] / "db" / "migrations").glob("*_a_tag_is_lowercase_*.sql"))
     up = migration.read_text().split("-- migrate:down")[0]
@@ -183,9 +190,9 @@ def test_a_carried_over_tag_in_capitals_is_found_by_its_label_after_the_migratio
                 " VALUES (1, 's', 'c', 0, 'en', 'v', ARRAY['cheatsheets', 'README'])"
             )
         )
-        assert _count(c, stand.Scope(label="README")) == 0
+        assert _count(c, search_scope.Scope(label="README")) == 0
         c.execute(text(up))
-        assert _count(c, stand.Scope(label="README")) == 1
+        assert _count(c, search_scope.Scope(label="README")) == 1
 
 
 # a version no searched source holds is refused, and the newest clause asks for a strict scan once an older one is in
@@ -204,12 +211,14 @@ def test_an_unheld_version_refuses_and_an_older_one_in_search_turns_the_scan_str
                 " versions) VALUES (1, 's', 'c', 0, 'postgresql', 'en', 'v', ARRAY['18'])"
             )
         )
-    monkeypatch.setattr(stand, "engine", db)
+    engine = db
+    monkeypatch.setattr(stand, "engine", engine)
+    monkeypatch.setattr(corpus_search, "engine", engine)
 
-    stand.refuse_unheld_version(stand.Scope(label="postgresql", version="18"), "v")
+    corpus_search.refuse_unheld_version(search_scope.Scope(label="postgresql", version="18"), "v")
     with pytest.raises(ScopeRefused, match="no source in search holds postgresql 17"):
-        stand.refuse_unheld_version(stand.Scope(label="postgresql", version="17"), "v")
-    assert stand.older_versions_held("v") is False
+        corpus_search.refuse_unheld_version(search_scope.Scope(label="postgresql", version="17"), "v")
+    assert corpus_search.older_versions_held("v") is False
 
     with db.connect() as c:
         c.execute(
@@ -218,13 +227,14 @@ def test_an_unheld_version_refuses_and_an_older_one_in_search_turns_the_scan_str
                 " versions) VALUES (1, 's', 'c', 1, 'postgresql', 'en', 'v', ARRAY['17'])"
             )
         )
-    assert stand.older_versions_held("v") is True
-    assert stand.filtered_scan(stand.Scope(), "off", older_held=True) == "strict_order"
-    assert stand.filtered_scan(stand.Scope(), "off") == "off"
+    assert corpus_search.older_versions_held("v") is True
+    assert corpus_search.filtered_scan(search_scope.Scope(), "off", older_held=True) == "strict_order"
+    assert corpus_search.filtered_scan(search_scope.Scope(), "off") == "off"
 
 
-# a chunk whose text another source holds word for word is counted, past the prefix each source puts before it
+# a long body another source holds word for word is counted past each prefix; a short shared one is an echo, not a copy
 def test_a_body_another_source_holds_is_counted_across_sources(db, monkeypatch):
+    from corpus_keys import body_hash
     from sqlalchemy.orm import sessionmaker
     from use_cases import ingest_quality
 
@@ -233,14 +243,68 @@ def test_a_body_another_source_holds_is_counted_across_sources(db, monkeypatch):
         for sid, name in ((1, "a"), (2, "b")):
             c.execute(text("INSERT INTO data_sources (id, name, kind, stage) VALUES (:i, :n, 'local', 'accepted')"),
                       {"i": sid, "n": name})
-        rows = [(1, "a/x.md", "A > X\nshared body", 6, 0), (1, "a/y.md", "own body", 0, 1),
-                (2, "b/z.md", "B > Z\nshared body", 6, 0)]
+        shared = "a shared body two sources hold word for word. " * 5
+        rows = [(1, "a/x.md", "A > X\n" + shared, 6, 0), (1, "a/y.md", "own body", 0, 1),
+                (2, "b/z.md", "B > Z\n" + shared, 6, 0), (2, "b/w.md", "own body", 0, 1)]
         for sid, src, content, prefix, idx in rows:
             c.execute(text("INSERT INTO data_chunks (source_id, source, content, prefix_len, chunk_index, language,"
-                           " variant) VALUES (:s, :src, :c, :p, :i, 'en', 'clean_1024')"),
-                      {"s": sid, "src": src, "c": content, "p": prefix, "i": idx})
+                           " variant, content_hash) VALUES (:s, :src, :c, :p, :i, 'en', 'clean_1024', :h)"),
+                      {"s": sid, "src": src, "c": content, "p": prefix, "i": idx, "h": body_hash(content[prefix:])})
         c.commit()
     monkeypatch.setattr(ingest_quality, "Session", sessionmaker(bind=db))
 
     assert ingest_quality.dup_across_sources("a", "clean_1024") == {
         "chunks": 2, "shared": 1, "share": 0.5, "with": {"b": 1}}
+
+
+# a text one source holds under several files takes one place when the knob is on, and every place when it is off
+def test_copies_of_a_text_in_one_source_collapse_only_when_asked(db, monkeypatch):
+    import config
+
+    import db as stand
+
+    def vector(lean: float) -> str:
+        return str([1.0, lean, *([0.0] * 1022)])
+
+    with db.connect() as c:
+        c.execute(text("TRUNCATE data_sources CASCADE"))
+        c.execute(
+            text(
+                "INSERT INTO data_sources (id, name, kind, stage, active)"
+                " VALUES (1, 'man', 'git', 'accepted', true), (2, 'other', 'git', 'accepted', true)"
+            )
+        )
+        rows = [
+            (1, "man/ls.1", "h1", 0.0), (1, "man/dir.1", "h1", 0.01), (1, "man/vdir.1", "h1", 0.02),
+            (2, "other/ls.md", "h1", 0.03), (1, "man/cp.1", "h2", 0.04),
+        ]
+        for i, (source_id, source, content_hash, lean) in enumerate(rows):
+            c.execute(
+                text(
+                    "INSERT INTO data_chunks (source_id, source, content, content_hash, chunk_index, language,"
+                    " variant, embedding, embedded_by)"
+                    " VALUES (:s, :src, :c, :h, :i, 'en', 'v', CAST(:e AS vector), 'm')"
+                ),
+                {"s": source_id, "src": source, "c": "x" * 300, "h": content_hash, "i": i, "e": vector(lean)},
+            )
+        c.commit()
+    engine = db.execution_options(isolation_level="READ COMMITTED")
+    monkeypatch.setattr(stand, "engine", engine)
+    monkeypatch.setattr(corpus_search, "engine", engine)
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
+    query = str([1.0, 0.0, *([0.0] * 1022)])
+
+    def sources() -> list[str]:
+        hits = corpus_search.hybrid_search(
+            "zzzq", query, None, variant="v", exact=True, embedded_by="m", distance_threshold=1.0, limit=4,
+        )
+        return [h.source for h in hits]
+
+    assert sources() == ["man/ls.1", "man/dir.1", "man/vdir.1", "other/ls.md"]
+    monkeypatch.setattr(config.settings.retrieval, "collapse_copies_in_source", True)
+    assert sources() == ["man/ls.1", "other/ls.md", "man/cp.1"]
+    # a body under the shared-text length is no copy: "See also" in two files stays twice
+    with db.connect() as c:
+        c.execute(text("UPDATE data_chunks SET content = 'short'"))
+        c.commit()
+    assert sources() == ["man/ls.1", "man/dir.1", "man/vdir.1", "other/ls.md"]

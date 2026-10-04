@@ -6,13 +6,13 @@ import llm
 import logging_setup
 import prompt_repo
 from corpus_keys import VETO_CUT_FROM, leaf_of
+from gold_match import clean_gold, heading_text
 from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
 from sources import files
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from use_cases.retrieval_compare import clean_gold, heading_text
 
 import db
 
@@ -165,8 +165,6 @@ def _already_asked(session, set_name: str) -> set[int]:
     )
 
 
-
-
 def build(
     seed: str,
     set_name: str = "veto_v1",
@@ -176,7 +174,7 @@ def build(
 ) -> dict:
     if not seed:
         raise ValueError(f"set '{set_name}' needs a seed to be reproducible")
-    variants = variants or ["baseline", cut_from]
+    variants = variants or [cut_from]
     rows = plan(seed, variants, cut_from, quotas)
     counted = {"planned": len(rows), "asked": 0, "written": 0}
     with Session() as session:

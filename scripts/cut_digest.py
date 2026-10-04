@@ -1,5 +1,6 @@
 """Does a variant still cut into the rows it holds?"""
 
+import difflib
 import hashlib
 import json
 import sys
@@ -16,7 +17,7 @@ def digest(value: str) -> str:
     return hashlib.md5(value.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
-# keyed by file and position: the same texts in another order is still a changed cut
+# keyed by file and position; the comparison reads the order of a file's texts, not the numbers
 def stored(variant: str) -> dict[tuple[str, str, int], str]:
     with Session() as session:
         rows = session.execute(
@@ -39,17 +40,38 @@ def freshly_cut(variant: str) -> dict[tuple[str, str, int], str]:
     return out
 
 
+# a file's chunks in their order: a renumbering with the same texts in the same order is the same cut
+def _by_file(chunks: dict[tuple[str, str, int], str]) -> dict[tuple[str, str], list[str]]:
+    files: dict[tuple[str, str], list[tuple[int, str]]] = {}
+    for (name, src, idx), value in chunks.items():
+        files.setdefault((name, src), []).append((idx, value))
+    return {key: [value for _, value in sorted(rows)] for key, rows in files.items()}
+
+
 def compare(variant: str) -> dict:
-    was, now = stored(variant), freshly_cut(variant)
-    moved = {k for k in was.keys() | now.keys() if was.get(k) != now.get(k)}
+    was, now = _by_file(stored(variant)), _by_file(freshly_cut(variant))
+    counts = {"gone": 0, "new": 0, "changed": 0}
+    moved = set()
+    for key in was.keys() | now.keys():
+        a, b = was.get(key, []), now.get(key, [])
+        if a == b:
+            continue
+        moved.add(key)
+        for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+            if op == "delete":
+                counts["gone"] += i2 - i1
+            elif op == "insert":
+                counts["new"] += j2 - j1
+            elif op == "replace":
+                counts["changed"] += max(i2 - i1, j2 - j1)
     return {
         "variant": variant,
         "sources": len({k[0] for k in was}),
         "sources_differing": len({k[0] for k in moved}),
         "files_differing": len({k[1] for k in moved}),
-        "chunks_gone": sum(1 for k in moved if k not in now),
-        "chunks_new": sum(1 for k in moved if k not in was),
-        "chunks_changed": sum(1 for k in moved if k in was and k in now),
+        "chunks_gone": counts["gone"],
+        "chunks_new": counts["new"],
+        "chunks_changed": counts["changed"],
         "differing": sorted({k[0] for k in moved})[:20],
     }
 

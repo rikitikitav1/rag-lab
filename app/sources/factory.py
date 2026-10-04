@@ -4,15 +4,7 @@ from pathlib import Path
 
 import config
 import logging_setup
-from sources import (  # noqa: F401
-    arangodb_docs,
-    cheatsheets,
-    converted,
-    files,
-    interview,
-    redis_docs,
-    system_design_primer,
-)
+from sources import converted, files  # noqa: F401
 from sources.base import Base
 from sources.declaration import Declaration
 

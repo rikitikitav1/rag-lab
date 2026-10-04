@@ -7,9 +7,9 @@ import engines.ollama
 import llm
 import logging_setup
 import token_fields
+import vocabulary
 from errors import StandFault
 from langchain_core.tools import StructuredTool
-from use_cases import agent_policy as policy
 from use_cases import chat
 
 log = logging_setup.get_logger(__name__)
@@ -161,7 +161,7 @@ def invoke(question: str, system: str, ctx: dict, result) -> None:
     result.chunks = chunks
     result.hops = len(replies)
     # a bare `create_agent` has no edge of ours to record, and a silent gap reads as a fault
-    result.finished_by = str(policy.FinishedBy.unrecorded)
+    result.finished_by = str(vocabulary.FinishedBy.unrecorded)
     result.text = str(replies[-1].content) if replies else ""
     result.success = bool(result.text)
     for reply in replies:

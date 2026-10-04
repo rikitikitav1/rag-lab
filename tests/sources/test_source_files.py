@@ -54,7 +54,7 @@ def test_the_seed_rows_unroll_a_family_and_keep_a_folder(found):
     import seed
 
     rows = {r["name"]: r for r in seed._source_rows(found)}
-    assert len(rows) == 8 + 173
+    assert len(rows) == 9 + 173
     assert rows["arangodb-docs"]["kind"] == "local" and rows["arangodb-docs"]["path"].endswith("arangodb/3.12")
     assert rows["nginx-org-ru"]["kind"] == "pages" and rows["nginx-org-ru"]["language"] == "ru"
     assert rows["eloquent-javascript"]["kind"] == "urls" and rows["eloquent-javascript"]["git_url"] is None
@@ -140,11 +140,26 @@ def test_the_report_names_moved_files_with_their_variants_and_orphans(found, pre
     )
     assert report == {
         "moved": {"redis-doc": ["clean_1024"]},
+        "fields": {},
         "orphaned": ["renamed-away"],
         "unrecorded": 1,
     }
     ok, said = preflight.source_files_verdict(report)
     assert not ok and "redis-doc: clean_1024" in said and "renamed-away" in said
+
+
+# a field left at its default is not in the digest, and a moved digest names the fields it was cut by otherwise
+def test_a_new_default_field_moves_no_digest_and_a_moved_one_names_its_fields(found, preflight):
+    sheets = found["cheatsheets"]
+    assert files.digest(sheets.model_copy(update={"markup": None, "skip_paths": []})) == files.digest(sheets)
+    was = files.cut_rules(sheets)
+    moved = sheets.model_copy(update={"skip_paths": ["old/*"]})
+    report = files.drift_report(
+        [("cheatsheets", {"v": files.digest(sheets)}, _declared(moved), {"v": was})]
+    )
+    assert report["moved"] == {"cheatsheets": ["v"]} and report["fields"] == {"cheatsheets": ["skip_paths"]}
+    ok, said = preflight.source_files_verdict(report)
+    assert not ok and "(by skip_paths)" in said
 
 
 def test_a_row_whose_declaration_drifts_is_named_by_the_base(monkeypatch):
@@ -204,3 +219,11 @@ def test_versions_without_the_newest_refuse():
     )
     with pytest.raises(ValueError, match="lack postgresql's newest 18"):
         files._refuse_unmapped({"pg17": older})
+
+
+# the hand-written notes declare their trust: with the readers gone nothing else names them notes
+def test_the_notes_sources_declare_their_trust(found):
+    from use_cases.dedup import source_trust
+
+    for name in ("interview", "cheatsheets", "system-design-primer"):
+        assert source_trust(found[name].model_dump(mode="json", exclude_none=True)) == "notes", name

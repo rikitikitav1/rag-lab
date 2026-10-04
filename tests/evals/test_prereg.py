@@ -133,7 +133,7 @@ def test_cleared_is_always_a_value_with_its_reason():
 def test_a_closing_run_under_a_promise_that_does_not_exist_is_refused(monkeypatch):
     import job_queue
 
-    monkeypatch.setattr(prereg, "exists", lambda name: name == "mr4_sgr")
+    monkeypatch.setattr(job_queue, "_preregistered", lambda name: name == "mr4_sgr")
     with pytest.raises(job_specs.Refused, match="no preregistration named 'typo'"):
         job_queue._promise({"purpose": "closing", "prereg": "typo"})
     assert job_queue._promise({"purpose": "closing", "prereg": "mr4_sgr"}) == "mr4_sgr"
@@ -268,6 +268,7 @@ def test_a_declared_floor_value_is_the_bar_when_no_floor_run_is_named(monkeypatc
     monkeypatch.setattr(prereg, "_question_ids", lambda sets, language=None: set(range(50)))
     monkeypatch.setattr(prereg, "_rows", {"c": control, "a": arm}.get)
     monkeypatch.setattr(prereg, "_closed_with", lambda name, runs, result: None)
+    monkeypatch.setattr(prereg, "_made_under_or_refuse", lambda name, arms, runs: None)
     out = prereg.close("p", runs={"control": "c", "arm": "a"})
     assert out["bar"] == 0.18 and out["effect"]["ci95"][0] > 0.18 and out["cleared"] is True
     assert out["means"] == {"control": 6.0, "arm": 6.5}
@@ -290,6 +291,7 @@ def test_a_declared_draw_narrows_the_population_to_its_questions(monkeypatch):
     monkeypatch.setattr(prereg, "_question_ids", lambda sets, language=None: set(range(5)))
     monkeypatch.setattr(prereg, "_rows", {"c": control, "a": arm}.get)
     monkeypatch.setattr(prereg, "_closed_with", lambda name, runs, result: None)
+    monkeypatch.setattr(prereg, "_made_under_or_refuse", lambda name, arms, runs: None)
     assert prereg.close("p", runs={"control": "c", "arm": "a"})["n"] == 2
 
 
@@ -340,7 +342,7 @@ def test_a_one_arm_bar_is_declared_with_its_reading_and_not_beside_a_floor_value
 
 # a closed promise keeps the numbers it was read on, not only its word
 def test_a_closing_stores_the_level_it_was_read_on(monkeypatch):
-    row = SimpleNamespace(closed_with=None)
+    row = SimpleNamespace(closed_with=None, attempts=[])
 
     class _Session:
         def __enter__(self):
@@ -361,6 +363,67 @@ def test_a_closing_stores_the_level_it_was_read_on(monkeypatch):
     stored = prereg._closed_with("p", {"runs": {}, "measurements": {"arm": "m.json"}}, result)
     assert stored["read"] == 0.4328 and stored["bar"] == 0.9 and stored["n"] == 67
     assert "guards" not in stored and stored["measurements"] == {"arm": "m.json"}
+    assert [a["cleared"] for a in row.attempts] == [False]
+
+
+def _made_under(monkeypatch, jobs):
+    from datetime import UTC, datetime
+
+    row = SimpleNamespace(created_at=datetime(2026, 10, 2, 20, tzinfo=UTC), attempts=[])
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def scalar(self, query):
+            return row
+
+        def execute(self, query):
+            def row(i, p, h, purpose="closing"):
+                at = datetime(2026, 10, 2, h)
+                return SimpleNamespace(id=i, prereg=p, created_at=at, options={"purpose": purpose})
+
+            return SimpleNamespace(all=lambda: [row(*job) for job in jobs])
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(prereg, "Session", _Session)
+    return row
+
+
+# a closing picked from runs made before the promise, or under another one, is refused and kept as a try
+def test_a_promise_closes_only_on_runs_made_under_it(monkeypatch):
+    row = _made_under(monkeypatch, [(1, "p", 21), (2, None, 19)])
+    with pytest.raises(prereg.Refused, match=r"jobs \[2\]"):
+        prereg._made_under_or_refuse("p", {"arm": "serving"}, {"arm": "r"})
+    assert "refused" in row.attempts[0]
+    _made_under(monkeypatch, [(1, "p", 21)])
+    prereg._made_under_or_refuse("p", {"arm": "serving"}, {"arm": "r"})
+    with pytest.raises(prereg.Refused, match="declared no 'control'"):
+        prereg._made_under_or_refuse("p", {"arm": "serving"}, {"control": "r"})
+    _made_under(monkeypatch, [])
+    with pytest.raises(prereg.Refused, match="no eval_run"):
+        prereg._made_under_or_refuse("p", {"arm": "serving"}, {"arm": "r"})
+    _made_under(monkeypatch, [(1, "p", 21, "smoke")])
+    with pytest.raises(prereg.Refused, match=r"jobs \[1\]"):
+        prereg._made_under_or_refuse("p", {"arm": "serving"}, {"arm": "r"})
+
+
+# a run stopped part way is a prefix in source order: the bar is not read on it
+def test_a_one_arm_bar_is_not_read_on_a_run_that_asked_part_of_the_population(monkeypatch):
+    promise = {"closing": {"columns": ["faithfulness"], "arm_should": "raise", "bar": 5, "read_on": "point"},
+               "population": {"sets": ["s"]}, "guards": [], "vetoes": []}
+    monkeypatch.setattr(prereg, "read", lambda name: promise)
+    monkeypatch.setattr(prereg, "_question_ids", lambda sets, language=None: set(range(10)))
+    monkeypatch.setattr(prereg, "_rows", {"a": {q: _row(faithfulness="7") for q in range(6)}}.get)
+    monkeypatch.setattr(prereg, "_closed_with", lambda name, runs, result: None)
+    monkeypatch.setattr(prereg, "_made_under_or_refuse", lambda name, arms, runs: None)
+    out = prereg.close("p", runs={"arm": "a"})
+    assert out["cleared"] is None and out["asked"] == {"rows": 6, "declared": 10}
 
 
 # a guard pairs two arms: beside a one-arm bar it could never be read, and the promise would never close
@@ -383,3 +446,35 @@ def test_a_one_arm_bar_refuses_a_guard_at_the_door(monkeypatch):
     guard = {"column": "reader_answered", "must_not": "fall"}
     with pytest.raises(prereg.Refused, match="one-arm bar takes vetoes"):
         prereg.write("p", {"sets": ["smoke"]}, {"arm": "a"}, closing, [guard], {})
+
+
+# hit@5 counts distinct (source, section) pairs: two versions of one section are one candidate, not two
+def test_hit_at_5_counts_a_sections_copies_once():
+    gold = SimpleNamespace(gold={"file": "pg/gold.md", "section": "Gold > Part"}, marked_sources=[])
+
+    def row(sources):
+        chunks = [{"source": s, "section": f"{s} > S"} for s in sources]
+        return SimpleNamespace(question=gold, chunks=chunks, sources=None)
+
+    copies = ["pg/a.md", "pg/a.md", "pg/b.md", "pg/b.md", "pg/c.md", "pg/d.md", "pg/gold.md"]
+    assert columns.read("hit_at_5", row(copies)) == 1.0, "seven chunks, five distinct pairs, the gold the fifth"
+    assert columns.read("hit_at_5", row(["pg/a.md", "pg/b.md", "pg/c.md", "pg/d.md", "pg/e.md", "pg/gold.md"])) == 0.0
+    assert columns.read("hit_at_5", SimpleNamespace(question=None, chunks=[], sources=None)) is None
+
+
+# a twin is the evidence's text in a served chunk of another file; strict hits and rows without evidence read as before
+def test_twin_hit_counts_the_evidence_in_another_file_among_the_five():
+    def row(sources, texts, evidence="The limit is 20 by default."):
+        question = SimpleNamespace(gold={"file": "pg/gold.md", "section": "Gold > Part"}, marked_sources=[],
+                                   evidence=evidence)
+        chunks = [{"source": s, "section": f"{s} > S"} for s in sources]
+        return SimpleNamespace(question=question, chunks=chunks, contexts=texts, sources=None)
+
+    others = ["pg/a.md", "pg/b.md", "pg/c.md", "pg/d.md", "pg/e.md", "pg/twin.md"]
+    plain = ["text"] * 6
+    assert columns.read("twin_hit_at_5", row(others[:5], ["x", "the  limit is 20\nby default.", "x", "x", "x"])) == 1.0
+    assert columns.read("twin_hit_at_5", row(others, plain[:5] + ["The limit is 20 by default."])) == 0.0, (
+        "a twin past the fifth pair is a miss"
+    )
+    assert columns.read("twin_hit_at_5", row(["pg/gold.md"], ["x"])) == 1.0
+    assert columns.read("twin_hit_at_5", row(others[:5], plain[:5], evidence=None)) == 0.0

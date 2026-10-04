@@ -5,6 +5,7 @@ from pydantic import AfterValidator
 
 # what a door may accept, once: the same value was capped at four lengths across five doors
 MAX_RUN_NAME = 200
+MAX_SET_NAME = 200
 # every comparison walks every run named: without a cap one call asks for the table
 MAX_RUNS = 32
 MAX_QUESTION_IDS = 10000

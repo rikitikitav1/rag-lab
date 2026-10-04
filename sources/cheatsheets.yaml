@@ -6,7 +6,12 @@ git:
   repo: https://github.com/rstacruz/cheatsheets
   include:
   - '*.md'
-reader: cheatsheets
+# a sheet the site hides is not read; its category and tags label it
+skip_when_frontmatter:
+  category: Hidden
+tags_from_frontmatter:
+- category
+- tags
 skip:
 - AGENTS
 - CONTRIBUTING
@@ -32,3 +37,5 @@ skip_when_hygienic:
 veto_families:
 - name: cheatsheets
   prefix: cheatsheets/
+# hand-written notes: an official page holding the same text wins over this one
+trust: notes

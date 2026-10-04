@@ -14,6 +14,16 @@ def stamp_in_a_temp_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(version, "SAID", tmp_path / "worker.stamp")
 
 
+# a finished job is announced on the stand's own database; a test that means the notice takes the real one back
+@pytest.fixture(autouse=True)
+def quiet_announcements(monkeypatch):
+    import job_queue
+
+    real = job_queue.announce_finished
+    monkeypatch.setattr(job_queue, "announce_finished", lambda ids: None)
+    return real
+
+
 # every stamp reads each ollama model's parameters and the server's version; a test that means them patches its own
 @pytest.fixture(autouse=True)
 def no_ollama_reads(monkeypatch):
@@ -33,8 +43,13 @@ def client(monkeypatch):
     from fastapi.testclient import TestClient
     from orm.async_db import get_session
 
+    # no database: a door that hands its work to a use case through `run_sync` reaches it with no session
+    class _NoSession:
+        async def run_sync(self, fn, *args):
+            return fn(None, *args)
+
     async def _dummy_session():
-        yield None
+        yield _NoSession()
 
     server.app.dependency_overrides[get_session] = _dummy_session
     with TestClient(server.app) as c:

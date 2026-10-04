@@ -1,7 +1,9 @@
 from typing import Annotated, Literal
 
 import config
+import corpus_search
 import logging_setup
+import search_scope
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models.registry import Pipeline
@@ -9,8 +11,6 @@ from pydantic import BaseModel, Field
 from search_scope import MAX_SOURCES
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import agent, card_wait, chat
-
-import db
 
 log = logging_setup.get_logger(__name__)
 
@@ -34,16 +34,16 @@ def _check_text(value: str, field: str) -> None:
 
 def _safe_category(category: str | None) -> str | None:
     try:
-        db.refuse_bad_category(category)
+        search_scope.refuse_bad_category(category)
     except ValueError as e:
         raise ToolError(str(e)) from e
     return category
 
 
-def _safe_scope(category: str | None, sources: list[str] | None, version: str | None) -> db.Scope:
-    scope = db.Scope.of(category, sources, version)
+def _safe_scope(category: str | None, sources: list[str] | None, version: str | None) -> search_scope.Scope:
+    scope = search_scope.Scope.of(category, sources, version)
     try:
-        db.refuse_bad_scope(scope)
+        corpus_search.refuse_bad_scope(scope)
     except ValueError as e:
         raise ToolError(str(e)) from e
     return scope
@@ -120,7 +120,7 @@ def search_corpus(
         content, _texts, _sources, _depth, _chunks = chat.search_chunks(
             query, scope, variant=config.settings.corpus.variant
         )
-    except (db.ForeignVectors, db.ScopeRefused) as e:
+    except (corpus_search.ForeignVectors, search_scope.ScopeRefused) as e:
         raise ToolError(str(e)) from e
     return content
 
@@ -157,7 +157,7 @@ def answer_question(
             res = agent.run(text, run_name="mcp", language=language)
         else:
             res = chat.answer(text, scope=scope, run_name="mcp", language=language)
-    except (db.ForeignVectors, db.ScopeRefused) as e:
+    except (corpus_search.ForeignVectors, search_scope.ScopeRefused) as e:
         raise ToolError(str(e)) from e
     except Exception as e:
         log.error("mcp.answer_failed", error=str(e))
@@ -182,7 +182,8 @@ def list_categories(
     if only_top and category:
         raise ToolError("only_top cannot be combined with a category filter")
     try:
-        rows = db.list_categories(only_top=only_top, category=category, variant=config.settings.corpus.variant)
+        variant = config.settings.corpus.variant
+        rows = corpus_search.list_categories(only_top=only_top, category=category, variant=variant)
     except SQLAlchemyError as e:
         log.error("mcp.list_categories_failed", error=str(e))
         raise
@@ -197,4 +198,4 @@ def list_categories(
 def list_tags(
     limit: Annotated[int, Field(ge=1, le=1000, description="How many tags, most used first.")] = 50,
 ) -> dict[str, int]:
-    return {name: n for name, n in db.list_tags(limit, variant=config.settings.corpus.variant)}
+    return {name: n for name, n in corpus_search.list_tags(limit, variant=config.settings.corpus.variant)}

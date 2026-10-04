@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -17,9 +18,10 @@ from evals import measurements
 from models.corpus import DataSource, Stage
 from orm.sync_db import Session
 from paths import FETCHED, RAW, ROOT
+from sources import files
 from sources.declaration import site_of
 from sqlalchemy import select
-from use_cases import converting, intake_fetch, raw_quality, reading, route, source_intake
+from use_cases import converting, intake_fetch, raw_quality, reading, route, rule_counts, source_intake
 from use_cases.converting import load_settings, pieces
 
 from .base import Final, register
@@ -137,10 +139,12 @@ def _read_unit(unit, folder: Path, shas: dict, loaded: dict, language: str, laye
 
 
 # each file's markdown whole, its pieces in page order as the loader will read it, and the chunker's rows a chapter
-def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: set, rule, layers: dict) -> tuple:
+def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: set, rule, layers: dict,
+              waived: frozenset = frozenset(), read_as=None) -> tuple:
     sections: list[dict] = []
-    joins = Counter({"fences": 0, "tables": 0, "rows_continued": 0, "headings": 0, "running_heads": 0})
+    joins = Counter({"fences": 0, "tables": 0, "headings": 0, "running_heads": 0})
     check: Counter = Counter()
+    written = set()
     for file in files:
         rel = named[file]
         if rel in left:
@@ -152,9 +156,39 @@ def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: 
         whole, healed = reading.whole_file(parts, [r.get("route") for r in mine], rule, layers.get(file))
         joins.update(healed)
         (folder / "files" / f"{_stem(rel)}.md").write_text(whole)
-        sections += raw_quality.section_rows(whole, rel)
+        written.add(f"{_stem(rel)}.md")
+        sections += raw_quality.section_rows(whole, rel, waived, read_as(file, rel) if read_as else None)
         check.update(raw_quality.self_check(whole, route.outline_titles(file)))
+    # a file this run no longer reads (its origin moved from a folder to a link) leaves with its markdown
+    for stale in (folder / "files").glob("*.md"):
+        if stale.name not in written:
+            log.info("onboard.stale_markdown_dropped", file=stale.name)
+            stale.unlink()
     return sections, joins, check
+
+
+# a markdown source the index reads through its own reader is judged on that reader's text, not the plain cleaning
+def _own_reader(run: "_Run"):
+    from sources import factory
+    from sources.base import Base
+    from sources.declaration import Declaration
+
+    if not (run.origin.get("reader") or Base.reads_beyond_plain(run.origin)) or not run.units:
+        return None
+    if any(unit[2].engine is not None for unit in run.units):
+        return None
+    declaration = Declaration.model_validate(run.origin)
+    reader = factory._reader(declaration)
+    if reader.read is Base.read and not Base.reads_beyond_plain(run.origin):
+        return None
+    instance = reader(run.root, declaration, name=run.source.name)
+
+    # a page the reader leaves out (a hidden cheat sheet) is no text to judge
+    def read_as(file, rel) -> str:
+        parsed = instance.read(file, rel)
+        return parsed.content if parsed else ""
+
+    return read_as
 
 
 # piece ends the seam rule moved off a page break that code runs over, against a plain cut of the same run
@@ -167,30 +201,7 @@ def _seams_moved(units: list, loaded: dict) -> int:
     return sum(len({end for _, end in cut} - {end for _, end in plain[key]}) for key, cut in runs.items())
 
 
-_CODE_RULES = (
-    "rebuilt",
-    "kept",
-    "joined",
-    "tables_joined",
-    "fenced",
-    "relevelled",
-    "numbered_levels",
-    "paragraphs_joined",
-    "entities_decoded",
-    "pipes_dropped",
-    "rows_run_on",
-    "rows_once",
-    "dashes_restored",
-    "words_joined",
-    "bullets_unescaped",
-    "underscores_unescaped",
-    "pictures_addressed",
-    "formulas_from_layer",
-    "captions_demoted",
-    "running_heads_dropped",
-    "split_words_joined",
-    "duplicates_dropped",
-)
+_CODE_RULES = rule_counts.COUNTERS
 
 
 def _unlisted(code: list[dict]) -> list[str]:
@@ -220,10 +231,14 @@ def _fingerprint(arm_hash: str, route_sha: str, file_shas: dict) -> str:
     return hashlib.sha256(json.dumps([arm_hash, route_sha, sorted(file_shas.items())]).encode()).hexdigest()
 
 
-# where the index reads a source: its own tree when every file is markdown, else the raw folder a converter wrote
+# where the index reads a source: its markdown tree (a fetched one copied, as a fetch resets it) or the raw folder
 def _index_root(units: list, tree: Path, folder: Path) -> tuple[str, str]:
     kind = "tree" if units and all(run.engine is None for _, _, run, _, _ in units) else "converted"
     root = tree if kind == "tree" else folder
+    if kind == "tree" and tree.resolve().is_relative_to(FETCHED.resolve()):
+        root = folder / "tree"
+        shutil.rmtree(root, ignore_errors=True)
+        shutil.copytree(tree, root, ignore=shutil.ignore_patterns(".git"))
     return (str(root.relative_to(ROOT)) if root.is_relative_to(ROOT) else str(root)), kind
 
 
@@ -284,6 +299,12 @@ def _onboard(options: dict) -> dict | None:
     return _finish(run)
 
 
+# the file is read before the row: a row seeded before its file gained a knob holds the older declaration
+def _knobs_of(source) -> dict | None:
+    declared = files.source_files().get(source.name)
+    return declared.model_dump(mode="json", exclude_none=True) if declared is not None else source.declaration
+
+
 # the source, its rule and settings, its files fetched and fingerprinted; the accepted run's twin stops here unchanged
 def _set_up(options: dict):
     with Session() as session:
@@ -294,7 +315,7 @@ def _set_up(options: dict):
             raise Final(refusal)
         session.expunge(source)
     # the job's own settings over the source's knobs over the stand's; the knobs from its file, else its row
-    rule, names = source_intake.intake_rule(source_intake.intake_block(source.declaration))
+    rule, names = source_intake.intake_rule(source_intake.intake_block(_knobs_of(source)))
     names = {**names, **(options.get("settings") or {})}
     settings = {tool: load_settings(name) for tool, name in names.items()}
     arm_hash = hashlib.sha256(json.dumps({t: s[1] for t, s in sorted(settings.items())}).encode()).hexdigest()[:8]
@@ -302,7 +323,7 @@ def _set_up(options: dict):
     loaded = {name: settings[tool] for tool, name in names.items()}
     route_sha = reading.route_sha(rule)
     origin = source.declaration or {}
-    root, gathered, fetched, release_read = intake_fetch.gather(source, FETCHED / source.name, ROOT)
+    root, gathered, fetched, release_read, gone = intake_fetch.gather(source, FETCHED / source.name, ROOT)
     # a release read from the site keys this run's pages; the declaration on the row keeps only what was asked for
     if release_read:
         origin = {**origin, "site": {**origin["site"], "release": release_read}}
@@ -311,7 +332,7 @@ def _set_up(options: dict):
     site = site_of(origin)
     named, left_out = intake_fetch.named_files(
         root, gathered, FETCHED / source.name, frozenset(rule.epub_skip), rule.epub_chapters,
-        site.generated if site else [],
+        site.generated if site else [], origin.get("skip_paths") or [],
     )
     shas = {file: sha256(file) for file in named}
     fingerprint = _fingerprint(arm_hash, route_sha, {named[f]: sha for f, sha in shas.items()})
@@ -323,8 +344,8 @@ def _set_up(options: dict):
     if accepted and (source.raw or {}).get("fingerprint") == fingerprint and same_release and not fresh:
         log.info("onboard.unchanged", source=source.name)
         return {"unchanged": True, "refetched": refetched}
-    run = _Run(source, options, rule, names, loaded, route_sha, origin, root, fetched, named, dict(left_out), shas,
-               fingerprint, accepted, fresh)
+    run = _Run(source, options, rule, names, loaded, route_sha, origin, root, fetched, named, dict(left_out) | gone,
+               shas, fingerprint, accepted, fresh)
     # a new run of an accepted source goes beside the accepted folder, which search keeps reading until it is accepted
     run.folder = source_intake.raw_folder(RAW, source.name, arm_hash, fingerprint if accepted else None)
     (run.folder / "files").mkdir(parents=True, exist_ok=True)
@@ -339,6 +360,8 @@ def _set_up(options: dict):
             "settings_override": options.get("settings") or {},
             "settings_sha256": {t: s[1] for t, s in settings.items()},
             "route_sha256": route_sha,
+            # what the fingerprint was taken over, so a moved route names the knobs that moved
+            "route": reading.route_rules(rule),
             # every piece read by its tool now, no kept reading and no kept piece: a run that measures the tool
             "fresh": fresh,
         }
@@ -357,27 +380,37 @@ def _plan_run(run: _Run) -> None:
     run.language = intake_fetch.source_language(run.source, run.files, run.layers)
 
 
-# each piece read or kept, the record written after every one; False when a cancel stopped the run between pieces
+# the record is the resume point of a cut-off run; written after every piece, its size made a large source quadratic
+RECORD_EVERY_S = 30
+
+
+# each piece read or kept, the record written now and then and at the end; False when a cancel stopped the run
 def _read_units(run: _Run) -> bool:
-    for unit in run.units:
-        file, rel, _, piece, name = unit
-        key = _key(rel, piece)
-        # a piece whose markdown is gone from the folder, or was written under an older name, is converted again
-        sha = run.loaded[name][1] if name else None
-        kept = not run.fresh and _kept(run.record["units"].get(key), run.shas[file], sha, run.same_route)
-        if kept and (run.folder / "pieces" / f"{_stem(key)}.md").exists():
-            continue
-        # a cancel is read between pieces: a long book otherwise holds the queue and the card after it was called off
-        job_id = run.options.get("_job_id")
-        if job_id is not None and job_queue.is_cancelled(job_id):
-            _write_json(run.record_path, run.record)
-            log.info("onboard.cancelled", source=run.source.name, unit=key)
-            return False
-        started = time.monotonic()
-        run.record["units"][key] = _read_unit(unit, run.folder, run.shas, run.loaded, run.language, run.layers,
-                                              run.rule)
+    written = time.monotonic()
+    # a piece that raises must not cost the pieces read since the last write: the retry would convert them again
+    try:
+        for unit in run.units:
+            file, rel, _, piece, name = unit
+            key = _key(rel, piece)
+            # a piece whose markdown is gone from the folder, or was written under an older name, is converted again
+            sha = run.loaded[name][1] if name else None
+            kept = not run.fresh and _kept(run.record["units"].get(key), run.shas[file], sha, run.same_route)
+            if kept and (run.folder / "pieces" / f"{_stem(key)}.md").exists():
+                continue
+            # a cancel is read between pieces: a long book otherwise holds the queue and the card after the call-off
+            job_id = run.options.get("_job_id")
+            if job_id is not None and job_queue.is_cancelled(job_id):
+                log.info("onboard.cancelled", source=run.source.name, unit=key)
+                return False
+            started = time.monotonic()
+            run.record["units"][key] = _read_unit(unit, run.folder, run.shas, run.loaded, run.language, run.layers,
+                                                  run.rule)
+            if time.monotonic() - written >= RECORD_EVERY_S:
+                _write_json(run.record_path, run.record)
+                written = time.monotonic()
+            log.info("onboard.unit", source=run.source.name, unit=key, seconds=round(time.monotonic() - started, 1))
+    finally:
         _write_json(run.record_path, run.record)
-        log.info("onboard.unit", source=run.source.name, unit=key, seconds=round(time.monotonic() - started, 1))
     return True
 
 
@@ -385,7 +418,8 @@ def _read_units(run: _Run) -> bool:
 def _finish(run: _Run) -> dict:
     source, folder, record, fetched = run.source, run.folder, run.record, run.fetched
     sections, joins, check = _assemble(
-        run.files, run.named, record, folder, set(run.unreadable) | set(run.skipped), run.rule, run.layers
+        run.files, run.named, record, folder, set(run.unreadable) | set(run.skipped), run.rule, run.layers,
+        frozenset(run.origin.get("waived_gates") or ()), _own_reader(run),
     )
     index_root, root_kind = _index_root(run.units, run.root, folder)
     rows = list(record["units"].values())

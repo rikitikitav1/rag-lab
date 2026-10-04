@@ -1,9 +1,11 @@
+import asyncio
 from typing import Annotated, Literal
 
 import config
 import job_queue
 import limits
 import logging_setup
+from errors import Refusal
 from evals import (
     compare,
     generation_metrics,
@@ -21,12 +23,11 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models import Job, JobStatus
 from models.corpus import Stage
-from models.experiment import Experiment, ExperimentKind
 from orm.sync_db import Session
 from pydantic import Field
 from sqlalchemy import select
 from use_cases import experiment as experiment_uc
-from use_cases import prereg, rejudge, retrieval_compare
+from use_cases import prereg
 
 log = logging_setup.get_logger(__name__)
 
@@ -292,13 +293,6 @@ def compare_pools(
         raise ToolError(str(e)) from e
 
 
-READING = {
-    ExperimentKind.generation: experiment_uc.for_reading,
-    ExperimentKind.retrieval: retrieval_compare.for_reading,
-    ExperimentKind.rejudge: rejudge.for_reading,
-}
-
-
 @mcp_ops.tool(
     name="experiment_results",
     description=(
@@ -309,7 +303,8 @@ READING = {
         "holds. For a rejudge, same_answers says the arms judged the same "
         "answers; a false there means the deltas compare two different sets. "
         "Read this instead of the raw record: the record carries halves and "
-        "seeds that only the aggregation is meant to read."
+        "seeds that only the aggregation is meant to read. REST serves the "
+        "same report at GET /v1/experiment/{id}/report."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -320,48 +315,13 @@ def experiment_results(
         Field(description="Only this pair, as it is named in the report."),
     ] = None,
 ) -> dict:
+    from use_cases import experiment_report
+
     with Session() as session:
-        exp = session.get(Experiment, id)
-        if exp is None:
-            raise ToolError(f"no experiment {id}")
-        # each kind writes its own shape, and only its writer knows which key holds what
-        read = READING[ExperimentKind(exp.kind)](exp.results or {})
-        out = {
-            "id": exp.id,
-            "name": exp.name,
-            "kind": exp.kind,
-            "status": exp.status,
-            "conclusion": exp.conclusion,
-            **{k: v for k, v in read.items() if k != "deltas"},
-        }
-        # the rule the stored numbers were read with, not today's: an older report names none
-        if exp.kind != ExperimentKind.retrieval:
-            out["outcome_rule"] = (exp.results or {}).get("outcome_rule")
-            out["code"] = (exp.results or {}).get("code") or {}
-        guests = (
-            session.execute(
-                select(Job.status).where(
-                    Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if guests:
-            out["guest_passes"] = {
-                "done": sum(1 for status in guests if status == JobStatus.done),
-                "of": len(guests),
-                "reads": "guest numbers are read per question_id, not compared here; "
-                "run_metrics debts.guests says what a copy still owes",
-            }
-        deltas = read["deltas"]
-        if pair is not None:
-            if pair not in deltas:
-                raise ToolError(f"no pair {pair!r}; this report has {sorted(deltas)}")
-            deltas = {pair: deltas[pair]}
-        # halves are the aggregation's own check and read as four more numbers per axis here
-        out["deltas"] = {name: {k: v for k, v in body.items() if k != "halves"} for name, body in deltas.items()}
-        return out
+        try:
+            return experiment_report.report_of(session, id, pair)
+        except Refusal as e:
+            raise ToolError(str(e)) from e
 
 
 @mcp_ops.tool(
@@ -397,6 +357,23 @@ def broker_balances() -> list[dict]:
 
 
 @mcp_ops.tool(
+    name="queue_stats",
+    description=(
+        "The queue in one screen: how many jobs of each type wait, what runs now and for how long, what finished "
+        "in the window by type and status, each type's mean seconds over the last day, and the waiting jobs priced "
+        "at those means as an estimate of when the queue ends; a type with no history is listed as unpriced."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def queue_stats(
+    window_minutes: Annotated[int, Field(description="The window for finished jobs, in minutes.", ge=1, le=1440)] = 60,
+) -> dict:
+    from use_cases import queue_stats as stats_of
+
+    return stats_of.stats(window_minutes)
+
+
+@mcp_ops.tool(
     name="list_jobs",
     description=(
         "List background jobs, newest first. Optional filters by status, type "
@@ -409,10 +386,13 @@ def list_jobs(
     status: Annotated[JobStatus | None, Field(description="Filter by status.")] = None,
     type: Annotated[str | None, Field(description="Filter by job type.")] = None,
     run_name: Annotated[str | None, Field(description="Filter by options.run_name.")] = None,
+    parent_id: Annotated[int | None, Field(description="Only jobs this job's handler queued.")] = None,
     limit: Annotated[int, Field(description="Max rows (1-100).", ge=1, le=100)] = 20,
 ) -> list[dict]:
     with Session() as session:
         stmt = select(Job)
+        if parent_id is not None:
+            stmt = stmt.where(Job.parent_id == parent_id)
         if status is not None:
             stmt = stmt.where(Job.status == status)
         if type is not None:
@@ -426,12 +406,17 @@ def list_jobs(
                 "type": j.type,
                 "status": j.status,
                 "run_name": (j.options or {}).get("run_name"),
+                "parent_id": j.parent_id,
+                "created_at": j.created_at,
+                # set while a retry or a deferral waits: why, and when it is tried again
+                "waiting_because": (j.options or {}).get("waiting_because"),
                 "elapsed": j.elapsed,
                 # per role, per engine and model; null for a job from before the count
                 "tokens": j.tokens,
                 # per cloud, the broker's balance before and after; null for a job that called no cloud
                 "balances": j.balances,
                 "result": j.result,
+                "error": j.error,
             }
             for j in session.scalars(stmt)
         ]
@@ -453,6 +438,93 @@ def cancel_job(
         if session.get(Job, id) is None:
             raise ToolError(f"job {id} not found")
     return {"cancelled": job_queue.cancel_with_its_judge(id)}
+
+
+@mcp_ops.tool(
+    name="job",
+    description="One job by id, whole: options, status, error with its kind, result, tokens, code stamp, parent.",
+    annotations={"readOnlyHint": True},
+)
+def job(id: Annotated[int, Field(description="Job id.")]) -> dict:
+    with Session() as session:
+        j = session.get(Job, id)
+        if j is None:
+            raise ToolError(f"job {id} not found")
+        return {c.name: getattr(j, c.name) for c in Job.__table__.columns}
+
+
+@mcp_ops.tool(
+    name="enqueue_job",
+    description=(
+        "Queue a job of any type with its options, checked as at POST /v1/job. dry_run=true queues nothing and "
+        "returns the options as the handler would read them and the lane. An eval_run gets the same name and "
+        "question checks as at POST /v1/job; options.resume=true answers the rest of a run on its own options."
+    ),
+)
+async def enqueue_job(
+    type: Annotated[str, Field(description="Job type, as scripts/surface.py lists them.")],
+    options: Annotated[dict | None, Field(description="The type's options.")] = None,
+    dry_run: Annotated[bool, Field(description="Check only, queue nothing.")] = False,
+) -> dict:
+    from use_cases import job_control
+
+    try:
+        if type == "eval_run":
+            return await job_control.enqueue_eval_run(options or {}, dry_run)
+        return await asyncio.to_thread(job_control.enqueue, type, options, dry_run)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
+
+
+def _scoped(action, run_name, type, ids, parent_id, status, every, dry_run) -> dict:
+    from use_cases import job_control
+
+    scope = job_control.Scope(run_name=run_name, type=type, ids=ids or [], parent_id=parent_id,
+                              statuses=status or [], every=every)
+    try:
+        return getattr(job_control, action)(scope, dry_run)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
+
+
+_SCOPE_DOC = (
+    " Scope by run_name, type, ids or parent_id; a type alone needs every=true. dry_run=true returns the ids it"
+    " would touch and changes nothing."
+)
+
+
+@mcp_ops.tool(
+    name="cancel_jobs",
+    description="Cancel live jobs in bulk, each run's judge along; status=['new'] spares the running one." + _SCOPE_DOC,
+    annotations={"destructiveHint": True},
+)
+def cancel_jobs(
+    run_name: str | None = None, type: str | None = None, ids: list[int] | None = None, parent_id: int | None = None,
+    status: list[JobStatus] | None = None, every: bool = False, dry_run: bool = False,
+) -> dict:
+    return _scoped("cancel", run_name, type, ids, parent_id, status, every, dry_run)
+
+
+@mcp_ops.tool(
+    name="pause_jobs",
+    description="Hold waiting jobs: they keep their ids and order, and the worker passes them by." + _SCOPE_DOC,
+)
+def pause_jobs(
+    run_name: str | None = None, type: str | None = None, ids: list[int] | None = None, parent_id: int | None = None,
+    every: bool = False, dry_run: bool = False,
+) -> dict:
+    return _scoped("pause", run_name, type, ids, parent_id, None, every, dry_run)
+
+
+@mcp_ops.tool(
+    name="resume_jobs",
+    description="Release held jobs back to the queue in their old order." + _SCOPE_DOC,
+)
+def resume_jobs(
+    run_name: str | None = None, type: str | None = None, ids: list[int] | None = None, parent_id: int | None = None,
+    every: bool = False, dry_run: bool = False,
+) -> dict:
+    return _scoped("resume", run_name, type, ids, parent_id, None, every, dry_run)
 
 
 @mcp_ops.tool(
@@ -585,31 +657,19 @@ def add_source(
         "The declaration, field for field as `sources/<name>.yaml` writes it, e.g. {'name': 'nginx-org-en', "
         "'licence': 'BSD-2', 'pages': [...], 'site': {'main': 'div#content'}, 'categories': ['nginx']}."))],
 ) -> dict:
-    from models.corpus import DataSource
     from pydantic import ValidationError
     from sources.declaration import Declaration
-    from sqlalchemy.exc import IntegrityError
     from use_cases import source_intake
 
     try:
         declaration = Declaration.model_validate(declaration)
     except ValidationError as e:
         raise ToolError(str(e)) from e
-    name = declaration.name
-    from paths import ROOT
-
-    if refusal := source_intake.declaration_refusal(declaration, ROOT):
-        raise ToolError(refusal)
     with Session() as session:
-        if session.scalar(select(DataSource.id).where(DataSource.name == name)):
-            raise ToolError(source_intake.name_taken(name))
-        source = source_intake.declared_row(declaration)
-        session.add(source)
         try:
-            session.commit()
-        except IntegrityError as e:
-            raise ToolError(source_intake.name_taken(name)) from e
-        session.refresh(source)
+            source = source_intake.declare(session, declaration)
+        except Refusal as e:
+            raise ToolError(str(e)) from e
         return source_intake.view(source, 0, 0)
 
 
@@ -619,25 +679,18 @@ def add_source(
     annotations={"readOnlyHint": True},
 )
 def source(name: Annotated[str, Field(description="The source's name.")]) -> dict:
-    from models.corpus import DataChunk, DataSource
-    from sqlalchemy import func
     from use_cases import source_intake
 
     with Session() as session:
-        found = session.scalar(select(DataSource).where(DataSource.name == name))
-        if found is None:
-            raise ToolError(f"no source named {name}")
-        count = select(func.count()).select_from(DataChunk).where(DataChunk.source_id == found.id)
-        chunks = session.scalar(count) or 0
-        in_variant = session.scalar(count.where(DataChunk.variant == found.ingest_variant)) or 0
-        return source_intake.view(found, chunks, in_variant if found.ingest_variant else 0)
+        found = _source_named(session, name)
+        return source_intake.view(found, *source_intake.chunk_counts(session, found))
 
 
 @mcp_ops.tool(
     name="sources",
     description=(
-        "Sources by stage (declared, raw, accepted), a page at a time by name: name, stage, raw verdict and "
-        "whether active."
+        "Sources by stage (declared, raw, accepted), a page at a time by name, the same rows as GET /v1/source: "
+        "name, stage, language, whether active, raw verdict, chunks in every variant and in the one last indexed."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -646,22 +699,46 @@ def sources(
     limit: Annotated[int, Field(ge=1, le=1000, description="Rows in the page.")] = 100,
     offset: Annotated[int, Field(ge=0, description="Rows to skip, by name.")] = 0,
 ) -> list[dict]:
-    from models.corpus import DataSource
     from use_cases import source_intake
 
     with Session() as session:
-        stmt = select(DataSource).order_by(DataSource.name).limit(limit).offset(offset)
-        if stage is not None:
-            stmt = stmt.where(DataSource.stage == stage)
-        return [
-            {
-                "name": s.name,
-                "stage": s.stage,
-                "active": s.active,
-                "raw_verdict": source_intake.run_under_review(s).get("verdict"),
-            }
-            for s in session.scalars(stmt)
-        ]
+        return source_intake.listed(session, stage, limit, offset)
+
+
+@mcp_ops.tool(
+    name="intake_board",
+    description=(
+        "The intake at a glance for one corpus variant: sources counted by stage and verdict, the chunks the variant "
+        "holds, and the sources that wait, grouped by who moves them next: a person (a dirty or bad run, with its "
+        "breaching share and top reasons), a door (onboard, accept, index, turn on) or the queue (a job of theirs is "
+        "queued or running). Read this first when tracking a corpus build."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def intake_board(
+    variant: Annotated[str | None, Field(description="The corpus variant; the served one when left out.")] = None,
+) -> dict:
+    from use_cases import intake_board as boards
+
+    return boards.board(variant or config.settings.corpus.variant)
+
+
+@mcp_ops.tool(
+    name="source_trail",
+    description=(
+        "One source in a screen: stage, trust, origin, the run's verdict with its breaching share and reasons, what "
+        "it skipped counted by suffix, chunks per variant, drift, its last jobs (onboard, index, report, questions) "
+        "with their result in a line, and the step that waits next. The compact companion of `source`."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def source_trail(name: Annotated[str, Field(description="The source's name.")]) -> dict:
+    from use_cases import intake_board as boards
+
+    found = boards.trail(name)
+    if found is None:
+        raise ToolError(f"no source named {name}")
+    return found
 
 
 @mcp_ops.tool(
@@ -725,9 +802,9 @@ def set_source_active(
 @mcp_ops.tool(
     name="accept_source",
     description=(
-        "Accept a raw source for indexing: the owner's word that its conversion is fit. A bad raw verdict needs "
-        "a `reason`, kept on the row. The index then reads it once a source file names it; it stays out of search "
-        "until set_source_active turns it on."
+        "Accept a raw source for indexing: its conversion is fit to cut. A bad raw verdict needs a `reason`, kept on "
+        "the row. Nothing is queued: index_data reads the accepted row, and it stays out of search until "
+        "set_source_active turns it on."
     ),
 )
 def accept_source(
@@ -737,7 +814,8 @@ def accept_source(
     from use_cases import source_intake
 
     with Session() as session:
-        replaced = _transition(source_intake.accept, _source_named(session, name), reason)
+        # the ops server is the agent's door, so the row says an agent accepted it
+        replaced = _transition(source_intake.accept, _source_named(session, name), reason, "agent")
         session.commit()
         source_intake.drop_folder(replaced, name)
         return {"source": name, "stage": "accepted"}
@@ -767,6 +845,33 @@ def set_source_intake(
         _transition(source_intake.set_intake, _source_named(session, name), block)
         session.commit()
         return {"source": name, "intake": block}
+
+
+@mcp_ops.tool(
+    name="set_source_fields",
+    description=(
+        "Set declared fields of a source on its row in place, read by its next onboarding or index, as the REST doors "
+        "`PUT /v1/source/{id}/skip_paths|markup|section_roots` do: `skip_paths` (globs under the root), `markup` "
+        "(hugo or mdn) with `markup_values` (the site parameters it prints), `section_root_by_path` (a book's heading "
+        "root by file glob); and, until the source is cut, the `language`, `licence` and `categories` guessed at "
+        "its declaration. An empty value clears a field. Refused while a job reads the source, a source file speaks "
+        "for it, or the agent's knob rounds are spent."
+    ),
+)
+def set_source_fields(
+    name: Annotated[str, Field(description="The source's name.")],
+    fields: Annotated[dict, Field(description="The fields to set, e.g. {'markup': 'hugo', 'markup_values': {...}}.")],
+) -> dict:
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = _source_named(session, name)
+        try:
+            _transition(source_intake.set_fields, found, fields)
+        except Refusal as e:
+            raise ToolError(str(e)) from e
+        session.commit()
+        return {"source": name, "declaration": found.declaration}
 
 
 @mcp_ops.tool(
@@ -837,14 +942,64 @@ def remove_variant(variant: Annotated[str, Field(description="The variant's name
     ),
     annotations={"destructiveHint": True},
 )
-def remove_question_set(set_name: Annotated[str, Field(description="The set's name.", max_length=200)]) -> dict:
+def remove_question_set(
+    set_name: Annotated[str, Field(description="The set's name.", max_length=limits.MAX_SET_NAME)],
+) -> dict:
     from errors import Final
-    from evals import question_sets
+    from use_cases import question_set_removal
 
     try:
-        return question_sets.remove(set_name)
+        return question_set_removal.remove(set_name)
     except Final as e:
         raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="set_role",
+    description=(
+        "Move a role that runs on a cloud broker to another model on a cloud broker (gonka, neuraldeep, groq), "
+        "e.g. when a broker refuses its key. The broker is asked whether it serves the model, the model is "
+        "registered if new and checked for the role's job first. A role on a local engine (ollama, vllm) is "
+        "refused: it holds the card and is a person's to move. Answers the role, the model and what it replaced."
+    ),
+)
+def set_role(
+    role: Annotated[str, Field(description="The role, e.g. questioning.")],
+    model: Annotated[str, Field(description="The model's name as the broker lists it.")],
+    engine: Annotated[str, Field(description="The cloud broker's engine name.")],
+    anyway: Annotated[bool, Field(description="Seat it even if the fitness check refuses.")] = False,
+) -> dict:
+    from use_cases import cloud_roles
+
+    try:
+        return cloud_roles.seat(role, model, engine, anyway)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
+
+
+@mcp_ops.tool(
+    name="raw_text",
+    description=(
+        "A source's converted markdown before the cut, the text its verdict was read on. With no file: the run's "
+        "files and their sizes. With a file: its text, or one chapter's with `heading` (the first heading holding "
+        "those words, up to the next heading of its level), at most 20000 characters from `offset`; `more` says "
+        "whether text is left."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def raw_text(
+    name: Annotated[str, Field(description="The source's name.")],
+    file: Annotated[str | None, Field(description="A file of the run, as the listing names it.")] = None,
+    heading: Annotated[str | None, Field(description="Words of a heading in that file.")] = None,
+    offset: Annotated[int, Field(description="Characters to skip.", ge=0)] = 0,
+    limit: Annotated[int, Field(description="Max characters (1-20000).", ge=1, le=20000)] = 20000,
+) -> dict:
+    from use_cases import raw_text as raw_text_uc
+
+    try:
+        return raw_text_uc.read(name, file, heading, offset, limit)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
 
 
 @mcp_ops.tool(

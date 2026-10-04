@@ -1,4 +1,5 @@
 @startuml single_shot_flow
+!include style.iuml
 title Single shot: retrieve once, generate once, no tools
 
 skinparam wrapWidth 220
@@ -22,7 +23,7 @@ partition "Hybrid retrieval, one SQL query" {
 
 if (any rows left?) then (no)
   :"No relevant documents found."
-  An honest refusal, no LLM call; <<#fff3cd>>
+  An honest refusal, no LLM call; <<#F0FDFA>>
 else (yes)
   if (rerank enabled?) then (yes, per-run override)
     :Cross-encoder rerank, bge-reranker-v2-m3,
@@ -31,7 +32,7 @@ else (yes)
   endif
   :Build the context: chunks and source markers;
   :Generate (llama3.1:8b, temp 0.1);
-  :Answer and sources; <<#d4edda>>
+  :Answer and sources;
 endif
 
 :question_log: answer, context, sources, config;

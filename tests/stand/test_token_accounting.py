@@ -5,6 +5,8 @@ import engines
 import job_queue
 import llm
 import pytest
+import search_scope
+import structlog
 from models.registry import EngineKind, Placement
 
 LOCAL = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
@@ -26,6 +28,14 @@ def test_a_call_counts_into_every_open_scope_and_only_a_carried_pool_thread_coun
     assert row.record() == {"judging": [_entry(10, 3, 1, max_prompt=10)]}
     assert job.record() == {"judging": [_entry(14, 7, 5, max_prompt=10)]}
     assert llm.Tally().record() is None, "a job that called nothing writes nothing"
+
+
+def test_a_carried_pool_thread_logs_with_the_job_it_works_for():
+    with structlog.contextvars.bound_contextvars(job_id=7, job_type="judge_answers"):
+        with ThreadPoolExecutor(2) as pool:
+            fields = list(pool.map(llm.carried(lambda i: structlog.contextvars.get_contextvars()), range(2)))
+    assert fields == [{"job_id": 7, "job_type": "judge_answers"}] * 2
+    assert structlog.contextvars.get_contextvars() == {}
 
 
 def _embedder(monkeypatch, usage):
@@ -72,7 +82,7 @@ def test_the_worker_writes_what_a_failed_job_spent(monkeypatch):
         worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=5, type="spender", options={})
     )
     monkeypatch.setattr(worker.job_specs, "check", lambda *a, **kw: None)
-    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, elapsed=None: failed.append(id))
+    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, kind, elapsed=None: failed.append(id))
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: written.append((id, record)))
     assert worker.run_once(["default"])
     assert failed == [5]
@@ -183,11 +193,10 @@ def test_a_turn_without_token_counts_does_not_fail_the_row(monkeypatch):
 def test_the_run_snapshot_says_its_scope_and_filtered_scan():
     from use_cases import run_snapshot
 
-    import db
 
     assert {"scope", "filtered_scan"} <= set(run_snapshot.KEYS)
     assert run_snapshot.scope_of(None) is None
-    assert run_snapshot.scope_of(db.Scope(label="redis", sources=("redis-doc",))) == {
+    assert run_snapshot.scope_of(search_scope.Scope(label="redis", sources=("redis-doc",))) == {
         "label": "redis",
         "sources": ["redis-doc"],
         "version": None,

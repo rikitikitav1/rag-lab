@@ -6,3 +6,10 @@ urls:
 - https://edu.postgrespro.ru/postgresql_internals-18.pdf
 categories:
 - postgresql
+# the converter reads cover text as the book's first heading
+section_root_by_path:
+  "*": PostgreSQL 18 изнутри
+# Docling's default PDF backend glues Russian words on this TeX book ("Будетданная"); PDFium keeps the spaces
+intake:
+  settings:
+    docling: docling/pypdfium2_cells

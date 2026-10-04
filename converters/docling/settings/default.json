@@ -8,7 +8,8 @@
     "do_formula_enrichment": "false",
     "code_formula_preset": "codeformulav2",
     "do_picture_classification": "false",
-    "ocr_preset": "tesseract"
+    "ocr_preset": "tesseract",
+    "pdf_heading_hierarchy_options": "{\"enabled\": true, \"max_level\": 5}"
   },
   "ocr_lang": {
     "ru": [
@@ -19,6 +20,6 @@
       "eng"
     ]
   },
-  "pages_per_chunk": 50,
+  "pages_per_chunk": 100,
   "code_from_layer": true
 }

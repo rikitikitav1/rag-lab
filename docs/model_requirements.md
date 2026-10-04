@@ -1,6 +1,6 @@
 # What each role requires of a model
 
-Seven roles are assigned to models: five project roles and two for the RAGAS guest. Each role needs
+Roles are the members of `Role` in `app/models/registry.py`; this page covers those whose requirements are not obvious. Each role needs
 capabilities that are not obvious from a model's name or benchmark scores. A model without a required
 capability can fail or produce misleading results. Often the run still completes, so the problem
 looks like poor quality rather than a broken setup. This page describes the requirements and the
@@ -26,8 +26,8 @@ ollama show <model>
 The failure is not loud where it matters. The first hop raises, the graph forces a final answer
 with zero sources, and the model, given no context, writes an honest refusal. The run finishes,
 every job reports done, and the report reads as a pipeline that answered nothing rather than as a
-pipeline that never ran. On 2026-08-30 that shape cost 400 questions across four control runs: 92 to 95
-per cent refusals on a set whose questions all sit well inside the corpus.
+pipeline that never ran. On 2026-08-30 that shape cost four control runs: all 400 questions refused,
+on a set whose questions all sit well inside the corpus.
 
 `single_shot` does not send tools and does not need the capability. The trap is that one role
 serves both pipelines: a generator chosen on single-shot numbers can be measured, accepted, and
@@ -95,7 +95,7 @@ server may not take generation.
 The guest judge uses the standard's own prompts. They are long and ask for detailed output: a list of
 claims, each checked individually. Its model needs a sufficiently large context window and output
 budget to finish the task. At
-`max_tokens` 1024 the guest cut 36 of 338 calls, at 4096 none; a window of 16384 holds the inputs
+`max_tokens` 1024 the guest cut some of its calls and at 4096 none (the count is in the `ragas` row's comment, `config/roles.yaml`); a window of 16384 holds the inputs
 that 8192 cut, and still fits the GPU. A model that drifts into another language inside its JSON
 breaks the parse, and the guest gives up on that row rather than scoring it.
 
@@ -112,14 +112,14 @@ model, the embedder, and the reranker if it is on, against GPU memory.
 
 The resulting configuration is a decision, not a universal rule, so record it together with its
 cost. Reranking is off by default because the agent's generator leaves too little GPU memory for it.
-On the criterion set, reranking improved section MRR by +0.0454 [+0.0250, +0.0670]. Both facts
+On the Russian criterion set (`paraphrased_v2_ru`, n=823, `clean_1024`), reranking improved section MRR by +0.0454 [+0.0250, +0.0670] ([the entry](experiments/2026-08-28_reranking-and-the-language-of-the-question.md)). Both facts
 matter when choosing a setup.
 
 ## Where the role's model name actually lives
 
 `config/roles.yaml` carries the inference options for each role, and the model name in it is what
 bootstrap assigns on an empty database. Once a role is assigned, the name is served from the
-database and bootstrap leaves it alone, because the door for changing it is `PUT /v1/role` and a
+database and bootstrap leaves it alone, because the door for changing it is `PUT /v1/role/{role}` and a
 restart must not undo a deliberate change.
 
 So editing `config/roles.yaml` does not change an already assigned role. After bootstrap, the database
@@ -134,4 +134,4 @@ through the route, and read the file as a declaration rather than as the current
 2. Add up GPU memory: the model, the embedder, the reranker if it is on, against what the GPU has.
 3. Smoke ten questions and read the distribution of outcomes, not just that the job finished. A
    dead pipeline shows up as every question landing in one bucket.
-4. Change the role through `PUT /v1/role`, then run the preflight.
+4. Change the role through `PUT /v1/role/{role}`, then run the preflight.

@@ -54,3 +54,14 @@ def test_a_model_belongs_to_an_engine_and_says_which_weights_it_is():
     assert Engine.__table__.c.env_prefix.nullable is False
     assert "base_url" not in Engine.__table__.c, "the address lives in the environment"
     assert Placement.remote.value == "remote", "cloud is an answer, not a missing value"
+
+
+# the query reads the config and the index reads the trigger: one language stemmed two ways never matches
+def test_the_query_languages_are_the_ones_the_index_trigger_stems():
+    import re
+
+    import config
+
+    trigger = SCHEMA.read_text().split("FUNCTION public.data_chunks_content_tsv()")[1].split("END::regconfig")[0]
+    indexed = dict(re.findall(r"WHEN '(\w+)' THEN '(\w+)'", trigger))
+    assert indexed == config.settings.fts.languages

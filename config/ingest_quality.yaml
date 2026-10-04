@@ -5,6 +5,9 @@ ingest_quality:
     boilerplate_file_share: 0.5  # a body repeated in this share of a source's files is boilerplate
     boilerplate_min_files: 3     # a source of fewer files cannot show boilerplate
     min_breaching_chunks: 5      # a share over fewer chunks than this abstains
+    # tuned: file=datasets/measurements/flat_gate_calibration.md
+    flat_min_chunks: 20          # a chapter this long with two sections or fewer inside lost its headings
+    flat_max_sections: 2
     # not measured: soup is a chunk whose share of letters and digits falls below this
     soup_alnum_ratio: 0.55
     # not measured: a prose word is at least this many letters

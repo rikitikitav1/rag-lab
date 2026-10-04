@@ -2,9 +2,19 @@ from datetime import datetime
 from enum import StrEnum
 
 from orm import Base
-from sqlalchemy import Enum, Index, func
+from sqlalchemy import Enum, ForeignKey, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+
+
+# why a job ended in error, so a reader can tell fixing the input from retrying from fixing the stand
+class FailKind(StrEnum):
+    refused = "refused"
+    no_handler = "no_handler"
+    final = "final"
+    exhausted = "exhausted"
+    deferred_out = "deferred_out"
+    worker_died = "worker_died"
 
 
 class JobStatus(StrEnum):
@@ -44,6 +54,8 @@ class Job(Base):
     result: Mapped[dict | None] = mapped_column(JSONB)
     # the promise a closing run was made under, a column so the runs of one promise are a query
     prereg: Mapped[str | None]
+    # the job whose handler queued this one; null for a job queued from outside
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
     apply_since: Mapped[datetime] = mapped_column(server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

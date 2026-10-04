@@ -14,9 +14,9 @@ def _question(c, set_name, drawn_from=None):
 
 # a set's own paraphrase chain goes with it; an answer log or another set drawn from it is counted, not cascaded
 def test_a_set_is_counted_and_removed_with_its_own_chain(db, monkeypatch):
-    import db as stand_db
+    from use_cases import question_set_removal as removal
 
-    monkeypatch.setattr(stand_db, "engine", db)
+    monkeypatch.setattr(removal, "engine", db)
     with db.connect() as c:
         first = _question(c, "smoke")
         _question(c, "smoke", drawn_from=first)
@@ -27,21 +27,20 @@ def test_a_set_is_counted_and_removed_with_its_own_chain(db, monkeypatch):
         )
         c.commit()
 
-    assert stand_db.question_set_holds("smoke") == {"questions": 2, "answered": 0, "drawn_from": 0}
-    assert stand_db.question_set_holds("kept") == {"questions": 1, "answered": 1, "drawn_from": 1}
-    assert stand_db.remove_question_set("smoke") == 2
-    assert stand_db.question_set_holds("smoke")["questions"] == 0
-    assert stand_db.question_set_holds("kept")["questions"] == 1
+    assert removal._holds("smoke") == {"questions": 2, "answered": 0, "drawn_from": 0}
+    assert removal._holds("kept") == {"questions": 1, "answered": 1, "drawn_from": 1}
+    assert removal._delete_set("smoke") == 2
+    assert removal._holds("smoke")["questions"] == 0
+    assert removal._holds("kept")["questions"] == 1
 
 
 # a log that took a question after the door's check refuses the removal instead of failing the server
 def test_a_question_taken_after_the_check_refuses_the_removal(db, monkeypatch):
     import pytest
     from errors import Final
+    from use_cases import question_set_removal as removal
 
-    import db as stand_db
-
-    monkeypatch.setattr(stand_db, "engine", db)
+    monkeypatch.setattr(removal, "engine", db)
     with db.connect() as c:
         taken = _question(c, "late")
         c.execute(
@@ -50,8 +49,8 @@ def test_a_question_taken_after_the_check_refuses_the_removal(db, monkeypatch):
         c.commit()
 
     with pytest.raises(Final, match="questions of late were taken"):
-        stand_db.remove_question_set("late")
-    assert stand_db.question_set_holds("late")["questions"] == 1
+        removal._delete_set("late")
+    assert removal._holds("late")["questions"] == 1
 
 
 # a generated pair is written whole: one of its questions already in the base leaves the pair out

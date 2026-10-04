@@ -1,4 +1,5 @@
 import logging_setup
+import search_scope
 from errors import StandFault
 from evals import runner
 from models import Job
@@ -6,8 +7,6 @@ from models.eval import QuestionLog
 from models.registry import Pipeline, Role
 from orm.sync_db import Session
 from sqlalchemy import func, select, update
-
-import db
 
 from .base import Final, register, require_card, require_model_ready, require_role_ready
 
@@ -69,7 +68,7 @@ def eval_run(options: dict) -> None:
             resume=resume,
             generation_sampler=options.get("generation_sampler"),
             judge=options.get("judge", True),
-            scope=db.Scope.of(options.get("category"), options.get("sources"), options.get("version")),
+            scope=search_scope.Scope.of(options.get("category"), options.get("sources"), options.get("version")),
         )
     # the worker's retry would answer every question again beside the rows already written
     except StandFault as e:

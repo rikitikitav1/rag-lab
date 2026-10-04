@@ -6,12 +6,16 @@ from typing import NamedTuple
 
 import corpus_keys
 import logging_setup
+import requests
 from errors import Final
 from models.corpus import DataSource
-from sources.declaration import DEFAULT_INCLUDE, GitFamily, site_of
+from sources.declaration import DEFAULT_INCLUDE, GitFamily, site_of, skipped_path
 from use_cases import fetch, route, site_page
 
 log = logging_setup.get_logger(__name__)
+
+# a sitemap that lists a page the site removed: that page is left out, the source is not
+GONE = (404, 410)
 
 # what a file name keeps of a url's last step
 _SLUG = re.compile(r"[^\w.-]+")
@@ -48,6 +52,8 @@ class Gathered(NamedTuple):
     files: list[Path]
     fetched: dict
     release: str | None = None
+    # pages the sitemap lists and the site no longer serves, by url, with the answer it gave
+    gone: dict = {}
 
 
 # the files of a declared source as the route will read them, fetched into its inbox when they come from outside
@@ -79,9 +85,15 @@ def gather(source: DataSource, inbox: Path, stand: Path) -> Gathered:
             _refuse_unlisted_release(origin, live)
             release = read = live
     _drop_pages_of_another_release(inbox, release)
-    files, fresh = [], False
+    files, fresh, gone = [], False, {}
     for url in origin.get("pages") or _sitemap_pages(site, inbox):
-        page, new = _download(url, inbox / "pages")
+        try:
+            page, new = _download(url, inbox / "pages")
+        except requests.HTTPError as e:
+            if e.response is None or e.response.status_code not in GONE:
+                raise
+            gone[url] = f"the site answers {e.response.status_code} for a page its sitemap lists"
+            continue
         fresh |= new
         main = site_page.prepared(page.read_text(errors="ignore"), site.main, site.drop) if site else None
         if main is None:
@@ -93,7 +105,9 @@ def gather(source: DataSource, inbox: Path, stand: Path) -> Gathered:
         files.append(target)
     if release:
         (inbox / "release").write_text(release)
-    return Gathered(inbox, files, _fetched(fresh), read)
+    if gone:
+        log.warning("intake.pages_gone", source=source.name, n=len(gone))
+    return Gathered(inbox, files, _fetched(fresh), read, gone)
 
 
 # the release the site documents now, read from its own page every intake
@@ -153,11 +167,20 @@ def _flat(file: Path, inbox: Path, rel: str) -> Path:
 
 # every file under its report name, and what was left out; an EPUB stands for its chapters when the source reads them
 def named_files(
-    root: Path, files: list[Path], inbox: Path, skip=frozenset(), epub: bool = False, generated: list[str] = ()
+    root: Path, files: list[Path], inbox: Path, skip=frozenset(), epub: bool = False, generated: list[str] = (),
+    skip_paths: list[str] = (),
 ) -> tuple[dict[Path, str], dict[str, str]]:
     names, skipped = {}, {}
+    # a docs repository's screenshots are its pages' figures: OCR of nine thousand of them read nothing worth a search
+    beside_documents = any(f.suffix.lower() not in route.IMAGE and f.suffix.lower() in route.READABLE for f in files)
     for file in files:
         rel = str(file.relative_to(root))
+        if beside_documents and file.suffix.lower() in route.IMAGE:
+            skipped[rel] = "a picture beside documents: a page's figure, not a page"
+            continue
+        if pattern := skipped_path(rel, skip_paths):
+            skipped[rel] = f"the declaration skips {pattern}"
+            continue
         page = generated and file.suffix.lower() in route.HTML
         if page and (built := site_page.generated_by(file.read_text(errors="ignore"), generated)):
             skipped[rel] = f"the site builds this page: {built}"

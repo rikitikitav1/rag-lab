@@ -1,4 +1,5 @@
 import agent_tools as at
+import corpus_search
 
 
 def test_schema_shape():
@@ -22,6 +23,12 @@ def test_dispatch_bad_json():
     assert "invalid arguments" in at.dispatch("search_corpus", "{bad").content
 
 
+# json that parses but is no object gets the same answer the model can correct, not an exception that ends the row
+def test_dispatch_arguments_that_are_no_object():
+    for given in ("null", "[]", '"vacuum"'):
+        assert "invalid arguments" in at.dispatch("search_corpus", given).content
+
+
 def test_dispatch_catches_tool_exception(monkeypatch):
     def boom(**kwargs):
         raise ValueError("kaboom")
@@ -37,15 +44,14 @@ def test_dispatch_catches_tool_exception(monkeypatch):
 def test_dispatch_lets_a_stand_fault_end_the_run(monkeypatch):
     import pytest
 
-    import db
 
     def foreign(**kwargs):
-        raise db.ForeignVectors("variant holds vectors of another embedder")
+        raise corpus_search.ForeignVectors("variant holds vectors of another embedder")
 
     monkeypatch.setitem(
         at._REGISTRY, "foreign", at.Tool(name="foreign", description="", parameters={}, run=foreign)
     )
-    with pytest.raises(db.ForeignVectors):
+    with pytest.raises(corpus_search.ForeignVectors):
         at.dispatch("foreign", "{}")
 
 
@@ -65,9 +71,8 @@ def test_dispatch_drops_undeclared_args(monkeypatch):
 
 
 def test_search_corpus_formats_content_and_sources(monkeypatch):
+    from corpus_search import Hit
     from use_cases import chat
-
-    from db import Hit
 
     rows = [
         Hit("chunk one", "src/a.md", "cat", 0, 1, None, 0.1, 0.5, None),

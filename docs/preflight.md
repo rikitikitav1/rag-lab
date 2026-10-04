@@ -6,7 +6,7 @@ version the worker loaded. Those conditions decide whether the run's numbers des
 claim to describe.
 
 ```bash
-python scripts/preflight_grid.py                       # twenty-four checks, exit 1 on any failure
+python scripts/preflight_grid.py                       # every check, exit 1 on any failure
 python scripts/preflight_grid.py --verify RUN [RUN..]  # a finished run instead of the stand
 ```
 
@@ -20,8 +20,8 @@ process is running, what is in the table, what cut produced it, which switches t
 the run started. None of that is in a diff, and all of it decides what a run measured. A green test
 suite says nothing about any of it.
 
-**A run costs from forty minutes to a day of GPU.** The mistake surfaces when the results are read,
-which is a day later, and the fix is to run it again. The checks below cost about twenty seconds.
+**A run costs hours of GPU.** The mistake surfaces when the results are read, often a day later,
+and the fix is to run it again. The checks below cost seconds.
 
 **A spoiled run does not look spoiled.** It completes, it writes plausible numbers, the numbers go
 into the journal, and later work is built on them. There is no exception raised anywhere. This is
@@ -31,7 +31,7 @@ Most of these checks exist because the corresponding trap had already cost a gri
 true, the incident is named below, because a check whose reason is forgotten is a check somebody
 deletes.
 
-## The twenty-four checks
+## The checks
 
 ### Is the code that runs the code we think runs
 
@@ -54,7 +54,7 @@ in a rarely-loaded module surfaces as a failed job three hours into a run, not a
 **`models_are_on_the_card`** asks what is actually resident, per role, and refuses when anything is
 loaded with zero VRAM. It asks residency rather than free memory on purpose: the scheduler keeps
 reporting free VRAM after the GPU has gone away, so "there is room" is not evidence that anything
-is on it. A model that spilled to the CPU produces correct numbers about thirty times slower, which
+is on it. A model that spilled to the CPU produces correct numbers many times slower, which
 turns a forty-minute arm into a day and looks like nothing but slowness.
 
 It names the role beside the model, because a job runs one model and the others being resident
@@ -66,13 +66,13 @@ driver's own numbers for GPU memory, free and total.
 
 The incident that put it there, from when the reranker still ran inside the processes: on 2026-08-30
 a paraphrasing model left resident with
-`keep_alive: Forever` took 6.4 GB of an 8 GB GPU, the reranker fell back to the CPU with a warning,
-and the run would have taken thirteen times longer with identical numbers. It was caught by eye.
+`keep_alive: Forever` took most of the 8 GB GPU, the reranker fell back to the CPU with a warning,
+and the run would have taken many times longer with identical numbers. It was caught by eye.
 
 **`roles_match_the_config`** compares the model `config/roles.yaml` declares for each role against the one
 the database serves, by engine as well as by name. Which model serves a role is switched at runtime
 and outlives the run that switched it, so a file that says otherwise misleads the next reader about
-what the numbers were measured with. `PUT /v1/role` or an edit to the file settles it.
+what the numbers were measured with. `PUT /v1/role/{role}` or an edit to the file settles it.
 
 **`prompts_match_the_config`** compares the prompt version `config/roles.yaml` names for each purpose
 against the one the database holds active. The file decides only what a fresh database starts on, and
@@ -82,7 +82,7 @@ Activating the named version back or editing the file settles it.
 **`sources_match_their_files`** compares, for every source row, the digest of the declaration the row holds with
 the digest recorded when each variant was cut. The seed writes a source file's declaration onto its row, so a skip list
 or a category tree edited after the cut leaves chunks that no longer follow it; re-indexing the source settles it. The
-digest is taken over the rules, so a comment or a skip's reason moves nothing. Accepting a new run of an indexed source
+digest is taken over the rules, so a comment or a skip's reason moves nothing. The check names the fields a moved source was cut by otherwise (`by skip_paths, markup`), read from the rules each variant was cut by, which the row keeps beside the digest; a variant cut before those were kept names none. Accepting a new run of an indexed source
 fails it the same way: the variants were cut from the run it replaced, and they read as moved until the source is
 indexed again. A row indexed with no declaration fails too; rows cut before digests were kept are counted, not failed.
 
@@ -159,8 +159,8 @@ substitution.
 
 It asks every indexed variant because the crossover moves with what is in the table, and because it
 turned out to be a property of the **variant**, not of the table alone: on 2026-08-30 a variant with
-7,102 rows had its planner walking its smaller partial index to 400 while two variants of 12,102 and
-13,068 rows in the same table stopped at 200. Checking only the served variant is how the crossover
+7,102 rows had its planner walking its smaller partial index past 1000 while two variants of 12,102 and
+13,068 rows in the same table stopped at 248 and 259 ([the entry](experiments/2026-08-30_the-ceiling-that-changed-nothing.md)). Checking only the served variant is how the crossover
 moved twice before anybody noticed.
 
 **`tuned_numbers_still_describe_the_corpus`** reads every `# tuned: file=` line in `config.yaml` and `config/`,
@@ -168,8 +168,8 @@ opens the measurement each one points at, and compares the corpus fingerprint re
 the live one. A number that came out of a measurement is only as good as the corpus it was measured
 on, and a comment claiming provenance cannot be checked while a file carrying a fingerprint can. It
 refuses when a named file is missing or describes a different corpus, and says how many carry no
-comparable fingerprint. On its first run it found the criterion's zero point taken on 12,108 chunks
-against a table holding 12,102.
+comparable fingerprint. On its first run it found the criterion's zero point taken on a few chunks
+more than the table held.
 
 **`index_is_alive`** is a smoke test and says so in its own output: recall@20 against exact search on
 a few dozen questions, with a deliberately low floor. It catches an empty or half-built index. It is
@@ -194,7 +194,7 @@ double-weight that original in every paired comparison.
 ### Are the switches the switches the last run used
 
 **`keyword_switches_match_the_worker`** compares the keyword-leg switches the config on the worker's
-disk declares (`keyword_query`, `keyword_rank`, `keyword_norm`, `query_lang`, and the resolved depth)
+disk declares (`retrieval.keyword`: `query`, `rank`, `norm`, `query_lang`, `translation`, and the resolved depth)
 against the switches recorded in the most recent answer log. It runs `python -c` inside the worker
 container, which reads the config files fresh, so it sees the file rather than the memory of the
 process that is actually serving: a worker running yesterday's code is caught by

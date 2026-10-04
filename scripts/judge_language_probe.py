@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from evals.judge_language import measure
-from job_handlers.judging import _residency, judge_width, stamp_of
+from job_handlers.judging import judge_width, residency_of, stamp_of
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
             args.run_name, args.rows,
             note=lambda line: print(line, file=sys.stderr, flush=True),
             # the residency too, or the control is out of regime and cannot be read at all
-            stamp=stamp_of(judge_width(None), _residency(None)),
+            stamp=stamp_of(judge_width(None), residency_of(None)),
         ),
         indent=2, ensure_ascii=False,
     )

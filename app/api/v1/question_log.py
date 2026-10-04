@@ -15,7 +15,7 @@ from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONPATH
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from use_cases.agent_policy import FallbackPolicy, FallbackReason, Orchestrator
+from vocabulary import FallbackPolicy, FallbackReason, Orchestrator
 
 router = APIRouter(prefix="/question-log", tags=["question-logs"])
 

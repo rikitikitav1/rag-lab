@@ -1,6 +1,6 @@
 import re
 
-from use_cases.markup import FENCE_LINE, HYPHEN_MARK, INLINE_CODE
+from use_cases.markup import HYPHEN_MARK, INLINE_CODE, fence_scan
 
 # a dash of any kind across a line end, or a hyphen inside a line; a hyphen at a line end is a word's hyphenation
 _DASHED = re.compile(r"(\w+)(?:([\u2014\u2013])\s*|(-))(\w+)")
@@ -86,27 +86,12 @@ def join_split_words(markdown: str, layer: str | None) -> tuple[str, int]:
             return a
         return match.group(0)
 
-    lines, inside = markdown.split("\n"), False
+    lines = markdown.split("\n")
+    fences, inside, _ = fence_scan(lines)
     for n, line in enumerate(lines):
-        if FENCE_LINE.match(line):
-            inside = not inside
-        elif not inside:
+        if n not in fences and n not in inside:
             parts = INLINE_CODE.split(line)
             parts[::2] = [_SPLIT.sub(join, part) for part in parts[::2]]
             lines[n] = "".join(parts)
     return "\n".join(lines), count
 
-
-# one underscore after a letter or digit: a dunder name (`__repr__`) ends a word, the next line is not its tail
-_WRAPPED_UNDERSCORE = re.compile(r"(?<!\w)(\w*[^\W_]_)\r?\n[ \t]*(\w[\w.]*)")
-
-
-# an identifier wrapped after its underscore: the converter reads the line end as a space, the layer keeps the wrap
-def join_wrapped_identifiers(markdown: str, layer: str | None) -> tuple[str, int]:
-    if not layer:
-        return markdown, 0
-    pairs = {f"{a} {b}": f"{a}{b}" for a, b in _WRAPPED_UNDERSCORE.findall(layer)}
-    if not pairs:
-        return markdown, 0
-    pattern = re.compile(r"(?<!\w)(" + "|".join(map(re.escape, sorted(pairs, key=len, reverse=True))) + r")(?![\w])")
-    return pattern.subn(lambda m: pairs[m.group(0)], markdown)

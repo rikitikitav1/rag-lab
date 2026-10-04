@@ -2,6 +2,15 @@ import pytest
 from use_cases import retrieval_compare as rc
 
 
+# the rare cut's counts live in the base; these tests read the record's shape, not the counts
+@pytest.fixture(autouse=True)
+def counted_terms(monkeypatch):
+    import term_frequencies
+
+    monkeypatch.setattr(term_frequencies, "stale", lambda variant: None)
+    monkeypatch.setattr(term_frequencies, "counted", lambda variant: {"chunks": 10, "newest_chunk": 9})
+
+
 def _row(qid, file_rank=None, section_rank=None, scorable=True):
     return {
         "id": qid,
@@ -68,7 +77,7 @@ def test_a_comparison_must_name_the_axis_it_is_reported_along(client):
         "kind": "retrieval",
         "dataset": "paraphrased_ru",
         "param": "k",
-        "axes": {"variant": ["baseline", "clean_1024"]},
+        "axes": {"variant": ["clean_big_1024", "clean_1024"]},
     }
     out = client.post("/v1/experiment", json=body)
     assert out.status_code == 422
@@ -88,7 +97,7 @@ def test_an_axis_nobody_applies_is_refused_at_the_route(client):
 
 
 def test_a_delta_moves_only_the_axis_of_record():
-    axes = {"variant": ["baseline", "clean_1024"], "rerank_top": [0, 20]}
+    axes = {"variant": ["clean_big_1024", "clean_1024"], "rerank_top": [0, 20]}
     # every arm not at the first value has a reference differing only in the axis of record
     pairs = {
         rc.arm_name(a): rc.arm_name(rc._reference_for(a, "variant", axes))
@@ -96,14 +105,14 @@ def test_a_delta_moves_only_the_axis_of_record():
         if rc._reference_for(a, "variant", axes)
     }
     assert pairs == {
-        "rerank_top=0_variant=clean_1024": "rerank_top=0_variant=baseline",
-        "rerank_top=20_variant=clean_1024": "rerank_top=20_variant=baseline",
+        "rerank_top=0_variant=clean_1024": "rerank_top=0_variant=clean_big_1024",
+        "rerank_top=20_variant=clean_1024": "rerank_top=20_variant=clean_big_1024",
     }, "with two axes one reference for the whole grid would move both at once"
 
 
 def test_an_arm_already_at_the_reference_value_has_no_delta():
-    axes = {"variant": ["baseline", "clean_1024"]}
-    assert rc._reference_for({"variant": "baseline"}, "variant", axes) is None
+    axes = {"variant": ["clean_big_1024", "clean_1024"]}
+    assert rc._reference_for({"variant": "clean_big_1024"}, "variant", axes) is None
 
 
 def test_without_an_axis_of_record_nothing_is_compared():
@@ -115,7 +124,7 @@ def test_an_axis_value_is_checked_as_well_as_its_name(client):
         "kind": "retrieval",
         "dataset": "paraphrased_ru",
         "param": "variant",
-        "axes": {"variant": ["baseline", "no_such_cut"]},
+        "axes": {"variant": ["clean_big_1024", "no_such_cut"]},
     }
     out = client.post("/v1/experiment", json=body)
     assert out.status_code == 400
@@ -185,7 +194,7 @@ class _Exp:
 
         self.id = 1
         self.status = status
-        self.axes = {"variant": ["baseline"]}
+        self.axes = {"variant": ["clean_big_1024"]}
         self.param = "variant"
         self.dataset = "s"
         self.sample_size = None
@@ -287,12 +296,14 @@ def test_every_axis_measure_applies_has_a_rule_and_a_message():
 
     taken = set(inspect.signature(rc.measure).parameters)
     # `ef_search` reaches measure as `ef`, resolved by depth_of; the rest by their own name
-    knobs = {"variant", "ef_search", "limit_vector", "limit_keyword",
+    knobs = {"variant", "ef_search", "exact", "limit_vector", "limit_keyword",
              "distance_threshold", "rerank_top", "source"}
-    unapplied = {k for k in knobs if k not in taken} - {"ef_search"}
+    unapplied = {k for k in knobs if k not in taken} - {"ef_search", "exact"}
     assert not unapplied, f"an axis measure cannot apply is a knob nobody turns: {unapplied}"
-    assert set(rc.AXIS_RULES) == knobs
-    assert set(rc.AXIS_LIMITS) == knobs
+    # the keyword switches reach the search through config, set by keyword_settings around measure
+    keyword = {"keyword_query", "keyword_translation", "max_term_share", "keyword_aliases"}
+    assert set(rc.AXIS_RULES) == knobs | keyword
+    assert set(rc.AXIS_LIMITS) == knobs | keyword
 
 
 def test_a_pool_of_nothing_cannot_disarm_the_instrument_that_reports_a_capped_pool(client):
@@ -324,14 +335,14 @@ def test_a_cancelled_comparison_stops_instead_of_measuring_the_whole_grid(monkey
     monkeypatch.setattr(job_queue, "is_cancelled", lambda job_id: True)
     monkeypatch.setattr(rc, "measure", lambda *a, **kw: pytest.fail("measured after cancel"))
     plan = rc.ComparisonPlan(
-        axes={"variant": ["baseline"]}, param="variant", dataset="s", job_id=7
+        axes={"variant": ["clean_big_1024"]}, param="variant", dataset="s", job_id=7
     )
     with pytest.raises(RuntimeError, match="cancelled"):
         rc.run(plan)
 
 
 def test_the_procedure_of_an_arm_is_the_shape_the_report_writes():
-    arm = {"variant": "baseline", "rerank_top": 20, "ef_search": 100}
+    arm = {"variant": "clean_big_1024", "rerank_top": 20, "ef_search": 100}
     proc = rc.arm_procedure(arm, [{"id": 1}, {"id": 2}], "paraphrased_ru")
     missing = [f for f in rc.COMPARABLE if f not in proc]
     assert missing == [], "a record the comparability check cannot read is not a record"
@@ -354,13 +365,13 @@ def test_the_stored_axes_are_validated_where_a_retry_reads_them():
 
 def test_a_record_says_whether_its_two_arms_were_comparable():
     # the axis of record may differ and nothing else; `ef_search` is named differently
-    base = rc.arm_procedure({"variant": "baseline", "ef_search": 100}, [{"id": 1}], "s")
-    arm = rc.arm_procedure({"variant": "baseline", "ef_search": 200}, [{"id": 1}], "s")
+    base = rc.arm_procedure({"variant": "clean_big_1024", "ef_search": 100}, [{"id": 1}], "s")
+    arm = rc.arm_procedure({"variant": "clean_big_1024", "ef_search": 200}, [{"id": 1}], "s")
     field = rc.AXIS_FIELD.get("ef_search", "ef_search")
     assert rc.comparable({**base, field: None}, {**arm, field: None}) == []
     # and a pair that also moved the candidate pool is not comparable, axis or no axis
     wider = rc.arm_procedure(
-        {"variant": "baseline", "ef_search": 200, "limit_vector": 20}, [{"id": 1}], "s"
+        {"variant": "clean_big_1024", "ef_search": 200, "limit_vector": 20}, [{"id": 1}], "s"
     )
     assert [f for f, _, _ in rc.comparable({**base, field: None}, {**wider, field: None})] == [
         "limit_vector"
@@ -383,3 +394,80 @@ def test_an_exact_gold_ranks_by_whole_paths_within_the_depth():
     sections = [("a.md", "summary")]
     assert rc._section_rank(rows, sections, Gold(("a.md",), "Ch2 > Summary"), None) == 3
     assert rc._section_rank(rows, sections, Gold(("a.md",), f"Ch{rc.DEPTH + 2} > Summary"), None) is None
+
+
+# a clamped search narrows to the gold's own source, and a source out of search is a miss, not a stopped measure
+def test_a_clamped_measure_narrows_to_the_gold_source_and_survives_one_out_of_search(monkeypatch):
+    from search_scope import ScopeRefused
+    from use_cases import retrieval_compare
+
+    asked = []
+
+    class _Searcher:
+        def hybrid_search(self, question, emb, scope, **kw):
+            asked.append(scope.sources)
+            if scope.sources == ("gone",):
+                raise ScopeRefused("not in search")
+            return []
+
+    def question(qid: int, file: str) -> dict:
+        return {"id": qid, "original_text": "q", "emb": "[0]", "embedded_by": "m", "marked_sources": [],
+                "gold": {"file": file, "section": "A"}, "gold_heading": None}
+
+    questions = [question(1, "kept/a.md"), question(2, "gone/b.md")]
+    monkeypatch.setattr(retrieval_compare, "questions", lambda conn, set_name, limit, ids=None: questions)
+    monkeypatch.setattr(retrieval_compare.db, "section_exists", lambda *a, **kw: False)
+    rows = retrieval_compare.measure(_Searcher(), None, "s", "v", 10, True, clamped=True)
+    assert asked == [("kept",), ("gone",)] and [r["file_rank"] for r in rows] == [None, None]
+
+
+# the search reads its keyword switches from config, so an arm sets them for its measuring and puts them back
+def test_an_arm_names_its_keyword_switches_and_leaves_the_config_as_it_found_it():
+    import config
+    from use_cases import retrieval_compare
+
+    kw = config.settings.retrieval.keyword
+    before = config.keyword_switches()
+    arm = {"keyword_query": "or", "keyword_translation": "replaces", "max_term_share": 0.05, "keyword_aliases": True}
+    with retrieval_compare.keyword_settings(arm):
+        set_now = (kw.query, kw.translation.enabled, kw.translation.replaces, kw.max_term_share, kw.aliases.enabled)
+        assert set_now == ("or", True, True, 0.05, True)
+    assert config.keyword_switches() == before
+    recorded = retrieval_compare.arm_procedure(arm, [], "s")["keyword"]
+    assert recorded["query"] == "or" and recorded["translation"]["replaces"] and recorded["max_term_share"] == 0.05
+    assert recorded["aliases"]["enabled"] and len(recorded["aliases"]["digest"]) == 12
+    assert not retrieval_compare.AXIS_RULES["max_term_share"](0.0005), "below the table's floor reads every word rare"
+    assert not retrieval_compare.AXIS_RULES["keyword_translation"]("on")
+
+
+# a loser on the full set is pinned to the dictionary entry that fired on its question
+def test_a_measured_row_names_the_aliases_that_fired_on_its_question(monkeypatch):
+    import config
+    from use_cases import retrieval_compare
+
+    class _Searcher:
+        def hybrid_search(self, question, emb, scope, **kw):
+            return []
+
+    monkeypatch.setattr(config.settings.retrieval.keyword.aliases, "enabled", True)
+    monkeypatch.setattr(config.settings, "aliases", {"k": config.AliasCfg(canonical="Kubernetes", aliases=["k8s"])})
+    questions = [{"id": i, "original_text": text, "emb": "[0]", "embedded_by": "m", "marked_sources": [],
+                  "gold": {"file": "a/b.md", "section": "A"}, "gold_heading": None}
+                 for i, text in ((1, "Поды в k8s"), (2, "Поды в Kubernetes"))]
+    monkeypatch.setattr(retrieval_compare, "questions", lambda conn, set_name, limit, ids=None: questions)
+    monkeypatch.setattr(retrieval_compare.db, "section_exists", lambda *a, **kw: False)
+    monkeypatch.setattr(retrieval_compare, "assert_pool", lambda *a: None)
+    rows = retrieval_compare.measure(_Searcher(), None, "s", "v", 10, True)
+    assert [retrieval_compare._keep(r)["aliases_fired"] for r in rows] == [["k8s=Kubernetes"], None]
+
+
+
+# an arm that names no depth searches as the stand serves, not by a scan of every vector
+def test_an_arm_searches_at_the_served_depth_unless_it_asks_for_the_exact_scan(monkeypatch):
+    import search_depth
+    from use_cases import retrieval_compare
+
+    monkeypatch.setattr(search_depth, "resolve", lambda variant=None, ef=None: 200)
+    assert retrieval_compare.depth_of({}) == (False, 200)
+    assert retrieval_compare.depth_of({"ef_search": 400}) == (False, 400)
+    assert retrieval_compare.depth_of({"exact": True})[0] is True

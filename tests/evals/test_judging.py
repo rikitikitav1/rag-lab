@@ -2,7 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 from conftest import FakeSession
-from job_handlers.judging import _MAX_JUDGE_ATTEMPTS, _errored, _errored_metric
+from job_handlers.judging import _errored, _errored_metric
+from use_cases.judge_debts import MAX_JUDGE_ATTEMPTS as _MAX_JUDGE_ATTEMPTS
 
 
 def test_errored_false_until_cap():
@@ -268,7 +269,7 @@ def test_a_verdict_that_is_not_one_says_what_the_judge_answered():
 
 def test_a_row_outside_the_control_sample_is_not_owed_that_axis():
     # nobody is coming for the rows a control sample left out, and the series waits
-    from job_handlers.judging import still_to_judge
+    from use_cases.judge_debts import still_to_judge
 
     paths = set(still_to_judge().compile().params.values())
 
@@ -476,7 +477,8 @@ def test_a_refusal_owes_no_axis_and_both_halves_of_the_rule_say_so():
     # abstain, rather than bend the judge prompt towards the guest
     from types import SimpleNamespace
 
-    from job_handlers.judging import _owed, still_to_judge
+    from job_handlers.judging import _owed
+    from use_cases.judge_debts import still_to_judge
 
     refused = SimpleNamespace(
         metrics={"refusal": True}, relevance=None, faithfulness=None, completeness=None,
@@ -588,24 +590,24 @@ def test_a_pass_names_the_residency_it_caused_or_inherits_the_last(monkeypatch):
     monkeypatch.setattr(j, "_card_changed_hands", lambda since, name: handed[0])
     queue = "ollama /api/ps and the queue"
 
-    assert j._residency(42) == j.Residency(42, None, "ollama /api/ps"), "the card was empty"
+    assert j.residency_of(42) == j.Residency(42, None, "ollama /api/ps"), "the card was empty"
     on_card[0], last[0] = True, (7, "2026-09-10T00:00:00+00:00")
-    assert j._residency(42) == j.Residency(7, True, queue), "it was resident, the older one holds"
+    assert j.residency_of(42) == j.Residency(7, True, queue), "it was resident, the older one holds"
     assert asked[-1] == "ollama", "only this engine's rows may lend it a number"
     last[0] = None
-    assert j._residency(42) == j.Residency(42, True, queue)
+    assert j.residency_of(42) == j.Residency(42, True, queue)
 
     # half on the card is another instrument: the cpu layers answer with other kernels
     on_card[0], last[0] = False, (7, "2026-09-10T00:00:00+00:00")
-    assert j._residency(42) == j.Residency(42, False, "ollama /api/ps"), "partial never inherits"
+    assert j.residency_of(42) == j.Residency(42, False, "ollama /api/ps"), "partial never inherits"
 
     # `/api/ps` cannot see a neighbour loaded between two passes, but the queue can
     on_card[0], disturbed[0] = True, True
-    assert j._residency(42) == j.Residency(42, True, queue), "something loaded since, this is new"
+    assert j.residency_of(42) == j.Residency(42, True, queue), "something loaded since, this is new"
 
     # a shell handed the card to vLLM and back, which the queue never saw but the verdicts did
     disturbed[0], handed[0] = False, True
-    assert j._residency(42) == j.Residency(42, True, queue), "the card changed hands in between"
+    assert j.residency_of(42) == j.Residency(42, True, queue), "the card changed hands in between"
 
 
 def test_a_vllm_pass_is_named_by_the_process_that_holds_the_judge(monkeypatch):
@@ -624,14 +626,14 @@ def test_a_vllm_pass_is_named_by_the_process_that_holds_the_judge(monkeypatch):
                         lambda name, at=None: asked.append((name, at)) or last[0])
     source = "vllm /metrics process start"
 
-    assert j._residency(42) == j.Residency(42, None, source), "the first pass on a process names it"
+    assert j.residency_of(42) == j.Residency(42, None, source), "the first pass on a process names it"
     assert asked[-1] == ("vllm", started[0]), "only rows judged under this very start may lend"
     last[0] = (30, started[0])
-    assert j._residency(42) == j.Residency(30, None, source), "same process, so the older one holds"
+    assert j.residency_of(42) == j.Residency(30, None, source), "same process, so the older one holds"
 
     # a server that cannot say when it started names nothing, and the pass stands alone
     started[0] = None
-    assert j._residency(42) == j.Residency(42, None, "the pass, vllm /metrics unreachable")
+    assert j.residency_of(42) == j.Residency(42, None, "the pass, vllm /metrics unreachable")
 
 
 def test_the_process_start_is_read_from_metrics_and_not_from_created(monkeypatch):
@@ -774,7 +776,7 @@ def test_the_language_probe_records_what_judged_it(monkeypatch):
     from job_handlers import judging
 
     seen = {}
-    monkeypatch.setattr(judging, "_residency", lambda job_id: judging.Residency(77, True))
+    monkeypatch.setattr(judging, "residency_of", lambda job_id: judging.Residency(77, True))
     _judged_on(monkeypatch, "ollama")
     monkeypatch.setattr(
         judging.llm, "sampler",
@@ -812,10 +814,10 @@ def test_the_card_is_read_after_the_judge_answered_and_not_before(monkeypatch):
     from job_handlers import judging
 
     order = []
-    monkeypatch.setattr(judging, "_residency", lambda job_id, model=None: order.append("probe")
+    monkeypatch.setattr(judging, "residency_of", lambda job_id, model=None: order.append("probe")
                         or judging.Residency(job_id, True))
 
-    late = judging.Pass(7, (), residency=lambda: judging._residency(7))
+    late = judging.Pass(7, (), residency=lambda: judging.residency_of(7))
     assert order == [], "building the holder must not touch the card"
 
     class _Session:
@@ -927,7 +929,7 @@ def test_a_remote_judge_is_stamped_with_no_residency_rather_than_one_of_its_own(
 
     cloud = engines.EngineSpec(8, "gonka", EngineKind.openai_compatible, "GONKA", Placement.remote)
     monkeypatch.setattr(j.llm, "resolve_for", lambda role, model=None: engines.Resolved("m", cloud))
-    assert j._residency(42) == j.Residency(None, False, card.NO_RESIDENCY)
+    assert j.residency_of(42) == j.Residency(None, False, card.NO_RESIDENCY)
 
 
 

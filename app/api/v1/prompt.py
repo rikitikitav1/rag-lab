@@ -1,7 +1,8 @@
 from datetime import datetime
 
 from crud import ensure_not_active, get_or_404
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from models.eval import QuestionLog
 from models.registry import Prompt, Purpose
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel
@@ -98,6 +99,14 @@ async def delete_prompt(
 ):
     prompt = await get_or_404(Prompt, id, session)
     ensure_not_active(prompt)
+    # a version runs recorded is their text: deleted, a later POST would give its number to another text
+    used = await session.scalar(
+        select(func.count()).select_from(QuestionLog).where(
+            QuestionLog.prompts[prompt.purpose.name].astext == str(prompt.version)
+        )
+    )
+    if used:
+        raise HTTPException(status_code=409, detail=f"{used} answer logs recorded {prompt.purpose} v{prompt.version}")
     await session.delete(prompt)
     await session.commit()
 

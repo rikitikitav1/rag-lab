@@ -20,7 +20,7 @@ def _with(tmp_path, change) -> str:
 
 def test_a_missing_or_misspelled_key_fails_the_start_rather_than_falling_back(tmp_path):
     # a default in the code stood in for a measured number: `ef_search` fell to "auto", the corpus to baseline
-    assert config._load(_with(tmp_path, lambda raw: None)).retrieval.ef_search == 100
+    assert config._load(_with(tmp_path, lambda raw: None)).retrieval.ef_search == 200
     with pytest.raises(Exception, match="ef_search"):
         config._load(_with(tmp_path, lambda raw: raw["retrieval"].pop("ef_search")))
     with pytest.raises(Exception, match="variant"):
@@ -35,12 +35,15 @@ def test_the_moved_keys_hold_the_values_they_held_before_the_move():
     # the layout changed and no number did: the old flat names, read at their new places
     s = config._load(str(ROOT / "config.yaml"))
     assert s.retrieval.keyword.model_dump() == {
-        "query": "and",
+        "query": "or",
         "rank": "ts_rank",
         "norm": 0,
         "query_lang": "function_words",
+        "translation": {"enabled": True, "model_dir": "datasets/models/opus-mt-ru-en-ctranslate2", "replaces": False},
+        "aliases": {"enabled": False},
+        "max_term_share": 0.05,
     }
-    assert (s.retrieval.ef_search, s.retrieval.distance_threshold, s.retrieval.results_limit) == (100, 0.55, 5)
+    assert (s.retrieval.ef_search, s.retrieval.distance_threshold, s.retrieval.results_limit) == (200, 0.56, 5)
     assert s.verdict.criterion_sets == ["paraphrased_v2_ru", "paraphrased_v2"] and s.verdict.veto_sets == ["veto_v1"]
     assert s.verdict.search_depth.model_dump() == {
         "ef_ladder": [100, 200, 400],
@@ -51,17 +54,18 @@ def test_the_moved_keys_hold_the_values_they_held_before_the_move():
     assert (s.verdict.index_alive.recall, s.verdict.index_alive.questions) == (0.9, 40)
     assert s.agent.gate.model_dump() == {
         "signal": "distance",
-        "weak_distance": 0.39,
+        "weak_distance": 0.3861,
         "weak_threshold": 0.5,
         "candidates": 5,
     }
-    assert s.agent.topic_threshold == {"ru": 0.4560, "en": 0.4374}
+    assert s.agent.topic_threshold == {"ru": 0.4707, "en": 0.4287}
     assert (s.ingestion.batch_size, s.ingestion.commit_size) == (100, 1000)
 
 
 def test_the_record_names_the_keyword_switches_as_before():
     # a run snapshot writes these names, and a changed one reads as a changed search
-    assert config.KEYWORD_SWITCHES == ("query", "rank", "norm", "query_lang")
+    assert config.KEYWORD_SWITCHES == ("query", "rank", "norm", "query_lang", "translation", "aliases",
+                                       "max_term_share")
     assert set(config.keyword_switches()) == set(config.KEYWORD_SWITCHES)
 
 

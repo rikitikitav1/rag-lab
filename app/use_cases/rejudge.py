@@ -21,11 +21,12 @@ from orm.sync_db import Session
 from sqlalchemy import delete, func, insert, literal, select, text
 from use_cases import judge, retrieval_compare
 from use_cases.retrieval_compare import half_of
+from vocabulary import JUDGE_AXES
 
 # 1 means and deltas; 2 pairing and `source_scored`; 3 the source's judge; 4 Holm; 5 p unrounded
 SCHEMA = 5
 
-AXES = ("faithfulness", "relevance", "completeness")
+AXES = JUDGE_AXES
 # a copy is unjudged, so it must not carry the judge the original named
 JUDGE_MODEL_KEY = "judging"
 
@@ -566,3 +567,22 @@ def for_reading(results: dict) -> dict:
         # the arms' code: every reader answers with the same keys, filled or empty
         "code": results.get("code") or {},
     }
+
+
+# a run copied under a new name and its judge queued; a refused copy is a refusal, a failed queue takes the copy back
+def queue_copy(source: str, run_name: str) -> tuple[int, int]:
+    import job_queue
+    from errors import Refusal
+
+    try:
+        copied = copy_run(source, run_name)
+    except ValueError as e:
+        raise Refusal("invalid", str(e)) from e
+    try:
+        job_id = job_queue.enqueue("judge_answers", {"run_name": run_name})
+    except BaseException:
+        # the copy is committed and the job is not, under a name no retry can reuse
+        delete_runs([run_name])
+        raise
+    return job_id, copied
+

@@ -1,5 +1,6 @@
 import job_queue
 import pytest
+import search_scope
 from job_handlers.base import Final
 from use_cases import source_intake
 
@@ -22,12 +23,12 @@ def test_every_job_that_reads_a_variant_holds_its_removal(monkeypatch):
 
 # a label is read in the case the index wrote tags in
 def test_a_scope_label_is_read_lowercased():
-    import db
 
-    assert db.Scope(label="Redis").label == "redis" and db.as_scope("PostgreSQL").label == "postgresql"
+    assert search_scope.Scope(label="Redis").label == "redis"
+    assert search_scope.as_scope("PostgreSQL").label == "postgresql"
 
 
-# a veto build that names no variants or no cut_from reads baseline and clean_1024 by default, and holds their removal
+# a veto build that names no variants or no cut_from reads clean_1024 by default, and holds its removal
 def test_a_veto_build_on_its_defaults_holds_the_variants_it_reads(monkeypatch):
     waiting = {}
     monkeypatch.setattr(job_queue, "pending_of_type", lambda type, **options: waiting.get((type, *options.items())))
@@ -38,7 +39,7 @@ def test_a_veto_build_on_its_defaults_holds_the_variants_it_reads(monkeypatch):
     waiting.clear()
     waiting[("build_veto_set", ("variants", None))] = 6
     with pytest.raises(Final, match="6"):
-        source_intake.remove_variant("baseline", "clean_2048")
+        source_intake.remove_variant("clean_1024", "clean_2048")
     waiting[("build_veto_set", ("cut_from", "clean_512"))] = 8
     with pytest.raises(Final, match="8"):
         source_intake.remove_variant("clean_512", "clean_2048")

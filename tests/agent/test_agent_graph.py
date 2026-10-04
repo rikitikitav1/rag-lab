@@ -1,7 +1,9 @@
 import json
 from types import SimpleNamespace
 
+import corpus_search
 import pytest
+import vocabulary
 from test_agent import _agent_harness, _hit, _tool_call, _turn, _weak_hit
 from use_cases import agent, agent_policy
 
@@ -32,7 +34,7 @@ def script_from_turns(turns) -> list:
 def _graph_run(monkeypatch_factory, turns, corpus_sources, **kwargs):
     with monkeypatch_factory() as monkeypatch:
         return _scenario(
-            monkeypatch, turns, corpus_sources, orchestrator=agent_policy.Orchestrator.langgraph_ported, **kwargs
+            monkeypatch, turns, corpus_sources, orchestrator=vocabulary.Orchestrator.langgraph_ported, **kwargs
         )
 
 
@@ -45,7 +47,7 @@ def _idiomatic_run(monkeypatch, script, corpus_sources, **kwargs):
     model = ScriptedChatModel(script)
     monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
     kwargs.setdefault("max_hops", 2)
-    return agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_idiomatic, **kwargs)
+    return agent.run("q", orchestrator=vocabulary.Orchestrator.langgraph_idiomatic, **kwargs)
 
 
 @pytest.fixture
@@ -138,7 +140,7 @@ def test_an_off_topic_question_is_refused_the_same_way(monkeypatch_factory):
             max_hops=2,
             fallback_policy="corpus_first_weak",
             topic_threshold=0.5,
-            orchestrator=agent_policy.Orchestrator.langgraph_ported,
+            orchestrator=vocabulary.Orchestrator.langgraph_ported,
         )
     assert graph.fallback_reason == agent.FallbackReason.off_topic
     assert graph.sources == []
@@ -179,7 +181,7 @@ def test_a_failing_tool_is_reported_the_same_way(monkeypatch_factory):
     with monkeypatch_factory() as monkeypatch:
         _agent_harness(monkeypatch, list(turns), [])
         monkeypatch.setattr(agent_tools, "dispatch", failing)
-        graph = agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_ported)
+        graph = agent.run("q", max_hops=2, orchestrator=vocabulary.Orchestrator.langgraph_ported)
     assert graph.tool_errors == {"search_corpus": "timeout"}
 
 
@@ -308,7 +310,7 @@ def _run_into_the_recursion_limit(monkeypatch_factory, orchestrator):
 
 
 def test_the_bare_arm_runs_out_of_hops_at_the_limit_rather_than_breaking(monkeypatch_factory):
-    result = _run_into_the_recursion_limit(monkeypatch_factory, agent_policy.Orchestrator.langgraph_idiomatic)
+    result = _run_into_the_recursion_limit(monkeypatch_factory, vocabulary.Orchestrator.langgraph_idiomatic)
 
     # the bare arm has no budget of its own, so the limit is what ends a run that keeps calling
     assert result.failed is False
@@ -327,7 +329,7 @@ def test_a_client_failure_is_logged_as_an_error_not_a_missing_row(monkeypatch_fa
         _agent_harness(monkeypatch, [], [])
         monkeypatch.setattr(react, "chat_model", lambda role=None, model=None: object())
         monkeypatch.setattr(agents_module, "create_agent", lambda **kw: Broken())
-        result = agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_idiomatic)
+        result = agent.run("q", max_hops=2, orchestrator=vocabulary.Orchestrator.langgraph_idiomatic)
 
     # the loop writes a row for a hop that blew up, and the arms have to write one too
     assert result.failed is True
@@ -340,13 +342,12 @@ def test_a_stand_fault_ends_every_agent_arm_instead_of_failing_the_row(monkeypat
     from engines.card import CardNotHanded
     from orchestrators import react
 
-    import db
 
     def lost(*a, **kw):
         raise CardNotHanded("vllm is down; the card stays where it is")
 
     def foreign(*a, **kw):
-        raise db.ForeignVectors("variant holds vectors of another embedder")
+        raise corpus_search.ForeignVectors("variant holds vectors of another embedder")
 
     class Broken:
         def invoke(self, *a, **kw):
@@ -355,31 +356,30 @@ def test_a_stand_fault_ends_every_agent_arm_instead_of_failing_the_row(monkeypat
     search = [_turn(tool_calls=[_tool_call("a", "search_corpus", "{}")], message={"role": "assistant"})]
     for patch, fault in (
         (lambda mp: mp.setattr(agent.llm, "chat", lost), CardNotHanded),
-        (lambda mp: mp.setattr(agent_tools, "dispatch", foreign), db.ForeignVectors),
+        (lambda mp: mp.setattr(agent_tools, "dispatch", foreign), corpus_search.ForeignVectors),
     ):
         with monkeypatch_factory() as monkeypatch:
             _agent_harness(monkeypatch, list(search), [])
             patch(monkeypatch)
             with pytest.raises(fault):
-                agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_ported)
+                agent.run("q", max_hops=2, orchestrator=vocabulary.Orchestrator.langgraph_ported)
 
     with monkeypatch_factory() as monkeypatch:
         _agent_harness(monkeypatch, [], [])
         monkeypatch.setattr(react, "chat_model", lambda role=None, model=None: object())
         monkeypatch.setattr(agents_module, "create_agent", lambda **kw: Broken())
-        with pytest.raises(db.ForeignVectors):
-            agent.run("q", max_hops=2, orchestrator=agent_policy.Orchestrator.langgraph_idiomatic)
+        with pytest.raises(corpus_search.ForeignVectors):
+            agent.run("q", max_hops=2, orchestrator=vocabulary.Orchestrator.langgraph_idiomatic)
 
 
 def test_the_topic_axis_does_not_turn_foreign_vectors_into_no_signal(monkeypatch):
-    import db
 
     def foreign(*a, **kw):
-        raise db.ForeignVectors("variant holds vectors of another embedder")
+        raise corpus_search.ForeignVectors("variant holds vectors of another embedder")
 
     monkeypatch.setattr(agent.llm, "embed_with_label", lambda text: ("bge-m3@ollama", [0.0]))
-    monkeypatch.setattr(agent.db, "nearest_distance", foreign)
-    with pytest.raises(db.ForeignVectors):
+    monkeypatch.setattr(corpus_search, "nearest_distance", foreign)
+    with pytest.raises(corpus_search.ForeignVectors):
         agent._topic_score("q", "baseline")
 
 
@@ -479,7 +479,7 @@ def test_the_graph_records_the_depth_the_tool_searched_at(monkeypatch_factory):
     with monkeypatch_factory() as monkeypatch:
         _agent_harness(monkeypatch, turns, [_hit()])
         _dispatch_with_depth(monkeypatch, 200)
-        result = agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_ported)
+        result = agent.run("q", orchestrator=vocabulary.Orchestrator.langgraph_ported)
     assert result.ef_search == 200
 
 
@@ -489,7 +489,7 @@ def test_an_agent_answer_without_a_search_records_no_depth(monkeypatch_factory):
     with monkeypatch_factory() as monkeypatch:
         _agent_harness(monkeypatch, turns, [_hit()])
         _dispatch_with_depth(monkeypatch, 200)
-        result = agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_ported)
+        result = agent.run("q", orchestrator=vocabulary.Orchestrator.langgraph_ported)
     assert result.ef_search is None
 
 
@@ -505,7 +505,7 @@ def test_the_idiomatic_arm_records_the_depth_too(monkeypatch_factory):
             [{"tool_calls": [{"name": "search_corpus", "args": {}, "id": "a"}]}, {"text": "final"}]
         )
         monkeypatch.setattr(react, "chat_model", lambda role=None, model_name=None: model)
-        result = agent.run("q", orchestrator=agent_policy.Orchestrator.langgraph_idiomatic, max_hops=2)
+        result = agent.run("q", orchestrator=vocabulary.Orchestrator.langgraph_idiomatic, max_hops=2)
     assert result.ef_search == 400
 
 
@@ -593,3 +593,15 @@ def test_the_hand_drawn_diagram_names_no_node_the_graph_does_not_have():
     today = cells(drawing / "agent_nodes_and_the_row.drawio.svg", parent="today")
     drawn = {re.match(r"\w+", label).group(0) for label in today}
     assert drawn == {n for n in graph.build().get_graph().nodes if not n.startswith("__")}
+
+
+# a hop that failed ends the row: no forced answer is asked after it, so the row is not failed and answered at once
+def test_a_failed_hop_asks_no_forced_final():
+    from types import SimpleNamespace
+
+    from orchestrators import graph
+
+    asked = []
+    run = {"result": SimpleNamespace(failed=True), "chat": lambda *a, **k: asked.append(a)}
+    out = graph.final_node({"messages": [], "hops": 1, "text": ""}, {"configurable": {"run": run}})
+    assert asked == [] and out == {"finished_by": vocabulary.FinishedBy.no_answer}

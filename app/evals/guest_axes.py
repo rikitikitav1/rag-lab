@@ -5,6 +5,8 @@ import math
 import time
 from dataclasses import dataclass
 
+from vocabulary import MESSAGE_FORMS
+
 # one prefix tells a guest key from ours in `metrics`, in a copy and in a report
 PREFIX = "ragas_"
 
@@ -88,9 +90,6 @@ def _sample(ql):
         reference=ql.question.reference_answer if ql.question else None,
     )
 
-
-# how the guest's prompt reaches the model; the second is the ruler every older guest number was taken with
-MESSAGE_FORMS = ("user_only", "empty_system")
 
 _METRICS: dict = {}
 

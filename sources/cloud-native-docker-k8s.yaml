@@ -1,0 +1,9 @@
+# a Russian book on Docker and Kubernetes from the owner's library
+name: cloud-native-docker-k8s
+language: ru
+licence: copyright of the publisher, owner's file
+folder: datasets/inbox/books/cloud-native-docker-k8s
+# Docling's default PDF backend glues whole Russian sentences on this book; PDFium keeps the spaces
+intake:
+  settings:
+    docling: docling/pypdfium2_cells

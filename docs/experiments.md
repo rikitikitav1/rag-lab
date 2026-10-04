@@ -4,7 +4,7 @@ A lab journal of RAG-quality experiments: question → setup → result → deci
 
 ## Methodology
 
-- **Eval sets** live in the question bank (`set_name`). Verdicts are read on `paraphrased_v2_ru` and `paraphrased_v2` (`verdict.criterion_sets` in `config/evals.yaml`; older entries used `paraphrased_ru`): interview questions paraphrased, and for the `_ru` sets translated to Russian, so retrieval must work cross-lingually (ru query over an en corpus, FTS misses, vector-only) instead of matching source text verbatim. Raw interview questions are near-verbatim to their source (hit@k ~99%), so they hide quality differences.
+- **Eval sets** live in the question bank (`set_name`). Verdicts are read on `paraphrased_v2_ru` and `paraphrased_v2` (`verdict.criterion_sets` in `config/evals.yaml`; older entries used `paraphrased_ru`): interview questions paraphrased, and for the `_ru` sets translated to Russian, so retrieval must work cross-lingually (ru query over an en corpus, FTS misses, vector-only) instead of matching source text verbatim. Raw interview questions are near-verbatim to their source (hit@k near its ceiling), so they hide quality differences.
 - **Metrics** come from `question_logs` per `run_name`: retrieval (hit@k / MRR against `marked_sources`), generation (faithfulness / relevance / completeness / refusal via LLM-as-judge, judge = `Qwen/Qwen2.5-7B-Instruct-AWQ` on vLLM since 2026-09-11, `qwen2.5:7b` on ollama before that and reproduced by [stand mode 6](stand_modes.md), neutral to the generator to avoid co-hallucination).
 - **Isolation**: change one variable at a time; hold the rest constant.
 - **Reproducibility**: the generator's sampler is recorded with the run; the default is `temperature: 0.1`, and a run pins another with `generation_sampler`. Even at temperature 0 two runs of one generator differ, so a change is read against the generator's own floor (README, "Why the numbers hold"), not against zero.
@@ -122,3 +122,4 @@ Each entry also follows these rules:
 - [2026-09-25 - Which converter turns each kind of document into markdown](experiments/2026-09-25_two-converters-one-per-regime.md)
 - [2026-09-27 - Question generators side by side](experiments/2026-09-27_question-generators-side-by-side.md)
 - [2026-09-28 - Intake defects per book: the step 0 baseline](experiments/2026-09-28_intake-defects-per-book-step-0.md)
+- [2026-10-03 - Finding the right page in a corpus ten times larger](experiments/2026-10-03_finding-the-right-page-in-a-corpus-ten-times-larger.md)

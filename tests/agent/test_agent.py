@@ -843,7 +843,7 @@ def test_the_row_says_which_edge_ended_the_graph():
     # `final` meant three things, and `pools.outcome` re-derived one of them from `hops >= ceiling`
     from orchestrators import graph
     from use_cases.agent import AgentResult
-    from use_cases.agent_policy import FinishedBy
+    from vocabulary import FinishedBy
 
     result = AgentResult()
     ctx = {"max_hops": 4, "result": result, "role": "generation", "model": None}
@@ -856,7 +856,7 @@ def test_the_row_says_which_edge_ended_the_graph():
 
 def test_a_reader_trusts_the_recorded_edge_over_the_ceiling_it_would_guess():
     from evals.pools import _exhausted
-    from use_cases.agent_policy import FinishedBy
+    from vocabulary import FinishedBy
 
     ceiling = {"max_hops": 4}
     # the row spent its hops and answered anyway: the old rule called that exhausted
@@ -871,7 +871,7 @@ def test_a_reader_trusts_the_recorded_edge_over_the_ceiling_it_would_guess():
 
 def test_the_idiomatic_arm_names_why_the_field_is_empty():
     # a gap without a reason reads as a fault a month later
-    from use_cases.agent_policy import FinishedBy
+    from vocabulary import FinishedBy
 
     assert FinishedBy.unrecorded == "unrecorded"
     source = Path(__file__).resolve().parents[2] / "app" / "orchestrators" / "react.py"
@@ -928,7 +928,7 @@ def test_the_row_says_which_pieces_came_from_which_call():
 def test_a_forced_final_is_not_always_the_ceiling():
     # `hops_exhausted` on an empty first hop was the same lie the field was added to end
     from orchestrators import graph
-    from use_cases.agent_policy import FinishedBy
+    from vocabulary import FinishedBy
 
     ctx = {"max_hops": 4, "result": SimpleNamespace(took=lambda *a: None, note_prompt=lambda t: None),
            "role": "generation", "model": None,

@@ -22,6 +22,13 @@ class Stage(StrEnum):
     accepted = "accepted"
 
 
+# how far a copy of a text is trusted when two sources hold it word for word, highest first
+class Trust(StrEnum):
+    official = "official"
+    book = "book"
+    notes = "notes"
+
+
 class DataSource(Base):
     __tablename__ = "data_sources"
 
@@ -53,6 +60,8 @@ class DataSource(Base):
     raw: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     # per variant, the digest of the source file the chunks were cut by
     indexed_with: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    # per variant, the rules that digest was taken over, so a moved digest names its fields
+    indexed_rules: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     chunks: Mapped[list["DataChunk"]] = relationship(back_populates="data_source", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

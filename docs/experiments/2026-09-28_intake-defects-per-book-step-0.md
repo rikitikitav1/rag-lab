@@ -12,6 +12,9 @@ Reviewers: Claude agents, two on FreePascal and GoalKicker (Opus), the rest Sonn
 
 pages, clean and clean ch12 count pages; ch0 to ch12 count the checker's defects. A page is clean when its review names no defect on it (clean: the reviewers on the night's run) or when the checker finds none of its kinds on it (clean ch12: run 13, recounted only where ch12 differs from ch11). pages is the chapter as run 10 reads it; the reviewers read the chapters as they ended on the night, some of them shorter (see Caveats).
 
+<details>
+<summary>Per source: pages, clean pages and the checker's defects by chapter</summary>
+
 | source | lang | pages | clean | clean ch12 | ch0 | ch1 | ch2 | ch3 | ch4 | ch5 | ch6 | ch7 | ch8 | ch9 | ch10 | ch11 | ch12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | freepascal | en | 133 | 17 | 132 | 397 | 384 | 37 | 37 | 25 | 25 | 25 | 2 | 2 | 2 | 2 | 2 | 2 |
@@ -43,6 +46,8 @@ pages, clean and clean ch12 count pages; ch0 to ch12 count the checker's defects
 | analiz-dannyh-genai-python | ru | 11 | 2 | 10 | 23 | 11 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
 | cloud-native-docker-k8s-scan | ru | 11 | 5 | 5 | 35 | 29 | 21 | 20 | 20 | 20 | 20 | 20 | 20 | 20 | 20 | 20 | 20 |
 | analiz-dannyh-genai-python-scan | ru | 11 | 3 | 7 | 38 | 27 | 19 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
+
+</details>
 
 | scope | pages | clean | clean ch12 | clean ch12 share | ch0 | ch1 | ch2 | ch3 | ch4 | ch5 | ch6 | ch7 | ch8 | ch9 | ch10 | ch11 | ch12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -96,6 +101,9 @@ The route gains most on code (exact blocks 18 → 42 of 69 over the four sets) a
 
 The third chapter of each document (`datasets/converter_gold/chapter_set_3.yaml`, 699 pages) was never used for tuning. It was read once on the defaults of the night ("before", jobs 3583, 3584) and once on the code of run 6 ("after", 3607, 3608), and counted by the same checker:
 
+<details>
+<summary>Third chapters per source: defects before and after</summary>
+
 | source | before | after |
 |---|---|---|
 | ostep | 7 | 2 |
@@ -127,6 +135,8 @@ The third chapter of each document (`datasets/converter_gold/chapter_set_3.yaml`
 | cloud-native-docker-k8s-scan | 14 | 8 |
 | analiz-dannyh-genai-python-scan | 62 | 6 |
 | **all** | 1909 | 678 |
+
+</details>
 
 No source is worse. Coulouris keeps most of what is left (534): its pages 149 to 163 agree with their layer at F1 0.69 and the second reading, at 0.97, was refused for losing two of 44 table cells; a source knob (`reread_cells_slack`) lets that source take it, and is set when Coulouris is taken into the corpus.
 

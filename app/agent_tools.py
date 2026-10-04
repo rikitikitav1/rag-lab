@@ -92,6 +92,9 @@ def dispatch(
     try:
         raw = json.loads(arguments or "{}")
     except json.JSONDecodeError:
+        raw = None
+    # `null`, a list or a bare string parse, and the model must hear the same correctable answer as for broken json
+    if not isinstance(raw, dict):
         return ToolResult(
             content=f"{errors.ERROR_PREFIX}tool '{name}' got invalid arguments",
             meta={"error_kind": "client"},

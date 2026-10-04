@@ -9,14 +9,13 @@ from itertools import combinations
 from pathlib import Path
 
 import config
+import text_language
 from corpus_keys import Gold
 from evals.loaders import load_logs
 from evals.measurements import hand_back, store_json
 from evals.pools import JOINS_BOTH_JUDGES, joins_both_judges
 from evals.stats import to_unit
 from paths import ROOT
-
-import db
 
 # 1 the sheet, its key and the two readings, moved here from a script
 SCHEMA = 1
@@ -84,7 +83,7 @@ def _leak(ql) -> str:
 
 # the judge charges for Russian at the same meaning, so language is a covariate of the pair
 def _language(text: str) -> str:
-    return db.detect_language(text or "")
+    return text_language.detect_language(text or "")
 
 
 # the letter on the sheet against the row it points at: four copies of this, one inverted

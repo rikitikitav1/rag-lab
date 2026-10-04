@@ -16,6 +16,7 @@ from use_cases import (
     piece_join,
     raw_quality,
     route,
+    rule_counts,
 )
 from use_cases.converting import ceiling, code_lines_of, convert, converter_for, fields, load_settings, pieces
 
@@ -52,7 +53,11 @@ def plan(file: Path, names: dict, loaded: dict, rule, pages=None, size: int | No
 # one piece through its engine: its markdown with code rebuilt from the layer, and Docling's structure when it gave one
 def convert_piece(file: Path, engine: str | None, piece, settings: tuple | None, language: str, rule) -> dict:
     if engine is None:
-        return {"markdown": file.read_text(errors="ignore"), "seconds": 0.0, "status": None, "structure": None}
+        fired = rule_counts.Fired(rule)
+        markdown = markdown_cleanup.markdown_of(file)
+        markdown = fired.run("drop_repeated_code", markdown, markdown_cleanup.drop_repeated_code)
+        done = {"markdown": markdown, "seconds": 0.0, "status": None, "structure": None}
+        return {**done, "code": fired.counts} if any(fired.counts.values()) else done
     tool_settings, _ = settings
     spec = converter_for(engine)
     tool_fields = fields(tool_settings, language)
@@ -73,35 +78,27 @@ def convert_piece(file: Path, engine: str | None, piece, settings: tuple | None,
 
 # a dash the converter dropped at a line end put back from the piece's own layer, counted with the code rules
 def _dashes_back(done: dict, layer, rule, piece=None) -> dict:
-    counts = {}
+    fired = rule_counts.Fired(rule)
+    md = done["markdown"]
     # the Docling path decodes before its code rules; a reading without them, as MinerU's, is decoded here
-    if rule.decode_entities and done.get("code") is None:
-        done["markdown"], counts["entities_decoded"] = markdown_cleanup.decode_entities(done["markdown"])
-    if rule.picture_addresses and done.get("code") is None:
-        done["markdown"], counts["pictures_addressed"] = markdown_cleanup.inline_pictures(done["markdown"], piece)
-    if rule.unescape_bullets:
-        done["markdown"], counts["bullets_unescaped"] = markdown_cleanup.unescape_bullets(done["markdown"])
-    if rule.unescape_underscores:
-        done["markdown"], counts["underscores_unescaped"] = markdown_cleanup.unescape_underscores(done["markdown"])
-    if rule.demote_caption_headings:
-        done["markdown"], counts["captions_demoted"] = heading_rules.demote_caption_headings(done["markdown"])
-    if not layer:
-        return _counted(done, counts)
-    if rule.drop_running_headings:
-        done["markdown"], counts["running_heads_dropped"] = heading_rules.drop_running_headings(done["markdown"], layer)
-    marked = layer_words.marked_joins(layer)
-    # only the word rules read the joined layer; the reread's floor was set on the layer as PDFium gives it
-    if rule.join_layer_hyphens:
-        layer = route.joined_hyphens(layer)
-    if rule.restore_dashes:
-        done["markdown"], counts["dashes_restored"] = layer_words.restore_dashes(done["markdown"], layer, marked)
-    if rule.join_broken_words:
-        done["markdown"], counts["words_joined"] = layer_words.join_broken_words(done["markdown"], layer)
-    if rule.join_split_words:
-        done["markdown"], counts["split_words_joined"] = layer_words.join_split_words(done["markdown"], layer)
-    if rule.join_wrapped_identifiers:
-        done["markdown"], counts["identifiers_joined"] = layer_words.join_wrapped_identifiers(done["markdown"], layer)
-    return _counted(done, counts)
+    if done.get("code") is None:
+        md = fired.run("decode_entities", md, markdown_cleanup.decode_entities)
+        md = fired.run("picture_addresses", md, markdown_cleanup.inline_pictures, piece)
+    md = fired.run("unescape_bullets", md, markdown_cleanup.unescape_bullets)
+    md = fired.run("unescape_underscores", md, markdown_cleanup.unescape_underscores)
+    md = fired.run("demote_caption_headings", md, heading_rules.demote_caption_headings)
+    md = fired.run("drop_inherited_members", md, markdown_cleanup.drop_inherited_members)
+    if layer:
+        md = fired.run("drop_running_headings", md, heading_rules.drop_running_headings, layer)
+        marked = layer_words.marked_joins(layer)
+        # only the word rules read the joined layer; the reread's floor was set on the layer as PDFium gives it
+        if rule.join_layer_hyphens:
+            layer = route.joined_hyphens(layer)
+        md = fired.run("restore_dashes", md, layer_words.restore_dashes, layer, marked)
+        md = fired.run("join_broken_words", md, layer_words.join_broken_words, layer)
+        md = fired.run("join_split_words", md, layer_words.join_split_words, layer)
+    done["markdown"] = md
+    return _counted(done, fired.counts)
 
 
 def _counted(done: dict, counts: dict) -> dict:
@@ -224,8 +221,8 @@ def splice_formulas(prose: dict, tables: dict) -> tuple[str, int]:
 
 
 # a file's pieces in page order as one markdown, with what the joins healed
-def assemble(parts: list[str], html: bool, one_title: bool = False, continued_rows: bool = False) -> tuple[str, dict]:
-    whole, healed = piece_join.join(parts, continued_rows)
+def assemble(parts: list[str], html: bool, one_title: bool = False) -> tuple[str, dict]:
+    whole, healed = piece_join.join(parts)
     healed["headings"] = 0
     if html and one_title:
         whole, healed["headings"] = heading_rules.one_title(whole)
@@ -235,7 +232,7 @@ def assemble(parts: list[str], html: bool, one_title: bool = False, continued_ro
 # one file whole for the corpus, the gold's intake arm and the probe alike; a running head is read over the whole file
 def whole_file(parts: list[str], routes: list[str], rule, layers: list[str] | None) -> tuple[str, dict]:
     html = bool(routes) and all(why == "html" for why in routes)
-    whole, healed = assemble(parts, html, rule.html_one_title, rule.join_continued_rows)
+    whole, healed = assemble(parts, html, rule.html_one_title)
     healed["running_heads"] = 0
     # a piece drops the heads it repeats itself; the first of each in a later piece is only seen from the whole
     if rule.drop_running_headings and layers:
@@ -249,7 +246,12 @@ def layer_of(layers: list[str] | None, piece) -> str | None:
     return "\f".join(layers[piece[0] - 1 : piece[1]]) if layers is not None and piece else None
 
 
-# the route's fingerprint for a resume: what shapes a piece, plus the reread file's own content under its name
-def route_sha(rule) -> str:
+# what shapes a piece and the reread file's content; a knob that is off is left out, so adding one moves nothing
+def route_rules(rule) -> dict:
     shaping = {key: getattr(rule, key) for key in _SHAPES} | {"reread_sha256": load_settings(rule.reread_settings)[1]}
-    return hashlib.sha256(json.dumps(shaping, sort_keys=True).encode()).hexdigest()[:12]
+    return {key: value for key, value in shaping.items() if value not in (None, False, [])}
+
+
+# the route's fingerprint for a resume
+def route_sha(rule) -> str:
+    return hashlib.sha256(json.dumps(route_rules(rule), sort_keys=True).encode()).hexdigest()[:12]

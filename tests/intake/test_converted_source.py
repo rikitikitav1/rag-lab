@@ -40,3 +40,17 @@ def test_a_converted_folder_is_read_by_its_paths_and_cut_as_its_report(tmp_path)
     samples = raw_quality._samples(BOOK, rel, policy)
     assert [d.content for d in docs] == [s.content for s in samples]
     assert [d.section for d in docs] == [s.section for s in samples]
+
+
+# a markdown an earlier run left in the folder is not read: the record names the files the index reads
+def test_a_markdown_the_record_does_not_name_is_not_read(tmp_path):
+    (tmp_path / "files").mkdir()
+    rel = "b8472833/Eloquent_JavaScript.pdf"
+    (tmp_path / "files" / f"{corpus_keys.file_stem(rel)}.md").write_text(BOOK)
+    (tmp_path / "files" / f"{corpus_keys.file_stem('eloquent-javascript.pdf')}.md").write_text(BOOK)
+    (tmp_path / "record.json").write_text(json.dumps({"units": {f"{rel}#1-10": {"file": rel}}}))
+    source = SourceFile(name="eloquent", language="en", licence="MIT", folder=str(tmp_path), reader="converted")
+
+    docs = Converted(tmp_path, source).documents(config.settings.corpus.policy())
+
+    assert {d.source for d in docs} == {f"eloquent/{rel}"}

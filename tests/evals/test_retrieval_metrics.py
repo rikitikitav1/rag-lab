@@ -141,7 +141,7 @@ def _chunk(source, section, index=0):
 
 def test_a_chunk_of_the_right_file_in_the_wrong_section_is_not_a_section_hit():
     # the whole point of the axis: file gold calls this a hit, section gold does not
-    from evals.retrieval_metrics import rank_of_gold_section
+    from gold_match import rank_of_gold_section
 
     chunks = [_chunk("repo/gold.md", "Gold file > Some other heading")]
     assert rank_of_gold_section(chunks, ["gold.md"], "The wanted heading") is None
@@ -151,7 +151,7 @@ def test_a_chunk_of_the_right_file_in_the_wrong_section_is_not_a_section_hit():
 
 
 def test_the_section_rank_is_a_rank_and_reads_the_leaf_of_the_path():
-    from evals.retrieval_metrics import rank_of_gold_section
+    from gold_match import rank_of_gold_section
 
     chunks = [
         _chunk("a.md", "A > first"),
@@ -193,7 +193,8 @@ def test_a_run_without_a_corpus_question_measures_nothing_rather_than_zero(monke
 def test_an_exact_gold_ranks_its_file_and_section_path():
     from corpus_keys import Gold
     from evals import gold_classes
-    from evals.retrieval_metrics import file_precision, rank_of_gold, rank_of_gold_section
+    from evals.retrieval_metrics import file_precision
+    from gold_match import rank_of_gold, rank_of_gold_section
 
     gold = Gold(("pg/locks.md",), "Locks > Summary", None)
     chunks = [

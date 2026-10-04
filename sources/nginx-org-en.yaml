@@ -1,5 +1,6 @@
 # the nginx documentation from nginx.org in English, pages listed from the site's sitemap
 # the indexes of directives and variables and the contents page are left out: links only, and a gold on them misleads search
+# the njs changelog is left out: release lists, not documentation
 name: nginx-org-en
 language: en
 licence: BSD-2-Clause
@@ -108,7 +109,6 @@ pages:
 - https://nginx.org/en/docs/ngx_google_perftools_module.html
 - https://nginx.org/en/docs/ngx_mgmt_module.html
 - https://nginx.org/en/docs/ngx_otel_module.html
-- https://nginx.org/en/docs/njs/changes.html
 - https://nginx.org/en/docs/njs/cli.html
 - https://nginx.org/en/docs/njs/compatibility.html
 - https://nginx.org/en/docs/njs/engine.html

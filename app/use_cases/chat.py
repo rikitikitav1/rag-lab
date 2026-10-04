@@ -1,14 +1,15 @@
 import time
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 
 import config
+import corpus_search
 import job_queue
 import llm
 import logging_setup
 import outcomes
 import prompt_repo
-import sources.base
+import search_depth
+import text_language
 from engines import answer_parsers
 from models.eval import Question, QuestionLog, text_hash
 from models.registry import Purpose
@@ -17,9 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from timing_wrappers import measure_elapsed
-from use_cases import run_snapshot, search_depth
-
-import db
+from use_cases import run_snapshot
 
 log = logging_setup.get_logger(__name__)
 
@@ -119,13 +118,10 @@ def stamped(sources: list, hop: int) -> list:
     return sources
 
 
-def take_sources(rows, rerank_scores=None, variant: str | None = None) -> list[Source]:
-    variant = variant or config.settings.corpus.variant
+def take_sources(rows, rerank_scores=None) -> list[Source]:
     scores = rerank_scores or [None] * len(rows)
     kept: dict[str, Source] = {}
     for hit, rerank_score in zip(rows, scores, strict=True):
-        if _hidden_by_cut(hit.source, variant):
-            continue
         if hit.source in kept:
             # a duplicated path must not hide the best cross-encoder score from the gate
             best = kept[hit.source].rerank_score
@@ -139,18 +135,6 @@ def take_sources(rows, rerank_scores=None, variant: str | None = None) -> list[S
     return list(kept.values())
 
 
-# baseline only: it filters after the search took k, so an answer can come back with fewer
-LEGACY_SKIP_NAMES = frozenset({"index.md"})
-
-
-def _hidden_by_cut(source: str, variant: str) -> bool:
-    # raising here would do it once per retrieved row in the middle of an answer
-    policy = config.settings.corpus.policy_or_none(variant)
-    if policy is not None and sources.base.hygienic(policy):
-        return False
-    return Path(source).name in LEGACY_SKIP_NAMES
-
-
 # resolving a second time is a second answer, so the depth comes back with the rows
 def _retrieve_rows(question: str, scope, k: int, rerank_enabled: bool, variant: str,
                    ef_search: int | None = None):
@@ -158,7 +142,7 @@ def _retrieve_rows(question: str, scope, k: int, rerank_enabled: bool, variant: 
     label, vector = llm.embed_with_label(question)
     if not rerank_enabled:
         return (
-            db.hybrid_search(
+            corpus_search.hybrid_search(
                 question, vector, scope, limit=k, variant=variant,
                 ef_search=depth, embedded_by=label,
             ),
@@ -168,7 +152,7 @@ def _retrieve_rows(question: str, scope, k: int, rerank_enabled: bool, variant: 
 
     import rerank
 
-    candidates = db.hybrid_search(
+    candidates = corpus_search.hybrid_search(
         question,
         vector,
         scope,
@@ -183,14 +167,13 @@ def _retrieve_rows(question: str, scope, k: int, rerank_enabled: bool, variant: 
 
 # one filter, one order, one pass: the text and its address cannot come out different lengths
 def kept_chunks(rows, variant: str | None = None) -> tuple[list[str], list[dict]]:
-    texts, chunks, _ = kept_chunks_with_seats(rows, variant)
+    texts, chunks, _ = kept_chunks_with_seats(rows)
     return texts, chunks
 
 
 # the seat of each kept chunk among the rows: without it a filter downstream cuts by the wrong index
-def kept_chunks_with_seats(rows, variant: str | None = None) -> tuple[list[str], list[dict], list[int]]:
-    variant = variant or config.settings.corpus.variant
-    seats = [n for n, hit in enumerate(rows) if not _hidden_by_cut(hit.source, variant)]
+def kept_chunks_with_seats(rows) -> tuple[list[str], list[dict], list[int]]:
+    seats = list(range(len(rows)))
     texts = [f"[{rows[n].source}]\n{rows[n].content}" for n in seats]
     chunks = [
         {"source": rows[n].source, "section": rows[n].section, "chunk_index": rows[n].chunk_index,
@@ -239,7 +222,7 @@ def search_chunks(
     return (
         "\n\n".join(texts) or NO_RESULTS,
         texts,
-        take_sources(rows, rerank_scores, variant),
+        take_sources(rows, rerank_scores),
         depth,
         chunks,
     )
@@ -260,7 +243,7 @@ def retrieve(
     rows, rerank_scores, _depth = _retrieve_rows(
         question, scope, k, resolve_rerank(use_rerank), variant, ef_search
     )
-    return Retrieval(sources=take_sources(rows, rerank_scores, variant))
+    return Retrieval(sources=take_sources(rows, rerank_scores))
 
 
 def answer(
@@ -329,7 +312,7 @@ def answer_from_rows(
     use_rerank = resolve_rerank(use_rerank)
     k = k or config.settings.retrieval.results_limit
 
-    texts, chunks, seats = kept_chunks_with_seats(rows, variant) if rows else ([], [], [])
+    texts, chunks, seats = kept_chunks_with_seats(rows) if rows else ([], [], [])
     # the same grader the graph node runs, on the one retrieval this path makes
     graded, asks = (
         _graded(question, texts, chunks, rows) if grade_chunks and texts else (None, [])
@@ -371,7 +354,7 @@ def answer_from_rows(
             ans = Answer(
                 text=response.text,
                 success=True,
-                sources=take_sources(rows, rerank_scores, variant),
+                sources=take_sources(rows, rerank_scores),
                 metrics=metrics,
             )
             if add_context:
@@ -396,7 +379,7 @@ _LANG_NAMES = {"ru": "Russian", "en": "English"}
 
 
 # re-exported: three callers above this layer already say `chat.resolve_language`
-resolve_language = db.resolve_language
+resolve_language = text_language.resolve_language
 
 
 # an unknown code is not a language name, and `replay` reads this out of a snapshot past the doors

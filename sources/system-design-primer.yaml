@@ -6,9 +6,16 @@ git:
   repo: https://github.com/donnemartin/system-design-primer
   include:
   - '**/README.md'
-reader: system-design-primer
+# tags: the topic, and a solution's own folder
+tags:
+- system-design
+tags_by_path:
+- prefix: solutions/
+  step: 2
 veto_families:
 - name: system-design-primer
   prefix: system-design-primer/
 categories:
 - system-design
+# hand-written notes: an official page holding the same text wins over this one
+trust: notes

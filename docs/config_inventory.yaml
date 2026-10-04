@@ -40,11 +40,29 @@ config:
     class: setting
   retrieval.keyword.query_lang:
     class: setting
+  retrieval.keyword.translation.enabled:
+    class: setting
+    how: on beside the question's words (owner 04.10); full retrieval run, ru 0.737 to 0.837, Russian-sources row 0.871 to 0.957 (datasets/measurements/arc7_keyword_full.json)
+  retrieval.keyword.translation.model_dir:
+    class: setting
+  retrieval.keyword.translation.replaces:
+    class: setting
+    how: off; replacing the question's words read ru 0.849 but Russian books 0.871 to 0.671 (datasets/measurements/arc7_keyword_full.json)
+  retrieval.keyword.aliases.enabled:
+    class: setting
+    how: off until the jargon subset measures it (owner 04.10)
+  retrieval.keyword.max_term_share:
+    class: setting
+    how: 0.05 (owner 04.10); at 0.05 a 100-pair probe kept every hit and cut the search threefold; en->ru 0.514 to 0.300 under or, open
   retrieval.ef_search:
     class: setting
+    how: owner 04.10, 200 on clean_big_1024; vector recall@20 0.862 to 0.923 on 200 sample questions, 2 ms more a search on 10
   retrieval.filtered_scan:
     class: setting
     how: not measured
+  retrieval.collapse_copies_in_source:
+    class: setting
+    how: not measured, off until its A/B
   verdict.criterion_sets:
     class: setting
   verdict.veto_sets:
@@ -142,6 +160,12 @@ config:
     class: setting
   ingest_quality.soft_gates.size_cut:
     class: setting
+  ingest_quality.measure.flat_min_chunks:
+    class: setting
+    how: calibrated 04.10 on 217 sources, 11 of 15 suspected caught, the 4 missed have 20 to 99 sections a chapter (not flat)
+  ingest_quality.measure.flat_max_sections:
+    class: setting
+    how: distinct section paths plus heading lines kept inside its chunks; 3 lifts pg-partman and readings over 0.2
   ingest_quality.soft_gates.soup:
     class: setting
   ingest_quality.soft_gates.code_only:
@@ -195,16 +219,15 @@ config:
     class: setting
   intake.route.man_page_titles:
     class: setting
-  intake.route.join_wrapped_identifiers:
-    class: setting
-  intake.route.join_continued_rows:
-    class: setting
   intake.route.listing_callouts:
     class: setting
   intake.route.mono_by_step:
     class: setting
   intake.route.code_row_rules:
     class: setting
+  intake.route.contents_outline:
+    class: setting
+    how: a source knob, off; seen on one control book whose PDF has no bookmarks (04.10)
   intake.route.outline_levels:
     class: setting
   intake.route.html_one_title:
@@ -237,6 +260,10 @@ config:
     class: setting
   intake.route.join_split_words:
     class: setting
+  intake.route.drop_inherited_members:
+    class: setting
+  intake.route.drop_repeated_code:
+    class: setting
   intake.route.mono_spread:
     class: setting
   intake.route.mono_faces:
@@ -255,6 +282,18 @@ config:
     class: setting
   intake.quality.auto_accept_ok:
     class: setting
+  intake.quality.source_gate.clamped_min:
+    class: setting
+    how: owner decision 04.10 (auditor straw man), clamped was about 0.93 on the big set
+  intake.quality.source_gate.open_min:
+    class: setting
+    how: owner decision 04.10, 0.75 like the closing bar
+  intake.quality.source_gate.min_questions:
+    class: setting
+    how: auditor round 194, 28 questions gave a band of about 0.17
+  intake.quality.agent_knob_rounds:
+    class: setting
+    how: owner decision 04.10, three rounds of an agent's own knobs on one source before a person decides
   intake.engines.docling:
     class: setting
   intake.engines.mineru:
@@ -275,14 +314,6 @@ config:
     class: setting
   corpus.variant:
     class: setting
-  corpus.variants.baseline.chunker:
-    class: setting
-  corpus.variants.baseline.max_chunk_size:
-    class: setting
-  corpus.variants.baseline.ceiling_on:
-    class: setting
-  corpus.variants.baseline.drop_boilerplate:
-    class: setting
   corpus.variants.clean_1024.chunker:
     class: setting
   corpus.variants.clean_1024.max_chunk_size:
@@ -291,6 +322,26 @@ config:
     class: setting
   corpus.variants.clean_1024.drop_boilerplate:
     class: setting
+  corpus.variants.clean_1024.merge_tiny_sections_under:
+    class: setting
+    how: owner decision 03.10, threshold 60 after the gate on 31 sources lost no gold section
+  corpus.variants.clean_1024.contents_runs_from:
+    class: setting
+    how: the gate on 261 sources 03.10, six books lost only contents rows, gold sections lost 0, prose kept
+  corpus.variants.clean_big_1024.chunker:
+    class: setting
+  corpus.variants.clean_big_1024.max_chunk_size:
+    class: setting
+  corpus.variants.clean_big_1024.ceiling_on:
+    class: setting
+  corpus.variants.clean_big_1024.drop_boilerplate:
+    class: setting
+  corpus.variants.clean_big_1024.merge_tiny_sections_under:
+    class: setting
+    how: owner decision 03.10, threshold 60 after the gate on 31 sources lost no gold section
+  corpus.variants.clean_big_1024.contents_runs_from:
+    class: setting
+    how: the gate on 261 sources 03.10, six books lost only contents rows, gold sections lost 0, prose kept
   repos_dir:
     class: setting
   prompts_dir:
@@ -298,6 +349,9 @@ config:
   categories:
     class: setting
     how: owner decision 26.09, the coverage map's rows; named categories, not technologies, 27.09
+  aliases:
+    class: setting
+    how: a question's jargon per technology, keyed as the categories; draft by the owner and Sonnet 04.10, `unsure` rows stay out of the search
   engines.ollama.name:
     class: seed
     note: seeded into the engine rows
@@ -789,6 +843,8 @@ constant:
   app/evals/columns.py:SCHEMA:
     class: code
     note: the shape of a stored record
+  app/evals/columns.py:_SPACES:
+    class: code
   app/evals/columns.py:_READERS:
     class: code
   app/evals/compare.py:SCHEMA:
@@ -848,11 +904,11 @@ constant:
   app/evals/trace.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/ingest.py:FENCE_LINE:
-    class: code
   app/ingest.py:HEADING_LINE:
     class: code
     family: heading_reader
+  app/ingest.py:_ANY_HEADING:
+    class: code
   app/ingest.py:HEADING_CAP:
     class: code
     note: the width a stored chunk field is cut to
@@ -862,7 +918,10 @@ constant:
   app/use_cases/converting.py:CHUNK_CEILING:
     class: cap
     family: piece_ceiling
-  app/job_handlers/judging.py:_MAX_JUDGE_ATTEMPTS:
+  app/job_handlers/onboard.py:RECORD_EVERY_S:
+    class: code
+    note: how much of a cut-off run's reading a restart may read again; not measured
+  app/use_cases/judge_debts.py:MAX_JUDGE_ATTEMPTS:
     class: cap
   app/job_handlers/judging.py:_MAX_SWEEPS:
     class: cap
@@ -882,6 +941,8 @@ constant:
   app/job_specs.py:STARVED_AFTER_MINUTES:
     class: cap
   app/limits.py:MAX_RUN_NAME:
+    class: cap
+  app/limits.py:MAX_SET_NAME:
     class: cap
   app/limits.py:MAX_RUNS:
     class: cap
@@ -936,6 +997,41 @@ constant:
   app/outcomes.py:RULE:
     class: code
     note: the outcome rule a stored row is read by
+  app/corpus_keys.py:TERM_SHARE_FLOOR:
+    class: code
+  app/use_cases/source_gate.py:HIT_DEPTH:
+    class: code
+    note: the closing column, hit at 5
+  app/use_cases/route.py:CONTENTS_PAGES:
+    class: code
+    note: a book's contents sit in its first pages; past them a leader line is an index
+  app/use_cases/route.py:_CONTENTS_LINE:
+    class: code
+  app/use_cases/route.py:_PART:
+    class: code
+  app/use_cases/route.py:_CHAPTER:
+    class: code
+  app/use_cases/raw_quality.py:_HEADING:
+    class: code
+  app/use_cases/raw_quality.py:_PAST_SIX:
+    class: code
+    note: markdown has six heading levels; seven hashes is a heading read as text
+  app/use_cases/raw_text.py:MAX_CHARS:
+    class: code
+    note: one chapter fits an agent's window, a whole book does not
+  app/use_cases/raw_text.py:_HEADING:
+    class: code
+  app/query_aliases.py:STEM_MIN:
+    class: code
+    note: a shorter Russian stem would match ordinary words
+  app/query_aliases.py:_TOKEN:
+    class: code
+  app/query_aliases.py:_CYRILLIC:
+    class: code
+  app/query_translation.py:_KEPT:
+    class: code
+  app/query_translation.py:_CYRILLIC:
+    class: code
   app/redaction.py:_NAMES:
     class: code
   app/redaction.py:_MIN:
@@ -952,6 +1048,8 @@ constant:
     class: code
   app/seed.py:_PROMPT_RE:
     class: code
+  app/server.py:REFUSAL_STATUS:
+    class: code
   app/server.py:MAX_BODY_BYTES:
     class: cap
   app/sources/base.py:MAX_FILE_BYTES:
@@ -961,7 +1059,7 @@ constant:
     family: heading_reader
   app/tool_names.py:SETTINGS_NAME:
     class: code
-  app/use_cases/agent_policy.py:MAX_HOPS:
+  app/vocabulary.py:MAX_HOPS:
     class: cap
     family: max_hops
   app/use_cases/card_wait.py:BUSY_RETRY_SECONDS:
@@ -992,7 +1090,7 @@ constant:
   app/corpus_keys.py:CYRILLIC_SHARE:
     class: cap
     why: "measured 29.09: 1876 questions change language at neither 0.2 nor 0.3; on three Russian books' raw chunks 0.2 misreads 47 as English, 0.3 misreads 88 (footnotes, SQL, unfenced code)"
-  app/use_cases/ingest_quality.py:FENCE:
+  app/corpus_keys.py:CODE_BLOCK:
     class: code
   app/use_cases/ingest_quality.py:PROSE_WORD:
     class: code
@@ -1016,8 +1114,6 @@ constant:
     class: code
     note: an item is code when nine glyphs in ten are monospace; inline code in prose stays below it
   app/use_cases/heading_rules.py:_NAME_SECTION:
-    class: code
-  app/use_cases/layer_words.py:_WRAPPED_UNDERSCORE:
     class: code
   app/use_cases/layer_words.py:_MID_LINE_MARK:
     class: code
@@ -1054,6 +1150,36 @@ constant:
     class: cap
   app/use_cases/layer_check.py:TEXT_LOST_MIN_WORDS:
     class: cap
+  app/use_cases/intake_board.py:_TRAIL:
+    class: code
+    note: how many of a source's last jobs its trail shows
+  app/use_cases/dedup.py:_RANK:
+    class: setting
+    note: the owner's order of trust for a text two sources hold, official docs over books over notes
+  app/use_cases/markdown_cleanup.py:_MDX_COMMENT:
+    class: code
+  app/use_cases/markdown_cleanup.py:_MDX_MODULE_LINE:
+    class: code
+  app/use_cases/markdown_cleanup.py:_COMPONENT_START:
+    class: code
+  app/use_cases/markdown_cleanup.py:_FRONTMATTER:
+    class: code
+  app/use_cases/markdown_cleanup.py:_FIRST_HEADING:
+    class: code
+  app/use_cases/markdown_cleanup.py:_TOP_HEADING:
+    class: code
+  app/use_cases/markdown_cleanup.py:_TABLE_ROW:
+    class: code
+  app/use_cases/markup.py:CHUNKER_FENCE_INDENT:
+    class: code
+  app/corpus_keys.py:SHARED_TEXT_MIN_CHARS:
+    class: code
+  app/use_cases/markdown_cleanup.py:_INHERITED:
+    class: code
+  app/use_cases/markdown_cleanup.py:_REPEATED_CODE_MIN_CHARS:
+    class: code
+  app/use_cases/markdown_cleanup.py:_PADDING:
+    class: code
   app/use_cases/markdown_cleanup.py:_TABLE_PIPE:
     class: code
   app/use_cases/layer_words.py:_SPLIT:
@@ -1106,8 +1232,6 @@ constant:
     class: code
   app/use_cases/raw_quality.py:_ESCAPES:
     class: code
-  app/use_cases/raw_quality.py:_FENCE_LINE:
-    class: code
   app/use_cases/raw_quality.py:_HEADING:
     class: code
   app/use_cases/rejudge.py:SCHEMA:
@@ -1158,11 +1282,15 @@ constant:
     class: code
   app/evals/section_questions.py:_LEANS_ON_THE_PAGE:
     class: code
-  app/sources/arangodb_docs.py:_COMMENT:
+  app/use_cases/markdown_cleanup.py:_HUGO_COMMENT:
     class: code
-  app/sources/arangodb_docs.py:_SHORTCODE:
+  app/use_cases/markdown_cleanup.py:_HUGO_SHORTCODE:
     class: code
-  app/sources/arangodb_docs.py:_QUOTED:
+  app/use_cases/markdown_cleanup.py:_HUGO_ARG:
+    class: code
+  app/use_cases/markdown_cleanup.py:_MDN_MACRO:
+    class: code
+  app/use_cases/markdown_cleanup.py:_MDN_ARG:
     class: code
   app/evals/question_acceptance.py:EVIDENCE_HELD:
     class: setting
@@ -1191,6 +1319,23 @@ constant:
     class: code
   app/book_matter.py:_NOT_A_WORD:
     class: code
+  app/book_matter.py:_BOOK_NAME:
+    class: code
+  app/book_matter.py:_INDEX:
+    class: code
+  app/book_matter.py:_INDEX_LETTERS:
+    class: code
+  app/book_matter.py:BACK_SHARE:
+    class: setting
+    note: the share of a book a back index starts after; every index of the saved PDF books starts past 0.86, a LaTeX manual's index chapter at 0.48
+  app/book_matter.py:_LEADER_LINE:
+    class: code
+  app/book_matter.py:_HEADING_LINE:
+    class: code
+  app/book_matter.py:_PAGE_ROW:
+    class: code
+  app/book_matter.py:_PROSE_BRIDGED:
+    class: cap
   app/use_cases/section_export.py:BLOCK_CHARS:
     class: setting
     note: not measured; the index's chunks joined to about 1300 words, one window of acceptance (1500 words)
@@ -1221,6 +1366,8 @@ constant:
     class: code
   app/use_cases/site_page.py:_DOCBOOK_SECTION_NAME:
     class: code
+  app/use_cases/stand_health.py:LIVE_SHOWN:
+    class: cap
   app/use_cases/site_page.py:_DIV:
     class: code
   app/use_cases/site_page.py:_CLASS:
@@ -1237,6 +1384,8 @@ constant:
     class: code
   app/use_cases/source_intake.py:REASON_CHARS:
     class: cap
+  app/use_cases/intake_fetch.py:GONE:
+    class: code
   app/use_cases/intake_fetch.py:_SLUG:
     class: code
     family: slug
@@ -1253,6 +1402,8 @@ constant:
   app/worker.py:POLL_INTERVAL:
     class: cap
   app/worker.py:MAX_ATTEMPTS:
+    class: cap
+  app/job_queue.py:MAX_RECLAIMS:
     class: cap
   app/worker.py:MAX_DEFERRED_SECONDS:
     class: cap

@@ -9,12 +9,20 @@ from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
 from evals.stats import mean_of, score_of
 from outcomes import RULE, Outcome
-from use_cases import rejudge
+from vocabulary import JUDGE_AXES
 
 # an answer standing on nothing the corpus gave it, whichever way it got there
 _UNSUPPORTED = (
     Outcome.unsupported_answer, Outcome.answered_ungrounded, Outcome.narrated_call,
 )
+
+
+# a broken row, one out of hops or a false refusal supports nothing; an off-domain refusal does
+def _supported(ql, in_corpus_ids: set[int]) -> bool:
+    outcome = _outcome(ql)
+    if outcome in _UNSUPPORTED or outcome in (Outcome.error, Outcome.exhausted):
+        return False
+    return not (outcome == Outcome.refused and id(ql) in in_corpus_ids)
 
 
 # a mean cannot tell sharper from kinder: v3 rose on both while its tens rose by half
@@ -30,7 +38,7 @@ def _distribution(scores) -> dict:
 
 
 def _scored(ql) -> bool:
-    return any(getattr(ql, axis) is not None for axis in rejudge.AXES)
+    return any(getattr(ql, axis) is not None for axis in JUDGE_AXES)
 
 
 # read off the rule rather than restated beside it: two spellings of one table is the usual defect
@@ -38,7 +46,7 @@ def _abstentions() -> dict:
     return {
         "ours": {
             "outcomes": ["refused", "unsupported_answer"],
-            "axes": list(rejudge.AXES),
+            "axes": list(JUDGE_AXES),
             "why": "on a refusal the axis does not apply; the judge scores answers that cite the corpus, and one "
                    "without sources is counted in the unsupported shares instead",
             "read_from": "metrics.refusal and the row's answered flag, both written by the answering paths",
@@ -83,8 +91,8 @@ def _share(logs, outcome) -> str:
     return f"{sum(1 for ql in logs if _outcome(ql) == outcome)}/{len(logs)}"
 
 
-# 1 before `answered_ungrounded`; 2 those; 3 abstention; 4 settled; 5 language; 6 narrower; 7 guests
-SCHEMA = 8
+# 1 before `answered_ungrounded`; 2 those; 3 abstention; 4 settled; 5 language; 6 narrower; 7 guests; 9 supported
+SCHEMA = 9
 
 
 def evaluate(run_name=None, verbose=False) -> dict:
@@ -116,6 +124,8 @@ def evaluate(run_name=None, verbose=False) -> dict:
     refusal_pool = [ql for ql in out_of_corpus if not _has_remote_evidence(ql)]
     correct = sum(1 for ql in refusal_pool if _outcome(ql) == Outcome.refused)
     n = sum(1 for ql in in_corpus if score_of(ql.faithfulness) is not None)
+
+    in_corpus_ids = {id(r) for r in in_corpus}
 
     def norm(x):
         return round(x / 10, 3) if x is not None else None
@@ -181,13 +191,7 @@ def evaluate(run_name=None, verbose=False) -> dict:
             else None
         ),
         "supported_rate": (
-            round(
-                sum(1 for ql in logs if _outcome(ql) not in _UNSUPPORTED)
-                / len(logs),
-                3,
-            )
-            if logs
-            else None
+            round(sum(1 for ql in logs if _supported(ql, in_corpus_ids)) / len(logs), 3) if logs else None
         ),
         "n_off_domain_scored": sum(1 for ql in off_domain if score_of(ql.faithfulness) is not None),
         "refused_with_context": sum(

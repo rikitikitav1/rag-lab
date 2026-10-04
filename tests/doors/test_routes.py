@@ -1,6 +1,15 @@
+import corpus_search
 import pytest
 from fastapi.testclient import TestClient
 from stand_specs import queued_job as _queued_job
+
+
+# `add_job` is awaited by the doors, so a stand-in answers as a coroutine
+def _staged(fn):
+    async def stage(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return stage
+
 
 
 def test_agent_max_hops_zero_422(client):
@@ -21,10 +30,9 @@ def test_agent_language_invalid_422(client):
 def test_the_agent_door_refuses_foreign_vectors_rather_than_answering_without_the_corpus(client, monkeypatch):
     import api.v1.agent as agent_door
 
-    import db
 
     def foreign(*a, **kw):
-        raise db.ForeignVectors("variant holds vectors of bge-m3@ollama-cpu")
+        raise corpus_search.ForeignVectors("variant holds vectors of bge-m3@ollama-cpu")
 
     monkeypatch.setattr(agent_door, "wait_for_the_card", lambda *roles: None)
     monkeypatch.setattr(agent_door.agent, "run", foreign)
@@ -40,7 +48,7 @@ def test_eval_run_pipeline_invalid_422(client):
 def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
     import api.v1.eval as eval_mod
 
-    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
 
     async def _refresh(session, obj):
         return obj
@@ -54,7 +62,7 @@ def test_every_field_a_run_declares_reaches_the_queue(client, monkeypatch):
     # the options dict is copied field by field, so a new field is accepted and never carried
     import api.v1.eval as eval_mod
 
-    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
 
     async def _refresh(session, obj):
         return obj
@@ -193,24 +201,6 @@ def test_bulk_cancel_needs_a_filter(client):
     assert r.status_code == 400
 
 
-class _SessionOfLiveJobs:
-    async def scalars(self, _statement):
-        return [11, 12]
-
-    async def commit(self):
-        return None
-
-
-def _with_live_jobs():
-    import server
-    from orm.async_db import get_session
-
-    async def _fake():
-        yield _SessionOfLiveJobs()
-
-    server.app.dependency_overrides[get_session] = _fake
-
-
 def test_cancelling_a_type_with_no_run_name_is_said_out_loud(client, monkeypatch):
     # `type: judge_answers` alone is every live judge job, which is several arms of several runs
     import job_queue
@@ -219,7 +209,7 @@ def test_cancelling_a_type_with_no_run_name_is_said_out_loud(client, monkeypatch
     assert r.status_code == 400
     assert "every=true" in r.json()["detail"]
 
-    _with_live_jobs()
+    monkeypatch.setattr(job_queue, "live_ids", lambda *a, **kw: [11, 12])
     monkeypatch.setattr(job_queue, "cancel", lambda ids: list(ids))
     r = client.post("/v1/job/cancel", json={"type": "judge_answers", "every": True})
     assert r.status_code == 200 and r.json()["cancelled"] == [11, 12]
@@ -229,12 +219,13 @@ def test_a_cancel_goes_through_the_queue_so_the_experiment_is_not_left_waiting(c
     # the route flipped the status itself while `mark_failed_for_run` lives in the queue
     import job_queue
 
-    seen = []
-    _with_live_jobs()
+    seen, asked = [], []
+    monkeypatch.setattr(job_queue, "live_ids", lambda *a, **kw: asked.append(a) or [11, 12])
     monkeypatch.setattr(job_queue, "cancel", lambda ids: seen.append(ids) or list(ids))
 
     assert client.post("/v1/job/cancel", json={"run_name": "arm"}).status_code == 200
     assert seen == [[11, 12]], "the route must delegate rather than write the status itself"
+    assert asked[0][2] == "arm", "the run name narrows the live jobs the cancel reads"
 
 
 def test_two_cuts_of_one_source_are_read_side_by_side(client, monkeypatch):
@@ -290,6 +281,7 @@ def test_the_compare_path_is_not_read_as_a_source_id(client):
 
 def _door_that_queues(monkeypatch, *, rows=0, jobs=()):
     import api.v1.eval as eval_mod
+    from use_cases import eval_runs
 
     async def _rows(session, run_name):
         return rows
@@ -300,9 +292,13 @@ def _door_that_queues(monkeypatch, *, rows=0, jobs=()):
     async def _refresh(session, obj):
         return obj
 
-    monkeypatch.setattr(eval_mod, "_rows_of", _rows)
-    monkeypatch.setattr(eval_mod, "_eval_runs_named", _named)
-    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
+    async def _ready(session, set_name):
+        return 5, []
+
+    monkeypatch.setattr(eval_runs, "_rows_of", _rows)
+    monkeypatch.setattr(eval_runs, "_eval_runs_named", _named)
+    monkeypatch.setattr(eval_runs, "_set_readiness", _ready)
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
     monkeypatch.setattr(eval_mod, "commit_and_refresh", _refresh)
 
 
@@ -372,13 +368,13 @@ def test_a_run_is_resumed_only_when_it_exists_and_has_stopped(client, monkeypatc
 
 
 def test_the_door_refuses_question_ids_that_repeat_or_are_not_in_the_stand(client, monkeypatch):
-    import api.v1.eval as eval_mod
+    from use_cases import eval_runs
 
     async def _found(session, ids):
         return {34, 35}
 
     _door_that_queues(monkeypatch)
-    monkeypatch.setattr(eval_mod, "_question_ids_in", _found)
+    monkeypatch.setattr(eval_runs, "_question_ids_in", _found)
     missing = client.post("/v1/eval/run", json={"question_ids": [34, 35, 99]})
     assert missing.status_code == 422 and "1 of 3 question ids are not in the stand: [99]" in missing.json()["detail"]
     repeated = client.post("/v1/eval/run", json={"question_ids": [34, 34]})
@@ -425,3 +421,78 @@ def test_the_door_refuses_a_declaration_the_index_could_not_read(client, rules, 
 
 def test_the_one_source_path_does_not_swallow_compare(client):
     assert client.get("/v1/source/compare?variants=baseline").status_code == 422
+
+
+# the jobs that read a set refuse a name a path cannot carry, so the import door refuses it first
+def test_import_refuses_a_set_name_the_jobs_would_refuse(client):
+    for name in ("a/b", "x y"):
+        r = client.post("/v1/questions/import", files={"file": ("q.txt", b"what?")}, data={"set_name": name})
+        assert r.status_code == 422
+
+
+# every kind of refusal has its HTTP status, and a kind nobody declared fails where it is raised
+def test_every_refusal_kind_has_a_status_and_a_misspelt_one_fails_at_once():
+    import pytest
+    import server
+    from errors import Refusal, RefusalKind
+
+    assert set(server.REFUSAL_STATUS) == set(RefusalKind)
+    with pytest.raises(ValueError):
+        Refusal("taken_twice", "x")
+
+
+# the agent queues a closing run over MCP, so the run's name checks hold there as at POST /v1/job
+def test_the_mcp_door_queues_an_eval_run_with_the_same_name_checks(monkeypatch):
+    import asyncio
+    import contextlib
+    from types import SimpleNamespace
+
+    import job_queue
+    import orm.async_db
+    from errors import Refusal
+    from use_cases import eval_runs, job_control
+
+    added = []
+
+    class _Session:
+        def add(self, job):
+            job.id = 7
+            added.append(job)
+
+        async def commit(self):
+            return None
+
+    async def _prepared(type, options):
+        return SimpleNamespace(type=type, queue="default", options=options)
+
+    rows = {"n": 3}
+
+    async def _rows(session, run_name):
+        return rows["n"]
+
+    async def _named(session, run_name):
+        return []
+
+    monkeypatch.setattr(orm.async_db, "session_factory", lambda: contextlib.nullcontext(_Session()))
+    monkeypatch.setattr(job_queue, "prepared", _prepared)
+    monkeypatch.setattr(eval_runs, "_rows_of", _rows)
+    monkeypatch.setattr(eval_runs, "_eval_runs_named", _named)
+    ready = {"answer": (5, [])}
+
+    async def _ready(session, set_name):
+        return ready["answer"]
+
+    monkeypatch.setattr(eval_runs, "_set_readiness", _ready)
+    with pytest.raises(Refusal, match="pass resume"):
+        asyncio.run(job_control.enqueue_eval_run({"run_name": "r", "set_name": "s"}))
+    rows["n"] = 0
+    assert asyncio.run(job_control.enqueue_eval_run({"run_name": "r", "set_name": "s"}, dry_run=True))["dry_run"]
+    assert added == []
+    assert asyncio.run(job_control.enqueue_eval_run({"run_name": "r", "set_name": "s"})) == {"job_id": 7}
+    # a set with nothing accepted answered nothing and read done; a gold out of search scored a miss
+    ready["answer"] = (0, [])
+    with pytest.raises(Refusal, match="no accepted question"):
+        asyncio.run(job_control.enqueue_eval_run({"run_name": "r2", "set_name": "s"}))
+    ready["answer"] = (40, ["control-book"])
+    with pytest.raises(Refusal, match="not in search: \\['control-book'\\]"):
+        asyncio.run(job_control.enqueue_eval_run({"run_name": "r3", "set_name": "s"}))

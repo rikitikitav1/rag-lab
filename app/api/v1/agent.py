@@ -1,8 +1,9 @@
 from typing import Literal
 
+import vocabulary
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from use_cases import agent, agent_policy, card_wait
+from use_cases import agent, card_wait
 
 from api.v1.card_door import wait_for_the_card
 from api.v1.schemas import AnswerSource
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 class AgentRequest(BaseModel):
     text: str
-    max_hops: int | None = Field(default=None, ge=1, le=agent_policy.MAX_HOPS)
+    max_hops: int | None = Field(default=None, ge=1, le=vocabulary.MAX_HOPS)
     language: Literal["ru", "en"] | None = None
     fallback_policy: agent.FallbackPolicy | None = None
     debug: bool = False

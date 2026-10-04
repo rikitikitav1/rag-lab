@@ -2,12 +2,13 @@ import time
 from types import SimpleNamespace
 
 import pytest
+import text_language
 from conftest import stub_engines
 from use_cases import chat
 
 
 def _row(src, vector_rank=1, keyword_rank=None, vector_distance=0.1, score=0.5, content="content"):
-    from db import Hit
+    from corpus_search import Hit
 
     return Hit(content, src, "cat", 0, vector_rank, keyword_rank, vector_distance, score, None)
 
@@ -159,13 +160,12 @@ def test_dedup_keeps_the_best_cross_encoder_score():
 def test_fts_language_comes_from_config(monkeypatch):
     import config
 
-    import db
 
     monkeypatch.setattr(
         config.settings, "fts", SimpleNamespace(languages={"ru": "russian"}, fallback="simple")
     )
-    assert db._ts_config("что такое хеш-таблица") == "russian"
-    assert db._ts_config("...") == "simple"
+    assert text_language.ts_config("что такое хеш-таблица") == "russian"
+    assert text_language.ts_config("...") == "simple"
 
 
 def test_one_place_decides_whether_a_run_reranks(monkeypatch):
@@ -257,7 +257,7 @@ def test_the_row_snapshot_says_which_schema_it_is(monkeypatch):
 
 
 def _hit(source, section, index, content="body"):
-    from db import Hit
+    from corpus_search import Hit
 
     return Hit(content, source, "cat", index, 1, None, 0.1, 0.5, section)
 
@@ -266,12 +266,11 @@ def test_the_text_and_its_address_come_out_of_one_pass(monkeypatch):
     # two lists, one filter, one order: a reader joins them by position and must not be wrong
     from use_cases import chat
 
-    monkeypatch.setattr(chat, "_hidden_by_cut", lambda source, variant: source == "index.md")
-    rows = [_hit("a.md", "A > one", 0), _hit("index.md", None, 0), _hit("b.md", "B > two", 3)]
+    rows = [_hit("a.md", "A > one", 0), _hit("b.md", "B > two", 3)]
 
-    texts, chunks = chat.kept_chunks(rows, "baseline")
+    texts, chunks = chat.kept_chunks(rows, "clean_1024")
 
-    assert len(texts) == len(chunks) == 2, "the cut hid one row from both lists"
+    assert len(texts) == len(chunks) == 2
     assert [c["source"] for c in chunks] == ["a.md", "b.md"]
     assert [c["section"] for c in chunks] == ["A > one", "B > two"]
     assert [c["chunk_index"] for c in chunks] == [0, 3]
@@ -417,16 +416,15 @@ def test_every_route_out_of_a_run_carries_the_flags_that_change_what_it_measures
 
 
 def test_a_graded_answer_keeps_rows_scores_and_sources_on_the_same_seats(monkeypatch):
-    # rows were cut by the grader's position while a chunk hidden by the cut policy shifted every index
+    # rows are cut by the grader's position, so the kept seat names the row it was graded on
     _stub_generation(monkeypatch)
-    rows = [_row("a.md"), _row("hidden.md"), _row("c.md")]
-    monkeypatch.setattr(chat, "_hidden_by_cut", lambda source, variant: source == "hidden.md")
+    rows = [_row("a.md"), _row("c.md")]
     kept_the_second = ({"kept": [1], "order": ["a.md#0", "c.md#0"], "dropped": ["a.md#0"],
                         "asked": 2, "unreadable": 0}, [])
     monkeypatch.setattr(chat, "_graded", lambda *a, **kw: kept_the_second)
 
-    ans = chat.answer_from_rows("q", rows, rerank_scores=[0.9, 0.5, 0.1], k=5,
-                                variant="baseline", grade_chunks=True)
+    ans = chat.answer_from_rows("q", rows, rerank_scores=[0.9, 0.1], k=5,
+                                variant="clean_1024", grade_chunks=True)
 
     assert ans.success is True
     assert [s.source for s in ans.sources] == ["c.md"], "the surviving chunk is row 2, not row 1"

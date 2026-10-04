@@ -1,18 +1,17 @@
 import re
 import unicodedata
 
-from use_cases.markup import FENCE_LINE
+from use_cases.markup import fence_scan
 
 _HEADING = re.compile(r"^(#{1,6}) ")
 
 
 # sections an HTML page sets at its title's level (each section's h1) go one level down, where the chunker cuts
 def one_title(markdown: str) -> tuple[str, int]:
-    lines, fenced, marks = markdown.split("\n"), False, []
+    lines, marks = markdown.split("\n"), []
+    fences, inside, _ = fence_scan(lines)
     for i, line in enumerate(lines):
-        if FENCE_LINE.match(line):
-            fenced = not fenced
-        elif not fenced and (m := _HEADING.match(line)):
+        if i not in fences and i not in inside and (m := _HEADING.match(line)):
             marks.append((i, len(m.group(1))))
     if not marks or [level for _, level in marks].count(1) < 2 or marks[0][1] != 1:
         return markdown, 0
@@ -112,24 +111,20 @@ def running_heads(layers: list[str]) -> set[str]:
 
 # the lines inside code fences blanked to spaces by the fence rule every repair reads, offsets kept for a checker
 def unfenced(markdown: str) -> str:
-    lines, inside = markdown.split("\n"), False
-    for n, line in enumerate(lines):
-        fence = bool(FENCE_LINE.match(line))
-        if inside or fence:
-            lines[n] = " " * len(line)
-        if fence:
-            inside = not inside
+    lines = markdown.split("\n")
+    fences, inside, _ = fence_scan(lines)
+    for n in fences | inside:
+        lines[n] = " " * len(lines[n])
     return "\n".join(lines)
 
 
 # a running head Docling made a heading is dropped from its second time on; the first is the chapter's own title
 def drop_running_headings(markdown: str, layer: str) -> tuple[str, int]:
     running = running_heads(layer.split("\f"))
-    lines, inside, seen, keep, count = markdown.split("\n"), False, set(), [], 0
-    for line in lines:
-        if FENCE_LINE.match(line):
-            inside = not inside
-        found = None if inside else _MD_HEADING.match(line)
+    lines, seen, keep, count = markdown.split("\n"), set(), [], 0
+    fences, inside, _ = fence_scan(lines)
+    for n, line in enumerate(lines):
+        found = None if n in inside or n in fences else _MD_HEADING.match(line)
         bare = bare_line(found.group(2)) if found else ""
         if bare in running and bare in seen:
             count += 1
@@ -148,12 +143,12 @@ _CAPTION_HEADING = re.compile(rf"^#{{1,6}}[ \t]+({CAPTION}.*)$", re.IGNORECASE)
 
 # a figure, listing or table caption made a heading cuts a section in two for the chunker: it goes back to a line
 def demote_caption_headings(markdown: str) -> tuple[str, int]:
-    lines, inside, count = markdown.split("\n"), False, 0
+    lines, count = markdown.split("\n"), 0
+    fences, inside, _ = fence_scan(lines)
     for n, line in enumerate(lines):
-        if FENCE_LINE.match(line):
-            inside = not inside
+        if n in fences:
             continue
-        found = None if inside else _CAPTION_HEADING.match(line)
+        found = None if n in inside else _CAPTION_HEADING.match(line)
         if found:
             lines[n], count = found.group(1), count + 1
     return "\n".join(lines), count

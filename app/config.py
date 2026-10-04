@@ -1,10 +1,11 @@
 import os
-from typing import Literal
+from typing import Literal, get_args
 
 import samplers
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from tool_names import Tool
+from vocabulary import QueryLanguageRule
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
 # a file that replaces `llm.roles`, as the layout of a host without a card does
@@ -30,12 +31,43 @@ class RoleCfg(_Strict):
         return samplers.check(v)
 
 
+# a Russian question's words in English beside it, so the English text it asks about is in the keyword search's reach
+class KeywordTranslationCfg(_Strict):
+    enabled: bool = False
+    model_dir: str = "datasets/models/opus-mt-ru-en-ctranslate2"
+    # the keyword search reads the translation instead of the question: the Russian words matched Russian chunks only
+    replaces: bool = False
+
+
+# a question's jargon (постгрес, k8s) reworded to the names the docs use, ranked beside the question's own words
+class KeywordAliasesCfg(_Strict):
+    enabled: bool = False
+
+
+KeywordQuery = Literal["and", "or"]
+KEYWORD_QUERY_MODES = get_args(KeywordQuery)
+
+
 # named as a run's record names them, so nothing translates between the two
 class KeywordCfg(_Strict):
-    query: str
+    query: KeywordQuery
     rank: str
     norm: int
-    query_lang: str
+    query_lang: QueryLanguageRule
+    translation: KeywordTranslationCfg = KeywordTranslationCfg()
+    aliases: KeywordAliasesCfg = KeywordAliasesCfg()
+    # candidates hold a word in at most this share of chunks, ranked by every word; 0 is off, else at least 0.001
+    max_term_share: float = Field(0.0, ge=0.0, le=1.0)
+
+    # the table keeps no word rarer than its floor, so a share below it would read every word as rare
+    @field_validator("max_term_share")
+    @classmethod
+    def _above_the_floor(cls, value: float) -> float:
+        from corpus_keys import TERM_SHARE_FLOOR
+
+        if 0 < value < TERM_SHARE_FLOOR:
+            raise ValueError(f"max_term_share is 0 (off) or at least {TERM_SHARE_FLOOR}")
+        return value
 
 
 class RetrievalCfg(_Strict):
@@ -49,6 +81,8 @@ class RetrievalCfg(_Strict):
     ef_search: int | Literal["auto"]
     # a filtered hnsw walk stops at ef_search and returns fewer rows; relaxed_order walks on until the filter is met
     filtered_scan: Literal["off", "relaxed_order"] = "off"
+    # the same text under several files of one source returns once, at its best rank
+    collapse_copies_in_source: bool = False
 
 
 class SearchDepthCfg(_Strict):
@@ -116,19 +150,15 @@ class FtsCfg(_Strict):
 
 # typed like the gates that judge it: a typo fails the start, not the cut
 class PolicyCfg(_Strict):
-    chunker: Literal["legacy", "rooted", "structured"]
+    chunker: Literal["rooted", "structured"]
     max_chunk_size: int = Field(gt=0)
     ceiling_on: Literal["body", "content"] = "body"
     # off by default: it changes the cut, so it is a corpus variant of its own
     drop_boilerplate: bool = False
-
-    # derived, not declared: two keys deciding one thing is how they came to disagree
-    @property
-    def header_prefix(self) -> bool:
-        return self.chunker != "legacy"
-
-    def model_dump(self, **kw) -> dict:
-        return {**super().model_dump(**kw), "header_prefix": self.header_prefix}
+    # a whole section with a body shorter than this joins its file's previous chunk, or the next; 0 is off
+    merge_tiny_sections_under: int = Field(default=0, ge=0)
+    # a run of at least this many dot-leader lines is a table of contents or an index and is cut out; 0 is off
+    contents_runs_from: int = Field(default=0, ge=0)
 
 
 class CorpusCfg(_Strict):
@@ -185,6 +215,9 @@ class MeasureRulesCfg(_Strict):
     boilerplate_file_share: float
     boilerplate_min_files: int
     min_breaching_chunks: int
+    # a chapter of at least this many chunks with at most that many sections inside is flat: its headings were lost
+    flat_min_chunks: int = Field(ge=1)
+    flat_max_sections: int = Field(ge=1)
     soup_alnum_ratio: float
     prose_word_letters: int
 
@@ -218,6 +251,7 @@ class RouteCfg(_Strict):
     mono_by_step: bool
     code_row_rules: list[Literal["run_on", "once", "numbers"]]
     outline_levels: bool
+    contents_outline: bool
     html_one_title: bool
     numbered_levels: bool
     decode_entities: bool
@@ -232,8 +266,8 @@ class RouteCfg(_Strict):
     demote_caption_headings: bool
     drop_running_headings: bool
     join_split_words: bool
-    join_wrapped_identifiers: bool
-    join_continued_rows: bool
+    drop_inherited_members: bool
+    drop_repeated_code: bool
     epub_chapters: bool
 
 
@@ -245,6 +279,13 @@ SHAPE_NO_PIECE = ("suspect_min_words", "epub_skip")
 SOURCE_KNOBS = tuple(name for name in RouteCfg.model_fields if name not in STAND_ONLY)
 
 
+# a source's own questions read against it after they are accepted, clamped to it and open over the corpus
+class SourceGateCfg(_Strict):
+    clamped_min: float = Field(ge=0, le=1)
+    open_min: float = Field(ge=0, le=1)
+    min_questions: int = Field(ge=1)
+
+
 class RawQualityCfg(_Strict):
     output_share_min: float
     output_share_max: float
@@ -253,6 +294,9 @@ class RawQualityCfg(_Strict):
     layer_band_engines: list[Tool]
     bad_share: float
     auto_accept_ok: bool
+    # rounds of existing knobs an agent tries on one source; past them a person approves a new knob or refuses it
+    agent_knob_rounds: int = Field(ge=0)
+    source_gate: SourceGateCfg
 
 
 class IntakeCfg(_Strict):
@@ -388,6 +432,21 @@ class CategoryCfg(_Strict):
     versions: list[str] = []
 
 
+# `unsure` aliases stay out of the search: an ordinary word (клик, квадрант) would reword questions that mean it
+class AliasCfg(_Strict):
+    canonical: str
+    aliases: list[str]
+    seen_in: list[str] = []
+    unsure: list[str] = []
+    related: list[str] = []
+
+    # yaml reads 404 as a number, and an empty `unsure:` as null
+    @field_validator("aliases", "unsure", "related", mode="before")
+    @classmethod
+    def _words(cls, value) -> list[str]:
+        return [str(v).lower() for v in value or []]
+
+
 class AppConfig(_Strict):
     retrieval: RetrievalCfg
     verdict: VerdictCfg
@@ -406,6 +465,23 @@ class AppConfig(_Strict):
     postgres: PostgresCfg
     mcp_integrations: McpIntegrationsCfg
     categories: dict[str, CategoryCfg]
+    aliases: dict[str, AliasCfg] = {}
+
+    # one alias naming two technologies leaves the search to guess which one the question meant
+    @field_validator("aliases")
+    @classmethod
+    def _one_owner_per_alias(cls, value: dict) -> dict:
+        def words(text: str) -> str:
+            return " ".join(text.lower().split())
+
+        owners: dict[str, set] = {}
+        for name, entry in value.items():
+            for alias in {words(a) for a in entry.aliases} | {words(entry.canonical)}:
+                owners.setdefault(alias, set()).add(name)
+        shared = {alias: sorted(names) for alias, names in owners.items() if len(names) > 1}
+        if shared:
+            raise ValueError(f"an alias names one technology, these name several: {shared}")
+        return value
 
 
 # the roles a stand cannot answer without: a layer dropping one fails at load; the rest are optional
@@ -501,5 +577,11 @@ settings = _load(CONFIG_PATH, CONFIG_OVERLAY)
 KEYWORD_SWITCHES = tuple(KeywordCfg.model_fields)
 
 
+# the dictionary's digest rides with the switch, so two runs on two dictionaries do not read as one setting
 def keyword_switches() -> dict:
-    return settings.retrieval.keyword.model_dump()
+    switches = settings.retrieval.keyword.model_dump()
+    if switches["aliases"]["enabled"]:
+        import query_aliases
+
+        switches["aliases"]["digest"] = query_aliases.digest()
+    return switches

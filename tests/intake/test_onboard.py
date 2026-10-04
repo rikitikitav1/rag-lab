@@ -1,10 +1,12 @@
 from pathlib import Path
 
+import gold_match
 import pytest
 from config import settings
+from corpus_keys import file_stem
 from job_handlers import onboard
 from job_handlers.base import Final
-from models.corpus import DataSource
+from models.corpus import DataSource, Stage
 from use_cases import intake_fetch, source_intake
 from use_cases.converting import pieces
 
@@ -32,8 +34,7 @@ def test_a_run_is_cut_into_pieces_of_the_settings_size(tmp_path, monkeypatch):
 
     planned = onboard.reading.plan(tmp_path / "a.pdf", names, loaded, STAND)
     assert [(piece, name) for _, piece, name in planned] == [
-        ((1, 50), "docling/default"),
-        ((51, 100), "docling/default"),
+        ((1, 100), "docling/default"),
         ((101, 120), "docling/default"),
     ]
     assert [piece for _, piece, _ in onboard.reading.plan(tmp_path / "a.md", names, loaded, STAND)] == [None]
@@ -148,7 +149,8 @@ def test_the_job_turns_a_declared_folder_into_a_raw_source(tmp_path, monkeypatch
         return [route.Run(None, None, "markdown")]
 
     monkeypatch.setattr(onboard.route, "route", fake_route)
-    monkeypatch.setattr(onboard.route, "seamless_pieces", lambda file, pages, size, rule=None: pieces(*pages, size))
+    # three pieces of fifty pages whatever the stand's size, so one fails and one is partial
+    monkeypatch.setattr(onboard.route, "seamless_pieces", lambda file, pages, size, rule=None: pieces(*pages, 50))
     layers = [f"page {n} words here" for n in range(1, 121)]
     monkeypatch.setattr(onboard.route, "layer_texts", lambda file, rule=None: layers)
     calls = []
@@ -178,7 +180,7 @@ def test_the_job_turns_a_declared_folder_into_a_raw_source(tmp_path, monkeypatch
     assert "conversion.partial" in record["units"]["b.pdf#101-120"]["breached"], "a partial piece is kept and said"
     assert record["units"]["b.pdf#1-50"]["engine"] == "docling"
     assert record["units"]["b.pdf#1-50"]["layer_f1"] > 0.95
-    whole = (folder / "files" / f"{onboard._stem('b.pdf')}.md").read_text()
+    whole = (folder / "files" / f"{file_stem('b.pdf')}.md").read_text()
     assert whole.index("## Pages 1") < whole.index("## Pages 51") < whole.index("## Pages 101")
     assert source.stage == Stage.raw
     assert source.raw["verdict"] == "bad" and source.raw["reasons"]["conversion.failed"] == 1
@@ -191,7 +193,7 @@ def test_the_job_turns_a_declared_folder_into_a_raw_source(tmp_path, monkeypatch
 
     # a piece whose markdown left the folder is converted again
     calls.clear()
-    (folder / "pieces" / f"{onboard._stem('b.pdf#1-50')}.md").unlink()
+    (folder / "pieces" / f"{file_stem('b.pdf#1-50')}.md").unlink()
     onboard.onboard_source({"source": "demo"})
     assert calls == [("b.pdf", (1, 50)), ("b.pdf", (51, 100))]
 
@@ -272,7 +274,7 @@ def test_an_accepted_source_is_accepted_again_only_with_a_new_run_waiting():
 
 
 def test_two_keys_never_share_a_file():
-    assert onboard._stem("docs/a.pdf#1-10") != onboard._stem("docs_a.pdf#1-10")
+    assert file_stem("docs/a.pdf#1-10") != file_stem("docs_a.pdf#1-10")
 
 
 def test_two_urls_ending_alike_are_two_files(tmp_path, monkeypatch):
@@ -417,15 +419,14 @@ def test_a_source_named_like_a_hash_keeps_its_folders_from_a_shorter_names_remov
 
 
 def test_a_folder_mark_holds_its_source_as_the_stands_gold_predicate_reads_it():
-    import db
 
     files = ["roadmap/content/clickhouse/intro.md", "roadmap/content/clickhouse/joins.md"]
     from corpus_keys import Gold
 
     marks = [["roadmap/content/clickhouse"], ["other/file.md"], ["roadmap/content/clickhouse/joins.md"]]
-    assert db.count_marking(files, marks) == 2
+    assert gold_match.count_marking(files, marks) == 2
     exact = [Gold(("roadmap/content/clickhouse/intro.md",), "Intro"), Gold(("roadmap/content/clickhouse",), "Intro")]
-    assert db.count_marking(files, exact) == 1, "an exact gold names its file whole, never a folder"
+    assert gold_match.count_marking(files, exact) == 1, "an exact gold names its file whole, never a folder"
 
 
 def test_a_source_is_accepted_from_raw_and_a_bad_verdict_needs_a_reason():
@@ -553,7 +554,7 @@ def test_a_low_piece_is_read_again_and_the_better_reading_stays(tmp_path, monkey
     row = json.loads((folder / "record.json").read_text())["units"]["b.pdf#1-1"]
     assert calls == ["default", "pypdfium2"]
     assert row["reread"]["taken"] and row["settings"] == config.settings.intake.route.reread_settings
-    assert "brown fox" in (folder / "pieces" / f"{onboard._stem('b.pdf#1-1')}.md").read_text()
+    assert "brown fox" in (folder / "pieces" / f"{file_stem('b.pdf#1-1')}.md").read_text()
 
     calls.clear()
     onboard.onboard_source({"source": "demo"})
@@ -634,6 +635,9 @@ def test_the_route_fingerprint_reads_what_shapes_a_piece(monkeypatch):
     before = reading.route_sha(stand)
     assert reading.route_sha(stand.model_copy(update={"epub_skip": ["toc"], "suspect_min_words": 99})) == before
     assert reading.route_sha(stand.model_copy(update={"seam_window": stand.seam_window + 1})) != before
+    # a knob that is off is not in the fingerprint, so adding or dropping one moves no record
+    off = next(k for k, v in stand.model_dump().items() if v is False and k in reading._SHAPES)
+    assert off not in reading.route_rules(stand) and off in reading.route_rules(stand.model_copy(update={off: True}))
     content["sha"] = "two"
     assert reading.route_sha(stand) != before
 
@@ -685,6 +689,25 @@ def test_a_markdown_only_source_is_read_from_its_tree_and_a_converted_one_from_i
     assert onboard._index_root(both, tree, folder) == ("datasets/raw_sources/x_1", "converted")
 
 
+# a tree the stand fetched is copied into the run: the next fetch resets the clone, not the accepted run's text
+def test_a_fetched_tree_is_read_from_its_runs_own_copy(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from job_handlers import onboard
+
+    fetched = tmp_path / "_fetched"
+    clone = fetched / "docs" / "repo"
+    (clone / ".git").mkdir(parents=True)
+    (clone / "a.md").write_text("# A\n")
+    monkeypatch.setattr(onboard, "FETCHED", fetched)
+    monkeypatch.setattr(onboard, "ROOT", tmp_path)
+    run = tmp_path / "raw" / "docs_1"
+    root, kind = onboard._index_root([(None, "a.md", SimpleNamespace(engine=None), None, None)], clone, run)
+    assert (kind, root) == ("tree", "raw/docs_1/tree")
+    (clone / "a.md").write_text("# moved upstream\n")
+    assert (run / "tree" / "a.md").read_text() == "# A\n" and not (run / "tree" / ".git").exists()
+
+
 # a family's row is one repository of the family, named by the row, cloned with the family's include
 def test_a_family_row_is_gathered_as_its_own_repository(tmp_path, monkeypatch):
     declared = {"name": "repos", "git_family": {"base_url": "https://github.com/x", "repos": ["a-repo"]}}
@@ -698,7 +721,7 @@ def test_a_family_row_is_gathered_as_its_own_repository(tmp_path, monkeypatch):
         return folder, {}
 
     monkeypatch.setattr(intake_fetch, "_clone", clone)
-    root, files, _, _ = intake_fetch.gather(source, tmp_path / "inbox", tmp_path)
+    root, files, *_ = intake_fetch.gather(source, tmp_path / "inbox", tmp_path)
     assert seen["repo"] == "https://github.com/x/a-repo" and [f.name for f in files] == ["README.md"]
 
 
@@ -898,3 +921,165 @@ def test_a_fresh_reading_passes_the_kept_one_over(monkeypatch, tmp_path):
     with converting.reading_fresh(True), converting.card_hold(hold):
         assert converting.convert(None, "docling", tmp_path / "f.pdf", [], None, 10)["markdown"] == "new"
     assert read == [1] and converting._FRESH.get() is False
+
+
+# a file the run no longer reads (its origin moved from a folder to a link) leaves the folder with its markdown
+def test_a_run_drops_the_markdown_of_a_file_it_no_longer_reads(tmp_path):
+    import config
+    from job_handlers import onboard
+
+    (tmp_path / "files").mkdir()
+    (tmp_path / "pieces").mkdir()
+    rel = "b8472833/notes.md"
+    key = f"{rel}#1-1"
+    (tmp_path / "pieces" / f"{file_stem(key)}.md").write_text("## A\n\ntext")
+    stale = tmp_path / "files" / f"{file_stem('notes.md')}.md"
+    stale.write_text("## A\n\nold")
+    record = {"units": {key: {"key": key, "file": rel, "pages": None, "route": None}}}
+
+    onboard._assemble([Path(rel)], {Path(rel): rel}, record, tmp_path, set(), config.settings.intake.route, {})
+
+    assert sorted(p.name for p in (tmp_path / "files").iterdir()) == [f"{file_stem(rel)}.md"]
+
+
+# the board says who moves a source next: a person for a run that is not ok, a door for the plain next step
+def test_the_next_step_of_a_source_names_who_moves_it():
+    from types import SimpleNamespace
+
+    from models.corpus import Stage
+    from use_cases.intake_board import next_step
+
+    def row(stage, raw=None, active=False):
+        return SimpleNamespace(stage=stage, raw=raw or {}, active=active)
+
+    assert next_step(row(Stage.declared), 0, []) == ("a door", "onboard it (onboard_source)")
+    who, step = next_step(row(Stage.raw, {"verdict": "dirty"}), 0, [])
+    assert who == "a person" and step.startswith("a person decides on a dirty run")
+    assert next_step(row(Stage.raw, {"verdict": "ok"}), 0, ["onboard_source"]) == (
+        "the queue", "waits for its queued onboard_source")
+    waiting = row(Stage.accepted, {"verdict": "ok", "candidate": {"verdict": "ok"}})
+    assert next_step(waiting, 10, [])[0] == "a person"
+    assert next_step(row(Stage.accepted, {"verdict": "ok"}), 0, [])[1] == "index it into a variant (index_data)"
+    assert next_step(row(Stage.accepted, {"verdict": "ok"}, active=True), 5, []) == (None, "nothing waits")
+    # a source whose every chunk another, more trusted source keeps waits for nothing, not for an index
+    copied = row(Stage.accepted, {"verdict": "ok", "copies_kept_by": {"v": {"pg-docs": 3}}})
+    assert next_step(copied, 0, [], "v")[0] is None
+
+
+# one page the sitemap lists and the site removed is left out with its answer; a server error still fails the fetch
+def test_a_page_the_site_no_longer_serves_is_left_out_not_the_source(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import requests
+    from use_cases import fetch
+
+    def download(url, target):
+        status = {"https://x/gone.html": 404, "https://x/broken.html": 503}.get(url)
+        if status:
+            raise requests.HTTPError(response=SimpleNamespace(status_code=status))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("<div id='content'><p>page</p></div>")
+        return True
+
+    monkeypatch.setattr(fetch, "download", download)
+
+    def source(pages):
+        declared = {"name": "site", "pages": pages, "site": {"main": "div#content"}}
+        return DataSource(name="site", kind="pages", declaration=declared)
+
+    got = intake_fetch.gather(source(["https://x/a.html", "https://x/gone.html"]), tmp_path / "inbox", tmp_path)
+    assert len(got.files) == 1 and list(got.gone) == ["https://x/gone.html"] and "404" in got.gone["https://x/gone.html"]
+    with pytest.raises(requests.HTTPError):
+        intake_fetch.gather(source(["https://x/broken.html"]), tmp_path / "inbox2", tmp_path)
+
+
+# a source's skipped paths change on its row in place: deleting and declaring it again would drop its chunks
+def test_skip_paths_are_set_on_the_row_and_refused_for_a_seeded_or_busy_source(monkeypatch):
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
+    row = DataSource(name="docs", seeded=False, declaration={"name": "docs", "folder": "inbox/docs", "licence": "MIT"})
+    source_intake.set_fields(row, {"skip_paths": ["release-notes/*"]})
+    assert row.declaration["skip_paths"] == ["release-notes/*"] and row.declaration["folder"] == "inbox/docs"
+    source_intake.set_fields(row, {"skip_paths": []})
+    assert "skip_paths" not in row.declaration
+    with pytest.raises(Final, match="source file"):
+        source_intake.set_fields(DataSource(name="x", seeded=True, declaration={"name": "x"}), {"skip_paths": ["a/*"]})
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: 42)
+    with pytest.raises(Final, match="42"):
+        source_intake.set_fields(row, {"skip_paths": ["a/*"]})
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: 43)
+    with pytest.raises(Final, match="43"):
+        source_intake.set_fields(row, {"skip_paths": ["a/*"]})
+
+
+
+# the agent turns existing knobs for three rounds; the row keeps each with the verdict it met, an ok says it came after
+def test_the_agents_knob_rounds_are_kept_on_the_row_and_stop_at_the_configured_limit(monkeypatch):
+    import config
+
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
+    monkeypatch.setattr(config.settings.intake.quality, "agent_knob_rounds", 2)
+    monkeypatch.setattr(config.settings.intake.quality, "auto_accept_ok", True)
+    row = DataSource(name="book", seeded=False, stage=Stage.raw, declaration={"name": "book", "folder": "inbox/b"},
+                     raw={"folder": "raw/1", "verdict": "dirty"})
+    source_intake.set_intake(row, {"seam_window": 9})
+    source_intake.set_fields(row, {"markup": "hugo"})
+    row.raw = {**row.raw, "folder": "raw/2", "verdict": "dirty"}
+    source_intake.set_intake(row, {"seam_window": 8})
+    assert [(k["run"], k["verdict_before"]) for k in row.raw["knobs_tried"]] == [
+        ("raw/1", "dirty"), ("raw/1", "dirty"), ("raw/2", "dirty")]
+    row.raw = {**row.raw, "folder": "raw/3"}
+    with pytest.raises(Final, match="2 rounds of knobs"):
+        source_intake.set_intake(row, {"seam_window": 7})
+    source_intake.take_run(row, {"folder": "raw/4", "verdict": "ok", "language": "ru"})
+    assert row.stage == Stage.accepted and row.raw["accepted_by"] == "auto"
+    assert len(row.raw["accepted_after_knobs"]) == 3
+
+
+# a language guessed wrong at the declaration picks the wrong OCR; it is mended before the cut, not after
+def test_the_guessed_language_and_categories_are_mended_before_the_cut_and_not_counted_as_knobs(monkeypatch):
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake.files, "index_refusal", lambda declaration: None)
+    row = DataSource(name="book", seeded=False, stage=Stage.raw, language="en", raw={"folder": "raw/1"},
+                     declaration={"name": "book", "folder": "inbox/b", "language": "en", "licence": "MIT"})
+    source_intake.set_fields(row, {"language": "ru", "categories": ["databases"]})
+    assert row.language == "ru" and row.declaration["categories"] == ["databases"]
+    assert "knobs_tried" not in row.raw
+    row.indexed_with = {"v": "abc"}
+    with pytest.raises(Final, match="declaring it again"):
+        source_intake.set_fields(row, {"language": "en"})
+
+def test_declared_fields_are_set_together_refused_by_name_and_checked_whole(monkeypatch):
+    from errors import Refusal
+
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
+    row = DataSource(name="book", seeded=False, declaration={"name": "book", "folder": "inbox/book", "licence": "MIT"})
+    source_intake.set_fields(row, {"section_root_by_path": {"*": "The Book"}})
+    source_intake.set_fields(row, {"markup": "hugo", "markup_values": {"version": "v1.37"}})
+    assert row.declaration["section_root_by_path"] == {"*": "The Book"} and row.declaration["markup"] == "hugo"
+    assert row.declaration["markup_values"] == {"version": "v1.37"}
+    source_intake.set_fields(row, {"section_root_by_path": {}})
+    assert "section_root_by_path" not in row.declaration
+    with pytest.raises(Refusal, match="not settable"):
+        source_intake.set_fields(row, {"folder": "elsewhere"})
+    with pytest.raises(Refusal) as raised:
+        source_intake.set_fields(row, {"markup": "latex"})
+    assert raised.value.kind == "invalid"
+
+def test_onboarding_reads_the_knobs_of_a_source_file_over_a_row_seeded_before_them(monkeypatch):
+    from types import SimpleNamespace
+
+    from job_handlers import onboard
+    from sources.declaration import SourceFile
+
+    pinned = SourceFile(name="book", language="ru", licence="x", folder="datasets/book",
+                        intake={"settings": {"docling": "docling/pypdfium2_cells"}})
+    monkeypatch.setattr(onboard.files, "source_files", lambda: {"book": pinned})
+    row = SimpleNamespace(name="book", declaration={"name": "book", "folder": "datasets/book"})
+    assert onboard._knobs_of(row)["intake"]["settings"] == {"docling": "docling/pypdfium2_cells"}
+    monkeypatch.setattr(onboard.files, "source_files", lambda: {})
+    assert onboard._knobs_of(row) == row.declaration, "a source with no file keeps its row"

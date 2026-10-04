@@ -3,7 +3,12 @@ name: arangodb-docs
 language: en
 licence: Apache-2.0
 folder: datasets/inbox/arangodb-docs-hugo/site/content/arangodb/3.12
-reader: arangodb-docs
+# a Hugo site: its shortcodes render by the table before the cut
+markup: hugo
+# per-version release notes and the highlights list: what changed when, not how it works
+skip_paths:
+- release-notes/*
+- features/highlights-by-version.md
 versions:
   "3.12": { folder: datasets/inbox/arangodb-docs-hugo/site/content/arangodb/3.12 }
   "3.11": { folder: datasets/inbox/arangodb-docs-hugo/site/content/arangodb/3.11 }
