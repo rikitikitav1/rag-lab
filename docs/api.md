@@ -13,7 +13,7 @@ Health:
   - `card`: free and total GPU memory
   - `residency`, `engines`: which models are resident and how much VRAM each holds
   - `window`: the context window the server actually serves, next to the declared one
-  - `queue`: the live queue
+  - `queue`: jobs counted by status, the waiting ones counted by type, `live_total`, and the first 10 live jobs with the running ones first (the full list is `GET /v1/job`)
   - `roles`: role drift between config and database
   - `corpus`, `ef_search`: the corpus variant and the search depth per variant
 
@@ -143,12 +143,16 @@ of 0.19, a CI of [-0.17, 0.57] and p = 0.37, and `significant_holm` is false.
 
 Any job type can be queued through one endpoint: `POST /v1/job` with `{"type": ..., "options": {...}}`.
 This endpoint and every endpoint that queues a job of its own (`/v1/eval/*`, `/v1/source/{id}/analyze`)
-answer with the whole job record: `job_id`, `type`, `queue`, `status`, `options`, `apply_since`,
-`created_at`. Once a worker claims a job, the record also carries `code`: the code version of the
+answer with the whole job record: `job_id`, `type`, `queue`, `status`, `options`, `parent_id`, `apply_since`,
+`created_at`. `parent_id` is the job whose handler queued this one, or null. Once a worker claims a job, the record also carries `code`: the code version of the
 worker process that took it. Whether a series of runs shared one code version is then a query, not a
 manual comparison of container start times with file dates. A finished job whose handler returns a
 summary keeps it in `result`: `index_data` the sources it read and refused, `probe_intake` each
 side's defect counts.
+
+A failed job's `error` carries a `kind`: `refused` (the options were refused when the worker took the job), `no_handler`, `final` (the handler said retrying will not help), `exhausted` (retries ran out), `deferred_out` (it waited past the ceiling for what it needs) and `worker_died` (the worker stopped under it too many times in a row). A job waiting out a retry or a deferral says why in `options.waiting_because`: `kind`, `error` and `retry_at`.
+
+The worker and the cancel announce each finished job on the postgres channel `job_finished` (payload: `id`, `type`, `status`, `run_name`). `scripts/wait_jobs.py <id...>` listens on it and prints one JSON line per job as it finishes, re-reading the rows when no notice comes. `scripts/restart_worker.sh` restarts the worker between jobs: it pauses the waiting line, waits for what runs, restarts and resumes the same jobs. Every worker log line carries `job_id` and `job_type`.
 
 What each type accepts is defined by a model per type in `app/job_specs.py`. The options are checked
 when the job is queued, whichever endpoint or script queues it, and again when the worker takes it.
@@ -181,7 +185,7 @@ Every type the queue knows, what it does and what it takes:
 |---|---|---|---|---|
 | `pull_llm_model` | pulls weights into an engine | `name`, `engine_id` | none (io lane) | the model row goes `ready` |
 | `delete_llm_model` | removes weights from an engine | `name`, `engine_id` | none (io lane) | the model row |
-| `index_data` | cuts the accepted sources, all or the one named, into a corpus variant and embeds them | `variant`, `source` | embedding | `data_chunks` of that variant; the job's `result`: sources read and refused, and `lower_copies_dropped` when a text another, more trusted source holds word for word was taken out of this one |
+| `index_data` | cuts the accepted sources, all or the one named, into a corpus variant and embeds them | `variant`, `source` | embedding | `data_chunks` of that variant; a chunk whose text is unchanged keeps the vector the same embedder already made; the job's `result`: sources read and refused, `phases` per source (`chunks`, `reused`, `embedded`, `cut_s`, `embed_s`, `write_s`), and `lower_copies_dropped` when a text another, more trusted source holds word for word was taken out of this one |
 | `build_vector_index` | builds the hnsw index of a variant | `variant` | none | the index |
 | `analyze_source` | reads one source and reports its ingest quality | `source`, `variant`, `mode` | none | `data_sources.ingest_quality` |
 | `convert_source` | turns PDF, image or HTML files of the converter bench into markdown through one converter tool, or with `intake` through the corpus's own reading path (route, seams, reread, join), over page ranges of store files and with each input's source knobs | `settings`, `language`, `inputs`, `out`, `intake`, `root`, `pages`, `pages_per_chunk`, `sources`, `knobs` | none; it takes the GPU for the engine that runs the settings' tool | `datasets/converter_gold/files/runs/<out>/`, with `record.json` |
@@ -255,8 +259,9 @@ Record the takeaway with `PUT /v1/experiment/{id}/conclusion` and the experiment
 
 Observability:
 - `GET /v1/question-log`, `GET /v1/question-log/{id}` (the row carries what it was asked and what it read: `question_text`, and on the detail row the `context` it was given. Filters incl. `pipeline`, `faithfulness`/`relevance`/`completeness`, `run_name`; and over the recorded snapshot: `rerank`, `rerank_device`, `phased`, `empty_retrieval`, `max_distance`, `answered_via_remote` - so "show me every answer where the corpus returned nothing" is one request; detail with context)
-- `GET /v1/job/stats` (the queue in one screen, as the MCP `queue_stats`: waiting by type, running, finished in `window_minutes`, means over the last day and the waiting priced at them), `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed; filters incl. `type`, `status` and `run_name`, which the MCP console could already do and the route could not), `POST /v1/job/{id}/cancel` (cancels the job and its dependent judge). A running job stops between rows: an eval run, a retrieval comparison and all three judging passes read the cancellation, and a judging pass that was cancelled does not queue its next sweep
-- `POST /v1/job/cancel` (cancel a whole run or job type at once: cancelling id by id through a paginated listing is how a supposedly stopped eval quietly kept running). A `type` with no `run_name` is refused with 400 unless the call also passes `every: true` and means it. Either door takes a run's judge down with the run
+- `GET /v1/job/stats` (the queue in one screen, as the MCP `queue_stats`: waiting by type, `deferred` (waiting jobs backing off a retry or a deferral), `paused`, running, finished in `window_minutes`, means over the last day and the waiting priced at them), `GET /v1/job`, `GET /v1/job/{id}` (jobs + elapsed; filters incl. `type`, `status`, `parent_id` and `run_name`, which the MCP console could already do and the route could not), `POST /v1/job/{id}/cancel` (cancels the job and its dependent judge). A running job stops between rows: an eval run, a retrieval comparison and all three judging passes read the cancellation, and a judging pass that was cancelled does not queue its next sweep
+- `POST /v1/job/cancel` (cancel a whole run or job type at once: cancelling id by id through a paginated listing is how a supposedly stopped eval quietly kept running). A `type` with no `run_name` is refused with 400 unless the call also passes `every: true` and means it. Either door takes a run's judge down with the run. The body can also carry `ids`, `parent_id` and `status` (a list, to cancel only waiting or only running jobs), and `dry_run: true` answers `would_cancel` with the ids and cancels nothing
+- `POST /v1/job/pause` and `POST /v1/job/resume` (the same body as the cancel: `run_name`, `type`, `ids`, `parent_id`, `every`, `dry_run`). A pause holds waiting jobs only: they take the status `paused`, keep their ids and order, and the worker passes them by until a resume returns them to `new`. Dry runs answer `would_pause` and `would_resume`
 
 The complete reference is Swagger at `http://localhost:8000/docs`; the scenarios that use these routes are in [use_cases.md](use_cases.md).
 

@@ -493,7 +493,7 @@ def lane(job_type: str) -> str:
 
 
 # the stand's own bookkeeping on a job: `_job_id` carries a prefix and these never did
-WORKER_KEYS = ("deferred_seconds", "attempts", "reclaims")
+WORKER_KEYS = ("deferred_seconds", "attempts", "reclaims", "waiting_because")
 
 # the options by which a job names a model beside its roles' own
 MODEL_OVERRIDES = {"generation": "model", "judging": "judge_model", "ragas": "guest_model"}

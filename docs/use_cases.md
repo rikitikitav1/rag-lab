@@ -237,6 +237,9 @@ docker compose exec -it rag-lab python app/main.py --console
 # Unit tests (no Ollama; real-database tests need TEST_POSTGRES_URL and are skipped without it)
 docker compose exec rag-lab pytest -q
 
+# The pre-commit gate in one call: ruff, config inventory check, pytest -n 8; the full output goes to temp_files/check.log
+scripts/check.sh
+
 # Dependencies (uv)
 uv sync                 # install from uv.lock
 uv add <pkg>            # add a dependency

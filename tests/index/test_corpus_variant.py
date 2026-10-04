@@ -268,7 +268,7 @@ def test_the_index_and_the_questions_write_which_embedder_made_their_vectors(mon
 
     class _Session:
         def execute(self, _stmt):
-            pass
+            return SimpleNamespace(all=lambda: [])
 
         def add_all(self, rows):
             self.rows = rows
@@ -276,7 +276,7 @@ def test_the_index_and_the_questions_write_which_embedder_made_their_vectors(mon
         def commit(self):
             pass
 
-    chunks = [SimpleNamespace(content="a"), SimpleNamespace(content="b")]
+    chunks = [SimpleNamespace(content="a", embedding=None), SimpleNamespace(content="b", embedding=None)]
     index._replace_chunks(_Session(), 1, "clean_big_1024", chunks, embed_size=1)
     assert [c.embedded_by for c in chunks] == ["bge-m3@ollama"] * 2
 

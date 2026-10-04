@@ -32,6 +32,7 @@ class JobResponse(BaseModel):
     balances: dict | None = None
     code: dict | None = None
     result: dict | None = None
+    parent_id: int | None = None
     apply_since: datetime
     created_at: datetime
     updated_at: datetime
@@ -60,6 +61,7 @@ async def list_jobs(
     created_from: datetime | None = Query(default=None),
     created_to: datetime | None = Query(default=None),
     run_name: str | None = Query(default=None),
+    parent_id: int | None = Query(default=None),
     page: Page = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
@@ -67,6 +69,8 @@ async def list_jobs(
     stmt = apply_created_between(stmt, Job.created_at, created_from, created_to)
     if run_name:
         stmt = stmt.where(Job.options["run_name"].astext == run_name)
+    if parent_id is not None:
+        stmt = stmt.where(Job.parent_id == parent_id)
 
     stmt = apply_sort_limit_offset(
         stmt=stmt,
@@ -133,39 +137,44 @@ class CancelResponse(BaseModel):
     cancelled: list[int]
 
 
-class BulkCancelRequest(BaseModel):
+class ScopeRequest(BaseModel):
     run_name: str | None = None
     type: str | None = None
-    # a type with no run name is every live job of that kind, which is a thing to say out loud
+    ids: list[int] = []
+    parent_id: int | None = None
+    # narrows a cancel to waiting or running jobs; a pause reads only waiting ones and a resume only held ones
+    status: list[JobStatus] = []
+    # a type with no run name, ids or parent is every live job of that kind, which is a thing to say out loud
     every: bool = False
+    dry_run: bool = False
+
+    def scope(self):
+        from use_cases.job_control import Scope
+
+        return Scope(run_name=self.run_name, type=self.type, ids=self.ids, parent_id=self.parent_id,
+                     statuses=self.status, every=self.every)
 
 
-@router.post("/cancel", response_model=CancelResponse)
-async def cancel_jobs(
-    request: BulkCancelRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    if not request.run_name and not request.type:
-        raise HTTPException(status_code=400, detail="run_name or type is required")
-    if request.every and request.run_name:
-        raise HTTPException(
-            status_code=400,
-            detail="every=true widens a cancel to a whole job type, so it takes no run_name",
-        )
-    if request.type and not request.run_name and not request.every:
-        raise HTTPException(
-            status_code=400,
-            detail=f"type '{request.type}' with no run_name cancels every live job of that"
-            " kind: name the run, or pass every=true and mean it",
-        )
-    stmt = select(Job.id).where(Job.status.in_(job_queue.ACTIVE))
-    if request.run_name:
-        stmt = stmt.where(Job.options["run_name"].astext == request.run_name)
-    if request.type:
-        stmt = stmt.where(Job.type == request.type)
-    ids = list(await session.scalars(stmt))
-    # through the queue: it fails the stranded experiment and takes each run's judge along
-    return CancelResponse(cancelled=await run_in_threadpool(job_queue.cancel, ids))
+@router.post("/cancel")
+async def cancel_jobs(request: ScopeRequest) -> dict:
+    from use_cases import job_control
+
+    return await run_in_threadpool(job_control.cancel, request.scope(), request.dry_run)
+
+
+# a held job keeps its id and its place, and the worker passes it by until it is resumed
+@router.post("/pause")
+async def pause_jobs(request: ScopeRequest) -> dict:
+    from use_cases import job_control
+
+    return await run_in_threadpool(job_control.pause, request.scope(), request.dry_run)
+
+
+@router.post("/resume")
+async def resume_jobs(request: ScopeRequest) -> dict:
+    from use_cases import job_control
+
+    return await run_in_threadpool(job_control.resume, request.scope(), request.dry_run)
 
 
 @router.post("/{id}/cancel", response_model=CancelResponse)

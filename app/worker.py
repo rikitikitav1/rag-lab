@@ -9,8 +9,10 @@ import job_queue
 import job_specs
 import llm
 import logging_setup
+import structlog
 import version
 from engines import balances
+from models import FailKind
 from redaction import redact
 
 log = logging_setup.get_logger(__name__)
@@ -49,23 +51,39 @@ def run_once(queues: list[str]) -> bool:
     claimed = job_queue.claim_next(queues)
     if claimed is None:
         return False
+    # every line the handler logs carries its job, and every job it queues names this one as the parent
+    structlog.contextvars.bind_contextvars(job_id=claimed.id, job_type=claimed.type)
+    parent = job_queue.running_job.set(claimed.id)
+    try:
+        _run(claimed)
+    finally:
+        job_queue.running_job.reset(parent)
+        structlog.contextvars.unbind_contextvars("job_id", "job_type")
+        # a rescheduled job is new again and says nothing; a finished one is announced whatever ended it
+        try:
+            job_queue.announce_finished([claimed.id])
+        except Exception as e:
+            log.warning("worker.not_announced", id=claimed.id, error=str(e))
+    return True
 
+
+def _run(claimed) -> None:
     log.info("worker.claimed", id=claimed.id, type=claimed.type)
     _say_the_code_differs(claimed.id)
     handler = HANDLERS.get(claimed.type)
     if handler is None:
         # it called nothing, and an empty count says so instead of reading as a job from before the count
         job_queue.add_tokens(claimed.id, {})
-        job_queue.fail(claimed.id, {"error": f"no handler for type {claimed.type}"})
-        return True
+        job_queue.fail(claimed.id, {"error": f"no handler for type {claimed.type}"}, FailKind.no_handler)
+        return
 
     # a row written straight into the table never passed the door, so the check runs here too
     try:
         job_specs.check(claimed.type, claimed.options, from_the_worker=True)
     except Exception as bad:
         job_queue.add_tokens(claimed.id, {})
-        job_queue.fail(claimed.id, {"error": redact(str(bad))})
-        return True
+        job_queue.fail(claimed.id, {"error": redact(str(bad))}, FailKind.refused)
+        return
 
     start = time.perf_counter()
     tally = llm.Tally()
@@ -88,6 +106,7 @@ def run_once(queues: list[str]) -> bool:
                 claimed.id,
                 {"error": f"waited {waited}s for what it needs and gave up: {d}",
                  "deferred_seconds": waited},
+                FailKind.deferred_out,
             )
             log.error(
                 "worker.deferred_out",
@@ -96,11 +115,13 @@ def run_once(queues: list[str]) -> bool:
                 deferred_seconds=waited,
             )
             _fail_the_experiment_waiting_on(claimed)
-            return True
+            return
         job_queue.reschedule(
             claimed.id,
             {**claimed.options, "deferred_seconds": waited},
             timedelta(seconds=d.delay_seconds),
+            because=redact(str(d)),
+            kind="deferred",
         )
         log.info(
             "worker.deferred",
@@ -120,15 +141,16 @@ def run_once(queues: list[str]) -> bool:
                 {**claimed.options, "attempts": attempts},
                 timedelta(seconds=60 * attempts),
                 elapsed=elapsed,
+                because=redact(str(e)),
             )
             log.error("worker.retry", id=claimed.id, attempts=attempts, error=str(e))
         else:
             job_queue.fail(
-                claimed.id, {"error": redact(str(e)), "attempts": attempts}, elapsed=elapsed
+                claimed.id, {"error": redact(str(e)), "attempts": attempts},
+                FailKind.final if isinstance(e, Final) else FailKind.exhausted, elapsed=elapsed,
             )
             log.error("worker.failed", id=claimed.id, error=str(e))
             _fail_the_experiment_waiting_on(claimed)
-    return True
 
 
 # every cloud with a reader for any job that calls a model: one or two requests, and no map of roles to drift

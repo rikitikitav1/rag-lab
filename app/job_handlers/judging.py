@@ -470,7 +470,7 @@ def _loaded_since(prev: int, job_id, judge) -> bool:
     from models.jobs import Job, JobStatus
 
     # `running` and the ones that died after loading evict the judge exactly as `done` ones do
-    ours = {JobStatus.new}
+    ours = {JobStatus.new, JobStatus.paused}
     with Session() as session:
         asked = select(Job.type, Job.options).where(Job.id > prev, Job.status.notin_(ours))
         # `Job.id != None` renders as a no-op, and an ad hoc pass then never inherits a residency

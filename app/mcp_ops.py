@@ -4,6 +4,7 @@ import config
 import job_queue
 import limits
 import logging_setup
+from errors import Refusal
 from evals import (
     compare,
     generation_metrics,
@@ -385,10 +386,13 @@ def list_jobs(
     status: Annotated[JobStatus | None, Field(description="Filter by status.")] = None,
     type: Annotated[str | None, Field(description="Filter by job type.")] = None,
     run_name: Annotated[str | None, Field(description="Filter by options.run_name.")] = None,
+    parent_id: Annotated[int | None, Field(description="Only jobs this job's handler queued.")] = None,
     limit: Annotated[int, Field(description="Max rows (1-100).", ge=1, le=100)] = 20,
 ) -> list[dict]:
     with Session() as session:
         stmt = select(Job)
+        if parent_id is not None:
+            stmt = stmt.where(Job.parent_id == parent_id)
         if status is not None:
             stmt = stmt.where(Job.status == status)
         if type is not None:
@@ -402,6 +406,10 @@ def list_jobs(
                 "type": j.type,
                 "status": j.status,
                 "run_name": (j.options or {}).get("run_name"),
+                "parent_id": j.parent_id,
+                "created_at": j.created_at,
+                # set while a retry or a deferral waits: why, and when it is tried again
+                "waiting_because": (j.options or {}).get("waiting_because"),
                 "elapsed": j.elapsed,
                 # per role, per engine and model; null for a job from before the count
                 "tokens": j.tokens,
@@ -430,6 +438,91 @@ def cancel_job(
         if session.get(Job, id) is None:
             raise ToolError(f"job {id} not found")
     return {"cancelled": job_queue.cancel_with_its_judge(id)}
+
+
+@mcp_ops.tool(
+    name="job",
+    description="One job by id, whole: options, status, error with its kind, result, tokens, code stamp, parent.",
+    annotations={"readOnlyHint": True},
+)
+def job(id: Annotated[int, Field(description="Job id.")]) -> dict:
+    with Session() as session:
+        j = session.get(Job, id)
+        if j is None:
+            raise ToolError(f"job {id} not found")
+        return {c.name: getattr(j, c.name) for c in Job.__table__.columns}
+
+
+@mcp_ops.tool(
+    name="enqueue_job",
+    description=(
+        "Queue a job of any type with its options, checked as at POST /v1/job. dry_run=true queues nothing and "
+        "returns the options as the handler would read them and the lane. An eval_run is refused here: it is "
+        "queued by POST /v1/eval/run, whose name and question checks this door does not run."
+    ),
+)
+def enqueue_job(
+    type: Annotated[str, Field(description="Job type, as scripts/surface.py lists them.")],
+    options: Annotated[dict | None, Field(description="The type's options.")] = None,
+    dry_run: Annotated[bool, Field(description="Check only, queue nothing.")] = False,
+) -> dict:
+    from use_cases import job_control
+
+    try:
+        return job_control.enqueue(type, options, dry_run)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
+
+
+def _scoped(action, run_name, type, ids, parent_id, status, every, dry_run) -> dict:
+    from use_cases import job_control
+
+    scope = job_control.Scope(run_name=run_name, type=type, ids=ids or [], parent_id=parent_id,
+                              statuses=status or [], every=every)
+    try:
+        return getattr(job_control, action)(scope, dry_run)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
+
+
+_SCOPE_DOC = (
+    " Scope by run_name, type, ids or parent_id; a type alone needs every=true. dry_run=true returns the ids it"
+    " would touch and changes nothing."
+)
+
+
+@mcp_ops.tool(
+    name="cancel_jobs",
+    description="Cancel live jobs in bulk, each run's judge along; status=['new'] spares the running one." + _SCOPE_DOC,
+    annotations={"destructiveHint": True},
+)
+def cancel_jobs(
+    run_name: str | None = None, type: str | None = None, ids: list[int] | None = None, parent_id: int | None = None,
+    status: list[JobStatus] | None = None, every: bool = False, dry_run: bool = False,
+) -> dict:
+    return _scoped("cancel", run_name, type, ids, parent_id, status, every, dry_run)
+
+
+@mcp_ops.tool(
+    name="pause_jobs",
+    description="Hold waiting jobs: they keep their ids and order, and the worker passes them by." + _SCOPE_DOC,
+)
+def pause_jobs(
+    run_name: str | None = None, type: str | None = None, ids: list[int] | None = None, parent_id: int | None = None,
+    every: bool = False, dry_run: bool = False,
+) -> dict:
+    return _scoped("pause", run_name, type, ids, parent_id, None, every, dry_run)
+
+
+@mcp_ops.tool(
+    name="resume_jobs",
+    description="Release held jobs back to the queue in their old order." + _SCOPE_DOC,
+)
+def resume_jobs(
+    run_name: str | None = None, type: str | None = None, ids: list[int] | None = None, parent_id: int | None = None,
+    every: bool = False, dry_run: bool = False,
+) -> dict:
+    return _scoped("resume", run_name, type, ids, parent_id, None, every, dry_run)
 
 
 @mcp_ops.tool(

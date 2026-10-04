@@ -24,6 +24,14 @@ def stats(window_minutes: int = 60) -> dict:
         waiting: dict[str, int] = dict(session.execute(
             select(Job.type, func.count()).where(Job.status == JobStatus.new).group_by(Job.type)
         ).all())
+        # inside the waiting: jobs backing off a retry or a deferral, which a backed-up queue is not
+        deferred: dict[str, int] = dict(session.execute(
+            select(Job.type, func.count()).where(Job.status == JobStatus.new, Job.apply_since > now)
+            .group_by(Job.type)
+        ).all())
+        paused: dict[str, int] = dict(session.execute(
+            select(Job.type, func.count()).where(Job.status == JobStatus.paused).group_by(Job.type)
+        ).all())
         running = [
             {"id": j.id, "type": j.type, "of": _named(j.options),
              "running_s": round((now - j.updated_at.replace(tzinfo=UTC)).total_seconds())}
@@ -49,6 +57,8 @@ def stats(window_minutes: int = 60) -> dict:
     return {
         "at": now.isoformat(timespec="minutes"),
         "waiting": dict(sorted(waiting.items(), key=lambda kv: -kv[1])),
+        "deferred": deferred,
+        "paused": paused,
         "running": running,
         f"finished_last_{window_minutes}_min": dict(finished),
         "mean_seconds": {kind: {"mean": m, "n": n} for kind, (m, n) in sorted(means.items())},

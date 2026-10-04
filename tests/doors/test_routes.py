@@ -201,24 +201,6 @@ def test_bulk_cancel_needs_a_filter(client):
     assert r.status_code == 400
 
 
-class _SessionOfLiveJobs:
-    async def scalars(self, _statement):
-        return [11, 12]
-
-    async def commit(self):
-        return None
-
-
-def _with_live_jobs():
-    import server
-    from orm.async_db import get_session
-
-    async def _fake():
-        yield _SessionOfLiveJobs()
-
-    server.app.dependency_overrides[get_session] = _fake
-
-
 def test_cancelling_a_type_with_no_run_name_is_said_out_loud(client, monkeypatch):
     # `type: judge_answers` alone is every live judge job, which is several arms of several runs
     import job_queue
@@ -227,7 +209,7 @@ def test_cancelling_a_type_with_no_run_name_is_said_out_loud(client, monkeypatch
     assert r.status_code == 400
     assert "every=true" in r.json()["detail"]
 
-    _with_live_jobs()
+    monkeypatch.setattr(job_queue, "live_ids", lambda *a, **kw: [11, 12])
     monkeypatch.setattr(job_queue, "cancel", lambda ids: list(ids))
     r = client.post("/v1/job/cancel", json={"type": "judge_answers", "every": True})
     assert r.status_code == 200 and r.json()["cancelled"] == [11, 12]
@@ -237,12 +219,13 @@ def test_a_cancel_goes_through_the_queue_so_the_experiment_is_not_left_waiting(c
     # the route flipped the status itself while `mark_failed_for_run` lives in the queue
     import job_queue
 
-    seen = []
-    _with_live_jobs()
+    seen, asked = [], []
+    monkeypatch.setattr(job_queue, "live_ids", lambda *a, **kw: asked.append(a) or [11, 12])
     monkeypatch.setattr(job_queue, "cancel", lambda ids: seen.append(ids) or list(ids))
 
     assert client.post("/v1/job/cancel", json={"run_name": "arm"}).status_code == 200
     assert seen == [[11, 12]], "the route must delegate rather than write the status itself"
+    assert asked[0][2] == "arm", "the run name narrows the live jobs the cancel reads"
 
 
 def test_two_cuts_of_one_source_are_read_side_by_side(client, monkeypatch):

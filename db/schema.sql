@@ -249,7 +249,8 @@ CREATE TABLE public.jobs (
     balances jsonb,
     code jsonb,
     prereg text,
-    result jsonb
+    result jsonb,
+    parent_id integer
 );
 
 
@@ -922,6 +923,13 @@ CREATE INDEX idx_jobs_queue_status_apply_since ON public.jobs USING btree (queue
 
 
 --
+-- Name: jobs_parent_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX jobs_parent_id_idx ON public.jobs USING btree (parent_id) WHERE (parent_id IS NOT NULL);
+
+
+--
 -- Name: idx_question_logs_pipeline; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -955,6 +963,14 @@ CREATE TRIGGER data_chunks_content_tsv_trg BEFORE INSERT OR UPDATE ON public.dat
 
 ALTER TABLE ONLY public.data_chunks
     ADD CONSTRAINT data_chunks_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.data_sources(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jobs jobs_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jobs
+    ADD CONSTRAINT jobs_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.jobs(id) ON DELETE SET NULL;
 
 
 --
@@ -1081,4 +1097,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260930000012'),
     ('20260930000013'),
     ('20261002000014'),
-    ('20261003000015');
+    ('20261003000015'),
+    ('20261003000016');

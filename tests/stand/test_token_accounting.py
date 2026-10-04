@@ -73,7 +73,7 @@ def test_the_worker_writes_what_a_failed_job_spent(monkeypatch):
         worker.job_queue, "claim_next", lambda queues: job_queue.ClaimedJob(id=5, type="spender", options={})
     )
     monkeypatch.setattr(worker.job_specs, "check", lambda *a, **kw: None)
-    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, elapsed=None: failed.append(id))
+    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, kind, elapsed=None: failed.append(id))
     monkeypatch.setattr(worker.job_queue, "add_tokens", lambda id, record: written.append((id, record)))
     assert worker.run_once(["default"])
     assert failed == [5]

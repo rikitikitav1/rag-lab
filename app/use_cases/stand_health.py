@@ -8,7 +8,7 @@ import search_depth
 import version
 from engines import card as card_holder
 from engines import ollama, vllm
-from models.jobs import Job
+from models.jobs import Job, JobStatus
 from models.registry import SAMPLING_ROLES, Engine, EngineKind, Model, ModelRole, Role
 from orm.sync_db import Session
 from sqlalchemy import func, select
@@ -31,12 +31,24 @@ def card() -> dict:
     return {"cuda": True, "free_mb": free, "total_mb": total}
 
 
+# the running jobs and the head of the waiting line: the whole list lives at GET /v1/job and swamped this read
+LIVE_SHOWN = 10
+
+
 def queue() -> dict:
     with Session() as session:
         counts = dict(session.execute(select(Job.status, func.count()).group_by(Job.status)).all())
-        live = session.scalars(select(Job).where(Job.status.in_(job_queue.ACTIVE)).order_by(Job.id)).all()
+        live = session.scalars(
+            select(Job).where(Job.status.in_(job_queue.ACTIVE))
+            .order_by((Job.status != JobStatus.running), Job.id).limit(LIVE_SHOWN)
+        ).all()
+        waiting = dict(session.execute(
+            select(Job.type, func.count()).where(Job.status == JobStatus.new).group_by(Job.type)
+        ).all())
         return {
             "by_status": {str(k): v for k, v in counts.items()},
+            "waiting_by_type": waiting,
+            "live_total": sum(counts.get(s, 0) for s in job_queue.ACTIVE),
             "live": [
                 {
                     "id": j.id,

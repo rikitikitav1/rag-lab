@@ -77,3 +77,33 @@ def test_the_bootstrap_queues_the_questions_again_when_the_embedder_moved(db, mo
     monkeypatch.setattr(llm, "embedder_label", lambda role="embedding": "bge-m3@vllm")
     bootstrap._ensure_question_embeddings()
     assert queued == ["embed_questions"]
+
+
+def test_a_reindex_embeds_only_the_text_this_embedder_has_not_seen(db, monkeypatch):
+    import llm
+    from models.corpus import DataChunk
+    from use_cases import index
+
+    with db.connect() as c:
+        c.execute(text("TRUNCATE data_sources CASCADE"))
+        c.execute(text("INSERT INTO data_sources (id, name, kind) VALUES (1, 's', 'git')"))
+        for i, (content, by) in enumerate((("kept", "bge-m3@vllm"), ("foreign", "bge-m3@ollama"))):
+            c.execute(text(
+                "INSERT INTO data_chunks (source_id, source, content, chunk_index, category, language, variant,"
+                " embedded_by, embedding) VALUES (1, 's', :t, :i, 'a', 'en', 'clean', :by,"
+                " array_fill(0.25::real, ARRAY[1024])::vector)"
+            ), {"t": content, "i": i, "by": by})
+    asked = []
+    monkeypatch.setattr(llm, "embedder_label", lambda role="embedding": "bge-m3@vllm")
+    monkeypatch.setattr(llm, "embed_labelled",
+                        lambda texts: ("bge-m3@vllm", asked.extend(texts) or [[0.5] * 1024] * len(texts)))
+    chunks = [DataChunk(source_id=1, source="s", content=t, chunk_index=i, category="a", language="en",
+                        variant="clean") for i, t in enumerate(("kept", "foreign", "new"))]
+    with sessionmaker(bind=db)() as session:
+        counted = index._replace_chunks(session, 1, "clean", chunks, embed_size=8)
+
+    assert sorted(asked) == ["foreign", "new"], "another embedder's vector is never reused"
+    assert (counted["chunks"], counted["reused"], counted["embedded"]) == (3, 1, 2)
+    with db.connect() as c:
+        rows = dict(c.execute(text("SELECT content, (embedding::real[])[1] FROM data_chunks")).all())
+    assert rows == {"kept": 0.25, "foreign": 0.5, "new": 0.5}

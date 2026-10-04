@@ -31,7 +31,7 @@
 ]
 
 [dependency-groups]
-  dev = ["pytest>=8", "ruff>=0.16"]
+  dev = ["pytest>=8", "pytest-xdist>=3", "ruff>=0.16"]
   # community pinned back because 0.4.2 dropped chat_models.vertexai, which ragas imports
   eval = ["ragas==0.4.3", "langchain-community<0.4"]
 

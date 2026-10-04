@@ -27,7 +27,7 @@ def test_a_deferral_has_a_ceiling_of_its_own(monkeypatch):
     import worker
 
     failed, rescheduled = [], []
-    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, **kw: failed.append(error))
+    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, kind, **kw: failed.append(error))
     monkeypatch.setattr(
         worker.job_queue, "reschedule",
         lambda id, options, delay, **kw: rescheduled.append(options.get("deferred_seconds")),
@@ -54,7 +54,7 @@ def test_a_deferral_has_a_ceiling_of_its_own(monkeypatch):
 def test_a_final_refusal_is_not_tried_again(monkeypatch):
     # a retry of the same refusal only wakes the server and takes the card again
     failed, rescheduled = [], []
-    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, **kw: failed.append(error))
+    monkeypatch.setattr(worker.job_queue, "fail", lambda id, error, kind, **kw: failed.append(error))
     monkeypatch.setattr(worker.job_queue, "reschedule",
                         lambda id, options, delay, **kw: rescheduled.append(options))
     monkeypatch.setattr(worker, "_fail_the_experiment_waiting_on", lambda claimed: None)

@@ -1,4 +1,6 @@
 import asyncio
+import json
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -7,14 +9,17 @@ import job_specs
 import logging_setup
 import token_fields
 import version
-from models import Job, JobStatus
+from models import FailKind, Job, JobStatus
 from models.experiment import fail_running_on
 from models.prereg import preregistered
 from orm.sync_db import Session
 from search_scope import ScopeRefused
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, func, select, text, update
 
 log = logging_setup.get_logger(__name__)
+
+# the job the worker is running in this context: what its handler queues names it as the parent
+running_job: ContextVar[int | None] = ContextVar("running_job", default=None)
 
 
 @dataclass
@@ -25,10 +30,9 @@ class ClaimedJob:
 
 
 # the lane is a property of the type: left to the caller, a card job reached the io lane by hand
-def enqueue(type: str, options: dict | None = None, queue: str | None = None) -> int:
-    _check(type, options)
+def enqueue(type: str, options: dict | None = None, queue: str | None = None, parent_id: int | None = None) -> int:
     with Session() as session:
-        job = Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
+        job = _checked(type, options, queue, parent_id)
         session.add(job)
         session.commit()
         return job.id
@@ -66,7 +70,7 @@ def pending_of_type(type: str, **options) -> int | None:
     with Session() as session:
         query = select(Job.id).where(
             Job.type == type,
-            Job.status.in_([JobStatus.new, JobStatus.running]),
+            Job.status.in_(ACTIVE),
         )
         for key, value in options.items():
             # a json null renders as "None" through astext, so two nulls would look like two jobs
@@ -81,7 +85,7 @@ def pending_of_type(type: str, **options) -> int | None:
 def pending_listing(type: str, key: str, value: str) -> int | None:
     with Session() as session:
         query = select(Job.id).where(
-            Job.type == type, Job.status.in_([JobStatus.new, JobStatus.running]), Job.options[key].contains([value])
+            Job.type == type, Job.status.in_(ACTIVE), Job.options[key].contains([value])
         )
         return session.scalar(query.limit(1))
 
@@ -115,9 +119,9 @@ def get(job_id: int) -> Job:
 
 # stage a job in the caller's async transaction (caller commits)
 async def add_job(
-    session, type: str, options: dict | None = None, queue: str | None = None
+    session, type: str, options: dict | None = None, queue: str | None = None, parent_id: int | None = None
 ) -> Job:
-    job = await prepared(type, options, queue)
+    job = await prepared(type, options, queue, parent_id)
     session.add(job)
     return job
 
@@ -128,13 +132,24 @@ def _preregistered(name: str) -> bool:
 
 
 # a checked job not yet in any session; the checks read the base, so they run off the loop
-async def prepared(type: str, options: dict | None = None, queue: str | None = None) -> Job:
-    return await asyncio.to_thread(_checked, type, options, queue)
+async def prepared(
+    type: str, options: dict | None = None, queue: str | None = None, parent_id: int | None = None
+) -> Job:
+    return await asyncio.to_thread(_checked, type, options, queue, parent_id)
 
 
-def _checked(type: str, options: dict | None, queue: str | None) -> Job:
+def _checked(type: str, options: dict | None, queue: str | None, parent_id: int | None = None) -> Job:
     _check(type, options)
-    return Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
+    return Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options),
+               parent_id=parent_id if parent_id is not None else running_job.get())
+
+
+# what a job would be queued as, with nothing queued: the checks, the options as the handler reads them, the lane
+def dry_run(type: str, options: dict | None = None, queue: str | None = None) -> dict:
+    checked = job_specs.check(type, options)
+    _check(type, options)
+    return {"type": type, "lane": _lane(type, queue),
+            "options": checked.model_dump(exclude_unset=True) if checked is not None else options or {}}
 
 
 # a job takes the card in its own turn, so the turn is the job's type, and an old job goes early
@@ -178,18 +193,20 @@ def requeue_stale(queues: list[str]) -> list[int]:
         jobs = session.scalars(
             select(Job).where(Job.status == JobStatus.running, Job.queue.in_(queues))
         ).all()
-        ids = []
+        ids, died = [], []
         for job in jobs:
             job.options = reclaimed(job.options)
             if job.options["reclaims"] > MAX_RECLAIMS:
                 job.status = JobStatus.error
                 job.error = {"error": f"the worker stopped under this job {MAX_RECLAIMS + 1} times in a row",
-                             "attempts": job.options["attempts"]}
+                             "kind": FailKind.worker_died, "attempts": job.options["attempts"]}
+                died.append(job.id)
                 continue
             job.status = JobStatus.new
             ids.append(job.id)
         session.commit()
-        return ids
+    announce_finished(died)
+    return ids
 
 
 # a restart is an attempt: without the mark a run met its own rows and refused itself as taken
@@ -206,8 +223,8 @@ def complete(id: int, elapsed: float | None = None, result: dict | None = None) 
     _update(id, **fields)
 
 
-def fail(id: int, error: dict, elapsed: float | None = None) -> None:
-    fields = {"status": JobStatus.error, "error": error}
+def fail(id: int, error: dict, kind: FailKind, elapsed: float | None = None) -> None:
+    fields = {"status": JobStatus.error, "error": {**error, "kind": kind}}
     if elapsed is not None:
         fields["elapsed"] = elapsed
     _update(id, **fields)
@@ -265,24 +282,75 @@ def merged_tokens(was: dict | None, more: dict) -> dict:
     return out
 
 
+# the reason rides in the options beside the attempts, so a job waiting out a backoff says why on its row
 def reschedule(
-    id: int, options: dict, delay: timedelta, elapsed: float | None = None
+    id: int, options: dict, delay: timedelta, elapsed: float | None = None, because: str | None = None,
+    kind: str = "retry",
 ) -> None:
+    retry_at = datetime.now(timezone.utc) + delay
+    if because is not None:
+        options = {**options, "waiting_because": {"kind": kind, "error": because, "retry_at": retry_at.isoformat()}}
     fields = {
         "status": JobStatus.new,
         "options": options,
-        "apply_since": datetime.now(timezone.utc) + delay,
+        "apply_since": retry_at,
     }
     if elapsed is not None:
         fields["elapsed"] = elapsed
     _update(id, **fields)
 
 
-# a job that has not run yet or is running: the only two states a cancellation can act on
-ACTIVE = (JobStatus.new, JobStatus.running)
+# a job that has not finished: waiting, held or running, the states a cancel and every guard act on
+ACTIVE = (JobStatus.new, JobStatus.paused, JobStatus.running)
+FINISHED = (JobStatus.done, JobStatus.error, JobStatus.cancelled)
+FINISHED_CHANNEL = "job_finished"
 
 # a dead answerer and a dead judge strand the experiment the same way
 EXPERIMENT_JOBS = ("eval_run", "judge_answers")
+
+
+# the live jobs a bulk door acts on; every filter narrows, and none given means every live job
+def live_ids(statuses=None, type: str | None = None, run_name: str | None = None, ids=None,
+             parent_id: int | None = None) -> list[int]:
+    stmt = select(Job.id).where(Job.status.in_([s for s in ACTIVE if not statuses or s in statuses]))
+    if type:
+        stmt = stmt.where(Job.type == type)
+    if run_name:
+        stmt = stmt.where(Job.options["run_name"].astext == run_name)
+    if ids:
+        stmt = stmt.where(Job.id.in_(ids))
+    if parent_id is not None:
+        stmt = stmt.where(Job.parent_id == parent_id)
+    with Session() as session:
+        return list(session.scalars(stmt.order_by(Job.id)))
+
+
+# what a cancel of these ids would take: the ids themselves plus the judges of their runs
+def cancel_reach(ids: list[int]) -> list[int]:
+    with Session() as session:
+        jobs = session.scalars(select(Job).where(Job.id.in_(ids), Job.status.in_(ACTIVE))).all()
+        return sorted({j.id for j in jobs} | set(_their_judges(session, jobs)))
+
+
+# a held job keeps its id, its place by apply_since and its options; only a waiting one can be held
+def pause(ids: list[int]) -> list[int]:
+    return _move(ids, JobStatus.new, JobStatus.paused)
+
+
+def resume(ids: list[int]) -> list[int]:
+    return _move(ids, JobStatus.paused, JobStatus.new)
+
+
+def _move(ids: list[int], was: JobStatus, to: JobStatus) -> list[int]:
+    if not ids:
+        return []
+    with Session() as session:
+        # one statement: a job the worker claims between a read and a write is not held while it runs
+        moved = session.scalars(
+            update(Job).where(Job.id.in_(ids), Job.status == was).values(status=to).returning(Job.id)
+        ).all()
+        session.commit()
+    return sorted(moved)
 
 
 def cancel_with_its_judge(job_id: int) -> list[int]:
@@ -324,13 +392,15 @@ def cancel(ids: list[int]) -> list[int]:
                 )
             ).all()
         cancelled = [j.id for j in jobs]
+        # a running one is announced by the worker when its handler returns
+        unclaimed = [j.id for j in jobs if j.status != JobStatus.running]
         stranded = [
             (j.options or {}).get("run_name")
             for j in jobs
             if j.type in EXPERIMENT_JOBS and (j.options or {}).get("run_name")
         ]
         for job in jobs:
-            if job.status == JobStatus.new and job.tokens is None:
+            if job.status != JobStatus.running and job.tokens is None:
                 job.tokens = {}
             job.status = JobStatus.cancelled
         # under a savepoint: a failed update leaves the cancel standing, and an experiment waiting on it would wait
@@ -345,7 +415,21 @@ def cancel(ids: list[int]) -> list[int]:
         session.commit()
     for run_name in failed:
         log.warning("experiment.failed", run_name=run_name)
+    announce_finished(unclaimed)
     return cancelled
+
+
+# a listener on the channel learns of a finished job at once; with nobody listening the notice is dropped
+def announce_finished(ids: list[int]) -> None:
+    if not ids:
+        return
+    with Session() as session:
+        for job in session.scalars(select(Job).where(Job.id.in_(ids), Job.status.in_(FINISHED))):
+            payload = {"id": job.id, "type": job.type, "status": job.status.value,
+                       "run_name": (job.options or {}).get("run_name")}
+            session.execute(text("SELECT pg_notify(:channel, :payload)"),
+                            {"channel": FINISHED_CHANNEL, "payload": json.dumps(payload)})
+        session.commit()
 
 
 def is_cancelled(id: int) -> bool:

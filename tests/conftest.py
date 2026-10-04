@@ -14,6 +14,16 @@ def stamp_in_a_temp_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(version, "SAID", tmp_path / "worker.stamp")
 
 
+# a finished job is announced on the stand's own database; a test that means the notice takes the real one back
+@pytest.fixture(autouse=True)
+def quiet_announcements(monkeypatch):
+    import job_queue
+
+    real = job_queue.announce_finished
+    monkeypatch.setattr(job_queue, "announce_finished", lambda ids: None)
+    return real
+
+
 # every stamp reads each ollama model's parameters and the server's version; a test that means them patches its own
 @pytest.fixture(autouse=True)
 def no_ollama_reads(monkeypatch):

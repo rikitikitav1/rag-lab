@@ -1276,6 +1276,8 @@ constant:
     class: code
   app/use_cases/site_page.py:_DOCBOOK_SECTION_NAME:
     class: code
+  app/use_cases/stand_health.py:LIVE_SHOWN:
+    class: cap
   app/use_cases/site_page.py:_DIV:
     class: code
   app/use_cases/site_page.py:_CLASS:

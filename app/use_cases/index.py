@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass, field
 
 import config
@@ -32,6 +33,8 @@ class IndexResult:
     left: list[str] = field(default_factory=list)
     # {source: {the more trusted source that keeps the text: chunks}}, the copies this cut took out
     lower_copies_dropped: dict[str, dict[str, int]] = field(default_factory=dict)
+    # {source: chunks, vectors reused and embedded, seconds to cut, embed and write}: where a cut's time went
+    phases: dict[str, dict] = field(default_factory=dict)
     model: str = field(default_factory=lambda: llm.resolve_name("embedding"))
 
     def __str__(self) -> str:
@@ -58,17 +61,41 @@ def question_needs_embedding(label: str | None):
 
 
 # on its own it left the source empty for as long as the embeddings took
-def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_size: int) -> int:
-    for i in range(0, len(chunks), embed_size):
-        batch = chunks[i : i + embed_size]
+def _replace_chunks(session, source_id: int, variant: str, chunks: list, embed_size: int) -> dict:
+    started = time.perf_counter()
+    reused = _reuse_vectors(session, source_id, variant, chunks, llm.embedder_label())
+    fresh = [c for c in chunks if c.embedding is None]
+    for i in range(0, len(fresh), embed_size):
+        batch = fresh[i : i + embed_size]
         label, vectors = llm.embed_labelled([c.content for c in batch])
         for chunk, vector in zip(batch, vectors, strict=True):
             chunk.embedding = vector
             chunk.embedded_by = label
+    # an embedder seated between the label read and the embedding must not leave two geometries in one source
+    if reused and fresh and any(c.embedded_by != fresh[0].embedded_by for c in chunks):
+        raise StandFault(f"the embedder moved while source {source_id} was cut, run it again")
+    log.info("index.vectors", source_id=source_id, reused=reused, embedded=len(fresh))
+    embedded_at = time.perf_counter()
     session.execute(delete(DataChunk).where(DataChunk.source_id == source_id, DataChunk.variant == variant))
     session.add_all(chunks)
     session.commit()
-    return len(chunks)
+    return {"chunks": len(chunks), "reused": reused, "embedded": len(fresh),
+            "embed_s": round(embedded_at - started, 1), "write_s": round(time.perf_counter() - embedded_at, 1)}
+
+
+# a chunk whose embedded text is unchanged keeps the vector the same embedder already made
+def _reuse_vectors(session, source_id: int, variant: str, chunks: list, label: str) -> int:
+    stored = dict(session.execute(
+        select(DataChunk.content, DataChunk.embedding).where(
+            DataChunk.source_id == source_id, DataChunk.variant == variant, DataChunk.embedded_by == label,
+            DataChunk.embedding.is_not(None))
+    ).all())
+    reused = 0
+    for chunk in chunks:
+        if (vector := stored.get(chunk.content)) is not None:
+            chunk.embedding, chunk.embedded_by = vector, label
+            reused += 1
+    return reused
 
 
 # whitespace must not decide whether two repositories hold the same answer
@@ -105,7 +132,7 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True, stop=
     total = 0
 
     with Session() as session:
-        refused, left = {}, []
+        refused, left, phases = {}, [], {}
         for n, source in enumerate(sources):
             # a cancel is read between sources: one source is replaced whole or not at all
             if stop is not None and stop():
@@ -118,13 +145,17 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True, stop=
                 refused[source.name] = f"stage {data_source.stage}, not accepted"
                 continue
             # the whole source at once, and the cut digest reads the same method
+            cut_from = time.perf_counter()
             buffer = [_chunk(data_source.id, doc, variant) for doc in source.documents(policy)]
+            cut_s = round(time.perf_counter() - cut_from, 1)
             # a folder this host lacks, or one of PDFs where the markdown should be, must not empty a source in silence
             if not buffer:
                 log.error("index.refused_empty", source=source.name, root=str(source.root))
                 refused[source.name] = f"no documents under {source.root}"
                 continue
-            total += _replace_chunks(session, data_source.id, variant, buffer, embed_size)
+            phases[source.name] = {**_replace_chunks(session, data_source.id, variant, buffer, embed_size),
+                                   "cut_s": cut_s}
+            total += len(buffer)
             # the digest of the rules this cut read, merged in the base so two variants cut at once keep both
             session.execute(
                 update(DataSource)
@@ -149,7 +180,7 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True, stop=
         ensure_vector_index(variant)
     log.info("index.done", chunks=total, variant=variant)
     return IndexResult(sources=len(sources) - len(refused) - len(left), chunks=total, refused=refused, left=left,
-                       lower_copies_dropped=dropped)
+                       lower_copies_dropped=dropped, phases=phases)
 
 
 # every cut, the job's and the CLI's, keeps one copy of a shared text; a failure here must not cost the embedding
