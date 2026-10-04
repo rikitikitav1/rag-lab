@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -99,14 +100,23 @@ def get(job_id: int) -> Job:
         return session.get(Job, job_id)
 
 
-def add_job(
+# stage a job in the caller's async transaction (caller commits)
+async def add_job(
     session, type: str, options: dict | None = None, queue: str | None = None
 ) -> Job:
-    # stage a job in the caller's transaction (caller commits); async-safe: .add() is sync
-    job_specs.check(type, options)
-    job = Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
+    job = await prepared(type, options, queue)
     session.add(job)
     return job
+
+
+# a checked job not yet in any session; the checks read the base, so they run off the loop
+async def prepared(type: str, options: dict | None = None, queue: str | None = None) -> Job:
+    return await asyncio.to_thread(_checked, type, options, queue)
+
+
+def _checked(type: str, options: dict | None, queue: str | None) -> Job:
+    job_specs.check(type, options)
+    return Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
 
 
 # a job takes the card in its own turn, so the turn is the job's type, and an old job goes early
@@ -141,22 +151,32 @@ def claim_next(queues: list[str]) -> ClaimedJob | None:
         return claimed
 
 
+# a job the worker died under this many times kills it again on every claim: it fails instead of holding its lane
+MAX_RECLAIMS = 5
+
+
 def requeue_stale(queues: list[str]) -> list[int]:
     with Session() as session:
         jobs = session.scalars(
             select(Job).where(Job.status == JobStatus.running, Job.queue.in_(queues))
         ).all()
-        ids = [job.id for job in jobs]
+        ids = []
         for job in jobs:
-            job.status = JobStatus.new
             job.options = reclaimed(job.options)
+            if job.options["reclaims"] > MAX_RECLAIMS:
+                job.status = JobStatus.error
+                job.error = {"error": f"the worker stopped under this job {MAX_RECLAIMS + 1} times in a row",
+                             "attempts": job.options["attempts"]}
+                continue
+            job.status = JobStatus.new
+            ids.append(job.id)
         session.commit()
         return ids
 
 
 # a restart is an attempt: without the mark a run met its own rows and refused itself as taken
 def reclaimed(options: dict) -> dict:
-    return {**options, "attempts": options.get("attempts", 0) + 1}
+    return {**options, "attempts": options.get("attempts", 0) + 1, "reclaims": options.get("reclaims", 0) + 1}
 
 
 def complete(id: int, elapsed: float | None = None, result: dict | None = None) -> None:

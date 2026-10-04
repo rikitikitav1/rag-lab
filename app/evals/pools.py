@@ -14,9 +14,11 @@ POOLS = ("in_corpus", "out_of_corpus", "off_domain", "rejected")
 # the rule lives here alone: the set inventory asks the same question of a question, not a log
 def kind_of_question(question) -> str:
     declared = question.kind if question else None
-    if declared in POOLS:
+    golden = bool(question and Gold.of_question(question))
+    # in_corpus without marked sources cannot be scored against the corpus, so it lands outside
+    if declared in POOLS and (declared != "in_corpus" or golden):
         return declared
-    return "in_corpus" if Gold.of_question(question) else "out_of_corpus"
+    return "in_corpus" if golden else "out_of_corpus"
 
 
 def kind(ql) -> str:
@@ -98,14 +100,10 @@ def has_remote_evidence(ql) -> bool:
     return any(s["source"].startswith("mcp:") for s in (ql.sources or []))
 
 
-# in_corpus without marked sources cannot be scored against the corpus, so it lands outside
 def split(logs) -> dict[str, list]:
     pools: dict[str, list] = {name: [] for name in POOLS}
     for ql in logs:
-        name = kind(ql)
-        if name == "in_corpus" and not (ql.question and Gold.of_question(ql.question)):
-            name = "out_of_corpus"
-        pools[name].append(ql)
+        pools[kind(ql)].append(ql)
     return pools
 
 

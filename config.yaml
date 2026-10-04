@@ -83,7 +83,7 @@ corpus:
     # variants that lost are gone; their policy rides in the entry that measured them
 
 fts:
-  # index-time: changing this re-indexes the corpus, it does not re-rank a query
+  # the query side; the index is built by the schema's trigger, which must name the same configs
   languages: { en: english, ru: russian }
   # not measured: the language most of the corpus is written in
   fallback: english

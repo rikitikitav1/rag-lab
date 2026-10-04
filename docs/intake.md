@@ -130,6 +130,8 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `join_layer_hyphens` | a word the layer breaks with a hyphen mark at a line end joined for the word rules (dashes, broken words); the reread's layer F1 reads the layer as PDFium gives it | on | |
 | `seam_window`, `seam_margin` | a piece's end moves off a page break that code runs over | window 0 (off) | |
 | `html_one_title` | HTML chapter headings one level down under the page title | off | |
+| `drop_inherited_members` | an inherited member a Sphinx autodoc site prints whole under every subclass keeps only its pointer to the parent; its docs and parameters go | off | sqlalchemy-docs |
+| `drop_repeated_code` | a code block a page prints again word for word, as a tutorial's sample data in every live example, is kept once | off | react-docs |
 | `epub_chapters` | an EPUB read as its chapters in reading order; off, the file is skipped and named in the report | off | Kubernetes Patterns (since removed) |
 | `epub_skip` | EPUB page types skipped as front and back matter | none | |
 

@@ -53,7 +53,11 @@ def plan(file: Path, names: dict, loaded: dict, rule, pages=None, size: int | No
 # one piece through its engine: its markdown with code rebuilt from the layer, and Docling's structure when it gave one
 def convert_piece(file: Path, engine: str | None, piece, settings: tuple | None, language: str, rule) -> dict:
     if engine is None:
-        return {"markdown": markdown_cleanup.markdown_of(file), "seconds": 0.0, "status": None, "structure": None}
+        fired = rule_counts.Fired(rule)
+        markdown = markdown_cleanup.markdown_of(file)
+        markdown = fired.run("drop_repeated_code", markdown, markdown_cleanup.drop_repeated_code)
+        done = {"markdown": markdown, "seconds": 0.0, "status": None, "structure": None}
+        return {**done, "code": fired.counts} if any(fired.counts.values()) else done
     tool_settings, _ = settings
     spec = converter_for(engine)
     tool_fields = fields(tool_settings, language)
@@ -83,6 +87,7 @@ def _dashes_back(done: dict, layer, rule, piece=None) -> dict:
     md = fired.run("unescape_bullets", md, markdown_cleanup.unescape_bullets)
     md = fired.run("unescape_underscores", md, markdown_cleanup.unescape_underscores)
     md = fired.run("demote_caption_headings", md, heading_rules.demote_caption_headings)
+    md = fired.run("drop_inherited_members", md, markdown_cleanup.drop_inherited_members)
     if layer:
         md = fired.run("drop_running_headings", md, heading_rules.drop_running_headings, layer)
         marked = layer_words.marked_joins(layer)

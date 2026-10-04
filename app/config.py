@@ -224,6 +224,8 @@ class RouteCfg(_Strict):
     demote_caption_headings: bool
     drop_running_headings: bool
     join_split_words: bool
+    drop_inherited_members: bool
+    drop_repeated_code: bool
     epub_chapters: bool
 
 

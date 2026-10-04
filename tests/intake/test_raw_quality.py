@@ -128,3 +128,35 @@ def test_the_report_does_not_judge_a_books_matter():
     markdown = f"# Book\n\n## Index\n\nalpha, 12\n\nbeta, 14\n\n## Locks\n\n{body}\n"
     sections = {row["section"] for row in raw_quality.section_rows(markdown, "book.pdf")}
     assert not any("Index" in (s or "") for s in sections) and any("Locks" in (s or "") for s in sections)
+
+
+# a gate the source waives leaves its chapters unbreached and is named on the row; the other gates still judge
+def test_a_waived_gate_is_named_and_does_not_breach(monkeypatch):
+    from use_cases import raw_quality
+
+    gates = {"hard": [], "soft": ["prefix_dominates.max", "dup_in_file.max"], "verdict": "dirty", "metrics": {}}
+    monkeypatch.setattr(raw_quality, "_gates", lambda samples, policy: gates)
+    page = "# Manual\n\n## Functions\n\n### Abs\n\nreturns the absolute value\n"
+
+    row = raw_quality.section_rows(page, "rtl.pdf", frozenset({"prefix_dominates"}))[0]
+    assert row["breached"] == ["dup_in_file.max"] and row["waived"] == ["prefix_dominates.max"]
+    assert row["chunker_verdict"] == "dirty"
+    assert raw_quality.section_rows(page, "rtl.pdf")[0]["breached"] == gates["soft"]
+
+
+# a source the index reads through its own reader is judged on that reader's text; one without keeps the cleaning
+def test_the_raw_report_reads_a_source_through_its_own_reader(tmp_path):
+    from types import SimpleNamespace
+
+    from job_handlers import onboard
+
+    page = tmp_path / "git.md"
+    page.write_text("---\ntitle: Git\ncategory: Git\n---\n\n## Branches\n\nGit keeps branches as refs.\n")
+    unit = (page, "git.md", SimpleNamespace(engine=None), None, None)
+    own = SimpleNamespace(units=[unit], root=tmp_path, source=SimpleNamespace(name="cheatsheets"),
+                          origin={"name": "cheatsheets", "folder": str(tmp_path), "reader": "cheatsheets"})
+    read_as = onboard._own_reader(own)
+    assert read_as is not None and read_as(page, "git.md").startswith("## Branches")
+    plain = SimpleNamespace(units=[unit], root=tmp_path, source=SimpleNamespace(name="docs"),
+                            origin={"name": "docs", "folder": str(tmp_path)})
+    assert onboard._own_reader(plain) is None

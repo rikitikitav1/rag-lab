@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import config
 import ingest
 import logging_setup
-from corpus_keys import SECTION_SEP
+from corpus_keys import SECTION_SEP, SHARED_BODY_SQL
 from ingest import BOILERPLATE_MIN_FILES
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
@@ -340,13 +340,13 @@ def analyze(source_name: str, *, variant: str, mode: str) -> dict:
     return entry
 
 
-# bodies held by more than one source of the same cut, by their exact text
-_SHARED = """
+# bodies held by more than one source of the same cut, by the key the dedup reads
+_SHARED = f"""
     WITH bodies AS (
-        SELECT s.name, md5(substr(c.content, coalesce(c.prefix_len, 0) + 1)) AS h
+        SELECT s.name, CASE WHEN {SHARED_BODY_SQL} THEN c.content_hash END AS h
         FROM data_chunks c JOIN data_sources s ON s.id = c.source_id
         WHERE c.variant = :variant
-    ), shared AS (SELECT h FROM bodies GROUP BY h HAVING count(DISTINCT name) > 1)
+    ), shared AS (SELECT h FROM bodies WHERE h IS NOT NULL GROUP BY h HAVING count(DISTINCT name) > 1)
 """
 
 

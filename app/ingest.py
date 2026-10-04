@@ -6,6 +6,7 @@ import logging_setup
 from book_matter import index_spans, is_matter
 from corpus_keys import SECTION_SEP
 from langchain_text_splitters import MarkdownHeaderTextSplitter
+from use_cases.markup import CHUNKER_FENCE_INDENT, fence_scan
 
 log = logging_setup.get_logger(__name__)
 
@@ -35,7 +36,6 @@ def parser_version() -> str:
     return f"{PARSER}/{version('langchain-text-splitters')}"
 
 
-FENCE_LINE = re.compile(r"^\s{0,3}(```|~~~)")
 # the heading lines the parser splits on, spelled from its own list
 HEADING_LINE = re.compile(rf"^({'|'.join(sorted((re.escape(mark) for mark, _ in HEADERS), key=len, reverse=True))}) ")
 # the same share the coverage report calls "tiny": one number, declared once
@@ -110,15 +110,7 @@ def _without_leading_h1(text: str) -> str:
 
 # which lines sit inside a fence, and where a fence that never closed was opened
 def _fence_scan(lines: list[str]) -> tuple[set[int], int | None]:
-    token, opened, inside = None, None, set()
-    for i, line in enumerate(lines):
-        found = FENCE_LINE.match(line)
-        if found and token is None:
-            token, opened = found.group(1), i
-        elif found and found.group(1) == token:
-            token, opened = None, None
-        elif token is not None:
-            inside.add(i)
+    _, inside, opened = fence_scan(lines, CHUNKER_FENCE_INDENT)
     return inside, opened
 
 

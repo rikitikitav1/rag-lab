@@ -65,6 +65,10 @@ intake:
     drop_running_headings: true
     # a word split by a space (a ligature `fi le`, a first letter apart) joined when the layer has it whole; 14 sources
     join_split_words: true
+    # an inherited member's docs a Sphinx autodoc site repeats under every subclass, cut to its pointer; one site
+    drop_inherited_members: false
+    # a code block a page prints again word for word (a tutorial's sample data in every example) kept once; one source
+    drop_repeated_code: false
     # an EPUB read as its chapters; one EPUB seen so far, so off and the file is skipped with its reason
     epub_chapters: false
   # tuned: file=datasets/converter_gold/raw_band.json

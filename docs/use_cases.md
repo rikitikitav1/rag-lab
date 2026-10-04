@@ -226,7 +226,7 @@ A `bad` verdict marks the source and does not stop it. The rows behind the verdi
 ## Command reference
 
 ```bash
-# Reindex the served variant only (drops its rows and rebuilds them); other variants are untouched
+# Queue an index_data job for the served variant (the same job `POST /v1/job` queues)
 docker compose exec rag-lab python app/main.py --index
 
 # Interactive console (REPL with chat/db/llm/session and all ORM entities auto-loaded, like rails console)

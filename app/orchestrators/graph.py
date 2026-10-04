@@ -373,6 +373,9 @@ def final_node(state: State, config) -> dict:
     if state.get("text"):
         ctx["result"].step("final", state["hops"], finished_by=str(policy.FinishedBy.answer))
         return {"finished_by": policy.FinishedBy.answer}
+    # a hop that failed ends the row as failed: a forced answer after it made the row failed and answered at once
+    if getattr(ctx["result"], "failed", False):
+        return {"finished_by": policy.FinishedBy.no_answer}
     messages = list(state["messages"])
     update = {}
     if not state.get("sources"):

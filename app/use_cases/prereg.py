@@ -1,8 +1,11 @@
+from datetime import UTC, datetime
+
 from evals import columns
 from evals.loaders import load_logs
 from evals.pools import Ambiguous, by_question
 from evals.stats import bootstrap_ci
 from models.eval import READ_BY_RUNS, Question
+from models.jobs import Job
 from models.prereg import Preregistration
 from orm.sync_db import Session
 from sqlalchemy import select
@@ -161,7 +164,7 @@ def read(name: str) -> dict:
             "schema": SCHEMA, "name": row.name, "created_at": str(row.created_at),
             "population": row.population, "arms": row.arms, "closing": row.closing,
             "guards": row.guards, "vetoes": row.vetoes, "declared": row.declared,
-            "closed_with": row.closed_with,
+            "closed_with": row.closed_with, "attempts": row.attempts,
         }
 
 
@@ -282,6 +285,7 @@ _OPEN = {
     "no_floor": "no floor was named, neither a floor run nor `floor_value`, so the bar has nothing to clear",
     "no_direction": "the promise declares no `arm_should`, so the effect has no sign",
     "not_run": "the closing arms are not named yet",
+    "incomplete": "the arm has rows on fewer questions than the population declares, so a stopped run cannot settle it",
 }
 
 
@@ -308,9 +312,41 @@ def _named(closed: dict) -> dict:
     return {"runs": said, "measurements": closed.get("measurements") or {}}
 
 
+def _attempted(row, entry: dict) -> None:
+    row.attempts = [*(row.attempts or []), {"at": datetime.now(UTC).isoformat(timespec="seconds"), **entry}]
+
+
+# a promise closes on runs made under it: queued naming it, after it was written, in a role it declared
+def _made_under_or_refuse(name: str, arms: dict, runs: dict) -> None:
+    with Session() as session:
+        row = session.scalar(select(Preregistration).where(Preregistration.name == name))
+        try:
+            for role, run in runs.items():
+                if role not in arms:
+                    raise Refused(f"runs: the promise declared no {role!r} arm, only {sorted(arms)}")
+                jobs = session.execute(select(Job.id, Job.prereg, Job.created_at, Job.options).where(
+                    Job.type == "eval_run", Job.options["run_name"].astext == run)).all()
+                if not jobs:
+                    raise Refused(f"runs: no eval_run wrote {run!r}")
+                # a smoke or a probe queued under the promise is a look, not the closing
+                stray = [j.id for j in jobs if j.prereg != name or j.created_at.replace(tzinfo=UTC) < row.created_at
+                         or (j.options or {}).get("purpose") != "closing"]
+                if stray:
+                    raise Refused(
+                        f"runs: {run!r} has jobs {stray} not queued as closing under {name!r} after it was written")
+        except Refused as e:
+            _attempted(row, {"runs": runs, "refused": str(e)})
+            session.commit()
+            raise
+
+
 def _closed_with(name: str, named: dict, result: dict) -> dict:
     with Session() as session:
         row = session.scalar(select(Preregistration).where(Preregistration.name == name))
+        if row.closed_with is None:
+            # every look is kept, so a closing picked out of several tries shows the tries
+            _attempted(row, {**named, "cleared": result["cleared"], "cleared_because": result["cleared_because"]})
+            session.commit()
         # an undecided close is a look, not a closing, so it leaves the promise open
         if row.closed_with is None and result["cleared"] is not None:
             # the numbers the promise was read on, so a month later the row says by how much it missed
@@ -352,6 +388,8 @@ def close(name: str, runs: dict | None = None, measurements: dict | None = None)
     runs, measurements = runs or {}, measurements or {}
     for role in set(runs) | set(measurements):
         _one_of_or_refuse(role, ("control", "arm", "floor"), "runs")
+    if promise.get("closed_with") is None:
+        _made_under_or_refuse(name, promise.get("arms") or {}, runs)
     ids = _question_ids(promise["population"]["sets"], promise["population"].get("language"))
     # a declared draw narrows the sets to the questions it named, and nothing else is read
     if promise["population"].get("question_ids") is not None:
@@ -362,7 +400,10 @@ def close(name: str, runs: dict | None = None, measurements: dict | None = None)
     sign = -1 if arm_should == "lower" else 1
     out = {"schema": SCHEMA, "name": name, "columns": cols, "arm_should": arm_should}
     by_role = _source(rows, cols)
-    if "bar" in closing and "arm" in by_role:
+    if "bar" in closing and "arm" in by_role and len(set(by_role["arm"]) & ids) < len(ids):
+        out["asked"] = {"rows": len(set(by_role["arm"]) & ids), "declared": len(ids)}
+        closing_state = "incomplete"
+    elif "bar" in closing and "arm" in by_role:
         out |= _one_arm(by_role["arm"], ids, cols, closing, sign)
         closing_state = out.pop("state")
     elif "bar" in closing:

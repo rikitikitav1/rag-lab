@@ -2,7 +2,7 @@
 
 import re
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 import limits
 import samplers
@@ -18,6 +18,7 @@ from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrato
 
 # a generated set names its files and its reports, so its name is one a path can carry as it is
 SET_NAME = r"^[\w.-]+$"
+SetName = Annotated[str, Field(min_length=1, max_length=limits.MAX_SET_NAME, pattern=SET_NAME)]
 # the only folder a graded pass reads: a path of its own would let a job open any file
 FROZEN_POOL_RE = re.compile(r"(/app/)?datasets/candidates/[\w.-]+\.json")
 
@@ -240,7 +241,7 @@ class ParaphraseQuestions(Spec):
 # a source's question pairs written from its sections; a probe caps the pairs it asks for
 class GenerateQuestions(Spec):
     source: str = Field(pattern=SOURCE_NAME)
-    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    set_name: SetName
     max_pairs: int | None = Field(default=None, ge=1)
     # a smoke: go on section by section until this many pairs are kept
     kept_at_least: int | None = Field(default=None, ge=1)
@@ -259,7 +260,7 @@ class GenerateQuestions(Spec):
 # a set's candidate pairs of one source read from their sections; a probe caps the pairs it reads
 class AcceptQuestions(Spec):
     source: str = Field(pattern=SOURCE_NAME)
-    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    set_name: SetName
     max_pairs: int | None = Field(default=None, ge=1)
     # a pair read once waits for the judge; asking the reader again is a choice, not a rerun's default
     again: bool = False
@@ -272,7 +273,7 @@ class AcceptQuestions(Spec):
 # a set's undecided pairs of one source judged on their evidence; a probe caps the pairs it reads
 class JudgeQuestions(Spec):
     source: str = Field(pattern=SOURCE_NAME)
-    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    set_name: SetName
     max_pairs: int | None = Field(default=None, ge=1)
     settle: bool = True
     every: bool = False
@@ -283,24 +284,24 @@ class JudgeQuestions(Spec):
 # a generation's report read again by today's checks; the name only, the folder is the stand's
 class ReparseQuestions(Spec):
     source: str = Field(pattern=SOURCE_NAME)
-    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    set_name: SetName
     report: str = Field(pattern=r"^question_set_[\w.-]+\.json$", max_length=300)
 
 
 # a set's rows given their anchors by today's rule, the source's sections read once
 class AnchorQuestions(Spec):
     source: str = Field(pattern=SOURCE_NAME)
-    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    set_name: SetName
 
 
 # a generated set to its file beside the sources, and back into the base on a later intake
 class SaveQuestions(Spec):
-    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    set_name: SetName
 
 
 class LoadQuestions(Spec):
     source: str = Field(pattern=SOURCE_NAME)
-    set_name: str = Field(min_length=1, max_length=200, pattern=SET_NAME)
+    set_name: SetName
 
 
 class BuildVetoSet(Spec):
@@ -489,8 +490,8 @@ def lane(job_type: str) -> str:
     return LANES.get(job_type, "default")
 
 
-# the stand's own bookkeeping on a job: `_job_id` carries a prefix and these two never did
-WORKER_KEYS = ("deferred_seconds", "attempts")
+# the stand's own bookkeeping on a job: `_job_id` carries a prefix and these never did
+WORKER_KEYS = ("deferred_seconds", "attempts", "reclaims")
 
 # the options by which a job names a model beside its roles' own
 MODEL_OVERRIDES = {"generation": "model", "judging": "judge_model", "ragas": "guest_model"}

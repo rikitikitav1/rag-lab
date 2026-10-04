@@ -1,8 +1,8 @@
-from use_cases.markup import FENCE_LINE
+from use_cases.markup import FENCE_LINE, fence_scan
 
 
 def _open_fence(text: str) -> bool:
-    return sum(1 for line in text.splitlines() if FENCE_LINE.match(line)) % 2 == 1
+    return fence_scan(text.splitlines())[2] is not None
 
 
 def _cells(line: str) -> int:
@@ -58,11 +58,10 @@ def join(parts: list[str]) -> tuple[str, dict]:
 
 # a piece's tables as line ranges, fenced code left out
 def table_spans(lines: list[str]) -> list[tuple[int, int]]:
-    found, fenced, start = [], False, None
+    found, start = [], None
+    fences, inside, _ = fence_scan(lines)
     for i, line in enumerate([*lines, ""]):
-        if FENCE_LINE.match(line):
-            fenced = not fenced
-        is_row = not fenced and line.strip().startswith("|")
+        is_row = i not in fences and i not in inside and line.strip().startswith("|")
         if is_row and start is None:
             start = i
         elif not is_row and start is not None:

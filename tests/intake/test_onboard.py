@@ -686,6 +686,25 @@ def test_a_markdown_only_source_is_read_from_its_tree_and_a_converted_one_from_i
     assert onboard._index_root(both, tree, folder) == ("datasets/raw_sources/x_1", "converted")
 
 
+# a tree the stand fetched is copied into the run: the next fetch resets the clone, not the accepted run's text
+def test_a_fetched_tree_is_read_from_its_runs_own_copy(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from job_handlers import onboard
+
+    fetched = tmp_path / "_fetched"
+    clone = fetched / "docs" / "repo"
+    (clone / ".git").mkdir(parents=True)
+    (clone / "a.md").write_text("# A\n")
+    monkeypatch.setattr(onboard, "FETCHED", fetched)
+    monkeypatch.setattr(onboard, "ROOT", tmp_path)
+    run = tmp_path / "raw" / "docs_1"
+    root, kind = onboard._index_root([(None, "a.md", SimpleNamespace(engine=None), None, None)], clone, run)
+    assert (kind, root) == ("tree", "raw/docs_1/tree")
+    (clone / "a.md").write_text("# moved upstream\n")
+    assert (run / "tree" / "a.md").read_text() == "# A\n" and not (run / "tree" / ".git").exists()
+
+
 # a family's row is one repository of the family, named by the row, cloned with the family's include
 def test_a_family_row_is_gathered_as_its_own_repository(tmp_path, monkeypatch):
     declared = {"name": "repos", "git_family": {"base_url": "https://github.com/x", "repos": ["a-repo"]}}
@@ -699,7 +718,7 @@ def test_a_family_row_is_gathered_as_its_own_repository(tmp_path, monkeypatch):
         return folder, {}
 
     monkeypatch.setattr(intake_fetch, "_clone", clone)
-    root, files, _, _ = intake_fetch.gather(source, tmp_path / "inbox", tmp_path)
+    root, files, *_ = intake_fetch.gather(source, tmp_path / "inbox", tmp_path)
     assert seen["repo"] == "https://github.com/x/a-repo" and [f.name for f in files] == ["README.md"]
 
 
@@ -942,3 +961,30 @@ def test_the_next_step_of_a_source_names_who_moves_it():
     # a source whose every chunk another, more trusted source keeps waits for nothing, not for an index
     copied = row(Stage.accepted, {"verdict": "ok", "copies_kept_by": {"v": {"pg-docs": 3}}})
     assert next_step(copied, 0, [], "v")[0] is None
+
+
+# one page the sitemap lists and the site removed is left out with its answer; a server error still fails the fetch
+def test_a_page_the_site_no_longer_serves_is_left_out_not_the_source(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import requests
+    from use_cases import fetch
+
+    def download(url, target):
+        status = {"https://x/gone.html": 404, "https://x/broken.html": 503}.get(url)
+        if status:
+            raise requests.HTTPError(response=SimpleNamespace(status_code=status))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("<div id='content'><p>page</p></div>")
+        return True
+
+    monkeypatch.setattr(fetch, "download", download)
+
+    def source(pages):
+        declared = {"name": "site", "pages": pages, "site": {"main": "div#content"}}
+        return DataSource(name="site", kind="pages", declaration=declared)
+
+    got = intake_fetch.gather(source(["https://x/a.html", "https://x/gone.html"]), tmp_path / "inbox", tmp_path)
+    assert len(got.files) == 1 and list(got.gone) == ["https://x/gone.html"] and "404" in got.gone["https://x/gone.html"]
+    with pytest.raises(requests.HTTPError):
+        intake_fetch.gather(source(["https://x/broken.html"]), tmp_path / "inbox2", tmp_path)

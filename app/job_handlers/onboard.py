@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -137,7 +138,8 @@ def _read_unit(unit, folder: Path, shas: dict, loaded: dict, language: str, laye
 
 
 # each file's markdown whole, its pieces in page order as the loader will read it, and the chunker's rows a chapter
-def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: set, rule, layers: dict) -> tuple:
+def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: set, rule, layers: dict,
+              waived: frozenset = frozenset(), read_as=None) -> tuple:
     sections: list[dict] = []
     joins = Counter({"fences": 0, "tables": 0, "headings": 0, "running_heads": 0})
     check: Counter = Counter()
@@ -154,7 +156,7 @@ def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: 
         joins.update(healed)
         (folder / "files" / f"{_stem(rel)}.md").write_text(whole)
         written.add(f"{_stem(rel)}.md")
-        sections += raw_quality.section_rows(whole, rel)
+        sections += raw_quality.section_rows(whole, rel, waived, read_as(file, rel) if read_as else None)
         check.update(raw_quality.self_check(whole, route.outline_titles(file)))
     # a file this run no longer reads (its origin moved from a folder to a link) leaves with its markdown
     for stale in (folder / "files").glob("*.md"):
@@ -162,6 +164,28 @@ def _assemble(files: list[Path], named: dict, record: dict, folder: Path, left: 
             log.info("onboard.stale_markdown_dropped", file=stale.name)
             stale.unlink()
     return sections, joins, check
+
+
+# a markdown source the index reads through its own reader is judged on that reader's text, not the plain cleaning
+def _own_reader(run: "_Run"):
+    from sources import factory
+    from sources.base import Base
+    from sources.declaration import Declaration
+
+    if not run.origin.get("reader") or not run.units or any(unit[2].engine is not None for unit in run.units):
+        return None
+    declaration = Declaration.model_validate(run.origin)
+    reader = factory._reader(declaration)
+    if reader.read is Base.read:
+        return None
+    instance = reader(run.root, declaration, name=run.source.name)
+
+    # a page the reader leaves out (a hidden cheat sheet) is no text to judge
+    def read_as(file, rel) -> str:
+        parsed = instance.read(file, rel)
+        return parsed.content if parsed else ""
+
+    return read_as
 
 
 # piece ends the seam rule moved off a page break that code runs over, against a plain cut of the same run
@@ -204,10 +228,14 @@ def _fingerprint(arm_hash: str, route_sha: str, file_shas: dict) -> str:
     return hashlib.sha256(json.dumps([arm_hash, route_sha, sorted(file_shas.items())]).encode()).hexdigest()
 
 
-# where the index reads a source: its own tree when every file is markdown, else the raw folder a converter wrote
+# where the index reads a source: its markdown tree (a fetched one copied, as a fetch resets it) or the raw folder
 def _index_root(units: list, tree: Path, folder: Path) -> tuple[str, str]:
     kind = "tree" if units and all(run.engine is None for _, _, run, _, _ in units) else "converted"
     root = tree if kind == "tree" else folder
+    if kind == "tree" and tree.resolve().is_relative_to(FETCHED.resolve()):
+        root = folder / "tree"
+        shutil.rmtree(root, ignore_errors=True)
+        shutil.copytree(tree, root, ignore=shutil.ignore_patterns(".git"))
     return (str(root.relative_to(ROOT)) if root.is_relative_to(ROOT) else str(root)), kind
 
 
@@ -286,7 +314,7 @@ def _set_up(options: dict):
     loaded = {name: settings[tool] for tool, name in names.items()}
     route_sha = reading.route_sha(rule)
     origin = source.declaration or {}
-    root, gathered, fetched, release_read = intake_fetch.gather(source, FETCHED / source.name, ROOT)
+    root, gathered, fetched, release_read, gone = intake_fetch.gather(source, FETCHED / source.name, ROOT)
     # a release read from the site keys this run's pages; the declaration on the row keeps only what was asked for
     if release_read:
         origin = {**origin, "site": {**origin["site"], "release": release_read}}
@@ -307,8 +335,8 @@ def _set_up(options: dict):
     if accepted and (source.raw or {}).get("fingerprint") == fingerprint and same_release and not fresh:
         log.info("onboard.unchanged", source=source.name)
         return {"unchanged": True, "refetched": refetched}
-    run = _Run(source, options, rule, names, loaded, route_sha, origin, root, fetched, named, dict(left_out), shas,
-               fingerprint, accepted, fresh)
+    run = _Run(source, options, rule, names, loaded, route_sha, origin, root, fetched, named, dict(left_out) | gone,
+               shas, fingerprint, accepted, fresh)
     # a new run of an accepted source goes beside the accepted folder, which search keeps reading until it is accepted
     run.folder = source_intake.raw_folder(RAW, source.name, arm_hash, fingerprint if accepted else None)
     (run.folder / "files").mkdir(parents=True, exist_ok=True)
@@ -379,7 +407,8 @@ def _read_units(run: _Run) -> bool:
 def _finish(run: _Run) -> dict:
     source, folder, record, fetched = run.source, run.folder, run.record, run.fetched
     sections, joins, check = _assemble(
-        run.files, run.named, record, folder, set(run.unreadable) | set(run.skipped), run.rule, run.layers
+        run.files, run.named, record, folder, set(run.unreadable) | set(run.skipped), run.rule, run.layers,
+        frozenset(run.origin.get("waived_gates") or ()), _own_reader(run),
     )
     index_root, root_kind = _index_root(run.units, run.root, folder)
     rows = list(record["units"].values())

@@ -397,6 +397,23 @@ def broker_balances() -> list[dict]:
 
 
 @mcp_ops.tool(
+    name="queue_stats",
+    description=(
+        "The queue in one screen: how many jobs of each type wait, what runs now and for how long, what finished "
+        "in the window by type and status, each type's mean seconds over the last day, and the waiting jobs priced "
+        "at those means as an estimate of when the queue ends; a type with no history is listed as unpriced."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def queue_stats(
+    window_minutes: Annotated[int, Field(description="The window for finished jobs, in minutes.", ge=1, le=1440)] = 60,
+) -> dict:
+    from use_cases import queue_stats as stats_of
+
+    return stats_of.stats(window_minutes)
+
+
+@mcp_ops.tool(
     name="list_jobs",
     description=(
         "List background jobs, newest first. Optional filters by status, type "
@@ -432,6 +449,7 @@ def list_jobs(
                 # per cloud, the broker's balance before and after; null for a job that called no cloud
                 "balances": j.balances,
                 "result": j.result,
+                "error": j.error,
             }
             for j in session.scalars(stmt)
         ]
@@ -873,7 +891,9 @@ def remove_variant(variant: Annotated[str, Field(description="The variant's name
     ),
     annotations={"destructiveHint": True},
 )
-def remove_question_set(set_name: Annotated[str, Field(description="The set's name.", max_length=200)]) -> dict:
+def remove_question_set(
+    set_name: Annotated[str, Field(description="The set's name.", max_length=limits.MAX_SET_NAME)],
+) -> dict:
     from errors import Final
     from evals import question_sets
 

@@ -427,3 +427,43 @@ def test_a_rule_that_gives_no_count_is_an_error():
     assert fired.counts == {"dashes_restored": 2}
     with pytest.raises(TypeError, match="restore_dashes"):
         fired.run("restore_dashes", "a", lambda md: md)
+
+
+# an inherited member keeps its pointer to the parent and loses the parent's docs; the class's own members stay
+def test_an_inherited_member_keeps_only_its_pointer():
+    from use_cases.markdown_cleanup import drop_inherited_members
+
+    page = (
+        "    - **method** `Select.alias()`\n"
+        "        - *inherited from the* [`SelectBase.alias()`](#a) *method of* [`SelectBase`](#b) Return a subquery.\n"
+        "                - **name** - the alias name.\n"
+        "    - **method** `Select.where()`\n"
+        "        - Return a new select with the clause added.\n"
+    )
+    out, dropped = drop_inherited_members(page)
+    assert dropped == 1
+    assert "*method of* [`SelectBase`](#b)\n" in out and "Return a subquery" not in out and "alias name" not in out
+    assert "Return a new select with the clause added." in out
+
+
+# one fence rule for every reader: ``` inside a ~~~ block is code, and `# comment` there is no heading
+def test_a_tilde_fence_holds_a_backtick_line_and_a_hash_comment():
+    from use_cases.heading_rules import demote_caption_headings, unfenced
+    from use_cases.markup import fence_scan
+
+    lines = ["~~~", "```", "# Figure 1 comment", "~~~", "# Figure 2 caption"]
+    fences, inside, opened = fence_scan(lines)
+    assert fences == {0, 3} and inside == {1, 2} and opened is None
+    out, count = demote_caption_headings("\n".join(lines))
+    assert count == 1 and "# Figure 1 comment" in out and out.endswith("\nFigure 2 caption")
+    assert unfenced("\n".join(lines)).split("\n")[4] == "# Figure 2 caption"
+
+
+# a code block printed again word for word is kept once; a short one, or one that differs, stays every time
+def test_a_repeated_code_block_is_kept_once():
+    from use_cases.markdown_cleanup import drop_repeated_code
+
+    data = "```js data.js\n" + "export const sculptures = [{ name: 'Terracotta Army' }];\n" * 3 + "```"
+    page = f"# A\n\n{data}\n\n```js\nnpm start\n```\n\n# B\n\n{data}\n\n```js\nnpm start\n```\n"
+    out, dropped = drop_repeated_code(page)
+    assert dropped == 1 and out.count("Terracotta Army") == 3 and out.count("npm start") == 2

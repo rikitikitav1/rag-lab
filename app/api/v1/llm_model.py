@@ -200,7 +200,7 @@ async def create_model(
         model.quant, model.size_bytes = seen.get("quant"), seen.get("size_bytes")
     session.add(model)
     if engine.kind is EngineKind.ollama:
-        job_queue.add_job(
+        await job_queue.add_job(
             session, "pull_llm_model", {"name": request.name, "engine_id": engine.id}, queue="io"
         )
     try:
@@ -374,7 +374,7 @@ async def delete_model(id: int, session: AsyncSession = Depends(get_session)):
 
     name = model.name
     await session.delete(model)
-    job_queue.add_job(
+    await job_queue.add_job(
         session,
         "delete_llm_model",
         {"name": name, "engine_id": engine.id},

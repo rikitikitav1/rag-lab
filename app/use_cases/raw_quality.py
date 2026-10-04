@@ -10,7 +10,7 @@ from sources.base import cuts_of, first_heading
 from tool_names import Tool
 from use_cases import ingest_quality as quality
 from use_cases import markdown_cleanup
-from use_cases.markup import FENCE
+from use_cases.markup import FENCE, fence_scan
 from use_cases.route import mixed_share, words
 
 # an HTML tag by its name, on one line; a bare `<` in code (`a < b`, `<%= %>`, JSX) is text and stays
@@ -81,8 +81,8 @@ def _policy() -> dict:
 
 
 # a file's markdown cut whole, as the index will cut it: a piece cut alone takes its own first heading for the root
-def _samples(markdown: str, file: str, policy: dict) -> list:
-    text = markdown_cleanup.as_indexed(markdown)
+def _samples(markdown: str, file: str, policy: dict, indexed: str | None = None) -> list:
+    text = markdown_cleanup.as_indexed(markdown) if indexed is None else indexed
     root = first_heading(text)
     return [
         quality.Sample(file=file, content=content, chunk_index=i, body=body, section=section, root=root, cut_by=cut_by)
@@ -102,11 +102,11 @@ def chunker_gates(markdown: str, file: str) -> dict:
     return _gates(_samples(markdown, file, policy), policy)
 
 
-# the chunker's gates a chapter of a file, a chapter the second step of the section path; no chapters, one row
-def section_rows(markdown: str, file: str) -> list[dict]:
+# the chunker's gates a chapter of a file (`indexed`: the text a source's own reader gives the index), one row each
+def section_rows(markdown: str, file: str, waived: frozenset = frozenset(), indexed: str | None = None) -> list[dict]:
     policy = _policy()
     chapters: dict[str | None, list] = {}
-    for sample in _samples(markdown, file, policy):
+    for sample in _samples(markdown, file, policy, indexed):
         # the index and the questions never read a book's matter, so its sections do not judge the conversion
         if is_matter(file, sample.section):
             continue
@@ -117,7 +117,11 @@ def section_rows(markdown: str, file: str) -> list[dict]:
         # a chapter that is the file's root alone has no heading below it by shape, so coverage measures nothing there
         root_only = chapter is None or SECTION_SEP not in chapter
         hard = [g for g in gates["hard"] if not (root_only and g.startswith("section_coverage."))]
-        verdict = gates["verdict"] if hard == gates["hard"] else quality.verdict(hard, gates["soft"], judged=True)
+        # a source's declaration waives a gate its shape breaks by nature, as a reference manual's short entries
+        hard, soft = _unwaived(hard, waived), _unwaived(gates["soft"], waived)
+        unread = [g for g in gates["hard"] + gates["soft"] if g.split(".")[0] in waived]
+        changed = hard != gates["hard"] or soft != gates["soft"]
+        verdict = quality.verdict(hard, soft, judged=True) if changed else gates["verdict"]
         rows.append(
             {
                 "file": file,
@@ -125,11 +129,16 @@ def section_rows(markdown: str, file: str) -> list[dict]:
                 "words": len(words(" ".join(s.body if s.body is not None else s.content for s in samples))),
                 **gates["metrics"],
                 "chunker_verdict": verdict,
-                "breached": hard + gates["soft"],
+                "breached": hard + soft,
+                **({"waived": unread} if unread else {}),
                 "coverage_by_shape": root_only,
             }
         )
     return rows
+
+
+def _unwaived(gates: list[str], waived: frozenset) -> list[str]:
+    return [g for g in gates if g.split(".")[0] not in waived]
 
 
 # what the output says against the text the file carried with it; no layer, no layer signals
@@ -200,7 +209,6 @@ def better_reading(first: dict, second: dict, cells_slack: float = 0.0) -> bool:
     return second["layer_f1"] > first["layer_f1"] and second["table_cells"] >= first["table_cells"] * (1 - cells_slack)
 
 
-_FENCE_LINE = re.compile(r"^\s*```", re.M)
 _HEADING = re.compile(r"^#{1,6}\s+(.+)$", re.M)
 
 
@@ -221,7 +229,7 @@ def self_check(markdown: str, outline: list[str]) -> dict:
     return {
         "outline": len(titles),
         "outline_found": sum(_found(t, headings) for t in titles),
-        "fences_unbalanced": len(_FENCE_LINE.findall(markdown)) % 2,
+        "fences_unbalanced": int(fence_scan(markdown.split("\n"))[2] is not None),
         "code_blocks": len(blocks),
         "code_one_line": sum("\n" not in b for b in blocks),
     }

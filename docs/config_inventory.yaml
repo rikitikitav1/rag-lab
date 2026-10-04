@@ -233,6 +233,10 @@ config:
     class: setting
   intake.route.join_split_words:
     class: setting
+  intake.route.drop_inherited_members:
+    class: setting
+  intake.route.drop_repeated_code:
+    class: setting
   intake.route.mono_spread:
     class: setting
   intake.route.mono_faces:
@@ -844,8 +848,6 @@ constant:
   app/evals/trace.py:SCHEMA:
     class: code
     note: the shape of a stored record
-  app/ingest.py:FENCE_LINE:
-    class: code
   app/ingest.py:HEADING_LINE:
     class: code
     family: heading_reader
@@ -883,6 +885,8 @@ constant:
   app/job_specs.py:STARVED_AFTER_MINUTES:
     class: cap
   app/limits.py:MAX_RUN_NAME:
+    class: cap
+  app/limits.py:MAX_SET_NAME:
     class: cap
   app/limits.py:MAX_RUNS:
     class: cap
@@ -1071,11 +1075,13 @@ constant:
     class: code
   app/use_cases/markdown_cleanup.py:_TABLE_ROW:
     class: code
-  app/use_cases/markdown_cleanup.py:_FENCED:
+  app/use_cases/markup.py:CHUNKER_FENCE_INDENT:
     class: code
-  app/use_cases/markdown_cleanup.py:_FENCE_OPEN:
+  app/corpus_keys.py:SHARED_TEXT_MIN_CHARS:
     class: code
-  app/use_cases/dedup.py:MIN_SHARED_CHARS:
+  app/use_cases/markdown_cleanup.py:_INHERITED:
+    class: code
+  app/use_cases/markdown_cleanup.py:_REPEATED_CODE_MIN_CHARS:
     class: code
   app/use_cases/markdown_cleanup.py:_PADDING:
     class: code
@@ -1130,8 +1136,6 @@ constant:
   app/use_cases/raw_quality.py:_LINE_MARKS:
     class: code
   app/use_cases/raw_quality.py:_ESCAPES:
-    class: code
-  app/use_cases/raw_quality.py:_FENCE_LINE:
     class: code
   app/use_cases/raw_quality.py:_HEADING:
     class: code
@@ -1271,6 +1275,8 @@ constant:
     class: code
   app/use_cases/source_intake.py:REASON_CHARS:
     class: cap
+  app/use_cases/intake_fetch.py:GONE:
+    class: code
   app/use_cases/intake_fetch.py:_SLUG:
     class: code
     family: slug
@@ -1287,6 +1293,8 @@ constant:
   app/worker.py:POLL_INTERVAL:
     class: cap
   app/worker.py:MAX_ATTEMPTS:
+    class: cap
+  app/job_queue.py:MAX_RECLAIMS:
     class: cap
   app/worker.py:MAX_DEFERRED_SECONDS:
     class: cap

@@ -1,6 +1,7 @@
 from collections import defaultdict
 
 import logging_setup
+from corpus_keys import SHARED_BODY_SQL
 from models.corpus import DataSource, Trust
 from orm.sync_db import Session
 from sqlalchemy import select, text
@@ -37,16 +38,12 @@ def keeper(rows: list[DataSource]) -> DataSource:
     return max(rows, key=lambda r: (-_RANK[source_trust(r.declaration)], _freshness(r), r.name))
 
 
-# a body this short is a heading's echo, a "See also" or a bare fence: its meaning is the path above it, not a copy
-MIN_SHARED_CHARS = 200
-
-# the same normalisation as `corpus_keys.body_hash`: one text with other line breaks is the same text
-_SHARED_WITH = """
+# copies by the hash the index stored for each body, the same key the quality report counts duplicates by
+_SHARED_WITH = f"""
     WITH bodies AS (
-        SELECT c.id, c.source_id,
-               md5(btrim(regexp_replace(substr(c.content, coalesce(c.prefix_len, 0) + 1), '\\s+', ' ', 'g'))) AS h
+        SELECT c.id, c.source_id, c.content_hash AS h
         FROM data_chunks c
-        WHERE c.variant = :variant AND length(c.content) - coalesce(c.prefix_len, 0) >= :min_chars
+        WHERE c.variant = :variant AND {SHARED_BODY_SQL}
     ), touched AS (
         SELECT DISTINCT h FROM bodies WHERE source_id = ANY(:ids)
     ), shared AS (
@@ -62,7 +59,7 @@ def drop_lower_copies(variant: str, names: list[str]) -> dict[str, dict[str, int
         ids = list(session.scalars(select(DataSource.id).where(DataSource.name.in_(names))))
         if not ids:
             return {}
-        asked = {"variant": variant, "ids": ids, "min_chars": MIN_SHARED_CHARS}
+        asked = {"variant": variant, "ids": ids}
         found = session.execute(text(_SHARED_WITH), asked).all()
         if not found:
             return {}

@@ -3,6 +3,14 @@ from fastapi.testclient import TestClient
 from stand_specs import queued_job as _queued_job
 
 
+# `add_job` is awaited by the doors, so a stand-in answers as a coroutine
+def _staged(fn):
+    async def stage(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return stage
+
+
+
 def test_agent_max_hops_zero_422(client):
     r = client.post("/v1/agent/question", json={"text": "x", "max_hops": 0})
     assert r.status_code == 422
@@ -40,7 +48,7 @@ def test_eval_run_pipeline_invalid_422(client):
 def test_eval_run_rerank_with_agent_ok(client, monkeypatch):
     import api.v1.eval as eval_mod
 
-    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
 
     async def _refresh(session, obj):
         return obj
@@ -54,7 +62,7 @@ def test_every_field_a_run_declares_reaches_the_queue(client, monkeypatch):
     # the options dict is copied field by field, so a new field is accepted and never carried
     import api.v1.eval as eval_mod
 
-    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
 
     async def _refresh(session, obj):
         return obj
@@ -302,7 +310,7 @@ def _door_that_queues(monkeypatch, *, rows=0, jobs=()):
 
     monkeypatch.setattr(eval_mod, "_rows_of", _rows)
     monkeypatch.setattr(eval_mod, "_eval_runs_named", _named)
-    monkeypatch.setattr(eval_mod.job_queue, "add_job", lambda s, t, o: _queued_job(t, o))
+    monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
     monkeypatch.setattr(eval_mod, "commit_and_refresh", _refresh)
 
 
@@ -425,3 +433,10 @@ def test_the_door_refuses_a_declaration_the_index_could_not_read(client, rules, 
 
 def test_the_one_source_path_does_not_swallow_compare(client):
     assert client.get("/v1/source/compare?variants=baseline").status_code == 422
+
+
+# the jobs that read a set refuse a name a path cannot carry, so the import door refuses it first
+def test_import_refuses_a_set_name_the_jobs_would_refuse(client):
+    for name in ("a/b", "x y"):
+        r = client.post("/v1/questions/import", files={"file": ("q.txt", b"what?")}, data={"set_name": name})
+        assert r.status_code == 422

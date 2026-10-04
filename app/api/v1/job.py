@@ -100,19 +100,24 @@ async def enqueue_job(
 
         extra = sorted(set(options) - {"run_name", "resume"})
         options = await resumed_options(session, options.get("run_name"), extra)
-    try:
-        job_specs.check(request.type, options)
-    except job_specs.Refused as bad:
-        raise HTTPException(status_code=400, detail=str(bad)) from bad
+    # checked once, off the loop, before the name lookup; a refusal answers 400 through the app's handler
+    job = await job_queue.prepared(request.type, options)
     if request.type == "eval_run" and options.get("run_name") and not options.get("resume"):
         from api.v1.eval import refuse_a_taken_run
 
         await refuse_a_taken_run(session, options["run_name"])
-
-    job = job_queue.add_job(session, request.type, options)
+    session.add(job)
     await session.commit()
     await session.refresh(job)
     return job
+
+
+# the queue in one screen: waiting by type, running, finished in the window, and the waiting priced at each type's mean
+@router.get("/stats")
+async def queue_stats(window_minutes: int = Query(default=60, ge=1, le=1440)) -> dict:
+    from use_cases import queue_stats
+
+    return await run_in_threadpool(queue_stats.stats, window_minutes)
 
 
 @router.get("/{id}", response_model=JobResponse)

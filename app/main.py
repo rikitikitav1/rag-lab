@@ -2,9 +2,8 @@ import argparse
 import os
 
 import config
+import job_queue
 import logging_setup
-import sources.factory
-import use_cases.index
 from engines import ollama
 
 import db
@@ -16,7 +15,7 @@ def main():
     logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
     parser = argparse.ArgumentParser(description="RAG over the corpus")
     parser.add_argument(
-        "--index", action="store_true", help="reindex the corpus (resets the configured corpus variant, then builds it)"
+        "--index", action="store_true", help="queue an index_data job for the served variant"
     )
     parser.add_argument(
         "--ensure-index", action="store_true", help="build index only if empty"
@@ -28,13 +27,13 @@ def main():
 
     args = parser.parse_args()
 
+    # through the job, so the embedder check and the card handover are the ones every index passes
     if args.index:
-        db.cleanup(variant=config.settings.corpus.variant)
-        print(use_cases.index.collect_data(list(sources.factory.sources())))
+        print(job_queue.enqueue("index_data", {}))
 
     if args.ensure_index:
         if db.is_empty(variant=config.settings.corpus.variant):
-            print(use_cases.index.collect_data(list(sources.factory.sources())))
+            print(job_queue.enqueue("index_data", {}))
         else:
             log.info("index.skip", reason="already_indexed")
 

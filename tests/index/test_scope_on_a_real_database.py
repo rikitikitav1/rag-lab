@@ -223,8 +223,9 @@ def test_an_unheld_version_refuses_and_an_older_one_in_search_turns_the_scan_str
     assert stand.filtered_scan(stand.Scope(), "off") == "off"
 
 
-# a chunk whose text another source holds word for word is counted, past the prefix each source puts before it
+# a long body another source holds word for word is counted past each prefix; a short shared one is an echo, not a copy
 def test_a_body_another_source_holds_is_counted_across_sources(db, monkeypatch):
+    from corpus_keys import body_hash
     from sqlalchemy.orm import sessionmaker
     from use_cases import ingest_quality
 
@@ -233,12 +234,13 @@ def test_a_body_another_source_holds_is_counted_across_sources(db, monkeypatch):
         for sid, name in ((1, "a"), (2, "b")):
             c.execute(text("INSERT INTO data_sources (id, name, kind, stage) VALUES (:i, :n, 'local', 'accepted')"),
                       {"i": sid, "n": name})
-        rows = [(1, "a/x.md", "A > X\nshared body", 6, 0), (1, "a/y.md", "own body", 0, 1),
-                (2, "b/z.md", "B > Z\nshared body", 6, 0)]
+        shared = "a shared body two sources hold word for word. " * 5
+        rows = [(1, "a/x.md", "A > X\n" + shared, 6, 0), (1, "a/y.md", "own body", 0, 1),
+                (2, "b/z.md", "B > Z\n" + shared, 6, 0), (2, "b/w.md", "own body", 0, 1)]
         for sid, src, content, prefix, idx in rows:
             c.execute(text("INSERT INTO data_chunks (source_id, source, content, prefix_len, chunk_index, language,"
-                           " variant) VALUES (:s, :src, :c, :p, :i, 'en', 'clean_1024')"),
-                      {"s": sid, "src": src, "c": content, "p": prefix, "i": idx})
+                           " variant, content_hash) VALUES (:s, :src, :c, :p, :i, 'en', 'clean_1024', :h)"),
+                      {"s": sid, "src": src, "c": content, "p": prefix, "i": idx, "h": body_hash(content[prefix:])})
         c.commit()
     monkeypatch.setattr(ingest_quality, "Session", sessionmaker(bind=db))
 

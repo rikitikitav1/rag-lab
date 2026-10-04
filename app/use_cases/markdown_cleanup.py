@@ -1,6 +1,6 @@
 import re
 
-from use_cases.markup import FENCE_LINE, INLINE_CODE
+from use_cases.markup import INLINE_CODE, fence_scan
 
 _ENTITY = re.compile(r"&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);")
 
@@ -43,12 +43,10 @@ def unescape_bullets(markdown: str) -> tuple[str, int]:
 
 # Docling and MinerU write `_` outside code as `\_`, and a search for `AT_STATX_SYNC` then misses it
 def unescape_underscores(markdown: str) -> tuple[str, int]:
-    lines, inside, count = markdown.split("\n"), False, 0
+    lines, count = markdown.split("\n"), 0
+    fences, inside, _ = fence_scan(lines)
     for n, line in enumerate(lines):
-        if FENCE_LINE.match(line):
-            inside = not inside
-            continue
-        if inside or "\\_" not in line:
+        if n in fences or n in inside or "\\_" not in line:
             continue
         parts = INLINE_CODE.split(line)
         for k in range(0, len(parts), 2):
@@ -77,9 +75,6 @@ def inline_pictures(markdown: str, pages: tuple[int, int] | None) -> tuple[str, 
 _MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.S)
 _MDX_MODULE_LINE = re.compile(r"^(?:import\s.+?\sfrom\s+['\"][^'\"]+['\"];?|export\s.*)$", re.M)
 _COMPONENT_START = re.compile(r"</?[A-Z][\w.]*")
-
-
-_FENCED = re.compile(r"^[ \t]*(```|~~~)[^\n]*\n.*?^[ \t]*\1[^\n]*$", re.M | re.S)
 
 
 # a JSX tag from its `<` to the `>` closing it, props with braces and quotes skipped over; none past a blank line
@@ -123,11 +118,18 @@ def _prose(text: str) -> str:
 
 # MDX is markdown with JSX: its imports, comments and component tags go, the text a component wraps stays
 def strip_mdx(text: str) -> str:
-    out, at = [], 0
-    for fence in _FENCED.finditer(text):
-        out += [_prose(text[at : fence.start()]), fence.group()]
-        at = fence.end()
-    return "".join([*out, _prose(text[at:])])
+    lines = text.split("\n")
+    fences, inside, _ = fence_scan(lines)
+    out, prose = [], []
+    for n, line in enumerate(lines):
+        if n in fences or n in inside:
+            out += [_prose("\n".join(prose))] if prose else []
+            out.append(line)
+            prose = []
+        else:
+            prose.append(line)
+    out += [_prose("\n".join(prose))] if prose else []
+    return "\n".join(out)
 
 
 # a markdown file's text as the stand reads it, the same at intake and at the index
@@ -176,17 +178,15 @@ def without_frontmatter(markdown: str) -> str:
 
 
 _TABLE_ROW = re.compile(r"^\s*\|")
-_FENCE_OPEN = re.compile(r"^[ \t]*(```|~~~)")
 _PADDING = re.compile(r" {2,}")
 
 
 # a converter pads each table cell to its column's width: the spaces show nothing and fill a chunk's ceiling
 def without_table_padding(markdown: str) -> str:
-    lines, fence = markdown.split("\n"), None
+    lines = markdown.split("\n")
+    fences, inside, _ = fence_scan(lines)
     for n, line in enumerate(lines):
-        if opened := _FENCE_OPEN.match(line):
-            fence = None if fence == opened.group(1)[:3] else fence or opened.group(1)[:3]
-        elif fence is None and _TABLE_ROW.match(line):
+        if n not in fences and n not in inside and _TABLE_ROW.match(line):
             spans = INLINE_CODE.split(line)
             lines[n] = "".join(s if k % 2 else _PADDING.sub(" ", s) for k, s in enumerate(spans)).rstrip()
     return "\n".join(lines)
@@ -195,3 +195,50 @@ def without_table_padding(markdown: str) -> str:
 # the text a markdown's chunks are cut from, one function for the index and for the raw report's verdict
 def as_indexed(markdown: str) -> str:
     return without_table_padding(without_frontmatter(markdown.lstrip("\ufeff")))
+
+
+_INHERITED = re.compile(
+    r"^(?P<indent>[ \t]*)- \*inherited from the\* .*?\*[\w ]+ of\* (?:\[`[^`]*`\]\([^)]*\)|`[^`]*`)"
+)
+
+
+# Sphinx autodoc prints an inherited member's whole docs under every subclass: the pointer to the parent stays
+def drop_inherited_members(markdown: str) -> tuple[str, int]:
+    out, dropped, inside = [], 0, None
+    for line in markdown.split("\n"):
+        if inside is not None:
+            if line.strip() and len(line) - len(line.lstrip()) > inside:
+                continue
+            inside = None
+        if found := _INHERITED.match(line):
+            out.append(found.group())
+            inside, dropped = len(found.group("indent")), dropped + 1
+            continue
+        out.append(line)
+    return "\n".join(out), dropped
+
+
+# a page that prints the same code block again and again (a tutorial's sample data in every example) keeps it once
+def drop_repeated_code(markdown: str) -> tuple[str, int]:
+    lines = markdown.split("\n")
+    fences, _, _ = fence_scan(lines)
+    out, seen, dropped, n = [], set(), 0, 0
+    opens = sorted(fences)
+    closes = dict(zip(opens[::2], opens[1::2], strict=False))
+    while n < len(lines):
+        if n in closes:
+            body = "\n".join(lines[n + 1 : closes[n]]).strip()
+            if len(body) >= _REPEATED_CODE_MIN_CHARS and body in seen:
+                dropped, n = dropped + 1, closes[n] + 1
+                continue
+            seen.add(body)
+            out += lines[n : closes[n] + 1]
+            n = closes[n] + 1
+            continue
+        out.append(lines[n])
+        n += 1
+    return "\n".join(out), dropped
+
+
+# a short block (`npm start`, an import line) repeats by nature, and its repeat is no copy worth dropping
+_REPEATED_CODE_MIN_CHARS = 80

@@ -35,6 +35,12 @@ def vector_index_name(variant: str) -> str:
     return f"{VECTOR_INDEX_PREFIX}{check_variant(variant)}_idx"
 
 
+# a body this short is a heading's echo, a "See also" or a bare fence: its meaning is the path above it, not a copy
+SHARED_TEXT_MIN_CHARS = 200
+# one text held twice, the same test for the dedup and the quality report: the stored `content_hash`, long enough
+SHARED_BODY_SQL = f"length(c.content) - coalesce(c.prefix_len, 0) >= {SHARED_TEXT_MIN_CHARS}"
+
+
 def body_hash(body: str) -> str:
     normalised = re.sub(r"\s+", " ", body).strip().encode()
     # a content fingerprint for deduplication, never a credential

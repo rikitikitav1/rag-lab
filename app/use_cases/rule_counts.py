@@ -14,6 +14,8 @@ KNOB_COUNTERS = {
     "restore_dashes": "dashes_restored",
     "join_broken_words": "words_joined",
     "join_split_words": "split_words_joined",
+    "drop_inherited_members": "inherited_members_dropped",
+    "drop_repeated_code": "repeated_code_dropped",
 }
 # steps every reading runs, with no knob of their own
 ALWAYS = (

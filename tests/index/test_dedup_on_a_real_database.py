@@ -8,6 +8,7 @@ SHARED = "VACUUM reclaims the space dead tuples hold. " * 6
 
 # a book, the official docs and a notes bank hold one paragraph: the docs keep it, the others lose their copy
 def test_a_text_held_by_several_sources_stays_with_the_most_trusted_copy(db, monkeypatch):
+    from corpus_keys import body_hash
     from sqlalchemy.orm import sessionmaker
     from use_cases import dedup
 
@@ -26,8 +27,8 @@ def test_a_text_held_by_several_sources_stays_with_the_most_trusted_copy(db, mon
             shared = SHARED.replace(". ", ".\n", 2) if sid == 3 else SHARED
             for i, body in enumerate((shared, "See also.", f"only in {sid}")):
                 c.execute(text("INSERT INTO data_chunks (source_id, source, content, prefix_len, chunk_index,"
-                               " language, variant) VALUES (:s, 's', :c, :p, :i, 'en', 'v')"),
-                          {"s": sid, "c": prefix + body, "p": len(prefix), "i": i})
+                               " language, variant, content_hash) VALUES (:s, 's', :c, :p, :i, 'en', 'v', :h)"),
+                          {"s": sid, "c": prefix + body, "p": len(prefix), "i": i, "h": body_hash(body)})
     monkeypatch.setattr(dedup, "Session", sessionmaker(bind=db))
 
     dropped = dedup.drop_lower_copies("v", ["pg-book"])

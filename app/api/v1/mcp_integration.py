@@ -5,7 +5,7 @@ import job_queue
 from crud import get_or_404
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from models.mcp_integration import TOOL_NAME_RE, McpIntegration, McpStatus, can_switch
+from models.mcp_integration import TOOL_NAME_RE, McpIntegration, McpStatus
 from orm.async_db import commit_and_refresh, get_session
 from pydantic import BaseModel, Field
 from query_utils import (
@@ -162,7 +162,7 @@ async def create_integration(
         raise HTTPException(
             status_code=409, detail=f"name '{request.name}' is taken"
         ) from None
-    job_queue.add_job(
+    await job_queue.add_job(
         session, "check_mcp_health", {"integration_id": integration.id}
     )
     return await commit_and_refresh(session, integration)
@@ -183,13 +183,27 @@ def refuse_a_moved_secret(auth, was: str, now: str) -> None:
         )
 
 
+# a field left out keeps its value; `unreachable` is what GET shows and is read back as no change of status
 class McpIntegrationUpdateRequest(BaseModel):
-    url: str = Field(max_length=512, pattern=_URL_PATTERN)
-    status: Literal[McpStatus.disabled, McpStatus.active]
+    url: str | None = Field(default=None, max_length=512, pattern=_URL_PATTERN)
+    status: McpStatus | None = None
     auth: Auth | None = None
     allowed_tools: ToolList = []
     timeout_s: int = Field(default=30, ge=1, le=300)
     max_result_chars: int = Field(default=4000, ge=100, le=100_000)
+
+
+def apply_update(integration, request: McpIntegrationUpdateRequest) -> None:
+    changes = {k: v for k, v in request.model_dump(exclude_unset=True).items() if v is not None or k == "auth"}
+    if changes.get("status") == McpStatus.unreachable:
+        del changes["status"]
+    url = changes.get("url", integration.url)
+    refuse_a_moved_secret(integration.auth or changes.get("auth"), integration.url, url)
+    if url != integration.url:
+        # the cached schemas describe the old server's tools until discover reads the new one
+        integration.tool_schemas = {}
+    for field, value in changes.items():
+        setattr(integration, field, value)
 
 
 @router.put("/{id}", response_model=McpIntegrationResponse)
@@ -199,20 +213,8 @@ async def update_integration(
     session: AsyncSession = Depends(get_session),
 ):
     integration = await get_or_404(McpIntegration, id, session)
-
-    if request.status != integration.status and not can_switch(
-        integration.status, request.status
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=f"cannot switch status {integration.status} -> {request.status}",
-        )
-
-    refuse_a_moved_secret(integration.auth or request.auth, integration.url, request.url)
-
-    for field, value in request.model_dump().items():
-        setattr(integration, field, value)
-    job_queue.add_job(
+    apply_update(integration, request)
+    await job_queue.add_job(
         session, "check_mcp_health", {"integration_id": integration.id}
     )
     return await commit_and_refresh(session, integration)

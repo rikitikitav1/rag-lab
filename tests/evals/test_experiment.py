@@ -4,6 +4,14 @@ from types import SimpleNamespace
 from models.experiment import ExperimentStatus, can_advance
 
 
+# `add_job` is awaited by the doors, so a stand-in answers as a coroutine
+def _staged(fn):
+    async def stage(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return stage
+
+
+
 def test_can_advance_valid():
     assert can_advance(ExperimentStatus.draft, ExperimentStatus.running)
     assert can_advance(ExperimentStatus.running, ExperimentStatus.aggregated)
@@ -482,7 +490,7 @@ def test_every_kind_of_report_declares_its_schema():
 
     assert (experiment.SCHEMA, rejudge.SCHEMA, retrieval_compare.SCHEMA) == (6, 5, 3)
     # the summaries the report is computed from, and the row snapshot they are computed over
-    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (8, 7, 20)
+    assert (generation_metrics.SCHEMA, retrieval_metrics.SCHEMA, run_snapshot.SCHEMA) == (9, 7, 20)
     # the judge-against-judge report is a record of its own, and its predictions were declared
     from evals import guest_probes, judge_language, replay
 
@@ -633,7 +641,7 @@ def test_an_arm_added_later_is_built_the_way_the_arms_before_it_were(monkeypatch
             control=control_sample, seed=control_seed
         ) or {},
     )
-    monkeypatch.setattr(door.job_queue, "add_job", lambda session, type, options: None)
+    monkeypatch.setattr(door.job_queue, "add_job", _staged(lambda session, type, options: None))
 
     import asyncio
 
@@ -684,7 +692,7 @@ def test_the_arm_that_cannot_be_merged_gives_its_copied_rows_back(monkeypatch, c
     monkeypatch.setattr(door.rejudge, "copy_runs", lambda *a, **kw: {})
     monkeypatch.setattr(door.rejudge, "arm_options", lambda *a, **kw: {})
     monkeypatch.setattr(door.rejudge, "delete_runs", lambda names: deleted.extend(names))
-    monkeypatch.setattr(door.job_queue, "add_job", lambda session, type, options: None)
+    monkeypatch.setattr(door.job_queue, "add_job", _staged(lambda session, type, options: None))
 
     with pytest.raises(HTTPException) as raised:
         asyncio.run(
@@ -891,3 +899,26 @@ def test_a_run_holding_a_question_twice_is_not_copied():
 
     with pytest.raises(ValueError, match="more than once"):
         rejudge._refuse_repeated_questions(_Session(), "tester_ss_k_05")
+
+
+# a broken row, one out of hops and a false refusal support nothing; an off-domain refusal does
+def test_supported_rate_counts_no_failure_and_no_false_refusal(monkeypatch):
+    from types import SimpleNamespace
+
+    from evals import generation_metrics
+    from outcomes import Outcome
+
+    kinds = {"answered": Outcome.answered, "error": Outcome.error, "exhausted": Outcome.exhausted,
+             "refused": Outcome.refused, "off": Outcome.refused}
+    rows = {k: SimpleNamespace(kind=k) for k in kinds}
+    monkeypatch.setattr(generation_metrics, "_outcome", lambda ql: kinds[ql.kind])
+    in_corpus = {id(rows[k]) for k in ("answered", "error", "exhausted", "refused")}
+    assert [k for k, ql in rows.items() if generation_metrics._supported(ql, in_corpus)] == ["answered", "off"]
+
+
+# a set is not removed under a job that writes it: every job type that names a set holds the door
+def test_every_job_that_names_a_set_holds_its_removal():
+    from evals.question_sets import set_jobs
+
+    writers = {"generate_questions", "load_questions", "accept_questions", "judge_questions", "eval_run"}
+    assert writers <= set(set_jobs())

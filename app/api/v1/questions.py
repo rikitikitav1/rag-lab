@@ -3,6 +3,8 @@ from typing import Literal
 
 import config
 import job_queue
+import job_specs
+import limits
 from evals import pools, question_sets
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile
 from models.eval import Question, text_hash
@@ -69,7 +71,7 @@ def list_questions(
 
 # a set and its questions; refused while it is named in the verdict, read by a job, answered, or drawn from
 @router.delete("/set/{set_name}")
-def remove_question_set(set_name: str = Path(max_length=200)) -> dict:
+def remove_question_set(set_name: str = Path(max_length=limits.MAX_SET_NAME)) -> dict:
     from errors import Final
 
     try:
@@ -90,7 +92,8 @@ class ImportResponse(BaseModel):
 @router.post("/import", response_model=ImportResponse)
 async def import_questions(
     file: UploadFile = File(...),
-    set_name: str = Form(...),
+    # the name every job reading the set checks, so a set it refuses is never written
+    set_name: str = Form(..., min_length=1, max_length=limits.MAX_SET_NAME, pattern=job_specs.SET_NAME),
     # the two the corpus and the text search speak; a detector stray once came in through here
     language: Literal["en", "ru"] | None = Form(default=None),
     run: bool = Form(default=False),
@@ -134,12 +137,12 @@ async def import_questions(
         )
         inserted = len(result.all())
 
-    job_queue.add_job(session, "embed_questions", {})
+    await job_queue.add_job(session, "embed_questions", {})
 
     resolved_run, run_job_id = None, None
     if run:
         resolved_run = run_name or f"{set_name}_{int(time.time())}"
-        run_job = job_queue.add_job(
+        run_job = await job_queue.add_job(
             session,
             "eval_run",
             {"run_name": resolved_run, "set_name": set_name, "question_ids": None},

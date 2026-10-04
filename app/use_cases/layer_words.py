@@ -1,6 +1,6 @@
 import re
 
-from use_cases.markup import FENCE_LINE, HYPHEN_MARK, INLINE_CODE
+from use_cases.markup import HYPHEN_MARK, INLINE_CODE, fence_scan
 
 # a dash of any kind across a line end, or a hyphen inside a line; a hyphen at a line end is a word's hyphenation
 _DASHED = re.compile(r"(\w+)(?:([\u2014\u2013])\s*|(-))(\w+)")
@@ -86,11 +86,10 @@ def join_split_words(markdown: str, layer: str | None) -> tuple[str, int]:
             return a
         return match.group(0)
 
-    lines, inside = markdown.split("\n"), False
+    lines = markdown.split("\n")
+    fences, inside, _ = fence_scan(lines)
     for n, line in enumerate(lines):
-        if FENCE_LINE.match(line):
-            inside = not inside
-        elif not inside:
+        if n not in fences and n not in inside:
             parts = INLINE_CODE.split(line)
             parts[::2] = [_SPLIT.sub(join, part) for part in parts[::2]]
             lines[n] = "".join(parts)

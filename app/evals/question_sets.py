@@ -128,8 +128,11 @@ def _row(q) -> dict:
     }
 
 
-# the jobs that read a set by name
-SET_JOBS = ("eval_run", "paraphrase_questions", "build_veto_set")
+# the jobs that read or write a set by name: every spec with a `set_name`, read off the specs so a new one counts
+def set_jobs() -> tuple[str, ...]:
+    import job_specs
+
+    return tuple(sorted(t for t, spec in job_specs.SPECS.items() if "set_name" in spec.model_fields))
 
 
 def removal_refusal(set_name: str, holds: dict, named_in_config: bool, queued: int | None) -> str | None:
@@ -156,7 +159,7 @@ def remove(set_name: str) -> dict:
     verdict = config.settings.verdict
     named = set_name in {*verdict.criterion_sets, *verdict.veto_sets}
     # a job may name its set by default or read it through another key, so any job that reads sets holds the door
-    queued = next((j for t in (*SET_JOBS, "embed_questions") if (j := job_queue.pending_of_type(t))), None)
+    queued = next((j for t in (*set_jobs(), "embed_questions") if (j := job_queue.pending_of_type(t))), None)
     if refusal := removal_refusal(set_name, db.question_set_holds(set_name), named, queued):
         raise Final(refusal)
     return {"set_name": set_name, "questions": db.remove_question_set(set_name)}

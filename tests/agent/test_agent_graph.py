@@ -593,3 +593,15 @@ def test_the_hand_drawn_diagram_names_no_node_the_graph_does_not_have():
     today = cells(drawing / "agent_nodes_and_the_row.drawio.svg", parent="today")
     drawn = {re.match(r"\w+", label).group(0) for label in today}
     assert drawn == {n for n in graph.build().get_graph().nodes if not n.startswith("__")}
+
+
+# a hop that failed ends the row: no forced answer is asked after it, so the row is not failed and answered at once
+def test_a_failed_hop_asks_no_forced_final():
+    from types import SimpleNamespace
+
+    from orchestrators import graph
+
+    asked = []
+    run = {"result": SimpleNamespace(failed=True), "chat": lambda *a, **k: asked.append(a)}
+    out = graph.final_node({"messages": [], "hops": 1, "text": ""}, {"configurable": {"run": run}})
+    assert asked == [] and out == {"finished_by": agent_policy.FinishedBy.no_answer}

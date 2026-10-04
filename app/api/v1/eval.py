@@ -10,6 +10,7 @@ import limits
 import logging_setup
 from corpus_keys import VARIANT_RE, Gold
 from evals import compare as compare_uc
+from evals import retrieval_metrics
 from evals.guest_axes import MESSAGE_FORMS
 from evals.pools import Ambiguous
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -118,7 +119,7 @@ def _debts_or_none(run_name: str):
 
 
 async def _enqueue(session, type: str, options: dict) -> JobEnqueuedResponse:
-    job = job_queue.add_job(session, type, options)
+    job = await job_queue.add_job(session, type, options)
     await commit_and_refresh(session, job)
     return JobEnqueuedResponse.model_validate(job)
 
@@ -182,9 +183,9 @@ async def eval_misses(
         if not gold:
             continue
         in_corpus += 1
-        got = [s["source"] for s in (ql.sources or [])]
-        hit = any(gold.holds_file(g) for g in got)
-        if not hit:
+        # the metric's own reading: an mcp result is not retrieval, a chunk a gate hid from the model is
+        _, _, got = retrieval_metrics.retrieved_sources(ql)
+        if retrieval_metrics.rank_of_gold(got, gold) is None:
             items.append(
                 MissItem(
                     question_id=q.id,
@@ -537,7 +538,7 @@ async def enqueue_experiment(
         await refuse_a_taken_run(session, name)
     jobs = []
     for value, name in zip(request.values, names, strict=True):
-        job = await _enqueue(
+        job = await job_queue.add_job(
             session,
             "eval_run",
             {
@@ -553,4 +554,8 @@ async def enqueue_experiment(
             },
         )
         jobs.append(job)
-    return jobs
+    # one commit: an arm the queue refuses leaves none of the earlier ones running under a taken name
+    await session.commit()
+    for job in jobs:
+        await session.refresh(job)
+    return [JobEnqueuedResponse.model_validate(job) for job in jobs]

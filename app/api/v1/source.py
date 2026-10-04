@@ -259,7 +259,7 @@ async def analyze_source(
     if request.variant is not None:
         check_variant(request.variant)
     options = {"source": source.name, "variant": request.variant, "mode": request.mode}
-    job = job_queue.add_job(session, "analyze_source", options)
+    job = await job_queue.add_job(session, "analyze_source", options)
     await commit_and_refresh(session, job)
     return JobEnqueuedResponse.model_validate(job)
 
@@ -316,7 +316,7 @@ async def onboard_source(
     source = await get_or_404(DataSource, id, session)
     _transition(source_intake.check_onboard, source)
     options = source_intake.onboard_options(source.name, request.settings, request.fresh)
-    job = job_queue.add_job(session, "onboard_source", options)
+    job = await job_queue.add_job(session, "onboard_source", options)
     await commit_and_refresh(session, job)
     return JobEnqueuedResponse.model_validate(job)
 

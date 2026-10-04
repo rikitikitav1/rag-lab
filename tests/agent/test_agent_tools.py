@@ -22,6 +22,12 @@ def test_dispatch_bad_json():
     assert "invalid arguments" in at.dispatch("search_corpus", "{bad").content
 
 
+# json that parses but is no object gets the same answer the model can correct, not an exception that ends the row
+def test_dispatch_arguments_that_are_no_object():
+    for given in ("null", "[]", '"vacuum"'):
+        assert "invalid arguments" in at.dispatch("search_corpus", given).content
+
+
 def test_dispatch_catches_tool_exception(monkeypatch):
     def boom(**kwargs):
         raise ValueError("kaboom")

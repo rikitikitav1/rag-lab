@@ -376,7 +376,8 @@ CREATE TABLE public.preregistrations (
     guards jsonb DEFAULT '[]'::jsonb NOT NULL,
     declared jsonb DEFAULT '{}'::jsonb NOT NULL,
     closed_with jsonb,
-    vetoes jsonb DEFAULT '[]'::jsonb NOT NULL
+    vetoes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    attempts jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 
@@ -1077,4 +1078,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260929000010'),
     ('20260930000011'),
     ('20260930000012'),
-    ('20260930000013');
+    ('20260930000013'),
+    ('20261002000014');

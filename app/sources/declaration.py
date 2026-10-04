@@ -3,7 +3,7 @@ import fnmatch
 import re
 from typing import ClassVar, Literal
 
-from config import SOURCE_KNOBS, RouteCfg
+from config import SOURCE_KNOBS, MetricGatesCfg, RouteCfg
 from models.corpus import Trust
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 from tool_names import settings_refusal
@@ -152,6 +152,8 @@ class Declaration(_Strict):
     # stems skipped, the second list with a reason for each; `fnmatch` patterns, so `[` and `?` match
     skip: list[str] = []
     skip_when_hygienic: dict[str, str] = {}
+    # chunker gates this source's shape breaks by nature, as a reference manual's one-line entries; named in its report
+    waived_gates: list[Literal[tuple(MetricGatesCfg.model_fields)]] = []
     # paths under the source's root skipped whole, where a stem cannot tell a folder: a site's pages are all `index`
     skip_paths: list[str] = []
     drop_docs_containing: list[str] = []

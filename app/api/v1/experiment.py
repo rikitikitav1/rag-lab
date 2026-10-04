@@ -206,12 +206,12 @@ async def _resolve_sample(
 async def _queue_arm(session: AsyncSession, arm: dict, run_name: str, control_sample, control_seed) -> None:
     from job_handlers.judging import guest_pass_refusal
 
-    job_queue.add_job(session, "judge_answers", rejudge.arm_options(arm, run_name, control_sample, control_seed))
+    await job_queue.add_job(session, "judge_answers", rejudge.arm_options(arm, run_name, control_sample, control_seed))
     if guest := rejudge.guest_options(arm, run_name):
         refused = await run_in_threadpool(guest_pass_refusal, run_name)
         if refused:
             raise HTTPException(status_code=refused[0], detail=f"arm {run_name}: {refused[1]}")
-        job_queue.add_job(session, "judge_guest_axes", guest)
+        await job_queue.add_job(session, "judge_guest_axes", guest)
 
 
 @router.post("", response_model=ExperimentResponse)
@@ -347,7 +347,7 @@ async def create_experiment(
         exp.run_names = [retrieval_compare.arm_name(a) for a in retrieval_compare.arms(request.axes)]
         exp.status = ExperimentStatus.running
         exp.started_at = datetime.now(timezone.utc)
-        job_queue.add_job(session, "compare_retrieval", {"experiment_id": exp.id})
+        await job_queue.add_job(session, "compare_retrieval", {"experiment_id": exp.id})
         return await commit_and_refresh(session, exp)
 
     base = request.name or f"{request.dataset}_{request.pipeline.value}_{int(time.time())}"
@@ -356,7 +356,7 @@ async def create_experiment(
     run_names = []
     for value in request.param_values:
         run_name = f"{base}_{request.param}_{value_suffix(value)}"
-        job_queue.add_job(
+        await job_queue.add_job(
             session,
             "eval_run",
             {
