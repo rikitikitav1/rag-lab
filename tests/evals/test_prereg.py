@@ -382,9 +382,11 @@ def _made_under(monkeypatch, jobs):
             return row
 
         def execute(self, query):
-            return SimpleNamespace(all=lambda: [SimpleNamespace(id=i, prereg=p, created_at=datetime(2026, 10, 2, h),
-                                                                options={"purpose": purpose})
-                                                for i, p, h, *rest in jobs for purpose in [rest[0] if rest else "closing"]])
+            def row(i, p, h, purpose="closing"):
+                at = datetime(2026, 10, 2, h)
+                return SimpleNamespace(id=i, prereg=p, created_at=at, options={"purpose": purpose})
+
+            return SimpleNamespace(all=lambda: [row(*job) for job in jobs])
 
         def commit(self):
             pass

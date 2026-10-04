@@ -31,9 +31,12 @@ def test_split_by_size_prefers_paragraph_boundary():
     ],
 )
 def test_a_file_path_becomes_the_tags_the_old_category_path_carried(path, expected):
+    from types import SimpleNamespace
+
     from sources.base import Base
 
-    assert Base.tags_for(None, path) == expected
+    undeclared = SimpleNamespace(settings=SimpleNamespace(tags=[], tag_from_name=None, tags_by_path=[]))
+    assert Base.tags_for(undeclared, path) == expected
 
 
 def _reader(categories, by_path=None):

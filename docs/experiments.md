@@ -122,3 +122,4 @@ Each entry also follows these rules:
 - [2026-09-25 - Which converter turns each kind of document into markdown](experiments/2026-09-25_two-converters-one-per-regime.md)
 - [2026-09-27 - Question generators side by side](experiments/2026-09-27_question-generators-side-by-side.md)
 - [2026-09-28 - Intake defects per book: the step 0 baseline](experiments/2026-09-28_intake-defects-per-book-step-0.md)
+- [2026-10-03 - Finding the right page in a corpus ten times larger](experiments/2026-10-03_finding-the-right-page-in-a-corpus-ten-times-larger.md)

@@ -40,7 +40,7 @@ def test_the_moved_keys_hold_the_values_they_held_before_the_move():
         "norm": 0,
         "query_lang": "function_words",
     }
-    assert (s.retrieval.ef_search, s.retrieval.distance_threshold, s.retrieval.results_limit) == (100, 0.55, 5)
+    assert (s.retrieval.ef_search, s.retrieval.distance_threshold, s.retrieval.results_limit) == (100, 0.56, 5)
     assert s.verdict.criterion_sets == ["paraphrased_v2_ru", "paraphrased_v2"] and s.verdict.veto_sets == ["veto_v1"]
     assert s.verdict.search_depth.model_dump() == {
         "ef_ladder": [100, 200, 400],
@@ -51,11 +51,11 @@ def test_the_moved_keys_hold_the_values_they_held_before_the_move():
     assert (s.verdict.index_alive.recall, s.verdict.index_alive.questions) == (0.9, 40)
     assert s.agent.gate.model_dump() == {
         "signal": "distance",
-        "weak_distance": 0.39,
+        "weak_distance": 0.3861,
         "weak_threshold": 0.5,
         "candidates": 5,
     }
-    assert s.agent.topic_threshold == {"ru": 0.4560, "en": 0.4374}
+    assert s.agent.topic_threshold == {"ru": 0.4707, "en": 0.4287}
     assert (s.ingestion.batch_size, s.ingestion.commit_size) == (100, 1000)
 
 

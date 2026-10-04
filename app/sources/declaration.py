@@ -134,6 +134,11 @@ class DeclaredQuestion(_Strict):
 
 
 # a source as the stand keeps it in its row, from the door or the seed: where it comes from and the rules only it needs
+class TagByPath(_Strict):
+    prefix: str = Field(min_length=1)
+    step: int = Field(ge=0)
+
+
 class Declaration(_Strict):
     ORIGINS: ClassVar[tuple[str, ...]] = ("urls", "folder", "git", "git_family", "pages")
     name: str = Field(pattern=SOURCE_NAME)
@@ -168,6 +173,18 @@ class Declaration(_Strict):
     questions: list[DeclaredQuestion] = []
     # a leaf pattern that names this source's reference pages where the leaf has no code shape (a command in capitals)
     reference_leaf: str | None = None
+    # tags in place of the file's folders: fixed ones, the row's name less a suffix, a path step under a prefix
+    tags: list[str] = []
+    tag_from_name: str | None = None
+    tags_by_path: list[TagByPath] = []
+    # tags read from the page's frontmatter keys, in order; a scalar is one tag, a list is several
+    tags_from_frontmatter: list[str] = []
+    # a page whose frontmatter key holds this value is not read: a sheet the site itself hides
+    skip_when_frontmatter: dict[str, str] = {}
+    # the folder whose pages carry no heading: a page there is rooted at its file name in capitals
+    section_root_from_filename: str | None = None
+    # the markup family the site writes beside markdown, rendered by its table before the cut
+    markup: Literal["hugo", "mdn"] | None = None
     # over the default read from the origin, when a source is not what its origin suggests
     trust: Trust | None = None
 

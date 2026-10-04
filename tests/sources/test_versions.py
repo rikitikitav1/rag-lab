@@ -148,7 +148,8 @@ def test_a_family_row_onboarded_from_its_fetched_tree_spells_its_chunks_by_the_r
     (tree / "README.md").write_text("# Go\n\n## Channels\n\nA channel carries values between goroutines.\n")
     family = Declaration(
         name="interview",
-        reader="interview",
+        tags=["interview"],
+        tag_from_name="-interview-questions",
         git_family={"base_url": "https://github.com/x", "repos": ["go-interview-questions"]},
     )
     rows = {"go-interview-questions": {"source": "interview", "raw": {"root": str(tree), "root_kind": "tree"}}}

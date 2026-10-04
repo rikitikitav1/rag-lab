@@ -988,3 +988,18 @@ def test_a_page_the_site_no_longer_serves_is_left_out_not_the_source(tmp_path, m
     assert len(got.files) == 1 and list(got.gone) == ["https://x/gone.html"] and "404" in got.gone["https://x/gone.html"]
     with pytest.raises(requests.HTTPError):
         intake_fetch.gather(source(["https://x/broken.html"]), tmp_path / "inbox2", tmp_path)
+
+
+# a source's skipped paths change on its row in place: deleting and declaring it again would drop its chunks
+def test_skip_paths_are_set_on_the_row_and_refused_for_a_seeded_or_busy_source(monkeypatch):
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    row = DataSource(name="docs", seeded=False, declaration={"name": "docs", "folder": "inbox/docs", "licence": "MIT"})
+    source_intake.set_skip_paths(row, ["release-notes/*"])
+    assert row.declaration["skip_paths"] == ["release-notes/*"] and row.declaration["folder"] == "inbox/docs"
+    source_intake.set_skip_paths(row, [])
+    assert "skip_paths" not in row.declaration
+    with pytest.raises(Final, match="source file"):
+        source_intake.set_skip_paths(DataSource(name="x", seeded=True, declaration={"name": "x"}), ["a/*"])
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: 42)
+    with pytest.raises(Final, match="42"):
+        source_intake.set_skip_paths(row, ["a/*"])

@@ -2,11 +2,17 @@ from pathlib import Path
 
 import pytest
 from sources.base import Base, Doc
-from sources.cheatsheets import CheatsheetsSource
 from sources.declaration import SourceFile
-from sources.interview import InterviewSource
 
 # a class built here reads its rules from its file in `sources/`: these tests pin the corpus's current lists
+
+# a source read the way its file declares it, with no reader class of its own
+def _declared(file, root, **kw):
+    from sources import files
+    from sources.base import Base
+
+    return Base(root, settings=files.source_files()[file], **kw)
+
 
 
 # built through the model production loads, so an impossible fixture cannot pass here
@@ -49,12 +55,12 @@ def write(base: Path, rel: str, text: str) -> Path:
 def test_a_versioned_cheatsheet_goes_and_the_plain_one_stays(tmp_path):
     for name in ("react.md", "react@0.14.md", "vainglory.md", "figlet.md", "101.md"):
         write(tmp_path, name, "---\ntitle: x\n---\n\n## S\n\nbody\n")
-    kept = {f.name for f in CheatsheetsSource(tmp_path).discover(DROPPING)}
+    kept = {f.name for f in _declared("cheatsheets", tmp_path).discover(DROPPING)}
     assert kept == {"react.md", "101.md"}
 
 
 def test_the_interview_badge_goes_and_the_answers_stay(tmp_path):
-    source = InterviewSource(tmp_path, name="ruby-interview-questions")
+    source = _declared("interview", tmp_path, name="ruby-interview-questions")
     docs = [doc("a badge. You can also find all 100 answers here", 0), doc("a real answer", 1)]
     kept = source.postprocess(docs, DROPPING)
     assert [d.content for d in kept] == ["a real answer"]
@@ -125,6 +131,17 @@ def test_frontmatter_is_read_away_and_its_description_kept():
     assert without_frontmatter(page) == "# USE\n\nChanges the database context.\n\nBody.\n"
     toml = "+++\ntitle = \"Pods\"\nweight = 3\n+++\nA pod is a group.\n"
     assert without_frontmatter(toml) == "# Pods\n\nA pod is a group.\n"
+    # a page whose body has only sub-headings keeps its title as the root, its lead under the title
+    hashes = "---\ntitle: Redis hashes\ndescription: Intro\n---\nMaps.\n\n## Basic commands\n\nHSET.\n"
+    assert without_frontmatter(hashes) == "# Redis hashes\n\nIntro\n\nMaps.\n\n## Basic commands\n\nHSET.\n"
+    # a body that repeats the title at another level is not titled twice
+    echo = "---\ntitle: Pods\n---\n## Pods\n\nA pod.\n"
+    assert without_frontmatter(echo) == "## Pods\n\nA pod.\n"
+    # an own top heading after an import keeps the page as it is; a `#` comment in code is no heading
+    mdx = "---\ntitle: Agents\n---\nimport X from 'y'\n\n# Agents\n\nText.\n"
+    assert without_frontmatter(mdx) == "import X from 'y'\n\n# Agents\n\nText.\n"
+    shell = "---\ntitle: Setup\n---\n```bash\n# install\n```\n\n## Steps\n"
+    assert without_frontmatter(shell).startswith("# Setup\n\n```bash")
 
 
 # a rule between two lines of prose, or a fence of text that is not a mapping, is the page's own and stays

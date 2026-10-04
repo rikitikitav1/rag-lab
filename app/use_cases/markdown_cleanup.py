@@ -140,6 +140,7 @@ def markdown_of(path) -> str:
 
 _FRONTMATTER = re.compile(r"\A(---|\+\+\+)[ \t]*\n(.*?)\n\1[ \t]*(?:\n|\Z)", re.S)
 _FIRST_HEADING = re.compile(r"^#{1,6}[ \t]+\S.*$", re.M)
+_TOP_HEADING = re.compile(r"^#[ \t]+\S.*$", re.M)
 
 
 def _metadata(fence: str, block: str) -> dict | None:
@@ -159,6 +160,16 @@ _LEAD_KEYS = ("description", "summary", "excerpt", "intro", "short_description")
 
 
 # a page's frontmatter is the site's metadata, not its text: its title and lead stay as words, the rest goes
+def _titled(body: str, heading, title: str) -> bool:
+    if heading is None:
+        return False
+    lines = body.split("\n")
+    fences, inside, _ = fence_scan(lines)
+    # an own top heading outside code is the page's title, even after an import line or a comment
+    own_top = any(_TOP_HEADING.match(line) for n, line in enumerate(lines) if n not in fences and n not in inside)
+    return own_top or heading.group().lstrip("#").strip() == title
+
+
 def without_frontmatter(markdown: str) -> str:
     found = _FRONTMATTER.match(markdown)
     meta = _metadata(found.group(1), found.group(2)) if found else None
@@ -167,7 +178,8 @@ def without_frontmatter(markdown: str) -> str:
     body = markdown[found.end():].lstrip("\n")
     title = meta.get("title")
     heading = _FIRST_HEADING.search(body)
-    if heading is None and isinstance(title, (str, int, float)) and str(title).strip():
+    # the page's title roots it unless the body opens with its own top heading or repeats the title
+    if isinstance(title, (str, int, float)) and str(title).strip() and not _titled(body, heading, str(title).strip()):
         body = f"# {str(title).strip()}\n\n{body}"
         heading = _FIRST_HEADING.search(body)
     lead = list(dict.fromkeys(v.strip() for k in _LEAD_KEYS if isinstance(v := meta.get(k), str) and v.strip()))
@@ -192,9 +204,101 @@ def without_table_padding(markdown: str) -> str:
     return "\n".join(lines)
 
 
+# Hugo shortcodes: `{{< name args >}}` and `{{% name args %}}`, a closing one with a slash before the name
+_HUGO_COMMENT = re.compile(r"\{\{([<%])\s*comment\s*[>%]\}\}.*?\{\{[<%]\s*/comment\s*[>%]\}\}", re.S)
+_HUGO_SHORTCODE = re.compile(r"\{\{[<%]\s*(/?)([\w-]+)((?:[^}]|\}(?!\}))*?)\s*[>%]\}\}")
+_HUGO_ARG = re.compile(r'(\w+)="([^"]*)"|"([^"]*)"|(\S+)')
+# the section headings a Kubernetes page names by key; another key reads as its words
+_HUGO_HEADINGS = {"whatsnext": "What's next", "prerequisites": "Before you begin", "cleanup": "Clean up",
+                  "seealso": "See also"}
+_HUGO_FENCES = ("highlight", "code")
+
+
+def _hugo_args(text: str) -> tuple[list[str], dict[str, str]]:
+    positional, named = [], {}
+    for key, value, quoted, bare in _HUGO_ARG.findall(text):
+        if key:
+            named[key] = value
+        else:
+            positional.append(quoted or bare)
+    return positional, named
+
+
+# what the site shows of a shortcode: a tab's label, a term, a heading, a fence; layout and embeds go, their body stays
+def _hugo_rendered(match: re.Match) -> str:
+    closing, name, (positional, named) = match.group(1), match.group(2), _hugo_args(match.group(3))
+    first = positional[0] if positional else ""
+    if name in _HUGO_FENCES:
+        return "```" if closing else f"```{first}"
+    if closing:
+        return ""
+    if name == "tab":
+        label = named.get("name") or named.get("tabName") or first
+        return f"\n{label}\n" if label else ""
+    if name == "kbd":
+        return first
+    if name == "endpoint":
+        return f"`{' '.join(positional)}`" if positional else ""
+    if name == "glossary_tooltip":
+        return named.get("text") or ""
+    if name == "heading" and first:
+        return f"\n## {_HUGO_HEADINGS.get(first, first.replace('-', ' ').replace('_', ' ').capitalize())}\n"
+    if name == "feature-state" and named.get("state"):
+        version = named.get("for_k8s_version") or named.get("for_version") or ""
+        return f"FEATURE STATE: {f'Kubernetes {version} ' if version else ''}[{named['state']}]"
+    if name in ("alert", "details", "collapsible"):
+        title = named.get("title") or named.get("summary") or first
+        return f"\n**{title}**\n" if title else ""
+    return ""
+
+
+def without_hugo_shortcodes(text: str) -> str:
+    return _HUGO_SHORTCODE.sub(_hugo_rendered, _HUGO_COMMENT.sub("", text))
+
+
+# MDN's KumaScript macros: `{{name}}` or `{{name("arg", 'arg', 3)}}`, names in any case
+_MDN_MACRO = re.compile(r"\{\{\s*([A-Za-z_][\w-]*)\s*(?:\(((?:[^{}]|\{(?!\{))*?)\))?\s*\}\}")
+_MDN_ARG = re.compile(r'"((?:[^"\\]|\\.)*)"|\'((?:[^\'\\]|\\.)*)\'|(-?\d+(?:\.\d+)?)')
+# a reference shows its own words: the label a page gives it, else the name; an API name reads as code
+_MDN_CODE_REFS = {"domxref", "cssxref", "jsxref", "svgattr", "httpheader", "httpmethod", "webextapiref", "csp"}
+_MDN_TAG_REFS = {"htmlelement", "svgelement", "mathmlelement"}
+_MDN_BADGES = {"optional_inline": "(optional)", "readonlyinline": "(read-only)",
+               "experimental_inline": "(experimental)", "deprecated_inline": "(deprecated)",
+               "non-standard_inline": "(non-standard)", "securecontext_inline": "(secure context)",
+               "availableinworkers": "Available in Web Workers."}
+
+
+def _mdn_rendered(match: re.Match) -> str:
+    name = match.group(1).lower()
+    args = [a or b or c for a, b, c in _MDN_ARG.findall(match.group(2) or "")]
+    shown = args[1] if len(args) > 1 and args[1] else (args[0] if args else "")
+    if name in _MDN_BADGES:
+        return _MDN_BADGES[name]
+    if not shown:
+        return ""
+    if name in _MDN_CODE_REFS:
+        return f"`{shown}`"
+    if name in _MDN_TAG_REFS:
+        return f"`<{args[0]}>`" if len(args) < 2 or not args[1] else shown
+    if name in ("glossary", "httpstatus"):
+        return shown
+    if name == "rfc":
+        return f"RFC {args[0]}"
+    return ""
+
+
+def without_mdn_macros(text: str) -> str:
+    return _MDN_MACRO.sub(_mdn_rendered, text)
+
+
+# a site's own markup rendered before the rules every page goes through
+MARKUPS = {"hugo": without_hugo_shortcodes, "mdn": without_mdn_macros}
+
+
 # the text a markdown's chunks are cut from, one function for the index and for the raw report's verdict
-def as_indexed(markdown: str) -> str:
-    return without_table_padding(without_frontmatter(markdown.lstrip("\ufeff")))
+def as_indexed(markdown: str, markup: str | None = None) -> str:
+    text = without_frontmatter(markdown.lstrip("\ufeff"))
+    return without_table_padding(MARKUPS[markup](text) if markup else text)
 
 
 _INHERITED = re.compile(

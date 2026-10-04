@@ -26,6 +26,8 @@
       "langchain-text-splitters>=1.0",
       "pypdf>=6.19.0",
       "pypdfium2>=4.30",
+      "ctranslate2>=4.8.2",
+      "sentencepiece>=0.2.2",
 ]
 
 [dependency-groups]

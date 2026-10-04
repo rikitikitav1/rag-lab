@@ -1073,6 +1073,8 @@ constant:
     class: code
   app/use_cases/markdown_cleanup.py:_FIRST_HEADING:
     class: code
+  app/use_cases/markdown_cleanup.py:_TOP_HEADING:
+    class: code
   app/use_cases/markdown_cleanup.py:_TABLE_ROW:
     class: code
   app/use_cases/markup.py:CHUNKER_FENCE_INDENT:
@@ -1187,11 +1189,15 @@ constant:
     class: code
   app/evals/section_questions.py:_LEANS_ON_THE_PAGE:
     class: code
-  app/sources/arangodb_docs.py:_COMMENT:
+  app/use_cases/markdown_cleanup.py:_HUGO_COMMENT:
     class: code
-  app/sources/arangodb_docs.py:_SHORTCODE:
+  app/use_cases/markdown_cleanup.py:_HUGO_SHORTCODE:
     class: code
-  app/sources/arangodb_docs.py:_QUOTED:
+  app/use_cases/markdown_cleanup.py:_HUGO_ARG:
+    class: code
+  app/use_cases/markdown_cleanup.py:_MDN_MACRO:
+    class: code
+  app/use_cases/markdown_cleanup.py:_MDN_ARG:
     class: code
   app/evals/question_acceptance.py:EVIDENCE_HELD:
     class: setting

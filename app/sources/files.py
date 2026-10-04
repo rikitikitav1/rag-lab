@@ -108,12 +108,23 @@ CUT_RULES = (
     "skip_paths",
     "drop_docs_containing",
 )
+LATER_CUT_RULES = (
+    "tags",
+    "tag_from_name",
+    "tags_by_path",
+    "tags_from_frontmatter",
+    "skip_when_frontmatter",
+    "section_root_from_filename",
+    "markup",
+)
 
 
 # over the cut's rules in the loaded file, not its bytes: a comment or metadata beside the rules moves no row
 def digest(source: SourceFile) -> str:
     rules = source.model_dump(mode="json", include=set(CUT_RULES))
     rules["skip_when_hygienic"] = sorted(source.skip_when_hygienic)
+    # a rule that came later joins the digest only where it is set, so the rows cut before it keep theirs
+    rules |= source.model_dump(mode="json", include=set(LATER_CUT_RULES), exclude_defaults=True)
     return hashlib.sha256(json.dumps(rules, sort_keys=True).encode()).hexdigest()[:12]
 
 

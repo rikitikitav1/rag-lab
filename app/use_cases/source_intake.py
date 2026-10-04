@@ -143,6 +143,26 @@ def set_intake(source: DataSource, block: dict) -> None:
     source.declaration = with_intake(source.declaration, block)
 
 
+# the paths a source leaves out at its next onboarding, kept on its row; the declaration's own check reads them
+def set_skip_paths(source: DataSource, patterns: list[str]) -> None:
+    if refusal := intake_refusal(source, _onboard_waiting(source.name)):
+        raise Final(refusal)
+    kept = {k: v for k, v in (source.declaration or {}).items() if k != "skip_paths"}
+    declared = {**kept, "skip_paths": patterns} if patterns else kept
+    Declaration.model_validate(declared)
+    source.declaration = declared
+
+
+# the markup family a source's pages are written in, read by its next onboarding; none clears it
+def set_markup(source: DataSource, markup: str | None) -> None:
+    if refusal := intake_refusal(source, _onboard_waiting(source.name)):
+        raise Final(refusal)
+    kept = {k: v for k, v in (source.declaration or {}).items() if k != "markup"}
+    declared = {**kept, "markup": markup} if markup else kept
+    Declaration.model_validate(declared)
+    source.declaration = declared
+
+
 def check_onboard(source: DataSource) -> None:
     if refusal := onboard_refusal(source, _onboard_waiting(source.name)):
         raise Final(refusal)

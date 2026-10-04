@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import config
+import frontmatter
 import ingest
 import logging_setup
 from book_matter import is_matter
@@ -87,6 +88,12 @@ class Parsed:
     tags: list[str]
 
 
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    return list(value) if isinstance(value, list) else [value]
+
+
 class Base(ABC):
     name: str
     root: Path
@@ -165,9 +172,16 @@ class Base(ABC):
             raise ValueError(f"{self.name}: {rel} is under no category_by_path and the source names several categories")
         return self.settings.categories[0] if self.settings.categories else None
 
-    # the file's folders and stem, the labels the old category path carried
+    # the declared tags, else the file's folders and stem, the labels the old category path carried
     def tags_for(self, rel_path) -> list[str]:
-        return list(Path(rel_path).with_suffix("").parts)
+        declared = self.settings
+        if not (declared.tags or declared.tag_from_name is not None or declared.tags_by_path):
+            return list(Path(rel_path).with_suffix("").parts)
+        parts = Path(rel_path).parts
+        named = [self.name.removesuffix(declared.tag_from_name)] if declared.tag_from_name is not None else []
+        by_path = [parts[r.step] for r in declared.tags_by_path
+                   if str(rel_path).startswith(r.prefix) and len(parts) > r.step]
+        return [*declared.tags, *named, *by_path]
 
     # a byte order mark hides the frontmatter fence and the first heading: one redis page had one
     def text_of(self, file) -> str:
@@ -177,14 +191,26 @@ class Base(ABC):
         return markdown_cleanup.markdown_of(file).lstrip("\ufeff")
 
     def read(self, file, rel, policy=None):
-        content = markdown_cleanup.as_indexed(self.text_of(file))
-        return Parsed(content, self.category_for(rel), self.title_from(content), [], self.tags_for(rel))
+        text = self.text_of(file)
+        declared = self.settings
+        tags = self.tags_for(rel)
+        if declared.skip_when_frontmatter or declared.tags_from_frontmatter:
+            meta = frontmatter.loads(text).metadata
+            if any(str(meta.get(key)) == value for key, value in declared.skip_when_frontmatter.items()):
+                return None
+            if declared.tags_from_frontmatter:
+                tags = [str(t) for key in declared.tags_from_frontmatter for t in _as_list(meta.get(key))]
+        content = markdown_cleanup.as_indexed(text, declared.markup)
+        return Parsed(content, self.category_for(rel), self.title_from(content), [], tags)
 
     def title_from(self, content):
         return first_heading(content)
 
     # where the heading path starts: markdown for most, but a source may declare it anywhere
     def section_root_for(self, file, parsed) -> str | None:
+        named_by_file = self.settings.section_root_from_filename
+        if named_by_file and Path(file).parent.name == named_by_file:
+            return Path(file).stem.replace("-", " ").upper()
         # frontmatter is yaml: `title: 101` arrives as an int
         title = parsed.title
         return None if title is None else str(title).strip() or None

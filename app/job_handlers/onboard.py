@@ -172,11 +172,13 @@ def _own_reader(run: "_Run"):
     from sources.base import Base
     from sources.declaration import Declaration
 
-    if not run.origin.get("reader") or not run.units or any(unit[2].engine is not None for unit in run.units):
+    if not (run.origin.get("reader") or run.origin.get("markup")) or not run.units:
+        return None
+    if any(unit[2].engine is not None for unit in run.units):
         return None
     declaration = Declaration.model_validate(run.origin)
     reader = factory._reader(declaration)
-    if reader.read is Base.read:
+    if reader.read is Base.read and not declaration.markup:
         return None
     instance = reader(run.root, declaration, name=run.source.name)
 

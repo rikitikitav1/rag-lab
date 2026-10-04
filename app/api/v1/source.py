@@ -184,6 +184,34 @@ async def set_source_intake(
     return _detail(source, *await _counts(session, source))
 
 
+class SkipPaths(BaseModel):
+    skip_paths: list[str] = Field(max_length=200)
+
+
+# the folders and files a source leaves out at its next onboarding; an empty list clears them
+@router.put("/{id}/skip_paths", response_model=SourceDetail)
+async def set_source_skip_paths(
+    id: int, request: SkipPaths, session: AsyncSession = Depends(get_session)
+) -> SourceDetail:
+    source = await get_or_404(DataSource, id, session)
+    _transition(source_intake.set_skip_paths, source, request.skip_paths)
+    await commit_and_refresh(session, source)
+    return _detail(source, *await _counts(session, source))
+
+
+class Markup(BaseModel):
+    markup: Literal["hugo", "mdn"] | None = None
+
+
+# the markup family a source's pages are written in; null clears it
+@router.put("/{id}/markup", response_model=SourceDetail)
+async def set_source_markup(id: int, request: Markup, session: AsyncSession = Depends(get_session)) -> SourceDetail:
+    source = await get_or_404(DataSource, id, session)
+    _transition(source_intake.set_markup, source, request.markup)
+    await commit_and_refresh(session, source)
+    return _detail(source, *await _counts(session, source))
+
+
 # a variant's chunks in every source, as a smoke leaves them; the variant the stand searches is refused
 @router.delete("/variant/{variant}")
 async def remove_variant(variant: str = PathParam(pattern=VARIANT_RE.pattern)) -> dict:

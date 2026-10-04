@@ -151,12 +151,12 @@ def test_the_raw_report_reads_a_source_through_its_own_reader(tmp_path):
     from job_handlers import onboard
 
     page = tmp_path / "git.md"
-    page.write_text("---\ntitle: Git\ncategory: Git\n---\n\n## Branches\n\nGit keeps branches as refs.\n")
+    page.write_text("---\ntitle: Git\n---\n\n## Branches\n\n{{< tab \"Shell\" >}}Git keeps branches as refs.\n")
     unit = (page, "git.md", SimpleNamespace(engine=None), None, None)
-    own = SimpleNamespace(units=[unit], root=tmp_path, source=SimpleNamespace(name="cheatsheets"),
-                          origin={"name": "cheatsheets", "folder": str(tmp_path), "reader": "cheatsheets"})
+    own = SimpleNamespace(units=[unit], root=tmp_path, source=SimpleNamespace(name="arangodb-docs"),
+                          origin={"name": "arangodb-docs", "folder": str(tmp_path), "markup": "hugo"})
     read_as = onboard._own_reader(own)
-    assert read_as is not None and read_as(page, "git.md").startswith("## Branches")
+    assert read_as is not None and "{{<" not in read_as(page, "git.md") and "Shell" in read_as(page, "git.md")
     plain = SimpleNamespace(units=[unit], root=tmp_path, source=SimpleNamespace(name="docs"),
                             origin={"name": "docs", "folder": str(tmp_path)})
     assert onboard._own_reader(plain) is None
