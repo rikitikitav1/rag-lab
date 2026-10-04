@@ -35,6 +35,8 @@ def vector_index_name(variant: str) -> str:
     return f"{VECTOR_INDEX_PREFIX}{check_variant(variant)}_idx"
 
 
+# term_frequencies keeps no word rarer than this, so a share set below it would read every word as rare
+TERM_SHARE_FLOOR = 0.001
 # a body this short is a heading's echo, a "See also" or a bare fence: its meaning is the path above it, not a copy
 SHARED_TEXT_MIN_CHARS = 200
 # one text held twice, the same test for the dedup and the quality report: the stored `content_hash`, long enough

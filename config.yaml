@@ -19,12 +19,18 @@ retrieval:
   # AND over every lexeme: OR costs 0.15-0.23 MRR on paraphrases
   # tuned: file=datasets/measurements/2026-08-26_keyword_switch_grid.txt
   keyword:                      # named as a run's record names them
-    query: and
+    # or over and on the big corpus: and found no chunk for most long questions (datasets/measurements/arc7_keyword_full.json)
+    query: or
     # rank and norm not measured: the grid above moved only the query
     rank: ts_rank
     norm: 0
     # ask each text-search config about the question's own function words, else the alphabet
     query_lang: function_words
+    # a Russian question's English words rank beside its own; replacing them lost the Russian books
+    translation:
+      enabled: true
+    # candidates hold a word in at most 5% of chunks, ranked by every word; needs count_terms after an index
+    max_term_share: 0.05
   # pinned, not auto: auto is a property of the variant, and preflight refuses a stale pin
   # tuned: file=datasets/measurements/index_cost_clean_1024.json
   # tuned: file=datasets/measurements/recall_ladder_clean_1024.json

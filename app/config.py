@@ -35,6 +35,13 @@ class RoleCfg(_Strict):
 class KeywordTranslationCfg(_Strict):
     enabled: bool = False
     model_dir: str = "datasets/models/opus-mt-ru-en-ctranslate2"
+    # the keyword search reads the translation instead of the question: the Russian words matched Russian chunks only
+    replaces: bool = False
+
+
+# a question's jargon (постгрес, k8s) reworded to the names the docs use, ranked beside the question's own words
+class KeywordAliasesCfg(_Strict):
+    enabled: bool = False
 
 
 # named as a run's record names them, so nothing translates between the two
@@ -44,6 +51,19 @@ class KeywordCfg(_Strict):
     norm: int
     query_lang: QueryLanguageRule
     translation: KeywordTranslationCfg = KeywordTranslationCfg()
+    aliases: KeywordAliasesCfg = KeywordAliasesCfg()
+    # candidates hold a word in at most this share of chunks, ranked by every word; 0 is off, else at least 0.001
+    max_term_share: float = Field(0.0, ge=0.0, le=1.0)
+
+    # the table keeps no word rarer than its floor, so a share below it would read every word as rare
+    @field_validator("max_term_share")
+    @classmethod
+    def _above_the_floor(cls, value: float) -> float:
+        from corpus_keys import TERM_SHARE_FLOOR
+
+        if 0 < value < TERM_SHARE_FLOOR:
+            raise ValueError(f"max_term_share is 0 (off) or at least {TERM_SHARE_FLOOR}")
+        return value
 
 
 class RetrievalCfg(_Strict):
@@ -394,6 +414,21 @@ class CategoryCfg(_Strict):
     versions: list[str] = []
 
 
+# `unsure` aliases stay out of the search: an ordinary word (клик, квадрант) would reword questions that mean it
+class AliasCfg(_Strict):
+    canonical: str
+    aliases: list[str]
+    seen_in: list[str] = []
+    unsure: list[str] = []
+    related: list[str] = []
+
+    # yaml reads 404 as a number, and an empty `unsure:` as null
+    @field_validator("aliases", "unsure", "related", mode="before")
+    @classmethod
+    def _words(cls, value) -> list[str]:
+        return [str(v).lower() for v in value or []]
+
+
 class AppConfig(_Strict):
     retrieval: RetrievalCfg
     verdict: VerdictCfg
@@ -412,6 +447,20 @@ class AppConfig(_Strict):
     postgres: PostgresCfg
     mcp_integrations: McpIntegrationsCfg
     categories: dict[str, CategoryCfg]
+    aliases: dict[str, AliasCfg] = {}
+
+    # one alias naming two technologies leaves the search to guess which one the question meant
+    @field_validator("aliases")
+    @classmethod
+    def _one_owner_per_alias(cls, value: dict) -> dict:
+        owners: dict[str, set] = {}
+        for name, entry in value.items():
+            for alias in entry.aliases:
+                owners.setdefault(alias, set()).add(name)
+        shared = {alias: sorted(names) for alias, names in owners.items() if len(names) > 1}
+        if shared:
+            raise ValueError(f"an alias names one technology, these name several: {shared}")
+        return value
 
 
 # the roles a stand cannot answer without: a layer dropping one fails at load; the rest are optional
@@ -507,5 +556,11 @@ settings = _load(CONFIG_PATH, CONFIG_OVERLAY)
 KEYWORD_SWITCHES = tuple(KeywordCfg.model_fields)
 
 
+# the dictionary's digest rides with the switch, so two runs on two dictionaries do not read as one setting
 def keyword_switches() -> dict:
-    return settings.retrieval.keyword.model_dump()
+    switches = settings.retrieval.keyword.model_dump()
+    if switches["aliases"]["enabled"]:
+        import query_aliases
+
+        switches["aliases"]["digest"] = query_aliases.digest()
+    return switches

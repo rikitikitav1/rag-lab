@@ -62,6 +62,13 @@ def build_vector_index(options: dict) -> None:
     _report_depth()
 
 
+@register("count_terms")
+def count_terms(options: dict) -> dict:
+    import term_frequencies
+
+    return term_frequencies.refresh(options.get("variant") or config.settings.corpus.variant)
+
+
 # indexing moves the depth, and a person runs the preflight, so it is read here
 def _report_depth() -> None:
     import search_depth

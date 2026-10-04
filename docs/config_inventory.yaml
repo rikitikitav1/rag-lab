@@ -42,9 +42,18 @@ config:
     class: setting
   retrieval.keyword.translation.enabled:
     class: setting
-    how: off until its A/B on Russian questions; the Russian-sources row must not fall
+    how: on beside the question's words (owner 04.10); full retrieval run, ru 0.737 to 0.837, Russian-sources row 0.871 to 0.957 (datasets/measurements/arc7_keyword_full.json)
   retrieval.keyword.translation.model_dir:
     class: setting
+  retrieval.keyword.translation.replaces:
+    class: setting
+    how: off; replacing the question's words read ru 0.849 but Russian books 0.871 to 0.671 (datasets/measurements/arc7_keyword_full.json)
+  retrieval.keyword.aliases.enabled:
+    class: setting
+    how: off until the jargon subset measures it (owner 04.10)
+  retrieval.keyword.max_term_share:
+    class: setting
+    how: 0.05 (owner 04.10); at 0.05 a 100-pair probe kept every hit and cut the search threefold; en->ru 0.514 to 0.300 under or, open
   retrieval.ef_search:
     class: setting
   retrieval.filtered_scan:
@@ -318,6 +327,9 @@ config:
   categories:
     class: setting
     how: owner decision 26.09, the coverage map's rows; named categories, not technologies, 27.09
+  aliases:
+    class: setting
+    how: a question's jargon per technology, keyed as the categories; draft by the owner and Sonnet 04.10, `unsure` rows stay out of the search
   engines.ollama.name:
     class: seed
     note: seeded into the engine rows
@@ -963,6 +975,12 @@ constant:
   app/outcomes.py:RULE:
     class: code
     note: the outcome rule a stored row is read by
+  app/corpus_keys.py:TERM_SHARE_FLOOR:
+    class: code
+  app/query_aliases.py:_TOKEN:
+    class: code
+  app/query_aliases.py:_CYRILLIC:
+    class: code
   app/query_translation.py:_KEPT:
     class: code
   app/query_translation.py:_CYRILLIC:

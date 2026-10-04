@@ -60,8 +60,8 @@ def config_keys() -> dict[str, str]:
         if isinstance(value, BaseModel):
             for name in type(value).model_fields:
                 walk(getattr(value, name), path + [name])
-        # the coverage map is data, one key: its rows are named in `notes`, not judged one by one
-        elif isinstance(value, dict) and value and path != ["categories"]:
+        # the coverage map and the alias dictionary are data, one key each: their rows are not judged one by one
+        elif isinstance(value, dict) and value and path not in (["categories"], ["aliases"]):
             for k, v in value.items():
                 walk(v, path + [str(k)])
         elif isinstance(value, list) and value and all(isinstance(v, BaseModel) for v in value):

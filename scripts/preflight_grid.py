@@ -551,6 +551,22 @@ def keyword_switches_match_the_worker() -> tuple[bool, str]:
     return ok, f"keyword switches: worker {live}, last run {logged}"
 
 
+# the rare cut reads each word's share of the variant's chunks; counted before a reindex, it cuts by stale shares
+def term_frequencies_are_current() -> tuple[bool, str]:
+    out = _in_worker(
+        "import json, config, term_frequencies;"
+        " k = config.settings.retrieval.keyword; v = config.settings.corpus.variant;"
+        " s = k.max_term_share;"
+        " print(json.dumps({'share': s, 'stale': term_frequencies.stale(v) if s else None}))"
+    )
+    said = json.loads(out) if out.startswith("{") else None
+    if said is None:
+        return False, "term frequencies: cannot read"
+    if not said["share"]:
+        return True, "term frequencies: the rare cut is off"
+    return said["stale"] is None, f"term frequencies: {said['stale'] or 'current'} (max_term_share {said['share']})"
+
+
 # asked of the worker rather than written twice; `marks_are_reachable` blocks on these sets
 @lru_cache(maxsize=1)
 def criterion_sets() -> tuple[str, ...]:
@@ -646,6 +662,7 @@ CHECKS = (
     one_question_per_original,
     every_variant_cuts_into_its_own_rows,
     keyword_switches_match_the_worker,
+    term_frequencies_are_current,
     marks_are_reachable,
     index_is_alive,
 )

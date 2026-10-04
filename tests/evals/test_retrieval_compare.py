@@ -291,8 +291,10 @@ def test_every_axis_measure_applies_has_a_rule_and_a_message():
              "distance_threshold", "rerank_top", "source"}
     unapplied = {k for k in knobs if k not in taken} - {"ef_search"}
     assert not unapplied, f"an axis measure cannot apply is a knob nobody turns: {unapplied}"
-    assert set(rc.AXIS_RULES) == knobs
-    assert set(rc.AXIS_LIMITS) == knobs
+    # the keyword switches reach the search through config, set by keyword_settings around measure
+    keyword = {"keyword_query", "keyword_translation", "max_term_share", "keyword_aliases"}
+    assert set(rc.AXIS_RULES) == knobs | keyword
+    assert set(rc.AXIS_LIMITS) == knobs | keyword
 
 
 def test_a_pool_of_nothing_cannot_disarm_the_instrument_that_reports_a_capped_pool(client):
@@ -408,3 +410,43 @@ def test_a_clamped_measure_narrows_to_the_gold_source_and_survives_one_out_of_se
     monkeypatch.setattr(retrieval_compare.db, "section_exists", lambda *a, **kw: False)
     rows = retrieval_compare.measure(_Searcher(), None, "s", "v", 10, True, clamped=True)
     assert asked == [("kept",), ("gone",)] and [r["file_rank"] for r in rows] == [None, None]
+
+
+# the search reads its keyword switches from config, so an arm sets them for its measuring and puts them back
+def test_an_arm_names_its_keyword_switches_and_leaves_the_config_as_it_found_it():
+    import config
+    from use_cases import retrieval_compare
+
+    kw = config.settings.retrieval.keyword
+    before = config.keyword_switches()
+    arm = {"keyword_query": "or", "keyword_translation": "replaces", "max_term_share": 0.05, "keyword_aliases": True}
+    with retrieval_compare.keyword_settings(arm):
+        set_now = (kw.query, kw.translation.enabled, kw.translation.replaces, kw.max_term_share, kw.aliases.enabled)
+        assert set_now == ("or", True, True, 0.05, True)
+    assert config.keyword_switches() == before
+    recorded = retrieval_compare.arm_procedure(arm, [], "s")["keyword"]
+    assert recorded["query"] == "or" and recorded["translation"]["replaces"] and recorded["max_term_share"] == 0.05
+    assert recorded["aliases"]["enabled"] and len(recorded["aliases"]["digest"]) == 12
+    assert not retrieval_compare.AXIS_RULES["max_term_share"](0.0005), "below the table's floor reads every word rare"
+    assert not retrieval_compare.AXIS_RULES["keyword_translation"]("on")
+
+
+# a loser on the full set is pinned to the dictionary entry that fired on its question
+def test_a_measured_row_names_the_aliases_that_fired_on_its_question(monkeypatch):
+    import config
+    from use_cases import retrieval_compare
+
+    class _Searcher:
+        def hybrid_search(self, question, emb, scope, **kw):
+            return []
+
+    monkeypatch.setattr(config.settings.retrieval.keyword.aliases, "enabled", True)
+    monkeypatch.setattr(config.settings, "aliases", {"k": config.AliasCfg(canonical="Kubernetes", aliases=["k8s"])})
+    questions = [{"id": i, "original_text": text, "emb": "[0]", "embedded_by": "m", "marked_sources": [],
+                  "gold": {"file": "a/b.md", "section": "A"}, "gold_heading": None}
+                 for i, text in ((1, "Поды в k8s"), (2, "Поды в Kubernetes"))]
+    monkeypatch.setattr(retrieval_compare, "questions", lambda conn, set_name, limit, ids=None: questions)
+    monkeypatch.setattr(retrieval_compare.db, "section_exists", lambda *a, **kw: False)
+    monkeypatch.setattr(retrieval_compare, "assert_pool", lambda *a: None)
+    rows = retrieval_compare.measure(_Searcher(), None, "s", "v", 10, True)
+    assert [retrieval_compare._keep(r)["aliases_fired"] for r in rows] == [["k8s=Kubernetes"], None]

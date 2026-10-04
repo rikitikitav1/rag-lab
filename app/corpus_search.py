@@ -2,6 +2,7 @@ from typing import NamedTuple
 
 import config
 import logging_setup
+import query_aliases
 import query_translation
 import search_depth
 import search_scope
@@ -219,9 +220,20 @@ def filtered_scan(scope: Scope, configured: str, older_held: bool = False) -> st
     return configured
 
 
+# candidates hold a rare word of the query and the full query ranks them: ranking every common-word match took a search
+def _rare_cut(text_param: str, config_param: str) -> str:
+    return f"""AND content_tsv @@ coalesce((
+                        SELECT to_tsquery('simple', string_agg(quote_literal(w), ' | '))
+                        FROM unnest(tsvector_to_array(to_tsvector(CAST(:{config_param} AS regconfig), :{text_param}))) w
+                        LEFT JOIN term_frequencies tf ON tf.variant = :variant AND tf.lexeme = w
+                        WHERE coalesce(tf.share, 0) <= :max_term_share
+                    ), q)"""
+
+
 # the third ranking RRF reads: the keyword search over the question's English words, the same shape as the first
-def _translated_branch(mode: str, rank_fn: str, cat_filter: str, src_filter: str) -> str:
+def _translated_branch(mode: str, rank_fn: str, cat_filter: str, src_filter: str, rare: bool) -> str:
     query = _keyword_query_sql(mode, "translated", "translated_config")
+    cut = _rare_cut("translated", "translated_config") if rare else ""
     return f""",
                 keyword_translated AS (
                     SELECT id,
@@ -229,7 +241,7 @@ def _translated_branch(mode: str, rank_fn: str, cat_filter: str, src_filter: str
                                ORDER BY {rank_fn}(content_tsv, q, :keyword_norm) DESC, id
                            ) AS rank
                     FROM data_chunks, {query} q
-                    WHERE content_tsv @@ q {cat_filter} {src_filter}
+                    WHERE content_tsv @@ q {cut} {cat_filter} {src_filter}
                     ORDER BY rank
                     LIMIT :limit_keyword
                 )"""
@@ -257,7 +269,15 @@ def hybrid_search(
     if rank_fn not in RANK_FUNCTIONS:
         raise ValueError(f"keyword_rank must be one of {sorted(RANK_FUNCTIONS)}")
     keyword_query = _keyword_query_sql(retrieval.keyword.query)
-    translated = query_translation.keyword_translation(question)
+    reworded, fired = query_aliases.reword(question)
+    if fired:
+        log.info("keyword.aliases_fired", fired=fired)
+    translated = query_translation.keyword_translation(reworded)
+    # the translation replaces the question's words or ranks beside them; a reworded English question ranks there too
+    keyword_text = translated if translated and retrieval.keyword.translation.replaces else question
+    third = translated if translated and keyword_text == question else (reworded if fired else None)
+    rare = retrieval.keyword.max_term_share > 0
+    cut = _rare_cut("question", "ts_config") if rare else ""
     scope = as_scope(scope)
     refuse_bad_scope(scope, variant)
     cat_filter, cat_params = _scope_filter(scope)
@@ -282,22 +302,26 @@ def hybrid_search(
                                ORDER BY {rank_fn}(content_tsv, q, :keyword_norm) DESC, id
                            ) AS rank
                     FROM data_chunks, {keyword_query} q
-                    WHERE content_tsv @@ q {cat_filter} {src_filter}
+                    WHERE content_tsv @@ q {cut} {cat_filter} {src_filter}
                     ORDER BY rank
                     LIMIT :limit_keyword
-                ){_translated_branch(retrieval.keyword.query, rank_fn, cat_filter, src_filter) if translated else ""}
-                , fused AS (
+                ){_translated_branch(retrieval.keyword.query, rank_fn, cat_filter, src_filter, rare) if third else ""}
+                -- the candidates first: joining the branches onto the whole table read every chunk on every search
+                , candidates AS (
+                    SELECT id FROM vector_search UNION SELECT id FROM keyword_search
+                    {"UNION SELECT id FROM keyword_translated" if third else ""}
+                ), fused AS (
                     SELECT d.id, d.source_id, d.content, d.source, d.category, d.chunk_index,
                            CASE WHEN {SHARED_BODY_SQL.replace("c.", "d.")} THEN d.content_hash END AS content_hash,
                            v.rank AS vector_rank, k.rank AS keyword_rank, v.distance AS distance,
                         COALESCE(1.0/(:rrf_k + v.rank), 0) + COALESCE(1.0/(:rrf_k + k.rank), 0)
-                        {"+ COALESCE(1.0/(:rrf_k + t.rank), 0)" if translated else ""} AS score,
-                           d.section, d.versions, {"t.rank" if translated else "NULL::int"} AS translated_rank
-                    FROM data_chunks d
+                        {"+ COALESCE(1.0/(:rrf_k + t.rank), 0)" if third else ""} AS score,
+                           d.section, d.versions, {"t.rank" if third else "NULL::int"} AS translated_rank
+                    FROM candidates c
+                    JOIN data_chunks d ON d.id = c.id
                     LEFT JOIN vector_search v ON d.id = v.id
                     LEFT JOIN keyword_search k ON d.id = k.id
-                    {"LEFT JOIN keyword_translated t ON d.id = t.id" if translated else ""}
-                    WHERE v.id IS NOT NULL OR k.id IS NOT NULL {"OR t.id IS NOT NULL" if translated else ""}
+                    {"LEFT JOIN keyword_translated t ON d.id = t.id" if third else ""}
                 ), ranked AS (
                     SELECT *, row_number() OVER (
                         PARTITION BY source_id, coalesce(content_hash, id::text) ORDER BY score DESC, id
@@ -316,18 +340,20 @@ def hybrid_search(
                 """
     params = {
         "embedding": embedding,
-        "question": question,
+        "question": keyword_text,
         "limit_vector": limit_vector,
         "limit_keyword": limit_keyword,
         "limit": limit,
         "distance_threshold": distance_threshold,
         "variant": variant,
         "rrf_k": config.settings.retrieval.rrf_k,
-        "ts_config": text_language.ts_config(question),
+        "ts_config": text_language.ts_config(keyword_text),
         "keyword_norm": retrieval.keyword.norm,
     }
-    if translated:
-        params |= {"translated": translated, "translated_config": text_language.ts_config(translated)}
+    if third:
+        params |= {"translated": third, "translated_config": text_language.ts_config(third)}
+    if rare:
+        params["max_term_share"] = retrieval.keyword.max_term_share
     params |= cat_params
     # an argument that names a switch and does not throw it labelled a run exact at 40
     depth = None if exact else search_depth.resolve(variant, ef_search)

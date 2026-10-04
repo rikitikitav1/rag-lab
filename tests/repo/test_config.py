@@ -35,11 +35,13 @@ def test_the_moved_keys_hold_the_values_they_held_before_the_move():
     # the layout changed and no number did: the old flat names, read at their new places
     s = config._load(str(ROOT / "config.yaml"))
     assert s.retrieval.keyword.model_dump() == {
-        "query": "and",
+        "query": "or",
         "rank": "ts_rank",
         "norm": 0,
         "query_lang": "function_words",
-        "translation": {"enabled": False, "model_dir": "datasets/models/opus-mt-ru-en-ctranslate2"},
+        "translation": {"enabled": True, "model_dir": "datasets/models/opus-mt-ru-en-ctranslate2", "replaces": False},
+        "aliases": {"enabled": False},
+        "max_term_share": 0.05,
     }
     assert (s.retrieval.ef_search, s.retrieval.distance_threshold, s.retrieval.results_limit) == (100, 0.56, 5)
     assert s.verdict.criterion_sets == ["paraphrased_v2_ru", "paraphrased_v2"] and s.verdict.veto_sets == ["veto_v1"]
@@ -62,7 +64,8 @@ def test_the_moved_keys_hold_the_values_they_held_before_the_move():
 
 def test_the_record_names_the_keyword_switches_as_before():
     # a run snapshot writes these names, and a changed one reads as a changed search
-    assert config.KEYWORD_SWITCHES == ("query", "rank", "norm", "query_lang", "translation")
+    assert config.KEYWORD_SWITCHES == ("query", "rank", "norm", "query_lang", "translation", "aliases",
+                                       "max_term_share")
     assert set(config.keyword_switches()) == set(config.KEYWORD_SWITCHES)
 
 

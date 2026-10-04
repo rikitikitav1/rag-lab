@@ -9,6 +9,7 @@ import corpus_search
 import job_queue
 import llm
 import logging_setup
+import query_aliases
 from corpus_keys import HAS_GOLD_SQL, READ_BY_RUNS_SQL, Gold, source_name_of
 from evals.stats import bootstrap_ci, deltas_over, tally
 from gold_match import heading_text, rank_of_exact_section, rank_of_gold, rank_of_section
@@ -238,6 +239,8 @@ def measure(
                 ),
                 "files": files,
                 "sections": [list(s) for s in sections],
+                # the same reword the search made, so a loser is pinned to the dictionary entry that fired
+                "aliases_fired": query_aliases.reword(q["original_text"])[1] or None,
             }
         )
     return out
@@ -350,6 +353,10 @@ AXIS_RULES = {
     "distance_threshold": lambda v: isinstance(v, int | float) and not isinstance(v, bool) and 0 <= v <= 2,
     "source": lambda v: isinstance(v, str) and bool(v),
     "variant": lambda v: isinstance(v, str) and v in config.settings.corpus.variants,
+    "keyword_query": lambda v: v in ("and", "or"),
+    "keyword_translation": lambda v: v in TRANSLATION_MODES,
+    "max_term_share": lambda v: isinstance(v, int | float) and not isinstance(v, bool) and (v == 0 or 0.001 <= v <= 1),
+    "keyword_aliases": lambda v: isinstance(v, bool),
 }
 AXIS_LIMITS = {
     "ef_search": "a whole number 1..1000 (what hnsw.ef_search accepts)",
@@ -359,7 +366,39 @@ AXIS_LIMITS = {
     "distance_threshold": "a number 0..2",
     "source": "a non-empty name",
     "variant": "a variant declared in config",
+    "keyword_query": "and or or",
+    "keyword_translation": "off, beside or replaces",
+    "max_term_share": "0 (off) or a share 0.001..1",
+    "keyword_aliases": "true or false",
 }
+
+
+TRANSLATION_MODES = ("off", "beside", "replaces")
+
+
+# the keyword switches an arm names, set for its measuring only: the search reads them from config
+@contextlib.contextmanager
+def keyword_settings(arm: dict):
+    kw = config.settings.retrieval.keyword
+    was = (kw.query, kw.translation.enabled, kw.translation.replaces, kw.max_term_share, kw.aliases.enabled)
+    mode = arm.get("keyword_translation")
+    try:
+        if "keyword_query" in arm:
+            object.__setattr__(kw, "query", arm["keyword_query"])
+        if mode is not None:
+            object.__setattr__(kw.translation, "enabled", mode != "off")
+            object.__setattr__(kw.translation, "replaces", mode == "replaces")
+        if "max_term_share" in arm:
+            object.__setattr__(kw, "max_term_share", arm["max_term_share"])
+        if "keyword_aliases" in arm:
+            object.__setattr__(kw.aliases, "enabled", arm["keyword_aliases"])
+        yield
+    finally:
+        object.__setattr__(kw, "query", was[0])
+        object.__setattr__(kw.translation, "enabled", was[1])
+        object.__setattr__(kw.translation, "replaces", was[2])
+        object.__setattr__(kw, "max_term_share", was[3])
+        object.__setattr__(kw.aliases, "enabled", was[4])
 
 
 # derived, not listed: an axis cannot be admitted without a rule saying what it may hold
@@ -375,6 +414,7 @@ def _keep(row: dict) -> dict:
         "section_scorable": row["section_scorable"],
         "repo": row.get("repo"),
         "gold_by_keyword_in_pool": row.get("gold_by_keyword_in_pool"),
+        "aliases_fired": row.get("aliases_fired"),
     }
 
 
@@ -393,7 +433,8 @@ COMPARABLE = (
 # absent is not a difference: it is the value the run had before anyone wrote it down
 ABSENT_MEANS = {"rerank_top": 0}
 # two arms may differ in the axis of record and nothing else; `ef_search` names differ
-AXIS_FIELD = {"ef_search": "search"}
+AXIS_FIELD = {"ef_search": "search", "keyword_query": "keyword", "keyword_translation": "keyword",
+              "max_term_share": "keyword", "keyword_aliases": "keyword"}
 
 
 def comparable(before, after) -> list[tuple]:
@@ -404,6 +445,11 @@ def comparable(before, after) -> list[tuple]:
         for now in [after.get(field, ABSENT_MEANS.get(field))]
         if was != now
     ]
+
+
+def _switches_of(arm: dict) -> dict:
+    with keyword_settings(arm):
+        return config.keyword_switches()
 
 
 # the shape the script's report writes, so one instrument reads a record and a file
@@ -420,7 +466,7 @@ def arm_procedure(arm: dict, rows: list[dict], dataset: str) -> dict:
         "limit_keyword": arm.get("limit_keyword", CANDIDATES),
         "distance_threshold": arm.get("distance_threshold", NO_THRESHOLD),
         "source": arm.get("source"),
-        "keyword": config.keyword_switches(),
+        "keyword": _switches_of(arm),
         "questions": len(rows),
         "questions_hash": ids_hash(r["id"] for r in rows),
         # descriptive, never compared: what cut these rows is not recoverable from them
@@ -491,21 +537,22 @@ def run(experiment) -> dict:
                 raise RuntimeError(f"comparison cancelled after {len(measured)} arms")
             name = arm_name(arm)
             exact, ef = depth_of(arm)
-            rows = measure(
-                corpus_search,
-                conn,
-                experiment.dataset,
-                arm.get("variant") or config.settings.corpus.variant,
-                experiment.sample_size or 10**6,
-                exact=exact,
-                ef=ef,
-                limit_keyword=arm.get("limit_keyword", CANDIDATES),
-                limit_vector=arm.get("limit_vector", CANDIDATES),
-                distance_threshold=arm.get("distance_threshold", NO_THRESHOLD),
-                rerank_top=arm.get("rerank_top", 0),
-                question_ids=experiment.question_ids,
-                source=arm.get("source"),
-            )
+            with keyword_settings(arm):
+                rows = measure(
+                    corpus_search,
+                    conn,
+                    experiment.dataset,
+                    arm.get("variant") or config.settings.corpus.variant,
+                    experiment.sample_size or 10**6,
+                    exact=exact,
+                    ef=ef,
+                    limit_keyword=arm.get("limit_keyword", CANDIDATES),
+                    limit_vector=arm.get("limit_vector", CANDIDATES),
+                    distance_threshold=arm.get("distance_threshold", NO_THRESHOLD),
+                    rerank_top=arm.get("rerank_top", 0),
+                    question_ids=experiment.question_ids,
+                    source=arm.get("source"),
+                )
             measured[name] = rows
             summary[name] = {level: summarise(rows, level) for level in ("file", "section")}
             kept[name] = [_keep(row) for row in rows]

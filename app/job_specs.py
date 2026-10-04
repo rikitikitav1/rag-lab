@@ -401,6 +401,11 @@ class BuildVectorIndex(Spec):
     variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
 
 
+# the share of chunks holding each word, which the keyword search's rare cut reads
+class CountTerms(Spec):
+    variant: str | None = Field(default=None, pattern=VARIANT_RE.pattern)
+
+
 class EmbedQuestions(Spec):
     pass
 
@@ -421,6 +426,7 @@ SPECS: dict[str, type[Spec]] = {
     "onboard_source": OnboardSource,
     "probe_intake": ProbeIntake,
     "build_vector_index": BuildVectorIndex,
+    "count_terms": CountTerms,
     "embed_questions": EmbedQuestions,
     "eval_run": EvalRun,
     "judge_answers": JudgeAnswers,
@@ -466,6 +472,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "probe_intake": (),
     "embed_questions": (Role.embedding,),
     "build_vector_index": (),
+    "count_terms": (),
     "analyze_source": (),
     "eval_run": (Role.generation, Role.embedding, Role.reranking),
     "compare_retrieval": (Role.reranking,),
