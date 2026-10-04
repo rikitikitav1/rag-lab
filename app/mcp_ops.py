@@ -955,6 +955,29 @@ def remove_question_set(
 
 
 @mcp_ops.tool(
+    name="set_role",
+    description=(
+        "Move a role that runs on a cloud broker to another model on a cloud broker (gonka, neuraldeep, groq), "
+        "e.g. when a broker refuses its key. The broker is asked whether it serves the model, the model is "
+        "registered if new and checked for the role's job first. A role on a local engine (ollama, vllm) is "
+        "refused: it holds the card and is a person's to move. Answers the role, the model and what it replaced."
+    ),
+)
+def set_role(
+    role: Annotated[str, Field(description="The role, e.g. questioning.")],
+    model: Annotated[str, Field(description="The model's name as the broker lists it.")],
+    engine: Annotated[str, Field(description="The cloud broker's engine name.")],
+    anyway: Annotated[bool, Field(description="Seat it even if the fitness check refuses.")] = False,
+) -> dict:
+    from use_cases import cloud_roles
+
+    try:
+        return cloud_roles.seat(role, model, engine, anyway)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
+
+
+@mcp_ops.tool(
     name="raw_text",
     description=(
         "A source's converted markdown before the cut, the text its verdict was read on. With no file: the run's "

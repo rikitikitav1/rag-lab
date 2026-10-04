@@ -68,7 +68,7 @@ def code_lines_of(settings: dict, path: Path, result: dict, rule) -> tuple[str, 
     )
     goes_on = docling_structure.continued(result["structure"])["table"]
     markdown, counts["tables_joined"] = piece_join.join_tables(markdown, goes_on)
-    outline = route.outline(path)
+    outline = route.outline(path) or (route.contents_outline(path) if rule.contents_outline else [])
     titles = [title for _, title, _ in outline]
     markdown, counts["fenced"] = code_lines.fence_mono(
         markdown, result["structure"], path, route.mono_names(rule), titles, spread=spread, rows_by=rows_by

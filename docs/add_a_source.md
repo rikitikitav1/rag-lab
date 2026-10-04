@@ -38,7 +38,7 @@ Every step has a REST route and an MCP tool of the `rag-lab-ops` server ([mcp.md
 
 ![The path from declaration to a measured number, in three lanes: person, agent through MCP, stand through jobs](diagrams/intake_path.drawio.svg)
 
-The same path as one sequence for an agent; the sections below say what each step decides. Each `enqueue_job` answers a job id: read it with `job` until it is `done` rather than waiting in a loop, and read a failed one's `error` before queuing anything after it.
+The same path as one sequence for an agent; the sections below say what each step decides. Each `enqueue_job` answers a job id. Wait for it with `scripts/wait_jobs.py <id>` in the worker (it returns when the job ends) and read it once with `job`; read a failed one's `error` before queuing anything after it. `enqueue_job(..., dry_run=true)` names the model and engine each role of the job would call; a role on a cloud broker that refuses its key moves with `set_role`.
 
 | # | call | what to read in the answer |
 |---|---|---|
@@ -49,6 +49,7 @@ The same path as one sequence for an agent; the sections below say what each ste
 | 5 | `enqueue_job(type="index_data", options={"source": "<name>", "variant": "<served variant>"})` | `lower_copies_dropped` and chunks in the job's result |
 | 6 | `set_source_active(name="<name>", active=true)` | the source answers in search from here; a run over a source left off is refused |
 | 7 | `enqueue_job(type="generate_questions", options={"source": "<name>", "set_name": "<set>"})`, then `accept_questions`, `judge_questions`, `anchor_questions` with the same options, each after the one before is `done` (none queues the next; generation queues `embed_questions` itself) | the pairs kept, refused and left open per job |
+| 7b | `enqueue_job(type="source_gate", options={"source": "<name>", "set_name": "<set>"})` | the set's `hit@5` clamped to the source and open over the corpus against `intake.quality.source_gate`, and the next step: `clamped_low` is the agent's (a knob, or the questions regenerated once into a new set), `open_low` waits for the owner, `too_few` reads nothing |
 | 8 | `preregister(name="<promise>", ...)`, then `python scripts/preflight_grid.py` in the worker ([preflight.md](preflight.md), no MCP tool) | the promise, written before the run; the preflight's failures, each against its known reason |
 | 9 | `enqueue_job(type="eval_run", options={"run_name": "<run>", "set_name": "<set>", "prereg": "<promise>", "purpose": "closing", "judge": false})`; a measurement with no promise leaves out `prereg` and `purpose` | the job id; a taken run name, a set with nothing accepted or a gold in a source left off are refused |
 | 10 | `run_metrics(run_name="<run>")`, then `close_preregistration(name="<promise>", runs={"arm": "<run>"})` | `hit_at_k` with `n`, and the promise read against its bar |

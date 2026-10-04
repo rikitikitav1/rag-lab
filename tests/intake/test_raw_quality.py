@@ -172,3 +172,30 @@ def test_the_raw_report_reads_a_source_through_its_own_reader(tmp_path):
                                      "skip_when_frontmatter": {"category": "Hidden"}})
     read_as = onboard._own_reader(sheets)
     assert read_as is not None and read_as(hidden, "hidden.md") == ""
+
+
+# a heading under seven hashes is text to the chunker: the chapter it opens is lost, and the gate says so under ok
+def test_a_chapter_holding_headings_past_six_levels_breaches():
+    body = " ".join(["Слово текста главы про данные."] * 40)
+    markdown = f"# Book\n\n## One\n\n{body}\n\n####### ГЛАВА 2\n\n{body}\n\n####### Раздел\n\n{body}"
+    rows = raw_quality.section_rows(markdown, "book.md")
+    lost = [r for r in rows if r["headings_past_six"]]
+    assert lost and lost[0]["headings_past_six"] == 2 and "headings_past_six.found" in lost[0]["breached"]
+    clean = raw_quality.section_rows(f"# Book\n\n## One\n\n{body}\n\n###### Deep\n\n{body}", "book.md")
+    assert all(not r["headings_past_six"] and "headings_past_six.found" not in r["breached"] for r in clean)
+
+
+
+# a long chapter with next to no section inside lost its headings; the same length under headings is a chapter
+def test_a_long_chapter_with_no_sections_inside_is_flat_and_one_with_sections_is_not(monkeypatch):
+    import config
+
+    monkeypatch.setattr(config.settings.ingest_quality.measure, "flat_min_chunks", 6)
+    def para(i: int) -> str:
+        return " ".join(f"Слово {i} главы {j} о хранилищах данных номер {i * j}." for j in range(30))
+
+    flat = raw_quality.section_rows("# Book\n\n## One\n\n" + "\n\n".join(para(i) for i in range(12)), "book.md")
+    assert any("structure.flat" in r["breached"] for r in flat)
+    parts = "\n\n".join(f"### Part {i}\n\n{para(i)}" for i in range(12))
+    sectioned = raw_quality.section_rows(f"# Book\n\n## One\n\n{parts}", "book.md")
+    assert not any("structure.flat" in r["breached"] for r in sectioned)

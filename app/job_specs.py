@@ -312,6 +312,11 @@ class QuestionVariant(BaseModel):
     original_text: str = Field(min_length=1, max_length=2000)
 
 
+class SourceGate(Spec):
+    source: str = Field(pattern=SOURCE_NAME)
+    set_name: SetName
+
+
 # accepted questions reworded outside (a jargon subset): a new set, each row under its original's gold
 class LoadVariants(Spec):
     set_name: SetName
@@ -433,6 +438,7 @@ SPECS: dict[str, type[Spec]] = {
     "save_questions": SaveQuestions,
     "load_questions": LoadQuestions,
     "load_variants": LoadVariants,
+    "source_gate": SourceGate,
     "build_veto_set": BuildVetoSet,
     "index_data": IndexData,
     "convert_source": ConvertSource,
@@ -477,6 +483,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "save_questions": (),
     "load_questions": (),
     "load_variants": (),
+    "source_gate": (),
     "build_veto_set": (Role.paraphrasing,),
     "index_data": (Role.embedding,),
     # the converter is an engine, not a role: the handler takes the card for it

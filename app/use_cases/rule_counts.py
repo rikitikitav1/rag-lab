@@ -25,7 +25,7 @@ ALWAYS = (
 # knobs that set how a step works or which route a file takes, not a rule that edits the markdown by itself
 NOT_RULES = frozenset(
     {"splice_tables", "headings_by_number", "listing_callouts", "mono_by_step", "html_one_title", "join_layer_hyphens",
-     "epub_chapters"}
+     "epub_chapters", "contents_outline"}
 )
 COUNTERS = (*ALWAYS, *KNOB_COUNTERS.values())
 

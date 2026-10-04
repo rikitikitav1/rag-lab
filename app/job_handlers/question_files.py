@@ -67,3 +67,10 @@ def load_variants(options: dict) -> dict:
     if done["questions_written"]:
         job_queue.enqueue("embed_questions", {})
     return done
+
+
+@register("source_gate")
+def source_gate(options: dict) -> dict:
+    from use_cases import source_gate as gate
+
+    return gate.run(options["source"], options["set_name"])

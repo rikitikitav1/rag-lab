@@ -79,6 +79,8 @@ def board(variant: str) -> dict:
         line = {"source": r.name, "stage": r.stage, "verdict": said["verdict"], "next": step}
         if knobs := (r.raw or {}).get("knobs_tried") or (r.raw or {}).get("accepted_after_knobs"):
             line["knobs_tried"] = len(knobs)
+        if gate := (r.raw or {}).get("gate"):
+            line["gate"] = gate.get("verdict")
         if who == A_PERSON:
             share = max((said["bad_share"] or {}).values(), default=None)
             line |= {"bad_share": share, "reasons": _top(said["reasons"])}
@@ -133,6 +135,8 @@ def trail(name: str) -> dict | None:
         "accepted_despite": (row.raw or {}).get("accepted_despite"),
         # the knobs an agent set since the first verdict, with the verdict each one met
         "knobs_tried": (row.raw or {}).get("knobs_tried") or (row.raw or {}).get("accepted_after_knobs"),
+        # the source's own questions read against it: clamped and open hit@5, n and the next step
+        "gate": (row.raw or {}).get("gate"),
         "candidate_waits": bool((row.raw or {}).get("candidate")),
         "chunks_by_variant": per_variant,
         "drift": files.drift(row.name, row.indexed_with, row.declaration).get("moved"),

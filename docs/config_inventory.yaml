@@ -160,6 +160,12 @@ config:
     class: setting
   ingest_quality.soft_gates.size_cut:
     class: setting
+  ingest_quality.measure.flat_min_chunks:
+    class: setting
+    how: calibrated 04.10 on 217 sources, 11 of 15 suspected caught, the 4 missed have 20 to 99 sections a chapter (not flat)
+  ingest_quality.measure.flat_max_sections:
+    class: setting
+    how: distinct section paths plus heading lines kept inside its chunks; 3 lifts pg-partman and readings over 0.2
   ingest_quality.soft_gates.soup:
     class: setting
   ingest_quality.soft_gates.code_only:
@@ -219,6 +225,9 @@ config:
     class: setting
   intake.route.code_row_rules:
     class: setting
+  intake.route.contents_outline:
+    class: setting
+    how: a source knob, off; seen on one control book whose PDF has no bookmarks (04.10)
   intake.route.outline_levels:
     class: setting
   intake.route.html_one_title:
@@ -273,6 +282,15 @@ config:
     class: setting
   intake.quality.auto_accept_ok:
     class: setting
+  intake.quality.source_gate.clamped_min:
+    class: setting
+    how: owner decision 04.10 (auditor straw man), clamped was about 0.93 on the big set
+  intake.quality.source_gate.open_min:
+    class: setting
+    how: owner decision 04.10, 0.75 like the closing bar
+  intake.quality.source_gate.min_questions:
+    class: setting
+    how: auditor round 194, 28 questions gave a band of about 0.17
   intake.quality.agent_knob_rounds:
     class: setting
     how: owner decision 04.10, three rounds of an agent's own knobs on one source before a person decides
@@ -981,6 +999,23 @@ constant:
     note: the outcome rule a stored row is read by
   app/corpus_keys.py:TERM_SHARE_FLOOR:
     class: code
+  app/use_cases/source_gate.py:HIT_DEPTH:
+    class: code
+    note: the closing column, hit at 5
+  app/use_cases/route.py:CONTENTS_PAGES:
+    class: code
+    note: a book's contents sit in its first pages; past them a leader line is an index
+  app/use_cases/route.py:_CONTENTS_LINE:
+    class: code
+  app/use_cases/route.py:_PART:
+    class: code
+  app/use_cases/route.py:_CHAPTER:
+    class: code
+  app/use_cases/raw_quality.py:_HEADING:
+    class: code
+  app/use_cases/raw_quality.py:_PAST_SIX:
+    class: code
+    note: markdown has six heading levels; seven hashes is a heading read as text
   app/use_cases/raw_text.py:MAX_CHARS:
     class: code
     note: one chapter fits an agent's window, a whole book does not

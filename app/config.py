@@ -215,6 +215,9 @@ class MeasureRulesCfg(_Strict):
     boilerplate_file_share: float
     boilerplate_min_files: int
     min_breaching_chunks: int
+    # a chapter of at least this many chunks with at most that many sections inside is flat: its headings were lost
+    flat_min_chunks: int = Field(ge=1)
+    flat_max_sections: int = Field(ge=1)
     soup_alnum_ratio: float
     prose_word_letters: int
 
@@ -248,6 +251,7 @@ class RouteCfg(_Strict):
     mono_by_step: bool
     code_row_rules: list[Literal["run_on", "once", "numbers"]]
     outline_levels: bool
+    contents_outline: bool
     html_one_title: bool
     numbered_levels: bool
     decode_entities: bool
@@ -275,6 +279,13 @@ SHAPE_NO_PIECE = ("suspect_min_words", "epub_skip")
 SOURCE_KNOBS = tuple(name for name in RouteCfg.model_fields if name not in STAND_ONLY)
 
 
+# a source's own questions read against it after they are accepted, clamped to it and open over the corpus
+class SourceGateCfg(_Strict):
+    clamped_min: float = Field(ge=0, le=1)
+    open_min: float = Field(ge=0, le=1)
+    min_questions: int = Field(ge=1)
+
+
 class RawQualityCfg(_Strict):
     output_share_min: float
     output_share_max: float
@@ -285,6 +296,7 @@ class RawQualityCfg(_Strict):
     auto_accept_ok: bool
     # rounds of existing knobs an agent tries on one source; past them a person approves a new knob or refuses it
     agent_knob_rounds: int = Field(ge=0)
+    source_gate: SourceGateCfg
 
 
 class IntakeCfg(_Strict):

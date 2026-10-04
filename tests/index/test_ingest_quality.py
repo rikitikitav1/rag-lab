@@ -330,3 +330,4 @@ def test_every_share_a_gate_reads_brings_the_count_it_was_taken_over():
     shares = set(HARD) | set(SOFT)
 
     assert shares <= set(m.denominators)
+

@@ -1,4 +1,5 @@
 import re
+import statistics
 import unicodedata
 from collections import Counter
 from contextlib import closing
@@ -95,6 +96,54 @@ def outline(path: Path) -> list[tuple[int, str, int | None]]:
         return entries
     finally:
         document.close()
+
+
+# a printed contents line: its title, a dot leader and the printed page it points to
+_CONTENTS_LINE = re.compile(r"^(?P<title>.*?\S)\s*(?:\.\s?){4,}\s*(?P<page>\d{1,4})\s*$")
+_PART = re.compile(r"^(часть|part)\s+[\divxlc]+\b", re.IGNORECASE)
+_CHAPTER = re.compile(r"^(глава|chapter)\s+\d+", re.IGNORECASE)
+# contents sit in a book's first pages; past them a leader line is an index
+CONTENTS_PAGES = 40
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.findall(r"\w+", unicodedata.normalize("NFKC", text).lower()))
+
+
+def _depth(title: str) -> int:
+    return 1 if _PART.match(title) else 2 if _CHAPTER.match(title) else 3
+
+
+# a book with no bookmarks but a printed contents: its lines as an outline, the printed pages moved to the file's
+def contents_outline(path: Path) -> list[tuple[int, str, int | None]]:
+    texts = layer_texts(path) if path.suffix.lower() == ".pdf" else []
+    entries, seen = [], set()
+    for i, text in enumerate(texts[:CONTENTS_PAGES]):
+        for line in text.splitlines():
+            if not (m := _CONTENTS_LINE.match(line.strip())):
+                continue
+            title = " ".join(m.group("title").split()).strip("|").strip()
+            key = (_plain(title), int(m.group("page")))
+            if key[0] and key not in seen:
+                seen.add(key)
+                entries.append((_depth(title), title, int(m.group("page")), i))
+    if len(entries) < 5:
+        return []
+    last = max(i for *_, i in entries)
+    pages = [_plain(t) for t in texts]
+    # the file's page of each chapter title found past the contents, against its printed page: their usual gap
+    gaps = []
+    for depth, title, printed, _ in entries:
+        want = _plain(title)
+        if depth > 2 or not want:
+            continue
+        found = next((j for j in range(last + 1, len(pages)) if want in pages[j]), None)
+        if found is not None:
+            gaps.append(found + 1 - printed)
+    if not gaps:
+        return []
+    gap = statistics.median_low(gaps)
+    return [(depth, title, printed + gap) for depth, title, printed, _ in entries]
 
 
 def outline_titles(path: Path) -> list[str]:

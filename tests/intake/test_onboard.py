@@ -34,8 +34,7 @@ def test_a_run_is_cut_into_pieces_of_the_settings_size(tmp_path, monkeypatch):
 
     planned = onboard.reading.plan(tmp_path / "a.pdf", names, loaded, STAND)
     assert [(piece, name) for _, piece, name in planned] == [
-        ((1, 50), "docling/default"),
-        ((51, 100), "docling/default"),
+        ((1, 100), "docling/default"),
         ((101, 120), "docling/default"),
     ]
     assert [piece for _, piece, _ in onboard.reading.plan(tmp_path / "a.md", names, loaded, STAND)] == [None]
@@ -150,7 +149,8 @@ def test_the_job_turns_a_declared_folder_into_a_raw_source(tmp_path, monkeypatch
         return [route.Run(None, None, "markdown")]
 
     monkeypatch.setattr(onboard.route, "route", fake_route)
-    monkeypatch.setattr(onboard.route, "seamless_pieces", lambda file, pages, size, rule=None: pieces(*pages, size))
+    # three pieces of fifty pages whatever the stand's size, so one fails and one is partial
+    monkeypatch.setattr(onboard.route, "seamless_pieces", lambda file, pages, size, rule=None: pieces(*pages, 50))
     layers = [f"page {n} words here" for n in range(1, 121)]
     monkeypatch.setattr(onboard.route, "layer_texts", lambda file, rule=None: layers)
     calls = []

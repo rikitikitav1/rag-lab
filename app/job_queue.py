@@ -149,7 +149,22 @@ def dry_run(type: str, options: dict | None = None, queue: str | None = None) ->
     checked = job_specs.check(type, options)
     _check(type, options)
     return {"type": type, "lane": _lane(type, queue),
-            "options": checked.model_dump(exclude_unset=True) if checked is not None else options or {}}
+            "options": checked.model_dump(exclude_unset=True) if checked is not None else options or {},
+            "roles": _seated(type)}
+
+
+# the model each role of the job would call, so a dead broker is seen before a paid job dies on it
+def _seated(type: str) -> dict:
+    import llm
+
+    out = {}
+    for role in job_specs.LOADS.get(type, ()):
+        try:
+            picked = llm.resolve(role)
+            out[str(role)] = {"model": picked.name, "engine": picked.engine.name}
+        except Exception as e:
+            out[str(role)] = {"error": str(e)}
+    return out
 
 
 # a job takes the card in its own turn, so the turn is the job's type, and an old job goes early

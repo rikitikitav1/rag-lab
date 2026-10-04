@@ -98,6 +98,8 @@ The report of every source carries two records:
 
 Each piece is also compared with its own text layer. The report records word F1, the share of text retained, and words that mix writing systems. The chunker's quality checks run on every chapter. A chapter that is a file's root alone has no heading under it, so the coverage gate is not read there; the report counts such chapters as `coverage_by_shape`. If the share of text that breaches a check exceeds the configured limit, the source is marked `bad` and the reasons are recorded. It can still be accepted, but the acceptance reason is saved with it.
 
+Two checks read a chapter's structure, because a book whose headings were lost passed every other check as `ok` (04.10: a 288-page book cut into 17 sections, one of 15 944 words). `headings_past_six.found` breaches a chapter holding a line under seven hashes: Docling writes its sixth level as `#######`, markdown has no such heading, and the chunker reads it as text. `structure.flat` breaches a chapter of at least `flat_min_chunks` chunks (20) with at most `flat_max_sections` sections inside it (2), counting both the section paths and the deeper headings kept inside its chunks (`ingest_quality.measure`; calibrated on 217 sources, `datasets/measurements/flat_gate_calibration.md`). A long chapter with its sections is not flat; a chapter cut by length alone is.
+
 ## Knobs of a source
 
 A source can set its own values over the stand's in `config/intake.yaml`, by `PUT /v1/source/{id}/intake`, the MCP tool `set_source_intake`, or an `intake:` block in its source file, which the seed writes onto its row (the door then refuses that row's knobs) and onboarding reads before the row, so a knob added to the file reaches the next onboarding. Each knob that is off by default exists because one or two books needed it. A knob is tried first on a few pages with the MCP tool `probe_intake`, which reads them with and without it and gives the checker's counts of both.
@@ -116,6 +118,7 @@ A source can set its own values over the stand's in `config/intake.yaml`, by `PU
 | `outline_levels` | step 5 | on | |
 | `code_row_rules` | which code row rules run: `run_on` (a row runs on to the line's end), `once` (a row is given once a page), `numbers` (a listing's line numbers go) | `[run_on, once]` | |
 | `numbered_levels` | in a file with no outline, a numbered heading takes its level from its number | off | |
+| `contents_outline` | a PDF with no bookmarks takes its printed contents (dot-leader lines, «Часть», «Глава» or «Chapter» by pattern) as the outline step 5 levels by | off | Архитектуры данных (control book) |
 | `decode_entities` | `&lt;`, `&gt;`, `&amp;` decoded: before the code rules on the Docling path, after the reading on a path without them (MinerU) | on | |
 | `drop_lone_pipes` | a paragraph that is only `\|` dropped | on | |
 | `unescape_bullets` | a list marker MinerU escapes (`\- item`) unescaped | on | |

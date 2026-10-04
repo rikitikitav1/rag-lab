@@ -103,6 +103,10 @@ def chunker_gates(markdown: str, file: str) -> dict:
 
 
 # the chunker's gates a chapter of a file (`indexed`: the text a source's own reader gives the index), one row each
+_PAST_SIX = re.compile(r"^#{7,}\s", re.MULTILINE)
+_HEADING = re.compile(r"^#{1,6}\s", re.MULTILINE)
+
+
 def section_rows(markdown: str, file: str, waived: frozenset = frozenset(), indexed: str | None = None) -> list[dict]:
     policy = _policy()
     chapters: dict[str | None, list] = {}
@@ -117,8 +121,16 @@ def section_rows(markdown: str, file: str, waived: frozenset = frozenset(), inde
         # a chapter that is the file's root alone has no heading below it by shape, so coverage measures nothing there
         root_only = chapter is None or SECTION_SEP not in chapter
         hard = [g for g in gates["hard"] if not (root_only and g.startswith("section_coverage."))]
-        # a source's declaration waives a gate its shape breaks by nature, as a reference manual's short entries
-        hard, soft = _unwaived(hard, waived), _unwaived(gates["soft"], waived)
+        # a line under seven hashes is a heading the chunker read as text; a declaration may waive a gate by shape
+        past_six = sum(len(_PAST_SIX.findall(s.content or "")) for s in samples)
+        # the cut keeps a deeper heading inside its chunk: a chapter's sections are its paths and the headings it holds
+        sections = len({s.section for s in samples}) + sum(
+            len(_HEADING.findall(s.body if s.body is not None else s.content or "")) for s in samples)
+        # a long chapter with next to no section inside lost its headings; long sections under headings are fine
+        rules = config.settings.ingest_quality.measure
+        flat = len(samples) >= rules.flat_min_chunks and sections <= rules.flat_max_sections
+        found = ["headings_past_six.found"] * bool(past_six) + ["structure.flat"] * flat
+        hard, soft = _unwaived(hard, waived), _unwaived(gates["soft"] + found, waived)
         unread = [g for g in gates["hard"] + gates["soft"] if g.split(".")[0] in waived]
         changed = hard != gates["hard"] or soft != gates["soft"]
         verdict = quality.verdict(hard, soft, judged=True) if changed else gates["verdict"]
@@ -128,6 +140,8 @@ def section_rows(markdown: str, file: str, waived: frozenset = frozenset(), inde
                 "section": chapter,
                 "words": len(words(" ".join(s.body if s.body is not None else s.content for s in samples))),
                 **gates["metrics"],
+                "headings_past_six": past_six,
+                "sections_in_chapter": sections,
                 "chunker_verdict": verdict,
                 "breached": hard + soft,
                 **({"waived": unread} if unread else {}),
