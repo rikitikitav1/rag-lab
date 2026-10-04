@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass, field
 
 import agent_tools
 import config
+import corpus_search
 import engines
 import llm
 import logging_setup
@@ -17,20 +18,8 @@ from orchestrators import react as orch_react
 from orm.sync_db import Session
 from sqlalchemy.exc import SQLAlchemyError
 from use_cases import card_wait, chat, grading, run_snapshot
-from use_cases.agent_policy import (
-    GONE,
-    FallbackPolicy,
-    FallbackReason,
-    Gate,
-    GateSignal,
-    Orchestrator,
-    Topic,
-    gates_with_cross_encoder,
-    required_values,
-    signatures,
-)
-
-import db
+from use_cases.agent_policy import Gate, Topic, gates_with_cross_encoder, required_values, signatures
+from vocabulary import GONE, FallbackPolicy, FallbackReason, GateSignal, Orchestrator
 
 log = logging_setup.get_logger(__name__)
 
@@ -328,7 +317,7 @@ def _admissible(question: str, tools: dict, result: AgentResult, ask) -> dict:
 def _topic_score(question: str, variant: str) -> float | None:
     try:
         label, vector = llm.embed_with_label(question)
-        return db.nearest_distance(vector, variant=variant, embedded_by=label)
+        return corpus_search.nearest_distance(vector, variant=variant, embedded_by=label)
     except StandFault:
         raise
     except Exception as e:

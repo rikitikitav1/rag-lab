@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import corpus_search
 import pytest
 from evals import runner
 from use_cases.run_snapshot import ANSWERING
@@ -12,7 +13,7 @@ def _spec(**kw):
 
 
 def _rows(marker, n=3):
-    from db import Hit
+    from corpus_search import Hit
 
     return [
         Hit(f"chunk {marker} {i}", f"{marker}.md", "cat", i, 1, None, 0.1, 0.5, None)
@@ -21,8 +22,8 @@ def _rows(marker, n=3):
 
 
 def _stub_phases(monkeypatch, use_rerank_expected=None):
+    import search_depth
     from conftest import stub_engines
-    from use_cases import search_depth
 
     # the card gate now asks the generator's own engine, and resolving one needs a database
     stub_engines(monkeypatch, runner)
@@ -37,7 +38,7 @@ def _stub_phases(monkeypatch, use_rerank_expected=None):
         runner.llm, "embed_labelled", lambda texts: ("bge-m3@ollama", [[0.1]] * len(texts))
     )
     monkeypatch.setattr(
-        runner.db, "hybrid_search",
+        corpus_search, "hybrid_search",
         lambda text, vector, category, limit, variant, ef_search=None, embedded_by=None: (
             calls.append(("search", text, limit, variant, ef_search)) or _rows(text)
         ),
@@ -117,7 +118,7 @@ def test_cancel_stops_generation_midway(monkeypatch):
 
 
 def _scored_rows(marker, scores):
-    from db import Hit
+    from corpus_search import Hit
 
     return [
         Hit(f"chunk {marker} {i}", f"{marker}.md", "cat", i, 1, None, 0.1, s, None)
@@ -203,7 +204,7 @@ def test_search_failure_skips_one_question(monkeypatch):
             raise RuntimeError("pg down")
         return _rows(text)
 
-    monkeypatch.setattr(runner.db, "hybrid_search", flaky)
+    monkeypatch.setattr(corpus_search, "hybrid_search", flaky)
 
     out, _depth = runner._phase_retrieve(["good", "bad"], _spec(use_rerank=False, k=3))
     assert [text for text, _, _ in out] == ["good"]
@@ -423,15 +424,14 @@ def test_a_stand_fault_ends_the_run_instead_of_one_row(monkeypatch):
     # a lost card or foreign vectors turned into a run `done` with part of its answers
     from engines import card
 
-    import db
 
     calls = _stub_phases(monkeypatch)
 
     def foreign(*a, **kw):
-        raise db.ForeignVectors("variant holds vectors of another embedder")
+        raise corpus_search.ForeignVectors("variant holds vectors of another embedder")
 
-    monkeypatch.setattr(runner.db, "hybrid_search", foreign)
-    with pytest.raises(db.ForeignVectors):
+    monkeypatch.setattr(corpus_search, "hybrid_search", foreign)
+    with pytest.raises(corpus_search.ForeignVectors):
         runner.run_phased(["q1", "q2"], "run", _spec(use_rerank=False, k=2))
     assert not [c for c in calls if c[0] == "generate"]
 
@@ -449,9 +449,9 @@ _FORGIVES_NO_CALL = {
     ("evals/runner.py", "_release"),
     ("job_handlers/judging.py", "_count_the_attempt"),
     ("job_handlers/judging.py", "_merge_guest_scores"),
-    ("job_handlers/judging.py", "_residency"), ("job_handlers/judging.py", "_merge_our_scores"),
+    ("job_handlers/judging.py", "residency_of"), ("job_handlers/judging.py", "_merge_our_scores"),
     ("agent_tools.py", "remote_tools"), ("orchestrators/graph.py", "versions"),
-    ("db.py", "fingerprint_or_none"), ("job_handlers/indexing.py", "index_data"),
+    ("job_handlers/indexing.py", "index_data"),
 }
 # read off the source, not listed: a module that starts calling a model later is guarded from then on
 def _reaches_a_model(app: Path) -> list[str]:

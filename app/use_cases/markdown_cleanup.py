@@ -178,7 +178,7 @@ def without_frontmatter(markdown: str) -> str:
     body = markdown[found.end():].lstrip("\n")
     title = meta.get("title")
     heading = _FIRST_HEADING.search(body)
-    # the page's title roots it unless the body opens with its own top heading or repeats the title
+    # the page's title roots it unless the body has its own top heading outside code or repeats the title
     if isinstance(title, (str, int, float)) and str(title).strip() and not _titled(body, heading, str(title).strip()):
         body = f"# {str(title).strip()}\n\n{body}"
         heading = _FIRST_HEADING.search(body)
@@ -225,7 +225,7 @@ def _hugo_args(text: str) -> tuple[list[str], dict[str, str]]:
 
 
 # what the site shows of a shortcode: a tab's label, a term, a heading, a fence; layout and embeds go, their body stays
-def _hugo_rendered(match: re.Match) -> str:
+def _hugo_rendered(match: re.Match, values: dict[str, str]) -> str:
     closing, name, (positional, named) = match.group(1), match.group(2), _hugo_args(match.group(3))
     first = positional[0] if positional else ""
     if name in _HUGO_FENCES:
@@ -249,11 +249,14 @@ def _hugo_rendered(match: re.Match) -> str:
     if name in ("alert", "details", "collapsible"):
         title = named.get("title") or named.get("summary") or first
         return f"\n**{title}**\n" if title else ""
+    # a site parameter the source declares; one it does not keeps its own word, so the sentence does not lose it
+    if name in ("param", "skew"):
+        return values.get(first, first)
     return ""
 
 
-def without_hugo_shortcodes(text: str) -> str:
-    return _HUGO_SHORTCODE.sub(_hugo_rendered, _HUGO_COMMENT.sub("", text))
+def without_hugo_shortcodes(text: str, values: dict[str, str] | None = None) -> str:
+    return _HUGO_SHORTCODE.sub(lambda m: _hugo_rendered(m, values or {}), _HUGO_COMMENT.sub("", text))
 
 
 # MDN's KumaScript macros: `{{name}}` or `{{name("arg", 'arg', 3)}}`, names in any case
@@ -291,14 +294,34 @@ def without_mdn_macros(text: str) -> str:
     return _MDN_MACRO.sub(_mdn_rendered, text)
 
 
-# a site's own markup rendered before the rules every page goes through
-MARKUPS = {"hugo": without_hugo_shortcodes, "mdn": without_mdn_macros}
+# a site's own markup rendered before the rules every page goes through, one renderer a name `vocabulary.Markup` allows
+MARKUPS = {"hugo": without_hugo_shortcodes, "mdn": lambda text, values=None: without_mdn_macros(text)}
+
+
+# a page's markup is rendered outside its code fences: a fenced example shows the markup as written
+def _outside_fences(text: str, render) -> str:
+    lines = text.split("\n")
+    fences, inside, _ = fence_scan(lines)
+    out, run = [], []
+    for n, line in enumerate(lines):
+        if n in fences or n in inside:
+            if run:
+                out.append(render("\n".join(run)))
+                run = []
+            out.append(line)
+        else:
+            run.append(line)
+    if run:
+        out.append(render("\n".join(run)))
+    return "\n".join(out)
 
 
 # the text a markdown's chunks are cut from, one function for the index and for the raw report's verdict
-def as_indexed(markdown: str, markup: str | None = None) -> str:
+def as_indexed(markdown: str, markup: str | None = None, values: dict[str, str] | None = None) -> str:
     text = without_frontmatter(markdown.lstrip("\ufeff"))
-    return without_table_padding(MARKUPS[markup](text) if markup else text)
+    if markup:
+        text = _outside_fences(text, lambda run: MARKUPS[markup](run, values))
+    return without_table_padding(text)
 
 
 _INHERITED = re.compile(

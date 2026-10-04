@@ -119,6 +119,7 @@ CREATE TABLE public.data_sources (
     origin jsonb,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
     indexed_with jsonb DEFAULT '{}'::jsonb NOT NULL,
+    indexed_rules jsonb DEFAULT '{}'::jsonb NOT NULL,
     declaration jsonb,
     seeded boolean DEFAULT false NOT NULL
 );
@@ -1079,4 +1080,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260930000011'),
     ('20260930000012'),
     ('20260930000013'),
-    ('20261002000014');
+    ('20261002000014'),
+    ('20261003000015');

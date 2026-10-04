@@ -1,7 +1,9 @@
 import inspect
 from types import SimpleNamespace
 
+import corpus_search
 import pytest
+import text_language
 from conftest import stub_engines
 from evals import runner
 from use_cases import agent, chat
@@ -10,8 +12,8 @@ import db
 
 
 def _reads_of_data_chunks():
-    return [db.hybrid_search, db.nearest_distance, db.corpus_fingerprint,
-            db.is_empty, db.list_categories, db.cleanup]
+    return [corpus_search.hybrid_search, corpus_search.nearest_distance, db.corpus_fingerprint,
+            db.is_empty, corpus_search.list_categories]
 
 
 def test_no_reader_of_the_corpus_can_forget_which_variant_it_reads():
@@ -121,10 +123,10 @@ def test_exact_search_sets_its_mode_on_the_connection_the_query_uses(monkeypatch
             )
 
     # the language of the question is answered elsewhere and would open its own connection
-    monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
-    db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True, embedded_by="bge-m3@ollama")
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    corpus_search.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True, embedded_by="bge-m3@ollama")
 
     assert seen[0] == "SET LOCAL enable_indexscan = off"
     assert not any("hnsw.ef_search" in s for s in seen), "exact search names no depth"
@@ -165,10 +167,10 @@ def test_a_search_row_is_read_by_name_so_a_moved_column_cannot_change_its_meanin
         def execute(self, statement, *args):
             return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: [scrambled]))
 
-    monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn())
-    monkeypatch.setattr(db, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
-    hit, = db.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True,
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", lambda conn, variant, embedded_by=None: None)
+    hit, = corpus_search.hybrid_search("q", [0.0], None, variant="clean_1024", exact=True,
                             embedded_by="bge-m3@ollama")
 
     assert (hit.content, hit.source, hit.distance, hit.section, hit.versions) == (
@@ -178,8 +180,8 @@ def test_a_search_row_is_read_by_name_so_a_moved_column_cannot_change_its_meanin
 
 def test_the_queries_that_claim_to_read_what_retrieval_reads_filter_the_same_rows():
     # the probe claims the shape `hybrid_search` gives the planner and filtered variant alone
+    import search_depth
     from evals import build_veto
-    from use_cases import search_depth
 
     import db
 
@@ -229,30 +231,28 @@ class _Seen:
 
 def test_a_search_refuses_vectors_another_embedder_wrote(monkeypatch):
     # bge-m3 on two engines reordered the top-20 of 172 questions in 200, under one name
-    import db
 
-    with pytest.raises(db.ForeignVectors, match="bge-m3@ollama.*embeds with bge-m3@vllm"):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@vllm")
+    with pytest.raises(corpus_search.ForeignVectors, match="bge-m3@ollama.*embeds with bge-m3@vllm"):
+        corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@vllm")
     # a variant half reindexed holds both, and is refused as well
-    with pytest.raises(db.ForeignVectors):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "clean_big_1024", "bge-m3@vllm")
+    with pytest.raises(corpus_search.ForeignVectors):
+        corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama", "bge-m3@vllm"]), "clean_big_1024", "bge-m3@vllm")
     seen = _Seen(["bge-m3@vllm"])
-    db.refuse_foreign_vectors(seen, "clean_big_1024", "bge-m3@vllm")
+    corpus_search.refuse_foreign_vectors(seen, "clean_big_1024", "bge-m3@vllm")
     assert seen.asked == [{"variant": "clean_big_1024"}]
     # a question embedded earlier carries its own embedder, and that one decides
-    db.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@ollama")
+    corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama"]), "clean_big_1024", "bge-m3@ollama")
     # a vector nobody marked is a ruler nobody named, refused rather than passed
-    with pytest.raises(db.ForeignVectors, match="no recorded embedder"):
-        db.refuse_foreign_vectors(_Seen(["bge-m3@ollama", None]), "clean_big_1024", "bge-m3@ollama")
+    with pytest.raises(corpus_search.ForeignVectors, match="no recorded embedder"):
+        corpus_search.refuse_foreign_vectors(_Seen(["bge-m3@ollama", None]), "clean_big_1024", "bge-m3@ollama")
 
 
 def test_no_search_asks_the_role_registry_on_its_own_connection():
     # the guard resolved the embedder through a second pooled connection per search
     import inspect
 
-    import db
 
-    for fn in (db.refuse_foreign_vectors, db.hybrid_search, db.nearest_distance):
+    for fn in (corpus_search.refuse_foreign_vectors, corpus_search.hybrid_search, corpus_search.nearest_distance):
         assert "llm." not in inspect.getsource(fn), fn.__name__
         assert inspect.signature(fn).parameters["embedded_by"].default is inspect.Parameter.empty
 
@@ -293,8 +293,8 @@ def test_every_vector_search_passes_the_guard_first(monkeypatch):
         guarded.append((variant, embedded_by))
         raise _Refused
 
-    monkeypatch.setattr(db, "refuse_foreign_vectors", refuse)
-    monkeypatch.setattr(db, "_ts_config", lambda *a, **kw: "english")
+    monkeypatch.setattr(corpus_search, "refuse_foreign_vectors", refuse)
+    monkeypatch.setattr(text_language, "ts_config", lambda *a, **kw: "english")
 
     class _Conn(_Seen):
         def __enter__(self):
@@ -305,9 +305,9 @@ def test_every_vector_search_passes_the_guard_first(monkeypatch):
 
     monkeypatch.setattr(db.engine, "connect", lambda: _Conn([]))
     with pytest.raises(_Refused):
-        db.hybrid_search("q", "[0]", None, variant="clean_big_1024", exact=True, embedded_by="x@y")
+        corpus_search.hybrid_search("q", "[0]", None, variant="clean_big_1024", exact=True, embedded_by="x@y")
     with pytest.raises(_Refused):
-        db.nearest_distance([0.0], variant="clean_big_1024", embedded_by="a@b")
+        corpus_search.nearest_distance([0.0], variant="clean_big_1024", embedded_by="a@b")
     assert guarded == [("clean_big_1024", "x@y"), ("clean_big_1024", "a@b")]
 
 
@@ -330,7 +330,7 @@ def test_a_compared_question_is_searched_with_the_embedder_that_embedded_it(monk
 def test_the_depth_script_searches_with_the_embedder_of_each_question(monkeypatch, script):
     ef_latency = script("ef_latency")
     seen = []
-    monkeypatch.setattr(ef_latency.db, "hybrid_search", lambda *a, **kw: seen.append(kw))
+    monkeypatch.setattr(corpus_search, "hybrid_search", lambda *a, **kw: seen.append(kw))
     monkeypatch.setattr(ef_latency.llm, "embedder_label", lambda: "bge-m3@ollama")
 
     ef_latency.timings([("q", "[0]", "bge-m3@vllm-embed"), ("q", "[0]", None)], "clean_big_1024", 100)

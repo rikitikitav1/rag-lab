@@ -5,12 +5,11 @@ import json
 import random
 import statistics
 
+import corpus_search
 from evals import measurements
 from models.eval import READ_BY_RUNS, Question
 from orm.sync_db import Session
 from sqlalchemy import select
-
-import db
 
 IN_CORPUS = ["paraphrased_v2", "paraphrased_v2_ru"]
 OFF_DOMAIN = ["off_domain", "off_domain_extra"]
@@ -26,7 +25,7 @@ def distances(sets: list[str], variant: str) -> dict[str, list[float]]:
         ).all()
     out: dict[str, list[float]] = {}
     for language, vector, embedded_by in rows:
-        found = db.nearest_distance(vector, variant=variant, embedded_by=embedded_by)
+        found = corpus_search.nearest_distance(vector, variant=variant, embedded_by=embedded_by)
         if found is not None:
             out.setdefault(language or "?", []).append(found)
     return out

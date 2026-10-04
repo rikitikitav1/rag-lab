@@ -6,13 +6,13 @@ import llm
 import logging_setup
 import prompt_repo
 from corpus_keys import VETO_CUT_FROM, leaf_of
+from gold_match import clean_gold, heading_text
 from models.eval import Question, text_hash
 from models.registry import Purpose
 from orm.sync_db import Session
 from sources import files
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from use_cases.retrieval_compare import clean_gold, heading_text
 
 import db
 

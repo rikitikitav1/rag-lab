@@ -222,3 +222,18 @@ def shares_heading_word(question: str, section: str | None) -> bool:
         return False
     stems = {w.casefold()[:5] for w in _WORDS.findall(leaf_of(section))}
     return any(w.casefold()[:5] in stems for w in _WORDS.findall(question))
+
+
+# a fenced code block whole, opening to closing fence
+CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
+
+
+# how much of a text is fenced code
+def code_fraction(text: str) -> float:
+    return sum(len(m) for m in CODE_BLOCK.findall(text or "")) / len(text) if text else 0.0
+
+
+# the source a file key or a mark names: its first path step
+def source_name_of(key: str) -> str:
+    return key.split("/", 1)[0]
+

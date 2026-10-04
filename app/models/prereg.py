@@ -27,3 +27,10 @@ class Preregistration(Base):
 
     def __repr__(self) -> str:
         return f"Preregistration(name={self.name!r})"
+
+
+def preregistered(session, name: str) -> bool:
+    from sqlalchemy import select
+
+    return session.scalar(select(Preregistration.id).where(Preregistration.name == name)) is not None
+

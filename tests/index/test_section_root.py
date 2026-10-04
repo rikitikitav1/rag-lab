@@ -175,3 +175,14 @@ def test_a_chunk_takes_the_language_of_its_own_text(tmp_path):
     file = write(tmp_path, "book.md", text)
     languages = {doc.section: doc.language for doc in source.to_documents(file, HYGIENIC)}
     assert "ru" in languages.values() and "en" in languages.values(), languages
+
+
+# a converter reads cover text as a book's first heading; a declared root by file glob stands in for it
+def test_declared_root_by_path_replaces_the_cover_heading(tmp_path):
+    roots = {"rtl.pdf*": "Run-Time Library", "*": "The Book"}
+    declared = SourceFile(name="book", language="en", licence="x", folder=str(tmp_path), section_root_by_path=roots)
+    source = Base(tmp_path, declared)
+    cover = "## MdLAHeH 97 1588380\n\ntitle page\n\n## Chapter\n\ntext\n"
+    assert root_of(source, write(tmp_path, "rtl.pdf.md", cover)) == "Run-Time Library"
+    assert root_of(source, write(tmp_path, "other.md", cover)) == "The Book"
+    assert root_of(_plain(tmp_path), write(tmp_path, "plain.md", cover)) == "MdLAHeH 97 1588380"

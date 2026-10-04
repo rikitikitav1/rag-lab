@@ -9,17 +9,14 @@ from sqlalchemy import select, text
 log = logging_setup.get_logger(__name__)
 
 _RANK = {Trust.official: 0, Trust.book: 1, Trust.notes: 2}
-_NOTES_READERS = frozenset({"interview", "cheatsheets", "system-design-primer"})
 _BOOK_SUFFIXES = (".pdf", ".epub")
 
 
-# a declared trust wins; otherwise a book is a file from the book shelf, notes are the hand-written banks
+# a declared trust wins, as the notes declare theirs; otherwise a book is a file from the book shelf
 def source_trust(declaration: dict | None) -> Trust:
     declaration = declaration or {}
     if declaration.get("trust"):
         return Trust(declaration["trust"])
-    if declaration.get("reader") in _NOTES_READERS or declaration.get("name") == "notes":
-        return Trust.notes
     folder = declaration.get("folder") or ""
     urls = declaration.get("urls") or []
     if folder.startswith("datasets/inbox/books/") or any(u.lower().endswith(_BOOK_SUFFIXES) for u in urls):

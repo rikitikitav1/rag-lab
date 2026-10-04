@@ -1,5 +1,6 @@
 import ingest
 import pytest
+import search_scope
 
 # the ceiling every variant of the corpus declares today
 CEILING = 1024
@@ -62,11 +63,11 @@ def test_a_source_of_several_categories_refuses_a_file_under_no_prefix():
 
 
 def test_a_label_names_a_category_or_every_category_of_a_group():
-    import db
 
-    assert db.categories_of("redis") == ["redis"]
-    assert "postgresql" in db.categories_of("databases") and "redis" in db.categories_of("databases")
-    assert db.categories_of("interview") == []
+    assert search_scope.categories_of("redis") == ["redis"]
+    databases = search_scope.categories_of("databases")
+    assert "postgresql" in databases and "redis" in databases
+    assert search_scope.categories_of("interview") == []
 
 
 def _doc(file: str, body: str, section: str, i: int = 0):
@@ -164,3 +165,41 @@ def test_a_source_of_several_categories_names_every_loose_file_before_cutting(tm
     found = [tmp_path / "docs" / "a.md", tmp_path / "x.md", tmp_path / "y" / "z.md"]
     with pytest.raises(ValueError, match="2 files under no category_by_path"):
         Base._refuse_uncategorised(reader, found)
+
+
+# a whole tiny section joins its file's previous chunk under its own heading, the first one joins the next
+def test_a_tiny_section_joins_a_neighbour_under_its_heading():
+    from ingest import Cut, merge_tiny_sections
+
+    text = "x" * 200
+    cuts = [
+        Cut("# R\n## Intro\n", "see below", "R > Intro"),
+        Cut("# R\n## Long\n", text, "R > Long"),
+        Cut("# R\n## Tiny\n", "one line", "R > Tiny"),
+        Cut("# R\n## Big\n", "y" * 1020, "R > Big"),
+        Cut("# R\n## Last\n", "end", "R > Last"),
+    ]
+    out = merge_tiny_sections(cuts, 60, 1024)
+    assert [c.section for c in out] == ["R > Long", "R > Big", "R > Last"]
+    assert out[0].body == f"### Intro\nsee below\n\n### Long\n{text}\n\n### Tiny\none line"
+    assert merge_tiny_sections(cuts, 0, 1024) == cuts
+
+
+# the root alone carries no heading, and two pieces of one section are not a tiny section
+def test_the_root_carries_no_heading_and_a_cut_section_stays():
+    from ingest import Cut, merge_tiny_sections
+
+    cuts = [Cut("# R\n", "cover", "R"), Cut("# R\n## A\n", "a", "R > A"), Cut("# R\n## A\n", "b", "R > A")]
+    out = merge_tiny_sections(cuts, 60, 1024)
+    assert [c.body for c in out] == ["cover\n\n### A\na", "b"]
+
+
+# two tiny sections at a file's head keep their own headings, in order, above the text they joined
+def test_tiny_sections_at_the_head_keep_their_headings_in_order():
+    from ingest import Cut, merge_tiny_sections
+
+    cuts = [Cut("# R\n## A\n", "tiny a", "R > A"), Cut("# R\n## B\n", "tiny b", "R > B"),
+            Cut("# R\n## C\n", "c" * 200, "R > C")]
+    out = merge_tiny_sections(cuts, 60, 1024)
+    assert [c.section for c in out] == ["R > C"]
+    assert out[0].body == f"### A\ntiny a\n\n### B\ntiny b\n\n### C\n{'c' * 200}"

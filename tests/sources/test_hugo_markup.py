@@ -45,3 +45,25 @@ def test_mdn_macros_render_what_the_page_shows():
             '{{Compat}}\n{{EmbedLiveSample("Examples", 300, 200)}}')
     assert without_mdn_macros(text) == ("Call `Element.click()` or `click()` on `<input>`. (optional) See CORS and 404"
                                         " per RFC 7231.\n\n")
+
+
+# a parameter prints the value the source declares, an unknown one keeps its word, a fenced example stays as written
+def test_hugo_parameters_print_declared_values_and_fences_keep_the_markup():
+    values = {"version": "v1.37", "currentVersion": "1.37"}
+    page = "Kubernetes {{< skew currentVersion >}} ships kubectl {{< param \"version\" >}}"
+    page += " and {{< skew nextPatch >}}.\n"
+    page += "\n```\n{{< param \"version\" >}}\n```\n"
+    out = as_indexed(page, "hugo", values)
+    assert out.startswith("Kubernetes 1.37 ships kubectl v1.37 and nextPatch.")
+    assert '{{< param "version" >}}' in out
+
+
+# every markup a source may declare has its renderer, and no renderer waits for a name nobody may declare
+def test_every_declarable_markup_has_one_renderer():
+    import typing
+
+    from use_cases.markdown_cleanup import MARKUPS
+    from vocabulary import Markup
+
+    assert set(MARKUPS) == set(typing.get_args(Markup))
+

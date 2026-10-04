@@ -246,7 +246,12 @@ def layer_of(layers: list[str] | None, piece) -> str | None:
     return "\f".join(layers[piece[0] - 1 : piece[1]]) if layers is not None and piece else None
 
 
-# the route's fingerprint for a resume: what shapes a piece, plus the reread file's own content under its name
-def route_sha(rule) -> str:
+# what shapes a piece and the reread file's content; a knob that is off is left out, so adding one moves nothing
+def route_rules(rule) -> dict:
     shaping = {key: getattr(rule, key) for key in _SHAPES} | {"reread_sha256": load_settings(rule.reread_settings)[1]}
-    return hashlib.sha256(json.dumps(shaping, sort_keys=True).encode()).hexdigest()[:12]
+    return {key: value for key, value in shaping.items() if value not in (None, False, [])}
+
+
+# the route's fingerprint for a resume
+def route_sha(rule) -> str:
+    return hashlib.sha256(json.dumps(route_rules(rule), sort_keys=True).encode()).hexdigest()[:12]

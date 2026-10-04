@@ -108,3 +108,58 @@ def test_a_question_holds_one_kind_of_gold(db):
         )
     with pytest.raises(ValueError, match="names its file and section"):
         Gold.of([], {"file": "a.md", "section": None})
+
+
+# a cleanup that renames a page's root moves the gold to the same file and leaf; evidence settles a doubled leaf
+def test_golds_follow_their_leaf_to_the_new_root(db, monkeypatch):
+    import json
+
+    from models.eval import Question
+    from sqlalchemy import select
+    from sqlalchemy.orm import sessionmaker
+    from use_cases import gold_reanchor
+
+    monkeypatch.setattr(gold_reanchor, "engine", db)
+    monkeypatch.setattr(gold_reanchor, "Session", sessionmaker(bind=db))
+    chunks = [
+        ("d/a.md", "Title > Setup", "install it"),
+        ("d/a.md", "Title > Other", "other text"),
+        ("d/b.md", "X > Run", "nothing here"),
+        ("d/b.md", "Y > Run", "the exact evidence words"),
+    ]
+    golds = {
+        "moved": ("d/a.md", "Old > Setup", "install it"),
+        "by_evidence": ("d/b.md", "Z > Run", "the exact evidence words"),
+        "file_gone": ("d/gone.md", "Old > Setup", None),
+        "leaf_gone": ("d/a.md", "Old > Missing", None),
+        "evidence_gone": ("d/a.md", "Old > Other", "words no chunk holds"),
+    }
+    with db.connect() as c:
+        c.execute(text("TRUNCATE data_sources CASCADE"))
+        c.execute(text("DELETE FROM questions"))
+        c.execute(text("INSERT INTO data_sources (id, name, kind, active) VALUES (1, 'd', 'git', true)"))
+        for i, (source, section, content) in enumerate(chunks):
+            c.execute(
+                text(
+                    "INSERT INTO data_chunks (source_id, source, content, chunk_index, language, variant, section)"
+                    " VALUES (1, :source, :content, :i, 'en', 'v', :section)"
+                ),
+                {"source": source, "content": content, "i": i, "section": section},
+            )
+        for i, (name, (file, section, evidence)) in enumerate(golds.items()):
+            c.execute(
+                text(
+                    "INSERT INTO questions (original_text, text_hash, set_name, gold, evidence)"
+                    " VALUES (:q, :h, 's', CAST(:g AS jsonb), :e)"
+                ),
+                {"q": name, "h": f"h{i}", "g": json.dumps({"file": file, "section": section}), "e": evidence},
+            )
+        c.commit()
+
+    assert gold_reanchor.reanchor("s", "v", dry=True)["moved"] == 2
+    summary = gold_reanchor.reanchor("s", "v")
+    assert {k: summary[k] for k in ("moved", "file_gone", "leaf_gone")} == {"moved": 2, "file_gone": 1, "leaf_gone": 2}
+    with sessionmaker(bind=db)() as session:
+        sections = {q.original_text: q.gold["section"] for q in session.scalars(select(Question))}
+    assert sections == {"moved": "Title > Setup", "by_evidence": "Y > Run", "file_gone": "Old > Setup",
+                        "leaf_gone": "Old > Missing", "evidence_gone": "Old > Other"}

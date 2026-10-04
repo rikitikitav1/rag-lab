@@ -17,3 +17,5 @@ veto_families:
   prefix: system-design-primer/
 categories:
 - system-design
+# hand-written notes: an official page holding the same text wins over this one
+trust: notes

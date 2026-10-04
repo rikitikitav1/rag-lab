@@ -4,11 +4,13 @@ from dataclasses import dataclass, replace
 from operator import itemgetter
 
 import config
+import corpus_search
 import job_queue
 import llm
 import logging_setup
 import passes
 import rerank
+import search_depth
 from engines import card
 from errors import StandFault
 from models.eval import READ_BY_RUNS, Question, QuestionLog, read_by_runs
@@ -17,7 +19,7 @@ from orm.sync_db import Session
 from outcomes import Outcome
 from passes import Pass, Seat
 from sqlalchemy import delete, func, select
-from use_cases import agent, chat, run_snapshot, search_depth
+from use_cases import agent, chat, run_snapshot
 
 # the same resolver every other caller asks: a default is one default only if one decides
 from use_cases.chat import resolve_rerank
@@ -222,7 +224,7 @@ def _phase_retrieve(texts: list[str], spec: RunSpec) -> tuple[list, int]:
             retrieved.append(
                 (
                     text,
-                    db.hybrid_search(text, vector, spec.scope, limit=limit, variant=spec.variant,
+                    corpus_search.hybrid_search(text, vector, spec.scope, limit=limit, variant=spec.variant,
                                      ef_search=depth, embedded_by=label),
                     None,
                 )

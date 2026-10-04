@@ -51,7 +51,8 @@ def cuts_of(content: str, root: str | None, policy: dict, file: str):
     ceiling = policy.get("max_chunk_size")
     cut_by = ingest.cut_structured if policy.get("chunker") == STRUCTURED else ingest.cut_with_root
     on = policy.get("ceiling_on", ingest.BODY)
-    for cut in cut_by(ingest.without_index(content, file), root, ceiling=ceiling, ceiling_on=on, file=file):
+    cuts = cut_by(ingest.without_index(content, file), root, ceiling=ceiling, ceiling_on=on, file=file)
+    for cut in ingest.merge_tiny_sections(cuts, policy.get("merge_tiny_sections_under", 0), ceiling, on):
         yield cut.prefix + cut.body, cut.body, cut.section, root, cut.cut_by
 
 
@@ -200,14 +201,23 @@ class Base(ABC):
                 return None
             if declared.tags_from_frontmatter:
                 tags = [str(t) for key in declared.tags_from_frontmatter for t in _as_list(meta.get(key))]
-        content = markdown_cleanup.as_indexed(text, declared.markup)
+        content = markdown_cleanup.as_indexed(text, declared.markup, declared.markup_values)
         return Parsed(content, self.category_for(rel), self.title_from(content), [], tags)
+
+    # the declared fields that change the text `read` returns or the pages it keeps; a raw report reads through them
+    @staticmethod
+    def reads_beyond_plain(declared: dict) -> bool:
+        return bool(declared.get("markup") or declared.get("skip_when_frontmatter"))
 
     def title_from(self, content):
         return first_heading(content)
 
     # where the heading path starts: markdown for most, but a source may declare it anywhere
     def section_root_for(self, file, parsed) -> str | None:
+        rel = self.rel_of(file)
+        declared = self.settings.section_root_by_path
+        if by_path := next((root for glob, root in declared.items() if fnmatch.fnmatch(rel, glob)), None):
+            return by_path
         named_by_file = self.settings.section_root_from_filename
         if named_by_file and Path(file).parent.name == named_by_file:
             return Path(file).stem.replace("-", " ").upper()

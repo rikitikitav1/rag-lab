@@ -58,7 +58,7 @@ def _one_hop(monkeypatch, said, sources, **kwargs):
 
 
 def _hit(source: str, content: str):
-    from db import Hit
+    from corpus_search import Hit
 
     return Hit(content, source, "cat", 0, 1, None, 0.2, 0.5, None)
 

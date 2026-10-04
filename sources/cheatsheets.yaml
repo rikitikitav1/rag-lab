@@ -37,3 +37,5 @@ skip_when_hygienic:
 veto_families:
 - name: cheatsheets
   prefix: cheatsheets/
+# hand-written notes: an official page holding the same text wins over this one
+trust: notes

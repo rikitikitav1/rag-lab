@@ -1,9 +1,9 @@
 import outcomes
+import text_language
 from corpus_keys import Gold
 from evals.stats import score_of
 from outcomes import Outcome
-
-import db
+from vocabulary import FinishedBy
 
 # the taxonomy from the enum: a fourth bucket appeared while the pre-registration had three
 ALL_OUTCOMES = tuple(o.value for o in outcomes.Outcome)
@@ -31,8 +31,6 @@ _CEILING_BEFORE_ROWS_RECORDED_IT = 4
 
 # the row says which edge ended it; the ceiling is re-derived only for rows written before it did
 def _exhausted(metrics: dict, snapshot: dict) -> bool:
-    from use_cases.agent_policy import FinishedBy
-
     said = metrics.get("finished_by")
     # `unrecorded` is the bare arm saying it has no edge of ours, so the ceiling is re-derived
     if said and said != FinishedBy.unrecorded:
@@ -136,7 +134,7 @@ SAID_NOTHING = (
 # the run's own language when it recorded one, else the question's: answering the asker is the default
 def target_language(ql) -> str | None:
     asked = ((ql.metrics or {}).get("config") or {}).get("language")
-    return db.resolve_language(ql.question_text, asked) if ql.question_text else asked
+    return text_language.resolve_language(ql.question_text, asked) if ql.question_text else asked
 
 
 # None where the question cannot be put: a narrated tool call is json, not an answer in a language
@@ -144,7 +142,7 @@ def answered_in_target(ql) -> bool | None:
     target = target_language(ql)
     if not ql.answer or not target or outcome(ql) in SAID_NOTHING:
         return None
-    return db.detect_language(ql.answer) == target
+    return text_language.detect_language(ql.answer) == target
 
 
 # four doors paired by question with three rules: two kept the last row, one refused, one made a set

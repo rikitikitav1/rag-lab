@@ -9,10 +9,11 @@ from pathlib import Path
 import config
 import engines
 import llm
+import search_depth
 import version
 from evals import loaders
 from orm.sync_db import engine
-from use_cases import chat, grading, search_depth
+from use_cases import chat, grading
 
 import db
 

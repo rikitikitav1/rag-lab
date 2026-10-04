@@ -4,10 +4,10 @@ import argparse
 import json
 from pathlib import Path
 
-from job_handlers.judging import GUEST_MATERIAL
 from models.eval import Question, QuestionLog
 from orm.sync_db import Session
 from sqlalchemy import func, not_, select
+from use_cases.judge_debts import GUEST_MATERIAL
 
 
 def main():

@@ -1,5 +1,6 @@
 import job_queue
 import pytest
+import search_scope
 from job_handlers.base import Final
 from use_cases import source_intake
 
@@ -22,9 +23,9 @@ def test_every_job_that_reads_a_variant_holds_its_removal(monkeypatch):
 
 # a label is read in the case the index wrote tags in
 def test_a_scope_label_is_read_lowercased():
-    import db
 
-    assert db.Scope(label="Redis").label == "redis" and db.as_scope("PostgreSQL").label == "postgresql"
+    assert search_scope.Scope(label="Redis").label == "redis"
+    assert search_scope.as_scope("PostgreSQL").label == "postgresql"
 
 
 # a veto build that names no variants or no cut_from reads clean_1024 by default, and holds its removal

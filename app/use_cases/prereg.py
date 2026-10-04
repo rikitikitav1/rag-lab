@@ -6,7 +6,7 @@ from evals.pools import Ambiguous, by_question
 from evals.stats import bootstrap_ci
 from models.eval import READ_BY_RUNS, Question
 from models.jobs import Job
-from models.prereg import Preregistration
+from models.prereg import Preregistration, preregistered
 from orm.sync_db import Session
 from sqlalchemy import select
 
@@ -108,7 +108,7 @@ def _closing_or_refuse(closing: dict) -> dict:
 
 def exists(name: str) -> bool:
     with Session() as session:
-        return session.scalar(select(Preregistration.id).where(Preregistration.name == name)) is not None
+        return preregistered(session, name)
 
 
 # written before any row of the run exists, which is the whole point of the door

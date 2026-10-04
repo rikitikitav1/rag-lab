@@ -383,3 +383,28 @@ def test_an_exact_gold_ranks_by_whole_paths_within_the_depth():
     sections = [("a.md", "summary")]
     assert rc._section_rank(rows, sections, Gold(("a.md",), "Ch2 > Summary"), None) == 3
     assert rc._section_rank(rows, sections, Gold(("a.md",), f"Ch{rc.DEPTH + 2} > Summary"), None) is None
+
+
+# a clamped search narrows to the gold's own source, and a source out of search is a miss, not a stopped measure
+def test_a_clamped_measure_narrows_to_the_gold_source_and_survives_one_out_of_search(monkeypatch):
+    from search_scope import ScopeRefused
+    from use_cases import retrieval_compare
+
+    asked = []
+
+    class _Searcher:
+        def hybrid_search(self, question, emb, scope, **kw):
+            asked.append(scope.sources)
+            if scope.sources == ("gone",):
+                raise ScopeRefused("not in search")
+            return []
+
+    def question(qid: int, file: str) -> dict:
+        return {"id": qid, "original_text": "q", "emb": "[0]", "embedded_by": "m", "marked_sources": [],
+                "gold": {"file": file, "section": "A"}, "gold_heading": None}
+
+    questions = [question(1, "kept/a.md"), question(2, "gone/b.md")]
+    monkeypatch.setattr(retrieval_compare, "questions", lambda conn, set_name, limit, ids=None: questions)
+    monkeypatch.setattr(retrieval_compare.db, "section_exists", lambda *a, **kw: False)
+    rows = retrieval_compare.measure(_Searcher(), None, "s", "v", 10, True, clamped=True)
+    assert asked == [("kept",), ("gone",)] and [r["file_rank"] for r in rows] == [None, None]

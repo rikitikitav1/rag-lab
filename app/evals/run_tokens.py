@@ -5,7 +5,7 @@ from models import Job, JobStatus
 from models.eval import QuestionLog
 from orm.sync_db import Session
 from sqlalchemy import select
-from use_cases.rejudge import AXES
+from vocabulary import JUDGE_AXES as AXES
 
 SCHEMA = 2
 READS = (

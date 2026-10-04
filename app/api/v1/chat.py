@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from use_cases import card_wait, chat
 
-import db
 from api.v1.card_door import wait_for_the_card
 from api.v1.schemas import AnswerSource
 
@@ -35,7 +34,7 @@ class QuestionFilter(BaseModel):
 def _scoped(call):
     try:
         return call()
-    except db.ScopeRefused as e:
+    except search_scope.ScopeRefused as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 

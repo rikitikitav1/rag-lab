@@ -1,6 +1,8 @@
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
 
+import corpus_search
+import errors
 import job_specs
 import logging_setup
 from api import health
@@ -24,8 +26,6 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from mcp_ops import mcp_ops
 from mcp_server import mcp
-
-import db
 
 logging_setup.configure(os.getenv("LOG_LEVEL", "INFO"))
 
@@ -53,8 +53,24 @@ async def _refused_options(request, bad: job_specs.Refused):
     return JSONResponse(status_code=400, content={"detail": str(bad)})
 
 
-@app.exception_handler(db.ForeignVectors)
-async def _foreign_vectors(request, bad: db.ForeignVectors):
+# a refusal said in HTTP terms here and nowhere else
+REFUSAL_STATUS = {
+    errors.RefusalKind.invalid: 400,
+    errors.RefusalKind.malformed: 422,
+    errors.RefusalKind.missing: 404,
+    errors.RefusalKind.taken: 409,
+    errors.RefusalKind.busy: 409,
+    errors.RefusalKind.conflict: 409,
+}
+
+
+@app.exception_handler(errors.Refusal)
+async def _refused_run(request, bad: errors.Refusal):
+    return JSONResponse(status_code=REFUSAL_STATUS[bad.kind], content={"detail": str(bad)})
+
+
+@app.exception_handler(corpus_search.ForeignVectors)
+async def _foreign_vectors(request, bad: corpus_search.ForeignVectors):
     return JSONResponse(status_code=409, content={"detail": str(bad)})
 
 

@@ -1,7 +1,7 @@
 import pytest
 from evals import build_veto
+from gold_match import clean_gold, heading_text
 from sources import files
-from use_cases.retrieval_compare import clean_gold, heading_text
 
 FAMILIES = files.veto_families()
 

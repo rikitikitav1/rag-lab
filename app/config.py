@@ -5,6 +5,7 @@ import samplers
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from tool_names import Tool
+from vocabulary import QueryLanguageRule
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yaml")
 # a file that replaces `llm.roles`, as the layout of a host without a card does
@@ -35,7 +36,7 @@ class KeywordCfg(_Strict):
     query: str
     rank: str
     norm: int
-    query_lang: str
+    query_lang: QueryLanguageRule
 
 
 class RetrievalCfg(_Strict):
@@ -49,6 +50,8 @@ class RetrievalCfg(_Strict):
     ef_search: int | Literal["auto"]
     # a filtered hnsw walk stops at ef_search and returns fewer rows; relaxed_order walks on until the filter is met
     filtered_scan: Literal["off", "relaxed_order"] = "off"
+    # the same text under several files of one source returns once, at its best rank
+    collapse_copies_in_source: bool = False
 
 
 class SearchDepthCfg(_Strict):
@@ -121,6 +124,8 @@ class PolicyCfg(_Strict):
     ceiling_on: Literal["body", "content"] = "body"
     # off by default: it changes the cut, so it is a corpus variant of its own
     drop_boilerplate: bool = False
+    # a whole section with a body shorter than this joins its file's previous chunk, or the next; 0 is off
+    merge_tiny_sections_under: int = Field(default=0, ge=0)
 
 
 class CorpusCfg(_Strict):

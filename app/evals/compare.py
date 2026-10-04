@@ -19,11 +19,10 @@ from evals.pools import (
     split,
 )
 from evals.stats import delta_stats, deltas_over, mean_of, tally
-from use_cases import rejudge
-from use_cases.agent_policy import FallbackReason
+from vocabulary import JUDGE_AXES, FallbackReason
 
 OUTCOMES = ALL_OUTCOMES
-AXES = rejudge.AXES
+AXES = JUDGE_AXES
 GATE_REASONS = ("empty", "weak", "off_topic")
 
 
@@ -473,8 +472,6 @@ def _answering_penalties_of(runs: dict[str, list]) -> dict:
 
 # two arms judged across a reload are two instruments: 14% of scores move on identical input
 def residencies(runs: dict[str, list]) -> dict:
-    from use_cases import rejudge
-
     live = registered_names()
     seen, engines_seen, names_seen, prompts_seen, parsers_seen = {}, {}, {}, {}, {}
     choices_seen, budgets_seen, cuts_seen, grammars_seen, keys_seen = {}, {}, {}, {}, {}
@@ -482,16 +479,16 @@ def residencies(runs: dict[str, list]) -> dict:
     remote_judge = False
     for name, logs in runs.items():
         ids, addresses, named, keys = set(), set(), set(), set()
-        versions = {axis: set() for axis in rejudge.AXES}
-        parsers = {axis: set() for axis in rejudge.AXES}
-        choices = {axis: set() for axis in rejudge.AXES}
-        budgets = {axis: set() for axis in rejudge.AXES}
-        grammars = {axis: set() for axis in rejudge.AXES}
+        versions = {axis: set() for axis in JUDGE_AXES}
+        parsers = {axis: set() for axis in JUDGE_AXES}
+        choices = {axis: set() for axis in JUDGE_AXES}
+        budgets = {axis: set() for axis in JUDGE_AXES}
+        grammars = {axis: set() for axis in JUDGE_AXES}
         # judged before the sampler was stamped: beside stamped rows the arm cannot say it held one sampler
         bare = set()
         cuts = 0
         for ql in logs:
-            for axis in rejudge.AXES:
+            for axis in JUDGE_AXES:
                 stamp = ((ql.metrics or {}).get(axis) or {})
                 if stamp.get("residency_id") is not None:
                     ids.add(stamp["residency_id"])

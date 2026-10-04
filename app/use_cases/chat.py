@@ -2,11 +2,14 @@ import time
 from dataclasses import asdict, dataclass, field
 
 import config
+import corpus_search
 import job_queue
 import llm
 import logging_setup
 import outcomes
 import prompt_repo
+import search_depth
+import text_language
 from engines import answer_parsers
 from models.eval import Question, QuestionLog, text_hash
 from models.registry import Purpose
@@ -15,9 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from timing_wrappers import measure_elapsed
-from use_cases import run_snapshot, search_depth
-
-import db
+from use_cases import run_snapshot
 
 log = logging_setup.get_logger(__name__)
 
@@ -141,7 +142,7 @@ def _retrieve_rows(question: str, scope, k: int, rerank_enabled: bool, variant: 
     label, vector = llm.embed_with_label(question)
     if not rerank_enabled:
         return (
-            db.hybrid_search(
+            corpus_search.hybrid_search(
                 question, vector, scope, limit=k, variant=variant,
                 ef_search=depth, embedded_by=label,
             ),
@@ -151,7 +152,7 @@ def _retrieve_rows(question: str, scope, k: int, rerank_enabled: bool, variant: 
 
     import rerank
 
-    candidates = db.hybrid_search(
+    candidates = corpus_search.hybrid_search(
         question,
         vector,
         scope,
@@ -378,7 +379,7 @@ _LANG_NAMES = {"ru": "Russian", "en": "English"}
 
 
 # re-exported: three callers above this layer already say `chat.resolve_language`
-resolve_language = db.resolve_language
+resolve_language = text_language.resolve_language
 
 
 # an unknown code is not a language name, and `replay` reads this out of a snapshot past the doors

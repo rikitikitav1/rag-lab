@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import config
 import ingest
 import logging_setup
-from corpus_keys import SECTION_SEP, SHARED_BODY_SQL
+from corpus_keys import CODE_BLOCK, SECTION_SEP, SHARED_BODY_SQL
 from ingest import BOILERPLATE_MIN_FILES
 from models.corpus import DataChunk, DataSource, Verdict
 from orm.sync_db import Session
@@ -66,7 +66,6 @@ PROSE_WORD_LETTERS = config.settings.ingest_quality.measure.prose_word_letters
 # every other metric is a defect: more is worse
 HIGHER_IS_BETTER = frozenset({"section_coverage"})
 
-FENCE = re.compile(r"```.*?```", re.DOTALL)
 PROSE_WORD = re.compile(rf"[^\W\d_]{{{PROSE_WORD_LETTERS},}}", re.UNICODE)
 NOT_ALNUM_OR_SPACE = re.compile(r"[^\w\s]", re.UNICODE)
 OPENS_WITH_HEADING = re.compile(r"^\s*#")
@@ -107,12 +106,7 @@ def _is_soup(text: str) -> bool:
 
 
 def _is_code_only(text: str) -> bool:
-    return not PROSE_WORD.search(FENCE.sub(" ", text))
-
-
-# how much of a chunk is fenced code: `_is_code_only` answers a different question
-def code_fraction(text: str) -> float:
-    return sum(len(m) for m in FENCE.findall(text or "")) / len(text) if text else 0.0
+    return not PROSE_WORD.search(CODE_BLOCK.sub(" ", text))
 
 
 def _boilerplate_hits(samples: list[Sample], measurable_files: int) -> int:

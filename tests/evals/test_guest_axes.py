@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import engines
 from conftest import stub_engine
 from evals import guest_axes
+from use_cases import judge_debts
 
 
 def _row(**over):
@@ -35,12 +36,11 @@ def _session_of(ql):
 
 def test_what_an_axis_needs_is_spelled_once_for_the_row_and_once_for_the_query():
     # two spellings of materiality drifted apart once already, for our own three axes
-    from job_handlers import judging
 
     for axis, guest in guest_axes.AXES.items():
         for name in guest.needs:
             assert name in guest_axes.HAS, f"{axis} needs {name}, the row cannot check it"
-            assert name in judging.GUEST_MATERIAL, f"{axis} needs {name}, the query cannot ask it"
+            assert name in judge_debts.GUEST_MATERIAL, f"{axis} needs {name}, the query cannot ask it"
 
 
 def test_an_abstention_is_a_verdict_and_ends_the_debt():
@@ -96,7 +96,7 @@ def test_a_guest_stops_being_tried_after_the_same_cap_our_axes_have(monkeypatch)
 
     tried = []
     monkeypatch.setattr(guest_axes, "score", lambda axis, ql, messages=None, **kw: tried.append(axis) or {})
-    ql = _row(metrics={axis: {"attempts": judging._MAX_JUDGE_ATTEMPTS} for axis in guest_axes.NAMES})
+    ql = _row(metrics={axis: {"attempts": judge_debts.MAX_JUDGE_ATTEMPTS} for axis in guest_axes.NAMES})
     monkeypatch.setattr(judging, "Session", _session_of(ql))
     judging._score_guests(1, {})
     assert tried == []
@@ -107,23 +107,22 @@ def test_the_judging_pass_never_asks_for_a_guest():
     from job_handlers import judging
     from job_handlers.base import HANDLERS
 
-    assert not _named(judging.still_to_judge()) & set(guest_axes.NAMES)
+    assert not _named(judge_debts.still_to_judge()) & set(guest_axes.NAMES)
     assert "judge_guest_axes" in HANDLERS
     assert judging.judge_guest_axes is HANDLERS["judge_guest_axes"]
 
 
 def test_the_guest_pass_asks_only_for_rows_that_owe_a_guest():
-    from job_handlers import judging
     from sqlalchemy import or_
 
-    assert set(guest_axes.NAMES) <= _named(or_(*judging.guest_clauses()))
+    assert set(guest_axes.NAMES) <= _named(or_(*judge_debts.guest_clauses()))
 
 
 def test_a_guest_pass_that_cannot_score_says_so_instead_of_walking(monkeypatch):
     import pytest
     from job_handlers import judging
 
-    monkeypatch.setattr(judging, "guests_available", lambda: False)
+    monkeypatch.setattr(judge_debts, "guests_available", lambda: False)
     with pytest.raises(judging.Final, match="ragas"):
         judging.judge_guest_axes({"run_name": "r"})
 
@@ -191,10 +190,9 @@ def test_a_guest_pass_sweeps_itself_and_queues_nothing(monkeypatch):
 def test_the_door_refuses_where_the_library_is_missing(monkeypatch):
     # a queued job that cannot score would spend three sweeps proving it
     from fastapi.testclient import TestClient
-    from job_handlers import judging
     from server import app
 
-    monkeypatch.setattr(judging, "guests_available", lambda: False)
+    monkeypatch.setattr(judge_debts, "guests_available", lambda: False)
     with TestClient(app) as client:
         answer = client.post("/v1/eval/guest-axes", json={"run_name": "r"})
     assert answer.status_code == 409
@@ -250,15 +248,14 @@ def test_every_writer_takes_the_lock_and_no_reader_holds_it_through_a_model_call
 def test_the_door_refuses_a_run_that_owes_nothing_and_one_too_large(monkeypatch):
     import limits
     from fastapi.testclient import TestClient
-    from job_handlers import judging
     from server import app
 
-    monkeypatch.setattr(judging, "guests_available", lambda: True)
-    monkeypatch.setattr(judging, "guest_rows_of", lambda run: 0)
+    monkeypatch.setattr(judge_debts, "guests_available", lambda: True)
+    monkeypatch.setattr(judge_debts, "guest_rows_of", lambda run: 0)
     with TestClient(app) as client:
         assert client.post("/v1/eval/guest-axes", json={"run_name": "typo"}).status_code == 404
 
-    monkeypatch.setattr(judging, "guest_rows_of", lambda run: limits.MAX_GUEST_ROWS + 1)
+    monkeypatch.setattr(judge_debts, "guest_rows_of", lambda run: limits.MAX_GUEST_ROWS + 1)
     with TestClient(app) as client:
         answer = client.post("/v1/eval/guest-axes", json={"run_name": "huge"})
     assert answer.status_code == 400 and "cap" in answer.json()["detail"]
@@ -266,9 +263,8 @@ def test_the_door_refuses_a_run_that_owes_nothing_and_one_too_large(monkeypatch)
 
 def test_every_material_predicate_is_total_so_its_negation_counts_the_rest():
     # the cheap half; `scripts/materiality_totality.py` proves it on rows, where NULL lives
-    from job_handlers import judging
 
-    for name, clause in judging.GUEST_MATERIAL.items():
+    for name, clause in judge_debts.GUEST_MATERIAL.items():
         rendered = str(clause)
         assert "coalesce" in rendered.lower(), f"{name}: a NULL column reaches the comparison"
         assert "jsonb_array_length" not in rendered, f"{name}: raises on a jsonb scalar"
@@ -287,9 +283,8 @@ def test_every_axis_declares_the_question_it_is_handed():
 
 def test_a_json_null_context_is_not_material_rather_than_an_error():
     # 375 rows hold jsonb `null` there, and the pass survived only on the planner's filter order
-    from job_handlers import judging
 
-    assert "jsonb_typeof" in str(judging.GUEST_MATERIAL["contexts"])
+    assert "jsonb_typeof" in str(judge_debts.GUEST_MATERIAL["contexts"])
     assert not guest_axes.HAS["contexts"](_row(contexts=None))
 
 
@@ -407,7 +402,7 @@ def test_a_cancelled_judging_job_stops_instead_of_running_to_the_end(monkeypatch
 
 def test_the_guest_pass_draws_a_seeded_subsample_and_redraws_the_same_rows():
     # guests calibrate on a subsample, they cost 35x ours a row
-    from job_handlers.judging import _drawn
+    from use_cases.judge_debts import drawn as _drawn
 
     ids = list(range(100, 200))
     first = _drawn(ids, 20, 7)
@@ -419,9 +414,7 @@ def test_the_guest_pass_draws_a_seeded_subsample_and_redraws_the_same_rows():
 
 def test_the_guest_budget_is_drawn_once_and_a_sweep_stays_inside_it():
     # `sample=50` scored up to 150: every sweep called the drawing function again
-    import job_handlers.judging as j
-
-    drawn = j._drawn(list(range(1, 301)), 100, 0)
+    drawn = judge_debts.drawn(list(range(1, 301)), 100, 0)
     assert len(drawn) == 100
     budget = set(drawn)
     # what the second sweep sees: every row still owing, unsampled, filtered to the budget
@@ -436,8 +429,8 @@ def test_our_judge_never_took_a_subsample():
 
     import job_handlers.judging as j
 
-    assert "_drawn" not in inspect.getsource(j._target_log_ids)
-    assert inspect.getsource(j).count("def _drawn") == 1
+    assert "drawn" not in inspect.getsource(j._target_log_ids)
+    assert inspect.getsource(judge_debts).count("def drawn") == 1
 
 
 def test_the_guard_does_not_read_false_on_an_axis_given_up_on():
@@ -680,16 +673,21 @@ def test_a_guest_pass_is_refused_before_the_queue_at_both_doors(monkeypatch):
     import inspect
 
     import limits
-    from api.v1 import experiment
-    from job_handlers import judging
+    import pytest
+    from errors import Refusal
+    from use_cases import experiment_setup, judge_debts
 
-    monkeypatch.setattr(judging, "guests_available", lambda: True)
-    monkeypatch.setattr(judging, "guest_rows_of", lambda run_name: 0)
-    assert judging.guest_pass_refusal("r")[0] == 404
-    monkeypatch.setattr(judging, "guest_rows_of", lambda run_name: limits.MAX_GUEST_ROWS + 1)
-    assert judging.guest_pass_refusal("r")[0] == 400
-    assert judging.guest_pass_refusal("r", sample=50) is None
-    assert "guest_pass_refusal" in inspect.getsource(experiment._queue_arm)
+    monkeypatch.setattr(judge_debts, "guests_available", lambda: True)
+    monkeypatch.setattr(judge_debts, "guest_rows_of", lambda run_name: 0)
+    with pytest.raises(Refusal) as raised:
+        judge_debts.refuse_guest_pass("r")
+    assert raised.value.kind == "missing"
+    monkeypatch.setattr(judge_debts, "guest_rows_of", lambda run_name: limits.MAX_GUEST_ROWS + 1)
+    with pytest.raises(Refusal) as raised:
+        judge_debts.refuse_guest_pass("r")
+    assert raised.value.kind == "invalid"
+    judge_debts.refuse_guest_pass("r", sample=50)
+    assert "refuse_guest_pass" in inspect.getsource(experiment_setup._queue_arm)
 
 
 def test_a_probe_with_one_arm_says_so_instead_of_reading_no_difference(monkeypatch):

@@ -63,9 +63,9 @@ def build_vector_index(options: dict) -> None:
 
 # indexing moves the depth, and a person runs the preflight, so it is read here
 def _report_depth() -> None:
+    import search_depth
     from orm.sync_db import engine
     from sqlalchemy import text
-    from use_cases import search_depth
 
     # the plan and reltuples move on ANALYZE: right answer to a stale question otherwise
     with engine.connect() as conn:

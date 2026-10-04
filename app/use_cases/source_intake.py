@@ -4,12 +4,17 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+import gold_match
 import logging_setup
-from errors import Final
-from models.corpus import DataSource, Stage
+from corpus_keys import HAS_GOLD_SQL, Gold, vector_index_name
+from errors import Final, Refusal
+from models.corpus import DataChunk, DataSource, Stage
+from orm.sync_db import engine
 from paths import FETCHED, RAW, ROOT
 from sources import files
 from sources.declaration import Declaration
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from use_cases.intake_fetch import stand_folder
 
 log = logging_setup.get_logger(__name__)
@@ -143,23 +148,24 @@ def set_intake(source: DataSource, block: dict) -> None:
     source.declaration = with_intake(source.declaration, block)
 
 
-# the paths a source leaves out at its next onboarding, kept on its row; the declaration's own check reads them
-def set_skip_paths(source: DataSource, patterns: list[str]) -> None:
-    if refusal := intake_refusal(source, _onboard_waiting(source.name)):
-        raise Final(refusal)
-    kept = {k: v for k, v in (source.declaration or {}).items() if k != "skip_paths"}
-    declared = {**kept, "skip_paths": patterns} if patterns else kept
-    Declaration.model_validate(declared)
-    source.declaration = declared
+# the fields of a declaration a door may set in place; the rest go through the source file or a new declaration
+SETTABLE_FIELDS = frozenset({"skip_paths", "markup", "markup_values", "section_root_by_path"})
 
 
-# the markup family a source's pages are written in, read by its next onboarding; none clears it
-def set_markup(source: DataSource, markup: str | None) -> None:
+# declared fields set on the row for its next onboarding or index; an empty value clears one, the declaration checks all
+def set_fields(source: DataSource, fields: dict) -> None:
+    from pydantic import ValidationError
+
+    if unknown := sorted(set(fields) - SETTABLE_FIELDS):
+        raise Refusal("invalid", f"not settable in place: {unknown}; settable: {sorted(SETTABLE_FIELDS)}")
     if refusal := intake_refusal(source, _onboard_waiting(source.name)):
         raise Final(refusal)
-    kept = {k: v for k, v in (source.declaration or {}).items() if k != "markup"}
-    declared = {**kept, "markup": markup} if markup else kept
-    Declaration.model_validate(declared)
+    declared = {k: v for k, v in (source.declaration or {}).items() if k not in fields}
+    declared |= {k: v for k, v in fields.items() if v}
+    try:
+        Declaration.model_validate(declared)
+    except ValidationError as e:
+        raise Refusal("invalid", str(e)) from e
     source.declaration = declared
 
 
@@ -239,15 +245,13 @@ def remove_source(source: DataSource, raw: Path) -> dict:
 
     import job_queue
 
-    import db
-
     # a whole-corpus index names no source and reads every file-defined one, so it counts as reading this one too
     queued = next((j for t in SOURCE_JOBS if (j := job_queue.pending_of_type(t, source=source.name))), None)
     queued = queued or whole_corpus_index()
-    if refusal := removal_refusal(source, queued, db.questions_marking(source.id)):
+    if refusal := removal_refusal(source, queued, _questions_marking(source.id)):
         raise Final(refusal)
     own = stand_files(source, raw)
-    chunks = db.remove_source(source.id)
+    chunks = _drop_source_row(source.id)
     for folder in own:
         shutil.rmtree(folder)
     return {"source": source.name, "chunks": chunks, "folders": [p.name for p in own]}
@@ -256,13 +260,11 @@ def remove_source(source: DataSource, raw: Path) -> dict:
 def remove_variant(variant: str, live: str) -> dict:
     import job_queue
 
-    import db
-
     queued = next((j for t in VARIANT_JOBS if (j := job_queue.pending_of_type(t, variant=variant))), None)
     queued = queued or veto_reading(variant)
     if refusal := variant_refusal(variant, live, queued):
         raise Final(refusal)
-    return {"variant": variant, "chunks": db.remove_variant(variant)}
+    return {"variant": variant, "chunks": _drop_variant_rows(variant)}
 
 
 # a pending veto build that reads the variant, by name or through its defaults (no variants, no cut_from)
@@ -302,7 +304,7 @@ def view(source: DataSource, chunks: int, in_variant: int) -> dict:
         "raw": source.raw or {},
         "raw_verdict": run_under_review(source).get("verdict"),
         # the variants cut by another version of this row's declaration
-        "drift": files.drift(source.name, source.indexed_with, source.declaration),
+        "drift": files.drift(source.name, source.indexed_with, source.declaration, source.indexed_rules),
     }
 
 
@@ -385,6 +387,8 @@ def conversion_drift(source: DataSource) -> dict | None:
     hashes = record.get("settings_sha256") or {}
     edited = sorted(t for t, name in was.items() if _settings_sha(name) != hashes.get(t))
     moved = {"chosen": chosen, "edited": edited, "route": record.get("route_sha256") != reading.route_sha(rule)}
+    if moved["route"] and "route" in record:
+        moved["route_knobs"] = files.changed_fields(record["route"], reading.route_rules(rule))
     return moved if chosen or edited or moved["route"] else {}
 
 
@@ -399,3 +403,120 @@ def drifting_rows() -> list[str]:
     return sorted(name for name, declaration in rows if (declaration or {}).get("drifts"))
 
 
+# the list's fields of one source, the same at the REST list and the MCP one
+def line(source: DataSource, chunks: int, in_variant: int) -> dict:
+    return {
+        "id": source.id,
+        "name": source.name,
+        "kind": source.kind,
+        "active": source.active,
+        "chunks": chunks,
+        "chunks_in_variant": in_variant,
+        "ingest_quality": source.ingest_quality,
+        "ingest_variant": source.ingest_variant,
+        "ingest_checked_at": source.ingest_checked_at,
+        "stage": source.stage,
+        "language": source.language,
+        "raw_verdict": run_under_review(source).get("verdict"),
+    }
+
+
+# a source's chunks, all and those of the variant it was last indexed as
+def chunk_counts(session, source: DataSource) -> tuple[int, int]:
+    from sqlalchemy import func, select
+
+    count = select(func.count()).select_from(DataChunk).where(DataChunk.source_id == source.id)
+    chunks = session.scalar(count) or 0
+    in_variant = session.scalar(count.where(DataChunk.variant == source.ingest_variant)) if source.ingest_variant else 0
+    return chunks, in_variant or 0
+
+
+# a page of sources by name, each with its counts; `ingest_variant`, so two numbers side by side describe one cut
+def listed(session, stage: Stage | None, limit: int, offset: int) -> list[dict]:
+    from sqlalchemy import func, select
+
+    stmt = select(DataSource).order_by(DataSource.name).limit(limit).offset(offset)
+    if stage is not None:
+        stmt = stmt.where(DataSource.stage == stage)
+    found = list(session.scalars(stmt))
+    ids = [s.id for s in found]
+    per_variant = {
+        (source_id, variant): n
+        for source_id, variant, n in session.execute(
+            select(DataChunk.source_id, DataChunk.variant, func.count())
+            .where(DataChunk.source_id.in_(ids))
+            .group_by(DataChunk.source_id, DataChunk.variant)
+        )
+    }
+    totals: dict[int, int] = {}
+    for (source_id, _), n in per_variant.items():
+        totals[source_id] = totals.get(source_id, 0) + n
+    return [line(s, totals.get(s.id, 0), per_variant.get((s.id, s.ingest_variant), 0)) for s in found]
+
+
+# a declared row written for both doors; two declarations of one name at once meet the unique name at commit
+def declare(session, declaration: Declaration) -> DataSource:
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+
+    if refusal := declaration_refusal(declaration, ROOT):
+        raise Refusal("malformed", refusal)
+    if session.scalar(select(DataSource.id).where(DataSource.name == declaration.name)):
+        raise Refusal("taken", name_taken(declaration.name))
+    source = declared_row(declaration)
+    session.add(source)
+    try:
+        session.commit()
+    except IntegrityError as e:
+        session.rollback()
+        raise Refusal("taken", name_taken(declaration.name)) from e
+    session.refresh(source)
+    return source
+
+
+def _drop_variant(conn, variant) -> int:
+    dropped = conn.execute(text("DELETE FROM data_chunks WHERE variant = :variant"), {"variant": variant}).rowcount
+    # an empty partial index left behind makes the next index of the name insert row by row
+    conn.execute(text(f"DROP INDEX IF EXISTS {vector_index_name(variant)}"))
+    # a row kept by another variant must not say this one was cut by some file
+    conn.execute(
+        text(
+            "UPDATE data_sources SET indexed_with = indexed_with - :variant, indexed_rules = indexed_rules - :variant"
+        ),
+        {"variant": variant},
+    )
+    return dropped
+
+
+def _drop_variant_rows(variant) -> int:
+    with engine.begin() as conn:
+        return _drop_variant(conn, variant)
+
+
+# the row and its chunks in every variant; the chunks go by the foreign key's cascade
+def _drop_source_row(source_id: int) -> int:
+    try:
+        with engine.begin() as conn:
+            chunks = conn.execute(
+                text("SELECT count(*) FROM data_chunks WHERE source_id = :id"), {"id": source_id}
+            ).scalar()
+            conn.execute(text("DELETE FROM data_sources WHERE id = :id"), {"id": source_id})
+    except IntegrityError as e:
+        raise Final(f"source {source_id} was taken by another row while it was being removed; nothing removed") from e
+    return chunks
+
+
+# questions whose gold lies in the source, by the stand's own predicate: a mark is a file or a folder prefix
+def _questions_marking(source_id: int) -> int:
+    with engine.connect() as conn:
+        files = (
+            conn.execute(text("SELECT DISTINCT source FROM data_chunks WHERE source_id = :id"), {"id": source_id})
+            .scalars()
+            .all()
+        )
+        if not files:
+            return 0
+        rows = conn.execute(
+            text(f"SELECT marked_sources, gold FROM questions q WHERE {HAS_GOLD_SQL.format(q='q')}")
+        ).all()
+    return gold_match.count_marking(files, [Gold.of(marks, gold) for marks, gold in rows])

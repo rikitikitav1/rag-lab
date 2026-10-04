@@ -42,13 +42,17 @@ def test_a_row_carries_the_unit_the_arm_every_signal_and_what_it_breached():
 
 # a piece cut alone took its own first heading for the root; a file is cut whole and read a chapter a row
 def test_a_file_is_cut_whole_and_read_a_chapter_a_row():
-    markdown = "# Book\n\n## One\n\nFirst chapter text here.\n\n## Two\n\nSecond chapter text, a bit longer here."
+    # every chapter over the tiny-section threshold, so none joins its neighbour
+    one = "First chapter text here, long enough to stand as a chunk on its own."
+    two = "Second chapter text, a bit longer here, and longer than the first one by a few more words."
+    markdown = f"# Book\n\n## One\n\n{one}\n\n## Two\n\n{two}"
     rows = raw_quality.section_rows(markdown, "book.md")
 
     assert [r["section"] for r in rows] == ["Book > One", "Book > Two"]
     assert rows[1]["words"] > rows[0]["words"] > 0
     # the lead is the root alone: coverage is not read there, nor diluted in chapter one
-    lead = raw_quality.section_rows("# Book\n\nA lead paragraph.\n\n## One\n\nFirst chapter text here.", "b.md")
+    lead_text = "A lead paragraph, long enough to stand as a chunk of its own before the first chapter."
+    lead = raw_quality.section_rows(f"# Book\n\n{lead_text}\n\n## One\n\n{one}", "b.md")
     assert [r["section"] for r in lead] == ["Book", "Book > One"]
     assert lead[0]["coverage_by_shape"] and not lead[1]["coverage_by_shape"]
     assert not any("section_coverage.min" in r["breached"] for r in lead)
@@ -160,3 +164,11 @@ def test_the_raw_report_reads_a_source_through_its_own_reader(tmp_path):
     plain = SimpleNamespace(units=[unit], root=tmp_path, source=SimpleNamespace(name="docs"),
                             origin={"name": "docs", "folder": str(tmp_path)})
     assert onboard._own_reader(plain) is None
+    # a page the declaration hides by its frontmatter is not judged either, with no reader and no markup
+    hidden = tmp_path / "hidden.md"
+    hidden.write_text("---\ncategory: Hidden\n---\n\n## Old\n\nNot shown.\n")
+    sheets = SimpleNamespace(units=[unit], root=tmp_path, source=SimpleNamespace(name="cheatsheets"),
+                             origin={"name": "cheatsheets", "folder": str(tmp_path),
+                                     "skip_when_frontmatter": {"category": "Hidden"}})
+    read_as = onboard._own_reader(sheets)
+    assert read_as is not None and read_as(hidden, "hidden.md") == ""

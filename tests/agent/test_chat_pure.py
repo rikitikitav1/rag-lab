@@ -2,12 +2,13 @@ import time
 from types import SimpleNamespace
 
 import pytest
+import text_language
 from conftest import stub_engines
 from use_cases import chat
 
 
 def _row(src, vector_rank=1, keyword_rank=None, vector_distance=0.1, score=0.5, content="content"):
-    from db import Hit
+    from corpus_search import Hit
 
     return Hit(content, src, "cat", 0, vector_rank, keyword_rank, vector_distance, score, None)
 
@@ -159,13 +160,12 @@ def test_dedup_keeps_the_best_cross_encoder_score():
 def test_fts_language_comes_from_config(monkeypatch):
     import config
 
-    import db
 
     monkeypatch.setattr(
         config.settings, "fts", SimpleNamespace(languages={"ru": "russian"}, fallback="simple")
     )
-    assert db._ts_config("что такое хеш-таблица") == "russian"
-    assert db._ts_config("...") == "simple"
+    assert text_language.ts_config("что такое хеш-таблица") == "russian"
+    assert text_language.ts_config("...") == "simple"
 
 
 def test_one_place_decides_whether_a_run_reranks(monkeypatch):
@@ -257,7 +257,7 @@ def test_the_row_snapshot_says_which_schema_it_is(monkeypatch):
 
 
 def _hit(source, section, index, content="body"):
-    from db import Hit
+    from corpus_search import Hit
 
     return Hit(content, source, "cat", index, 1, None, 0.1, 0.5, section)
 

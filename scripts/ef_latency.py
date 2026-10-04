@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import config
+import corpus_search
 import llm
 from sqlalchemy import text
 
@@ -22,7 +23,7 @@ def timings(rows, variant: str, ef: int) -> dict:
     took = []
     for question, embedding, embedded_by in rows:
         started = time.perf_counter()
-        db.hybrid_search(question, embedding, None, limit=20, variant=variant, ef_search=ef,
+        corpus_search.hybrid_search(question, embedding, None, limit=20, variant=variant, ef_search=ef,
                          embedded_by=embedded_by or llm.embedder_label())
         took.append((time.perf_counter() - started) * 1000)
     took.sort()
@@ -57,7 +58,7 @@ def main() -> int:
             got = timings(rows, variant, ef)
             report["by_variant"][variant][str(ef)] = got
             print(f"{variant:14} ef={ef:<4} median {got['median_ms']:6.1f} ms  p95 {got['p95_ms']:6.1f} ms")
-    from use_cases import search_depth
+    import search_depth
 
     # resolved: an artifact recording the word `auto` cannot be compared against a number
     report["serving_ef_search"] = search_depth.resolve()

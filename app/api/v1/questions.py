@@ -73,9 +73,10 @@ def list_questions(
 @router.delete("/set/{set_name}")
 def remove_question_set(set_name: str = Path(max_length=limits.MAX_SET_NAME)) -> dict:
     from errors import Final
+    from use_cases import question_set_removal
 
     try:
-        return question_sets.remove(set_name)
+        return question_set_removal.remove(set_name)
     except Final as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
@@ -101,7 +102,7 @@ async def import_questions(
     session: AsyncSession = Depends(get_session),
 ):
     if run and run_name:
-        from api.v1.eval import refuse_a_taken_run
+        from use_cases.eval_runs import refuse_a_taken_run
 
         await refuse_a_taken_run(session, run_name)
     raw = await file.read(_MAX_UPLOAD + 1)

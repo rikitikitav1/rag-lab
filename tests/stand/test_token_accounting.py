@@ -5,6 +5,7 @@ import engines
 import job_queue
 import llm
 import pytest
+import search_scope
 from models.registry import EngineKind, Placement
 
 LOCAL = engines.EngineSpec(1, "ollama", EngineKind.ollama, "OLLAMA", Placement.gpu)
@@ -183,11 +184,10 @@ def test_a_turn_without_token_counts_does_not_fail_the_row(monkeypatch):
 def test_the_run_snapshot_says_its_scope_and_filtered_scan():
     from use_cases import run_snapshot
 
-    import db
 
     assert {"scope", "filtered_scan"} <= set(run_snapshot.KEYS)
     assert run_snapshot.scope_of(None) is None
-    assert run_snapshot.scope_of(db.Scope(label="redis", sources=("redis-doc",))) == {
+    assert run_snapshot.scope_of(search_scope.Scope(label="redis", sources=("redis-doc",))) == {
         "label": "redis",
         "sources": ["redis-doc"],
         "version": None,

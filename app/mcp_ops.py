@@ -21,12 +21,11 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from models import Job, JobStatus
 from models.corpus import Stage
-from models.experiment import Experiment, ExperimentKind
 from orm.sync_db import Session
 from pydantic import Field
 from sqlalchemy import select
 from use_cases import experiment as experiment_uc
-from use_cases import prereg, rejudge, retrieval_compare
+from use_cases import prereg
 
 log = logging_setup.get_logger(__name__)
 
@@ -292,13 +291,6 @@ def compare_pools(
         raise ToolError(str(e)) from e
 
 
-READING = {
-    ExperimentKind.generation: experiment_uc.for_reading,
-    ExperimentKind.retrieval: retrieval_compare.for_reading,
-    ExperimentKind.rejudge: rejudge.for_reading,
-}
-
-
 @mcp_ops.tool(
     name="experiment_results",
     description=(
@@ -309,7 +301,8 @@ READING = {
         "holds. For a rejudge, same_answers says the arms judged the same "
         "answers; a false there means the deltas compare two different sets. "
         "Read this instead of the raw record: the record carries halves and "
-        "seeds that only the aggregation is meant to read."
+        "seeds that only the aggregation is meant to read. REST serves the "
+        "same report at GET /v1/experiment/{id}/report."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -320,48 +313,14 @@ def experiment_results(
         Field(description="Only this pair, as it is named in the report."),
     ] = None,
 ) -> dict:
+    from errors import Refusal
+    from use_cases import experiment_report
+
     with Session() as session:
-        exp = session.get(Experiment, id)
-        if exp is None:
-            raise ToolError(f"no experiment {id}")
-        # each kind writes its own shape, and only its writer knows which key holds what
-        read = READING[ExperimentKind(exp.kind)](exp.results or {})
-        out = {
-            "id": exp.id,
-            "name": exp.name,
-            "kind": exp.kind,
-            "status": exp.status,
-            "conclusion": exp.conclusion,
-            **{k: v for k, v in read.items() if k != "deltas"},
-        }
-        # the rule the stored numbers were read with, not today's: an older report names none
-        if exp.kind != ExperimentKind.retrieval:
-            out["outcome_rule"] = (exp.results or {}).get("outcome_rule")
-            out["code"] = (exp.results or {}).get("code") or {}
-        guests = (
-            session.execute(
-                select(Job.status).where(
-                    Job.type == "judge_guest_axes", Job.options["run_name"].astext.in_(exp.run_names or [])
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if guests:
-            out["guest_passes"] = {
-                "done": sum(1 for status in guests if status == JobStatus.done),
-                "of": len(guests),
-                "reads": "guest numbers are read per question_id, not compared here; "
-                "run_metrics debts.guests says what a copy still owes",
-            }
-        deltas = read["deltas"]
-        if pair is not None:
-            if pair not in deltas:
-                raise ToolError(f"no pair {pair!r}; this report has {sorted(deltas)}")
-            deltas = {pair: deltas[pair]}
-        # halves are the aggregation's own check and read as four more numbers per axis here
-        out["deltas"] = {name: {k: v for k, v in body.items() if k != "halves"} for name, body in deltas.items()}
-        return out
+        try:
+            return experiment_report.report_of(session, id, pair)
+        except Refusal as e:
+            raise ToolError(str(e)) from e
 
 
 @mcp_ops.tool(
@@ -603,31 +562,20 @@ def add_source(
         "The declaration, field for field as `sources/<name>.yaml` writes it, e.g. {'name': 'nginx-org-en', "
         "'licence': 'BSD-2', 'pages': [...], 'site': {'main': 'div#content'}, 'categories': ['nginx']}."))],
 ) -> dict:
-    from models.corpus import DataSource
+    from errors import Refusal
     from pydantic import ValidationError
     from sources.declaration import Declaration
-    from sqlalchemy.exc import IntegrityError
     from use_cases import source_intake
 
     try:
         declaration = Declaration.model_validate(declaration)
     except ValidationError as e:
         raise ToolError(str(e)) from e
-    name = declaration.name
-    from paths import ROOT
-
-    if refusal := source_intake.declaration_refusal(declaration, ROOT):
-        raise ToolError(refusal)
     with Session() as session:
-        if session.scalar(select(DataSource.id).where(DataSource.name == name)):
-            raise ToolError(source_intake.name_taken(name))
-        source = source_intake.declared_row(declaration)
-        session.add(source)
         try:
-            session.commit()
-        except IntegrityError as e:
-            raise ToolError(source_intake.name_taken(name)) from e
-        session.refresh(source)
+            source = source_intake.declare(session, declaration)
+        except Refusal as e:
+            raise ToolError(str(e)) from e
         return source_intake.view(source, 0, 0)
 
 
@@ -637,25 +585,18 @@ def add_source(
     annotations={"readOnlyHint": True},
 )
 def source(name: Annotated[str, Field(description="The source's name.")]) -> dict:
-    from models.corpus import DataChunk, DataSource
-    from sqlalchemy import func
     from use_cases import source_intake
 
     with Session() as session:
-        found = session.scalar(select(DataSource).where(DataSource.name == name))
-        if found is None:
-            raise ToolError(f"no source named {name}")
-        count = select(func.count()).select_from(DataChunk).where(DataChunk.source_id == found.id)
-        chunks = session.scalar(count) or 0
-        in_variant = session.scalar(count.where(DataChunk.variant == found.ingest_variant)) or 0
-        return source_intake.view(found, chunks, in_variant if found.ingest_variant else 0)
+        found = _source_named(session, name)
+        return source_intake.view(found, *source_intake.chunk_counts(session, found))
 
 
 @mcp_ops.tool(
     name="sources",
     description=(
-        "Sources by stage (declared, raw, accepted), a page at a time by name: name, stage, raw verdict and "
-        "whether active."
+        "Sources by stage (declared, raw, accepted), a page at a time by name, the same rows as GET /v1/source: "
+        "name, stage, language, whether active, raw verdict, chunks in every variant and in the one last indexed."
     ),
     annotations={"readOnlyHint": True},
 )
@@ -664,22 +605,10 @@ def sources(
     limit: Annotated[int, Field(ge=1, le=1000, description="Rows in the page.")] = 100,
     offset: Annotated[int, Field(ge=0, description="Rows to skip, by name.")] = 0,
 ) -> list[dict]:
-    from models.corpus import DataSource
     from use_cases import source_intake
 
     with Session() as session:
-        stmt = select(DataSource).order_by(DataSource.name).limit(limit).offset(offset)
-        if stage is not None:
-            stmt = stmt.where(DataSource.stage == stage)
-        return [
-            {
-                "name": s.name,
-                "stage": s.stage,
-                "active": s.active,
-                "raw_verdict": source_intake.run_under_review(s).get("verdict"),
-            }
-            for s in session.scalars(stmt)
-        ]
+        return source_intake.listed(session, stage, limit, offset)
 
 
 @mcp_ops.tool(
@@ -824,6 +753,33 @@ def set_source_intake(
 
 
 @mcp_ops.tool(
+    name="set_source_fields",
+    description=(
+        "Set declared fields of a source on its row in place, read by its next onboarding or index, as the REST doors "
+        "`PUT /v1/source/{id}/skip_paths|markup|section_roots` do: `skip_paths` (globs under the root), `markup` "
+        "(hugo or mdn) with `markup_values` (the site parameters it prints), `section_root_by_path` (a book's heading "
+        "root by file glob). An empty value clears a field. Refused while a job reads the source or a source file "
+        "speaks for it."
+    ),
+)
+def set_source_fields(
+    name: Annotated[str, Field(description="The source's name.")],
+    fields: Annotated[dict, Field(description="The fields to set, e.g. {'markup': 'hugo', 'markup_values': {...}}.")],
+) -> dict:
+    from errors import Refusal
+    from use_cases import source_intake
+
+    with Session() as session:
+        found = _source_named(session, name)
+        try:
+            _transition(source_intake.set_fields, found, fields)
+        except Refusal as e:
+            raise ToolError(str(e)) from e
+        session.commit()
+        return {"source": name, "declaration": found.declaration}
+
+
+@mcp_ops.tool(
     name="probe_intake",
     description=(
         "Try intake knobs on a few pages before setting them: a job reads the pages of the source's PDF with its own "
@@ -895,10 +851,10 @@ def remove_question_set(
     set_name: Annotated[str, Field(description="The set's name.", max_length=limits.MAX_SET_NAME)],
 ) -> dict:
     from errors import Final
-    from evals import question_sets
+    from use_cases import question_set_removal
 
     try:
-        return question_sets.remove(set_name)
+        return question_set_removal.remove(set_name)
     except Final as e:
         raise ToolError(str(e)) from e
 

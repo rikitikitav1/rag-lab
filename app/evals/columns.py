@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 
 import outcomes
-from corpus_keys import reference_by, shares_heading_word
+from corpus_keys import reference_by, shares_heading_word, source_name_of
 from evals import gold_classes, grade_curve, measurements, pools
 from evals.stats import score_of
 
@@ -11,7 +11,7 @@ from evals.stats import score_of
 def _reference_page(gold: dict | None, leaves: dict) -> float | None:
     if gold is None:
         return None
-    leaf = leaves.get((gold.get("file") or "").split("/", 1)[0])
+    leaf = leaves.get(source_name_of(gold.get("file") or ""))
     return float(reference_by(gold.get("section"), leaf) is not None)
 
 
@@ -172,7 +172,8 @@ _READERS = {
 
 # a version's copy of a section is one candidate: counted apart, close copies would make hit@5 a hit@2
 def _hit_at(ql, k: int) -> float | None:
-    from evals.retrieval_metrics import gold_of, section_ids
+    from evals.retrieval_metrics import gold_of
+    from gold_match import section_ids
 
     gold = gold_of(ql)
     if gold is None:

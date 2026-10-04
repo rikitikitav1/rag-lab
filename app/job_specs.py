@@ -7,14 +7,12 @@ from typing import Annotated, Literal
 import limits
 import samplers
 from corpus_keys import VARIANT_RE
-from evals.guest_axes import MESSAGE_FORMS
-from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role
+from models.registry import MAX_MODEL_NAME, MODEL_NAME_RE, Pipeline, Role, refuse_unknown_registry
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from search_scope import CATEGORY_RE, MAX_SOURCES, VERSION_RE, Scope, refuse_malformed_scope
-from sources.declaration import SOURCE_NAME, IntakeOverride, Language
+from sources.declaration import IntakeOverride
 from tool_names import SETTINGS_NAME, settings_refusal
-from use_cases import agent_policy
-from use_cases.agent_policy import GONE, FallbackPolicy, GateSignal, Orchestrator
+from vocabulary import GONE, MAX_HOPS, MESSAGE_FORMS, SOURCE_NAME, FallbackPolicy, GateSignal, Language, Orchestrator
 
 # a generated set names its files and its reports, so its name is one a path can carry as it is
 SET_NAME = r"^[\w.-]+$"
@@ -46,7 +44,7 @@ class EvalRunFields(Spec):
     pipeline: Pipeline = Pipeline.single_shot
     language: Literal["ru", "en"] | None = None
     k: int | None = Field(default=None, ge=1, le=limits.MAX_K)
-    max_hops: int | None = Field(default=None, ge=1, le=agent_policy.MAX_HOPS)
+    max_hops: int | None = Field(default=None, ge=1, le=MAX_HOPS)
     model: str | None = Field(default=None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_RE.pattern)
     fallback_policy: FallbackPolicy | None = None
     gate_signal: GateSignal | None = None
@@ -222,8 +220,6 @@ class ModelByName(Spec):
     # the typed door refused a three-segment name pointing anywhere else; the universal one did not
     @model_validator(mode="after")
     def _known_registry(self):
-        from models.registry import refuse_unknown_registry
-
         refuse_unknown_registry(self.name)
         return self
 
@@ -294,6 +290,12 @@ class AnchorQuestions(Spec):
     set_name: SetName
 
 
+class ReanchorQuestions(Spec):
+    set_name: SetName
+    variant: str | None = None
+    dry: bool = False
+
+
 # a generated set to its file beside the sources, and back into the base on a later intake
 class SaveQuestions(Spec):
     set_name: SetName
@@ -351,8 +353,6 @@ class ConvertSource(Spec):
         if not self.intake and any(as_corpus):
             raise ValueError("pages, root and pages_per_chunk read a file as the corpus does, so they need intake")
         if self.knobs is not None:
-            from sources.declaration import IntakeOverride
-
             IntakeOverride(**self.knobs)
         for path, (first, last) in (self.pages or {}).items():
             if path not in self.inputs or not 1 <= first <= last:
@@ -412,6 +412,7 @@ SPECS: dict[str, type[Spec]] = {
     "judge_questions": JudgeQuestions,
     "reparse_questions": ReparseQuestions,
     "anchor_questions": AnchorQuestions,
+    "reanchor_questions": ReanchorQuestions,
     "save_questions": SaveQuestions,
     "load_questions": LoadQuestions,
     "build_veto_set": BuildVetoSet,
@@ -453,6 +454,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     # no model: the replies are the ones the generator gave
     "reparse_questions": (),
     "anchor_questions": (),
+    "reanchor_questions": (),
     "save_questions": (),
     "load_questions": (),
     "build_veto_set": (Role.paraphrasing,),
@@ -502,7 +504,7 @@ class Refused(ValueError):
 
 
 # its own type: a handler on pydantic's base read a bug in our own model as the caller's mistake
-def check(job_type: str, options: dict | None, *, from_the_worker: bool = False) -> None:
+def check(job_type: str, options: dict | None, *, from_the_worker: bool = False) -> BaseModel | None:
     given = {k: v for k, v in (options or {}).items() if not k.startswith("_")}
     theirs = sorted(set(given) & set(WORKER_KEYS))
     # a caller sending `attempts` past the cap buys a job that never retries, and says nothing
@@ -510,7 +512,7 @@ def check(job_type: str, options: dict | None, *, from_the_worker: bool = False)
         raise Refused(f"{theirs[0]}: the stand writes this on a retry, a caller does not")
     spec = SPECS.get(job_type)
     if spec is None:
-        return
+        return None
     asked = {k: v for k, v in given.items() if k not in WORKER_KEYS}
     try:
         checked = spec.model_validate(asked)
@@ -518,11 +520,4 @@ def check(job_type: str, options: dict | None, *, from_the_worker: bool = False)
         first = bad.errors()[0]
         where = ".".join(str(part) for part in first["loc"]) or "options"
         raise Refused(f"{where}: {first['msg']}") from bad
-    # the search's own step is the queue's door's, as at the MCP door: sources out of search, a version none holds
-    if not from_the_worker and hasattr(checked, "scope") and checked.scope().narrowed:
-        import db
-
-        try:
-            db.refuse_bad_scope(checked.scope(), getattr(checked, "variant", None))
-        except db.ScopeRefused as bad:
-            raise Refused(f"scope: {bad}") from bad
+    return checked

@@ -246,9 +246,29 @@ def test_the_rows_and_the_list_read_the_run_waiting_for_acceptance(monkeypatch):
         def scalars(self, _stmt):
             return [self._row]
 
+        def execute(self, *_):
+            return []
+
     monkeypatch.setattr(mcp_ops, "Session", lambda: _Rows(row))
     read = []
     monkeypatch.setattr(measurements, "rows_of", lambda path, kind: read.append(path.name) or [{"breached": ["x"]}])
 
     assert mcp_ops.raw_rows("book")["report"] == "waiting.json" and read == ["waiting.json"]
     assert mcp_ops.sources()[0]["raw_verdict"] == "bad"
+
+
+# one report, one list, one declaration: the MCP door and the REST one read the same use case
+def test_the_mcp_and_rest_doors_share_their_reading():
+    import inspect
+
+    from api.v1 import experiment, source
+
+    pairs = [
+        (mcp_ops.experiment_results, experiment.experiment_report_of, "experiment_report.report_of"),
+        (mcp_ops.sources, source.list_sources, "source_intake.listed"),
+        (mcp_ops.add_source, source.declare_source, "source_intake.declare"),
+        (mcp_ops.source, source._counts, "source_intake.chunk_counts"),
+    ]
+    for mcp_door, rest_door, shared in pairs:
+        mcp_body = inspect.getsource(getattr(mcp_door, "fn", mcp_door))
+        assert shared in mcp_body and shared in inspect.getsource(rest_door), shared

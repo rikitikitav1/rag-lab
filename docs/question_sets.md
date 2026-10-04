@@ -39,6 +39,8 @@ A pair the judge accepts is not proof the question is fair: a question built on 
 
 `anchor_questions` gives each row the identifiers it names by their shape (`snake_case`, `dotted.names`, `call()`, `--flags`, backticks) that its gold section holds, with the number of the source's sections holding each. A question anchored by an identifier is easier for keyword search than one that is not, so `run_metrics` reports the closing columns split by `anchored_by_identifier`, `shares_heading_word` (a word of the gold heading in the question) and `reference_page` (the gold is a reference entry, such as one function's page), as well as by language.
 
+A cleanup that renames a page's root (a title read from frontmatter, a declared book title) leaves the gold sections written before it unnamed by the index. `reanchor_questions` moves each such gold to the section of the same file with the same leaf heading that holds the question's evidence; a gold whose file left the index, whose leaf is gone, or whose leaf matches several sections is counted and left as it was.
+
 ## Where to look
 
 - `question_sets` (MCP): each set by source, with accepted, refused and open pairs.

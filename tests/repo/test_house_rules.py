@@ -238,3 +238,71 @@ def test_every_json_file_in_git_parses():
         except ValueError:
             broken.append(name)
     assert not broken
+
+
+# the queue's vocabulary sits under every layer: followed through every import, top or lazy, it reaches none of them
+def _reached(start: str) -> set[str]:
+    import ast
+
+    app = Path(__file__).resolve().parents[2] / "app"
+
+    def path_of(module: str) -> Path | None:
+        base = app.joinpath(*module.split("."))
+        return next((p for p in (base.with_suffix(".py"), base / "__init__.py") if p.exists()), None)
+
+    seen, todo = set(), [start]
+    while todo:
+        module = todo.pop()
+        if module in seen or (path := path_of(module)) is None:
+            continue
+        seen.add(module)
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Import):
+                todo += [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                todo += [node.module] + [f"{node.module}.{alias.name}" for alias in node.names]
+    return seen - {start}
+
+
+ABOVE_THE_QUEUE = ("use_cases", "evals", "job_handlers", "api", "orchestrators")
+
+
+def test_the_job_specs_are_a_leaf_and_the_queue_reaches_no_use_case():
+    def above(module: str) -> bool:
+        return module.split(".")[0] in ABOVE_THE_QUEUE
+
+    assert sorted(m for m in _reached("job_queue") if above(m)) == []
+    specs = _reached("job_specs")
+    assert sorted(m for m in specs if above(m) or m in ("db", "corpus_search", "sources.base", "sources.factory")) == []
+    assert _reached("vocabulary") == set()
+
+
+# evals splits into metrics over loaded logs and the services that run or judge; only the services reach use_cases
+EVAL_SERVICES = {"runner", "replay", "grade_candidates", "grade_curve", "judge_language", "run_debts"}
+
+
+def test_eval_metrics_reach_no_use_case_and_no_use_case_reaches_an_eval_service():
+    import ast
+
+    app = Path(__file__).resolve().parents[2] / "app"
+
+    def modules_imported(path: Path) -> set[str]:
+        names = set()
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                names.add(node.module)
+                names |= {f"{node.module}.{alias.name}" for alias in node.names}
+            elif isinstance(node, ast.Import):
+                names |= {alias.name for alias in node.names}
+        return names
+
+    reaching = sorted(
+        f.stem for f in (app / "evals").glob("*.py")
+        if f.stem not in EVAL_SERVICES and any(m.startswith("use_cases") for m in modules_imported(f))
+    )
+    assert reaching == [], f"metrics that reach a use case: {reaching}"
+    services = {f"evals.{name}" for name in EVAL_SERVICES}
+    reached = sorted(
+        f"{f.stem}: {m}" for f in (app / "use_cases").glob("*.py") for m in modules_imported(f) if m in services
+    )
+    assert reached == [], f"use cases that reach an eval service: {reached}"

@@ -7,9 +7,8 @@ from config import SOURCE_KNOBS, MetricGatesCfg, RouteCfg
 from models.corpus import Trust
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 from tool_names import settings_refusal
+from vocabulary import SOURCE_NAME, Language, Markup
 
-Language = Literal["en", "ru"]
-SOURCE_NAME = r"^[a-z0-9][a-z0-9_-]{0,62}$"
 # one vocabulary for the kind column: a folder is `local`, as the code-defined sources already say
 KINDS = {"urls": "urls", "folder": "local", "git": "git", "git_family": "git", "pages": "pages"}
 
@@ -183,8 +182,12 @@ class Declaration(_Strict):
     skip_when_frontmatter: dict[str, str] = {}
     # the folder whose pages carry no heading: a page there is rooted at its file name in capitals
     section_root_from_filename: str | None = None
+    # a book's root by its file's glob, where the converter read cover text as its first heading
+    section_root_by_path: dict[str, str] = {}
     # the markup family the site writes beside markdown, rendered by its table before the cut
-    markup: Literal["hugo", "mdn"] | None = None
+    markup: Markup | None = None
+    # the site parameters its markup prints, as the site's own config sets them: `{{< param "version" >}}`
+    markup_values: dict[str, str] = {}
     # over the default read from the origin, when a source is not what its origin suggests
     trust: Trust | None = None
 

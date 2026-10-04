@@ -1,3 +1,4 @@
+import corpus_search
 import pytest
 from fastapi.testclient import TestClient
 from stand_specs import queued_job as _queued_job
@@ -29,10 +30,9 @@ def test_agent_language_invalid_422(client):
 def test_the_agent_door_refuses_foreign_vectors_rather_than_answering_without_the_corpus(client, monkeypatch):
     import api.v1.agent as agent_door
 
-    import db
 
     def foreign(*a, **kw):
-        raise db.ForeignVectors("variant holds vectors of bge-m3@ollama-cpu")
+        raise corpus_search.ForeignVectors("variant holds vectors of bge-m3@ollama-cpu")
 
     monkeypatch.setattr(agent_door, "wait_for_the_card", lambda *roles: None)
     monkeypatch.setattr(agent_door.agent, "run", foreign)
@@ -298,6 +298,7 @@ def test_the_compare_path_is_not_read_as_a_source_id(client):
 
 def _door_that_queues(monkeypatch, *, rows=0, jobs=()):
     import api.v1.eval as eval_mod
+    from use_cases import eval_runs
 
     async def _rows(session, run_name):
         return rows
@@ -308,8 +309,8 @@ def _door_that_queues(monkeypatch, *, rows=0, jobs=()):
     async def _refresh(session, obj):
         return obj
 
-    monkeypatch.setattr(eval_mod, "_rows_of", _rows)
-    monkeypatch.setattr(eval_mod, "_eval_runs_named", _named)
+    monkeypatch.setattr(eval_runs, "_rows_of", _rows)
+    monkeypatch.setattr(eval_runs, "_eval_runs_named", _named)
     monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
     monkeypatch.setattr(eval_mod, "commit_and_refresh", _refresh)
 
@@ -380,13 +381,13 @@ def test_a_run_is_resumed_only_when_it_exists_and_has_stopped(client, monkeypatc
 
 
 def test_the_door_refuses_question_ids_that_repeat_or_are_not_in_the_stand(client, monkeypatch):
-    import api.v1.eval as eval_mod
+    from use_cases import eval_runs
 
     async def _found(session, ids):
         return {34, 35}
 
     _door_that_queues(monkeypatch)
-    monkeypatch.setattr(eval_mod, "_question_ids_in", _found)
+    monkeypatch.setattr(eval_runs, "_question_ids_in", _found)
     missing = client.post("/v1/eval/run", json={"question_ids": [34, 35, 99]})
     assert missing.status_code == 422 and "1 of 3 question ids are not in the stand: [99]" in missing.json()["detail"]
     repeated = client.post("/v1/eval/run", json={"question_ids": [34, 34]})
@@ -440,3 +441,14 @@ def test_import_refuses_a_set_name_the_jobs_would_refuse(client):
     for name in ("a/b", "x y"):
         r = client.post("/v1/questions/import", files={"file": ("q.txt", b"what?")}, data={"set_name": name})
         assert r.status_code == 422
+
+
+# every kind of refusal has its HTTP status, and a kind nobody declared fails where it is raised
+def test_every_refusal_kind_has_a_status_and_a_misspelt_one_fails_at_once():
+    import pytest
+    import server
+    from errors import Refusal, RefusalKind
+
+    assert set(server.REFUSAL_STATUS) == set(RefusalKind)
+    with pytest.raises(ValueError):
+        Refusal("taken_twice", "x")

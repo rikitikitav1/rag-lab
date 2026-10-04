@@ -1,8 +1,8 @@
 import config
+import corpus_search
+import search_scope
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-
-import db
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -22,12 +22,13 @@ class Tag(BaseModel):
 @router.get("")
 def list_categories(
     only_top: bool | None = None,
-    category: str | None = Query(default=None, pattern=db.CATEGORY_RE.pattern),
+    category: str | None = Query(default=None, pattern=search_scope.CATEGORY_RE.pattern),
 ) -> list[Category]:
-    rows = db.list_categories(only_top=only_top, category=category, variant=config.settings.corpus.variant)
+    rows = corpus_search.list_categories(only_top=only_top, category=category, variant=config.settings.corpus.variant)
     return [Category(name=name, group=group, chunks=n, level=0 if only_top else 1) for name, group, n in rows]
 
 
 @router.get("/tags")
 def list_tags(limit: int = Query(default=50, ge=1, le=1000)) -> list[Tag]:
-    return [Tag(name=name, chunks=n) for name, n in db.list_tags(limit, variant=config.settings.corpus.variant)]
+    tags = corpus_search.list_tags(limit, variant=config.settings.corpus.variant)
+    return [Tag(name=name, chunks=n) for name, n in tags]

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import gold_match
 import pytest
 from config import settings
 from corpus_keys import file_stem
@@ -418,15 +419,14 @@ def test_a_source_named_like_a_hash_keeps_its_folders_from_a_shorter_names_remov
 
 
 def test_a_folder_mark_holds_its_source_as_the_stands_gold_predicate_reads_it():
-    import db
 
     files = ["roadmap/content/clickhouse/intro.md", "roadmap/content/clickhouse/joins.md"]
     from corpus_keys import Gold
 
     marks = [["roadmap/content/clickhouse"], ["other/file.md"], ["roadmap/content/clickhouse/joins.md"]]
-    assert db.count_marking(files, marks) == 2
+    assert gold_match.count_marking(files, marks) == 2
     exact = [Gold(("roadmap/content/clickhouse/intro.md",), "Intro"), Gold(("roadmap/content/clickhouse",), "Intro")]
-    assert db.count_marking(files, exact) == 1, "an exact gold names its file whole, never a folder"
+    assert gold_match.count_marking(files, exact) == 1, "an exact gold names its file whole, never a folder"
 
 
 def test_a_source_is_accepted_from_raw_and_a_bad_verdict_needs_a_reason():
@@ -635,6 +635,9 @@ def test_the_route_fingerprint_reads_what_shapes_a_piece(monkeypatch):
     before = reading.route_sha(stand)
     assert reading.route_sha(stand.model_copy(update={"epub_skip": ["toc"], "suspect_min_words": 99})) == before
     assert reading.route_sha(stand.model_copy(update={"seam_window": stand.seam_window + 1})) != before
+    # a knob that is off is not in the fingerprint, so adding or dropping one moves no record
+    off = next(k for k, v in stand.model_dump().items() if v is False and k in reading._SHAPES)
+    assert off not in reading.route_rules(stand) and off in reading.route_rules(stand.model_copy(update={off: True}))
     content["sha"] = "two"
     assert reading.route_sha(stand) != before
 
@@ -994,12 +997,30 @@ def test_a_page_the_site_no_longer_serves_is_left_out_not_the_source(tmp_path, m
 def test_skip_paths_are_set_on_the_row_and_refused_for_a_seeded_or_busy_source(monkeypatch):
     monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
     row = DataSource(name="docs", seeded=False, declaration={"name": "docs", "folder": "inbox/docs", "licence": "MIT"})
-    source_intake.set_skip_paths(row, ["release-notes/*"])
+    source_intake.set_fields(row, {"skip_paths": ["release-notes/*"]})
     assert row.declaration["skip_paths"] == ["release-notes/*"] and row.declaration["folder"] == "inbox/docs"
-    source_intake.set_skip_paths(row, [])
+    source_intake.set_fields(row, {"skip_paths": []})
     assert "skip_paths" not in row.declaration
     with pytest.raises(Final, match="source file"):
-        source_intake.set_skip_paths(DataSource(name="x", seeded=True, declaration={"name": "x"}), ["a/*"])
+        source_intake.set_fields(DataSource(name="x", seeded=True, declaration={"name": "x"}), {"skip_paths": ["a/*"]})
     monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: 42)
     with pytest.raises(Final, match="42"):
-        source_intake.set_skip_paths(row, ["a/*"])
+        source_intake.set_fields(row, {"skip_paths": ["a/*"]})
+
+
+def test_declared_fields_are_set_together_refused_by_name_and_checked_whole(monkeypatch):
+    from errors import Refusal
+
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    row = DataSource(name="book", seeded=False, declaration={"name": "book", "folder": "inbox/book", "licence": "MIT"})
+    source_intake.set_fields(row, {"section_root_by_path": {"*": "The Book"}})
+    source_intake.set_fields(row, {"markup": "hugo", "markup_values": {"version": "v1.37"}})
+    assert row.declaration["section_root_by_path"] == {"*": "The Book"} and row.declaration["markup"] == "hugo"
+    assert row.declaration["markup_values"] == {"version": "v1.37"}
+    source_intake.set_fields(row, {"section_root_by_path": {}})
+    assert "section_root_by_path" not in row.declaration
+    with pytest.raises(Refusal, match="not settable"):
+        source_intake.set_fields(row, {"folder": "elsewhere"})
+    with pytest.raises(Refusal) as raised:
+        source_intake.set_fields(row, {"markup": "latex"})
+    assert raised.value.kind == "invalid"

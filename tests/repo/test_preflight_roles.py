@@ -89,7 +89,9 @@ def test_the_newest_check_asks_the_rows_search_reads(preflight, monkeypatch):
     asked = []
     monkeypatch.setattr(preflight, "_in_worker", lambda code: asked.append(code) or '{"held": {}, "newest": {}}')
     assert preflight.newest_versions_are_searchable()[0]
-    assert "db.versions_held(" in asked[0] and "db.newest()" in asked[0] and "data_chunks" not in asked[0]
+    asked_code = asked[0]
+    assert "corpus_search.versions_held(" in asked_code and "corpus_search.newest()" in asked_code
+    assert "data_chunks" not in asked_code
 
 
 def test_a_folder_source_missing_on_the_host_is_refused(preflight):

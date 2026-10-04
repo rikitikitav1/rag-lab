@@ -1,4 +1,5 @@
 # which vectors are foreign is a sql predicate, so it is checked against the real schema
+import corpus_search
 import pytest
 from real_db import pytestmark  # noqa: F401
 from sqlalchemy import text
@@ -34,7 +35,6 @@ def test_questions_embedded_by_another_embedder_are_embedded_again(db, monkeypat
 
 
 def test_the_guard_reads_the_variant_it_searches_and_nothing_else(db):
-    import db as stand
 
     with db.connect() as c:
         c.execute(text("TRUNCATE data_sources CASCADE"))
@@ -50,11 +50,11 @@ def test_the_guard_reads_the_variant_it_searches_and_nothing_else(db):
                 " :v, :by, CASE WHEN :vec THEN array_fill(0.1::real, ARRAY[1024])::vector END)"
             ), {"i": i, "v": variant, "by": by, "vec": vector})
     with db.connect() as c:
-        stand.refuse_foreign_vectors(c, "clean", "bge-m3@vllm")
-        with pytest.raises(stand.ForeignVectors, match="bge-m3@ollama"):
-            stand.refuse_foreign_vectors(c, "baseline", "bge-m3@vllm")
-        with pytest.raises(stand.ForeignVectors, match="no recorded embedder"):
-            stand.refuse_foreign_vectors(c, "unmarked", "bge-m3@vllm")
+        corpus_search.refuse_foreign_vectors(c, "clean", "bge-m3@vllm")
+        with pytest.raises(corpus_search.ForeignVectors, match="bge-m3@ollama"):
+            corpus_search.refuse_foreign_vectors(c, "baseline", "bge-m3@vllm")
+        with pytest.raises(corpus_search.ForeignVectors, match="no recorded embedder"):
+            corpus_search.refuse_foreign_vectors(c, "unmarked", "bge-m3@vllm")
 
 
 def test_the_bootstrap_queues_the_questions_again_when_the_embedder_moved(db, monkeypatch):

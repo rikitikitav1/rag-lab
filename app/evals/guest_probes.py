@@ -3,11 +3,11 @@
 import statistics
 
 import llm
+from corpus_keys import CODE_BLOCK
 from errors import StandFault
 from evals.guest_llm import stamp
 from evals.stats import bootstrap_ci
 from redaction import redact
-from use_cases.ingest_quality import FENCE
 
 # 1 the first shape of this report: three arms, a stamp and an interval each
 SCHEMA = 1
@@ -31,7 +31,7 @@ def sentence_of(contexts: list[str]) -> str | None:
 
 
 def without_code(text: str) -> str:
-    return "\n\n".join(p for p in FENCE.sub("", text or "").split("\n\n") if p.strip()).strip()
+    return "\n\n".join(p for p in CODE_BLOCK.sub("", text or "").split("\n\n") if p.strip()).strip()
 
 
 def arms_for(arm: str, ql) -> list[tuple[str, str]]:

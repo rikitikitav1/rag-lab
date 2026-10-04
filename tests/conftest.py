@@ -33,8 +33,13 @@ def client(monkeypatch):
     from fastapi.testclient import TestClient
     from orm.async_db import get_session
 
+    # no database: a door that hands its work to a use case through `run_sync` reaches it with no session
+    class _NoSession:
+        async def run_sync(self, fn, *args):
+            return fn(None, *args)
+
     async def _dummy_session():
-        yield None
+        yield _NoSession()
 
     server.app.dependency_overrides[get_session] = _dummy_session
     with TestClient(server.app) as c:

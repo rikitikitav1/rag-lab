@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import agent_tools
 import llm
+import vocabulary
 from use_cases import chat
 
 # 1 the first pass: seven fields compared byte for byte over one recorded run
@@ -155,7 +156,7 @@ def gate_of(snapshot: dict, remote: dict | None = None):
     topic = snapshot.get("topic") or {}
     gate = policy.Gate()
     if recorded:
-        gate.signal = policy.GateSignal(recorded["signal"])
+        gate.signal = vocabulary.GateSignal(recorded["signal"])
         gate.top, gate.threshold = recorded.get("top"), recorded.get("threshold")
         gate.distance_threshold = recorded.get("distance_threshold")
     gate.off_topic = bool(

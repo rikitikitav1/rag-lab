@@ -8,17 +8,16 @@ from crud import get_or_404
 from errors import Final
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import Path as PathParam
-from models.corpus import DataChunk, DataSource, Stage
+from models.corpus import DataSource, Stage
 from orm.async_db import commit_and_refresh, get_session
-from paths import RAW, ROOT
+from paths import RAW
 from pydantic import BaseModel, Field
 from sources.declaration import Declaration, IntakeOverride
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 from use_cases import source_intake
-from use_cases.source_intake import declared_row
+from vocabulary import Markup
 
 from api.v1.eval import JobEnqueuedResponse
 
@@ -84,39 +83,15 @@ class SourceReportResponse(BaseModel):
 
 
 def _response(source, chunks: int, in_variant: int = 0) -> SourceResponse:
-    return SourceResponse(
-        id=source.id,
-        name=source.name,
-        kind=source.kind,
-        active=source.active,
-        chunks=chunks,
-        chunks_in_variant=in_variant,
-        ingest_quality=source.ingest_quality,
-        ingest_variant=source.ingest_variant,
-        ingest_checked_at=source.ingest_checked_at,
-        stage=source.stage,
-        language=source.language,
-        raw_verdict=source_intake.run_under_review(source).get("verdict"),
-    )
+    return SourceResponse(**source_intake.line(source, chunks, in_variant))
 
 
 def _detail(source, chunks: int, in_variant: int = 0) -> SourceDetail:
     return SourceDetail(**source_intake.view(source, chunks, in_variant))
 
 
-# a source's chunks, all and those in the variant it was last indexed as
 async def _counts(session: AsyncSession, source) -> tuple[int, int]:
-    count = await session.scalar(select(func.count()).select_from(DataChunk).where(DataChunk.source_id == source.id))
-    in_variant = (
-        await session.scalar(
-            select(func.count())
-            .select_from(DataChunk)
-            .where(DataChunk.source_id == source.id, DataChunk.variant == source.ingest_variant)
-        )
-        if source.ingest_variant
-        else 0
-    )
-    return count or 0, in_variant or 0
+    return await session.run_sync(source_intake.chunk_counts, source)
 
 
 @router.get("", response_model=list[SourceResponse])
@@ -126,32 +101,7 @@ async def list_sources(
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(DataSource).order_by(DataSource.name).limit(limit).offset(offset)
-    if stage is not None:
-        stmt = stmt.where(DataSource.stage == stage)
-    sources = (await session.scalars(stmt)).all()
-    ids = [s.id for s in sources]
-    counts = dict(
-        (
-            await session.execute(
-                select(DataChunk.source_id, func.count())
-                .where(DataChunk.source_id.in_(ids))
-                .group_by(DataChunk.source_id)
-            )
-        ).all()
-    )
-    # `ingest_variant`, not the configured one: two numbers side by side must describe one thing
-    per_variant = {
-        (source_id, variant): n
-        for source_id, variant, n in (
-            await session.execute(
-                select(DataChunk.source_id, DataChunk.variant, func.count())
-                .where(DataChunk.source_id.in_(ids))
-                .group_by(DataChunk.source_id, DataChunk.variant)
-            )
-        ).all()
-    }
-    return [_response(s, counts.get(s.id, 0), per_variant.get((s.id, s.ingest_variant), 0)) for s in sources]
+    return [SourceResponse(**row) for row in await session.run_sync(source_intake.listed, stage, limit, offset)]
 
 
 def _transition(step, source, *args):
@@ -188,28 +138,40 @@ class SkipPaths(BaseModel):
     skip_paths: list[str] = Field(max_length=200)
 
 
+class MarkupRequest(BaseModel):
+    markup: Markup | None = None
+    # the site parameters its markup prints, as `{"version": "v1.37"}`; empty clears them
+    values: dict[str, str] = Field(default_factory=dict, max_length=200)
+
+
+class SectionRoots(BaseModel):
+    section_root_by_path: dict[str, str] = Field(max_length=200)
+
+
+# a declared field set on the row in place, read by the source's next onboarding or index
+async def _set_fields(session: AsyncSession, id: int, fields: dict) -> SourceDetail:
+    source = await get_or_404(DataSource, id, session)
+    _transition(source_intake.set_fields, source, fields)
+    await commit_and_refresh(session, source)
+    return _detail(source, *await _counts(session, source))
+
+
 # the folders and files a source leaves out at its next onboarding; an empty list clears them
 @router.put("/{id}/skip_paths", response_model=SourceDetail)
-async def set_source_skip_paths(
-    id: int, request: SkipPaths, session: AsyncSession = Depends(get_session)
-) -> SourceDetail:
-    source = await get_or_404(DataSource, id, session)
-    _transition(source_intake.set_skip_paths, source, request.skip_paths)
-    await commit_and_refresh(session, source)
-    return _detail(source, *await _counts(session, source))
+async def set_source_skip_paths(id: int, request: SkipPaths, session: AsyncSession = Depends(get_session)):
+    return await _set_fields(session, id, {"skip_paths": request.skip_paths})
 
 
-class Markup(BaseModel):
-    markup: Literal["hugo", "mdn"] | None = None
-
-
-# the markup family a source's pages are written in; null clears it
+# the markup family a source's pages are written in and the site parameters it prints; null clears it
 @router.put("/{id}/markup", response_model=SourceDetail)
-async def set_source_markup(id: int, request: Markup, session: AsyncSession = Depends(get_session)) -> SourceDetail:
-    source = await get_or_404(DataSource, id, session)
-    _transition(source_intake.set_markup, source, request.markup)
-    await commit_and_refresh(session, source)
-    return _detail(source, *await _counts(session, source))
+async def set_source_markup(id: int, request: MarkupRequest, session: AsyncSession = Depends(get_session)):
+    return await _set_fields(session, id, {"markup": request.markup, "markup_values": request.values})
+
+
+# a book's heading root by its file's glob, where the converter read cover text as the first heading; {} clears it
+@router.put("/{id}/section_roots", response_model=SourceDetail)
+async def set_source_section_roots(id: int, request: SectionRoots, session: AsyncSession = Depends(get_session)):
+    return await _set_fields(session, id, {"section_root_by_path": request.section_root_by_path})
 
 
 # a variant's chunks in every source, as a smoke leaves them; the variant the stand searches is refused
@@ -295,19 +257,7 @@ async def analyze_source(
 # a source added by hand starts declared: where its files come from, never which engine reads them
 @router.post("", response_model=SourceDetail, status_code=201)
 async def declare_source(request: Declaration, session: AsyncSession = Depends(get_session)) -> SourceDetail:
-    if refusal := source_intake.declaration_refusal(request, ROOT):
-        raise HTTPException(status_code=422, detail=refusal)
-    if await session.scalar(select(DataSource.id).where(DataSource.name == request.name)):
-        raise HTTPException(status_code=409, detail=source_intake.name_taken(request.name))
-    source = declared_row(request)
-    session.add(source)
-    # two declarations of one name at once: the second meets the unique name at commit
-    try:
-        await commit_and_refresh(session, source)
-    except IntegrityError as e:
-        await session.rollback()
-        raise HTTPException(status_code=409, detail=source_intake.name_taken(request.name)) from e
-    return _detail(source, 0)
+    return _detail(await session.run_sync(source_intake.declare, request), 0)
 
 
 class SourceOnboardRequest(BaseModel):

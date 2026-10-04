@@ -1,10 +1,11 @@
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 import config
 import logging_setup
 from book_matter import index_spans, is_matter
-from corpus_keys import SECTION_SEP
+from corpus_keys import SECTION_SEP, leaf_of
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from use_cases.markup import CHUNKER_FENCE_INDENT, fence_scan
 
@@ -343,3 +344,32 @@ def _merge_slivers(pieces, path, ceiling: int, ceiling_on: str) -> list[Cut]:
         for split in [split_by_size(cut.body, max_size=_budget(ceiling, cut.prefix, ceiling_on))]
         for piece in split
     ]
+
+
+def _headed(cut: Cut) -> str:
+    return f"### {_one_line(leaf_of(cut.section))}\n{cut.body}" if SECTION_SEP in (cut.section or "") else cut.body
+
+
+# a whole section shorter than this joins a neighbour of its file under its own heading, so it is not a chunk alone
+def merge_tiny_sections(cuts: list[Cut], under: int, ceiling: int, ceiling_on: str = BODY) -> list[Cut]:
+    if not under:
+        return cuts
+    alone = Counter(cut.section for cut in cuts)
+    out: list[Cut] = []
+    carried = ""
+    for i, cut in enumerate(cuts):
+        # a section carried in keeps its heading, and the text after it is put back under its own
+        carried_in, carried = carried, ""
+        body = f"{carried_in}\n\n{_headed(cut)}" if carried_in else cut.body
+        if alone[cut.section] != 1 or len(cut.body.strip()) >= under:
+            out.append(Cut(cut.prefix, body, cut.section, cut.cut_by))
+            continue
+        own = f"{carried_in}\n\n{_headed(cut)}" if carried_in else _headed(cut)
+        nxt = cuts[i + 1] if i + 1 < len(cuts) else None
+        if out and len(joined := f"{out[-1].body}\n\n{own}") <= _budget(ceiling, out[-1].prefix, ceiling_on):
+            out[-1] = Cut(out[-1].prefix, joined, out[-1].section, out[-1].cut_by)
+        elif nxt and len(f"{own}\n\n{_headed(nxt)}") <= _budget(ceiling, nxt.prefix, ceiling_on):
+            carried = own
+        else:
+            out.append(Cut(cut.prefix, body, cut.section, cut.cut_by))
+    return out

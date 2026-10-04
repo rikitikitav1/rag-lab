@@ -1,8 +1,10 @@
 import asyncio
 from types import SimpleNamespace
 
+import corpus_search
 import mcp_server
 import pytest
+import search_scope
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from models.registry import Pipeline
@@ -168,7 +170,7 @@ def test_answer_question_error_masks_through_client(monkeypatch):
 
 def test_list_categories_maps_rows_with_counts(monkeypatch):
     monkeypatch.setattr(
-        mcp_server.db,
+        corpus_search,
         "list_categories",
         lambda only_top, category, variant: [("none", "none", 3), ("redis", "databases", 5)],
     )
@@ -213,12 +215,11 @@ def test_a_version_needs_its_category_and_a_listed_version():
 
 
 def test_without_a_version_a_versioned_category_reads_its_newest_and_a_rolling_source_reads_all():
-    import db
 
-    sql, params = db._scope_filter(db.Scope())
+    sql, params = corpus_search._scope_filter(search_scope.Scope())
     assert "cardinality(versions) = 0" in sql
     assert "18" in params["newest_versions"] and "17" not in params["newest_versions"]
-    sql, params = db._scope_filter(db.Scope(label="postgresql", version="17"))
+    sql, params = corpus_search._scope_filter(search_scope.Scope(label="postgresql", version="17"))
     assert ":scope_version = ANY(versions) OR cardinality(versions) = 0" in sql and params["scope_version"] == "17"
 
 
@@ -227,7 +228,7 @@ def test_the_mcp_scope_takes_no_more_sources_than_the_other_doors(monkeypatch):
     from search_scope import MAX_SOURCES
 
     searched = []
-    monkeypatch.setattr(mcp_server.db, "refuse_sources_out_of_search", lambda names: None)
+    monkeypatch.setattr(corpus_search, "refuse_sources_out_of_search", lambda names: None)
     monkeypatch.setattr(mcp_server.chat, "search_chunks", lambda *a, **kw: searched.append(a) or [])
 
     async def go():

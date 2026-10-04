@@ -45,6 +45,9 @@ config:
   retrieval.filtered_scan:
     class: setting
     how: not measured
+  retrieval.collapse_copies_in_source:
+    class: setting
+    how: not measured, off until its A/B
   verdict.criterion_sets:
     class: setting
   verdict.veto_sets:
@@ -283,6 +286,9 @@ config:
     class: setting
   corpus.variants.clean_1024.drop_boilerplate:
     class: setting
+  corpus.variants.clean_1024.merge_tiny_sections_under:
+    class: setting
+    how: owner decision 03.10, threshold 60 after the gate on 31 sources lost no gold section
   corpus.variants.clean_big_1024.chunker:
     class: setting
   corpus.variants.clean_big_1024.max_chunk_size:
@@ -291,6 +297,9 @@ config:
     class: setting
   corpus.variants.clean_big_1024.drop_boilerplate:
     class: setting
+  corpus.variants.clean_big_1024.merge_tiny_sections_under:
+    class: setting
+    how: owner decision 03.10, threshold 60 after the gate on 31 sources lost no gold section
   repos_dir:
     class: setting
   prompts_dir:
@@ -865,7 +874,7 @@ constant:
   app/job_handlers/onboard.py:RECORD_EVERY_S:
     class: code
     note: how much of a cut-off run's reading a restart may read again; not measured
-  app/job_handlers/judging.py:_MAX_JUDGE_ATTEMPTS:
+  app/use_cases/judge_debts.py:MAX_JUDGE_ATTEMPTS:
     class: cap
   app/job_handlers/judging.py:_MAX_SWEEPS:
     class: cap
@@ -957,6 +966,8 @@ constant:
     class: code
   app/seed.py:_PROMPT_RE:
     class: code
+  app/server.py:REFUSAL_STATUS:
+    class: code
   app/server.py:MAX_BODY_BYTES:
     class: cap
   app/sources/base.py:MAX_FILE_BYTES:
@@ -966,7 +977,7 @@ constant:
     family: heading_reader
   app/tool_names.py:SETTINGS_NAME:
     class: code
-  app/use_cases/agent_policy.py:MAX_HOPS:
+  app/vocabulary.py:MAX_HOPS:
     class: cap
     family: max_hops
   app/use_cases/card_wait.py:BUSY_RETRY_SECONDS:
@@ -997,7 +1008,7 @@ constant:
   app/corpus_keys.py:CYRILLIC_SHARE:
     class: cap
     why: "measured 29.09: 1876 questions change language at neither 0.2 nor 0.3; on three Russian books' raw chunks 0.2 misreads 47 as English, 0.3 misreads 88 (footnotes, SQL, unfenced code)"
-  app/use_cases/ingest_quality.py:FENCE:
+  app/corpus_keys.py:CODE_BLOCK:
     class: code
   app/use_cases/ingest_quality.py:PROSE_WORD:
     class: code

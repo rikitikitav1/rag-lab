@@ -2,12 +2,16 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+import corpus_search
 import job_specs
 import logging_setup
 import token_fields
 import version
 from models import Job, JobStatus
+from models.experiment import fail_running_on
+from models.prereg import preregistered
 from orm.sync_db import Session
+from search_scope import ScopeRefused
 from sqlalchemy import case, func, select, text
 
 log = logging_setup.get_logger(__name__)
@@ -22,7 +26,7 @@ class ClaimedJob:
 
 # the lane is a property of the type: left to the caller, a card job reached the io lane by hand
 def enqueue(type: str, options: dict | None = None, queue: str | None = None) -> int:
-    job_specs.check(type, options)
+    _check(type, options)
     with Session() as session:
         job = Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
         session.add(job)
@@ -30,12 +34,21 @@ def enqueue(type: str, options: dict | None = None, queue: str | None = None) ->
         return job.id
 
 
+# the spec's own check, then the search's step as at the MCP door: sources out of search, a version none holds
+def _check(type: str, options: dict | None) -> None:
+    checked = job_specs.check(type, options)
+    if checked is None or not hasattr(checked, "scope") or not checked.scope().narrowed:
+        return
+    try:
+        corpus_search.refuse_bad_scope(checked.scope(), getattr(checked, "variant", None))
+    except ScopeRefused as bad:
+        raise job_specs.Refused(f"scope: {bad}") from bad
+
+
 # the spec checks that a closing run names a promise; only the base can say the promise exists
 def _promise(options: dict | None) -> str | None:
-    from use_cases import prereg
-
     name = (options or {}).get("prereg")
-    if name and not prereg.exists(name):
+    if name and not _preregistered(name):
         raise job_specs.Refused(f"prereg: no preregistration named {name!r}")
     return name or None
 
@@ -109,13 +122,18 @@ async def add_job(
     return job
 
 
+def _preregistered(name: str) -> bool:
+    with Session() as session:
+        return preregistered(session, name)
+
+
 # a checked job not yet in any session; the checks read the base, so they run off the loop
 async def prepared(type: str, options: dict | None = None, queue: str | None = None) -> Job:
     return await asyncio.to_thread(_checked, type, options, queue)
 
 
 def _checked(type: str, options: dict | None, queue: str | None) -> Job:
-    job_specs.check(type, options)
+    _check(type, options)
     return Job(type=type, options=options or {}, queue=_lane(type, queue), prereg=_promise(options))
 
 
@@ -315,15 +333,18 @@ def cancel(ids: list[int]) -> list[int]:
             if job.status == JobStatus.new and job.tokens is None:
                 job.tokens = {}
             job.status = JobStatus.cancelled
+        # under a savepoint: a failed update leaves the cancel standing, and an experiment waiting on it would wait
+        failed = []
+        for run_name in stranded:
+            try:
+                with session.begin_nested():
+                    if fail_running_on(session, run_name):
+                        failed.append(run_name)
+            except Exception as e:
+                log.warning("job.experiment_not_failed", run_name=run_name, error=str(e))
         session.commit()
-    # after the commit: an experiment waiting on a cancelled arm waits for ever
-    for run_name in stranded:
-        try:
-            from use_cases import experiment
-
-            experiment.mark_failed_for_run(run_name)
-        except Exception as e:
-            log.warning("job.experiment_not_failed", run_name=run_name, error=str(e))
+    for run_name in failed:
+        log.warning("experiment.failed", run_name=run_name)
     return cancelled
 
 

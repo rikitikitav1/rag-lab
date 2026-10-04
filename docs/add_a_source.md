@@ -22,6 +22,7 @@ Every step has a REST route and an MCP tool of the `rag-lab-ops` server ([mcp.md
 | one source in a screen | `GET /v1/source/{id}` | `source_trail`, `source` | agent reads |
 | try a knob on a few pages | job `probe_intake` | `probe_intake` | agent proposes |
 | set a source's knobs | `PUT /v1/source/{id}/intake` | `set_source_intake` | person |
+| set a declared field in place | `PUT /v1/source/{id}/skip_paths`, `/markup`, `/section_roots` | `set_source_fields` | person |
 | accept | `POST /v1/source/{id}/accept` | `accept_source` | person, or stand for `ok` |
 | index | job `index_data` | | stand |
 | turn on for search | `PUT /v1/source/{id}` | `set_source_active` | person |
@@ -43,6 +44,7 @@ curl -X POST localhost:8000/v1/source -H 'content-type: application/json' -d '{
 - Origins: `urls` (files to fetch), `folder` (already on disk), `git`, `git_family`, or a site's `pages` (with the CSS `main` that holds the text and `drop` for its furniture, or a `sitemap` with address patterns).
 - `skip_paths` leaves whole paths under the root out, each named in the report; `skip` matches file stems only.
 - `trust` (`official`, `book`, `notes`) decides which copy stays when two sources hold a text word for word. Left out, it is read from the origin: the book shelf is `book`, the interview banks are `notes`, the rest `official`.
+- Fields that replace a source-specific reader: `tags`, `tag_from_name`, `tags_by_path` and `tags_from_frontmatter` (tags in place of the file's folders), `skip_when_frontmatter` (a page whose frontmatter key holds the value is not read), `section_root_from_filename` and `section_root_by_path` (where a page's heading path starts), `markup` (`hugo` or `mdn`, rendered before the cut) with `markup_values` (the site parameters it prints). `skip_paths`, `markup`, `markup_values` and `section_root_by_path` can be set on an existing row in place; the rest go through a new declaration or the source file.
 - The door refuses a malformed declaration before any job: a missing folder, an unknown category, an origin it cannot read.
 
 The row starts `declared` and inactive. Sources the stand ships with come from `sources/*.yaml` through the same model.

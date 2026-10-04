@@ -132,7 +132,10 @@ def collect_data(sources, embed_size=None, variant=None, build_index=True, stop=
                 .values(
                     indexed_with=DataSource.indexed_with.op("||")(
                         sa_cast({variant: files.digest(source.settings)}, JSONB)
-                    )
+                    ),
+                    indexed_rules=DataSource.indexed_rules.op("||")(
+                        sa_cast({variant: files.cut_rules(source.settings)}, JSONB)
+                    ),
                 )
             )
             session.commit()

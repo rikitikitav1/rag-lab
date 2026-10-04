@@ -96,16 +96,20 @@ async def enqueue_job(
         raise HTTPException(status_code=400, detail=f"no such job type: {request.type}")
     options = request.options
     if request.type == "eval_run" and options.get("resume"):
-        from api.v1.eval import resumed_options
+        from use_cases.eval_runs import resumed_options
 
         extra = sorted(set(options) - {"run_name", "resume"})
         options = await resumed_options(session, options.get("run_name"), extra)
     # checked once, off the loop, before the name lookup; a refusal answers 400 through the app's handler
     job = await job_queue.prepared(request.type, options)
-    if request.type == "eval_run" and options.get("run_name") and not options.get("resume"):
-        from api.v1.eval import refuse_a_taken_run
+    if request.type == "eval_run" and not options.get("resume"):
+        from use_cases.eval_runs import refuse_a_taken_run, refuse_missing_questions
 
-        await refuse_a_taken_run(session, options["run_name"])
+        if options.get("run_name"):
+            await refuse_a_taken_run(session, options["run_name"])
+        # the run's own door refuses ids the stand lacks, and this one queues the same job
+        if options.get("question_ids"):
+            await refuse_missing_questions(session, options["question_ids"])
     session.add(job)
     await session.commit()
     await session.refresh(job)

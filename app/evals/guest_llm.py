@@ -9,10 +9,10 @@ import llm
 # a synchronous POST to the library's own server sat inside every measured call
 os.environ.setdefault("RAGAS_DO_NOT_TRACK", "true")
 import logging_setup
-from evals.guest_axes import MESSAGE_FORMS
 from langchain_core.outputs import Generation, LLMResult
 from ragas.embeddings.base import BaseRagasEmbeddings
 from ragas.llms.base import BaseRagasLLM
+from vocabulary import MESSAGE_FORMS
 
 log = logging_setup.get_logger(__name__)
 

@@ -9,7 +9,7 @@ from evals.pools import kind as _kind
 from evals.pools import outcome as _outcome
 from evals.stats import mean_of, score_of
 from outcomes import RULE, Outcome
-from use_cases import rejudge
+from vocabulary import JUDGE_AXES
 
 # an answer standing on nothing the corpus gave it, whichever way it got there
 _UNSUPPORTED = (
@@ -38,7 +38,7 @@ def _distribution(scores) -> dict:
 
 
 def _scored(ql) -> bool:
-    return any(getattr(ql, axis) is not None for axis in rejudge.AXES)
+    return any(getattr(ql, axis) is not None for axis in JUDGE_AXES)
 
 
 # read off the rule rather than restated beside it: two spellings of one table is the usual defect
@@ -46,7 +46,7 @@ def _abstentions() -> dict:
     return {
         "ours": {
             "outcomes": ["refused", "unsupported_answer"],
-            "axes": list(rejudge.AXES),
+            "axes": list(JUDGE_AXES),
             "why": "on a refusal the axis does not apply; the judge scores answers that cite the corpus, and one "
                    "without sources is counted in the unsupported shares instead",
             "read_from": "metrics.refusal and the row's answered flag, both written by the answering paths",

@@ -4,6 +4,7 @@ import gpu
 import job_queue
 import llm
 import logging_setup
+import search_depth
 import version
 from engines import card as card_holder
 from engines import ollama, vllm
@@ -11,7 +12,6 @@ from models.jobs import Job
 from models.registry import SAMPLING_ROLES, Engine, EngineKind, Model, ModelRole, Role
 from orm.sync_db import Session
 from sqlalchemy import func, select
-from use_cases import search_depth
 
 import db
 

@@ -167,7 +167,8 @@ def roles_match_the_config() -> tuple[bool, str]:
 def sources_match_their_files() -> tuple[bool, str]:
     out = _in_worker(
         "import json; from orm.sync_db import Session; from models.corpus import DataSource; from sources import files;"
-        " rows = Session().query(DataSource.name, DataSource.indexed_with, DataSource.declaration).all();"
+        " rows = Session().query(DataSource.name, DataSource.indexed_with, DataSource.declaration,"
+        " DataSource.indexed_rules).all();"
         " print(json.dumps(files.drift_report([tuple(r) for r in rows])))"
     )
     if not out.startswith("{"):
@@ -176,7 +177,11 @@ def sources_match_their_files() -> tuple[bool, str]:
 
 
 def source_files_verdict(seen: dict) -> tuple[bool, str]:
-    bad = [f"{source}: {', '.join(variants)}" for source, variants in seen["moved"].items()]
+    fields = seen.get("fields") or {}
+    bad = [
+        f"{source}: {', '.join(variants)}" + (f" (by {', '.join(fields[source])})" if source in fields else "")
+        for source, variants in seen["moved"].items()
+    ]
     if seen["orphaned"]:
         bad.append(f"rows indexed with no declaration: {', '.join(seen['orphaned'])}")
     if bad:
@@ -254,9 +259,9 @@ def seeded_rows_verdict(orphans: list[str]) -> tuple[bool, str]:
 def newest_versions_are_searchable() -> tuple[bool, str]:
     # what a search reads, through the search's own rows and newest: an inactive source's version answers nothing
     out = _in_worker(
-        "import json, config, db;"
-        " held = db.versions_held(config.settings.corpus.variant);"
-        " print(json.dumps({'held': held, 'newest': dict(zip(*db.newest()))}))"
+        "import json, config, corpus_search;"
+        " held = corpus_search.versions_held(config.settings.corpus.variant);"
+        " print(json.dumps({'held': held, 'newest': dict(zip(*corpus_search.newest()))}))"
     )
     if not out.startswith("{"):
         return False, f"versions: cannot read them ({out[:60] or 'no answer'})"

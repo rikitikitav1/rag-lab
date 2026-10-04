@@ -133,7 +133,7 @@ def test_cleared_is_always_a_value_with_its_reason():
 def test_a_closing_run_under_a_promise_that_does_not_exist_is_refused(monkeypatch):
     import job_queue
 
-    monkeypatch.setattr(prereg, "exists", lambda name: name == "mr4_sgr")
+    monkeypatch.setattr(job_queue, "_preregistered", lambda name: name == "mr4_sgr")
     with pytest.raises(job_specs.Refused, match="no preregistration named 'typo'"):
         job_queue._promise({"purpose": "closing", "prereg": "typo"})
     assert job_queue._promise({"purpose": "closing", "prereg": "mr4_sgr"}) == "mr4_sgr"

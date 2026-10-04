@@ -107,25 +107,28 @@ CUT_RULES = (
     "skip",
     "skip_paths",
     "drop_docs_containing",
-)
-LATER_CUT_RULES = (
     "tags",
     "tag_from_name",
     "tags_by_path",
     "tags_from_frontmatter",
     "skip_when_frontmatter",
     "section_root_from_filename",
+    "section_root_by_path",
     "markup",
+    "markup_values",
 )
 
 
-# over the cut's rules in the loaded file, not its bytes: a comment or metadata beside the rules moves no row
+# the cut's rules in the loaded file, not its bytes; a field at its default is left out, so a new knob moves no row
+def cut_rules(source: SourceFile) -> dict:
+    rules = source.model_dump(mode="json", include=set(CUT_RULES), exclude_defaults=True)
+    if source.skip_when_hygienic:
+        rules["skip_when_hygienic"] = sorted(source.skip_when_hygienic)
+    return rules
+
+
 def digest(source: SourceFile) -> str:
-    rules = source.model_dump(mode="json", include=set(CUT_RULES))
-    rules["skip_when_hygienic"] = sorted(source.skip_when_hygienic)
-    # a rule that came later joins the digest only where it is set, so the rows cut before it keep theirs
-    rules |= source.model_dump(mode="json", include=set(LATER_CUT_RULES), exclude_defaults=True)
-    return hashlib.sha256(json.dumps(rules, sort_keys=True).encode()).hexdigest()[:12]
+    return hashlib.sha256(json.dumps(cut_rules(source), sort_keys=True).encode()).hexdigest()[:12]
 
 
 def rows_of(source: SourceFile) -> list[str]:
@@ -161,21 +164,35 @@ def upserted(insert, table, columns) -> dict:
 
 
 # a row's declaration moved since a variant was cut by it; a row indexed with no declaration left says so
-def drift(row_name: str, indexed_with: dict, declaration: dict | None) -> dict | None:
+def drift(row_name: str, indexed_with: dict, declaration: dict | None, indexed_rules: dict | None = None):
     if not declaration:
         return {"source": None, "moved": "declaration gone", "indexed_with": indexed_with} if indexed_with else None
     source = Declaration.model_validate(declaration)
-    now = digest(source)
+    now, rules = digest(source), cut_rules(source)
     moved = sorted(v for v, was in (indexed_with or {}).items() if was != now)
-    return {"source": source.name, "digest": now, "indexed_with": indexed_with or {}, "moved": moved}
+    # the fields a moved variant was cut by otherwise; a variant cut before the rules were kept names none
+    changed = {
+        v: [RUN_REPLACED] if indexed_with[v] == RUN_REPLACED else changed_fields((indexed_rules or {}).get(v), rules)
+        for v in moved
+    }
+    said = {"source": source.name, "digest": now, "indexed_with": indexed_with or {}, "moved": moved}
+    return said | {"changed": changed}
+
+
+def changed_fields(was: dict | None, now: dict) -> list[str] | None:
+    if was is None:
+        return None
+    return sorted(k for k in was.keys() | now.keys() if was.get(k) != now.get(k))
 
 
 # the preflight's reading over every row: moved declarations with their variants, orphans, rows cut unrecorded
-def drift_report(rows: list[tuple[str, dict, dict | None]]) -> dict:
+def drift_report(rows: list[tuple]) -> dict:
     moved: dict[str, set[str]] = {}
+    fields: dict[str, set[str]] = {}
     orphaned, unrecorded = [], 0
-    for name, indexed_with, declaration in rows:
-        said = drift(name, indexed_with, declaration)
+    # a row is (name, indexed_with, declaration) and, where the rules were kept, indexed_rules
+    for name, indexed_with, declaration, *kept in rows:
+        said = drift(name, indexed_with, declaration, kept[0] if kept else None)
         if said is None:
             continue
         if said["source"] is None:
@@ -184,8 +201,10 @@ def drift_report(rows: list[tuple[str, dict, dict | None]]) -> dict:
             unrecorded += 1
         elif said["moved"]:
             moved.setdefault(said["source"], set()).update(said["moved"])
+            fields.setdefault(said["source"], set()).update(f for c in said["changed"].values() for f in c or ())
     return {
         "moved": {f: sorted(v) for f, v in sorted(moved.items())},
+        "fields": {f: sorted(v) for f, v in sorted(fields.items()) if v},
         "orphaned": sorted(orphaned),
         "unrecorded": unrecorded,
     }

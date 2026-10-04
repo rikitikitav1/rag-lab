@@ -15,7 +15,7 @@ def test_a_text_held_by_several_sources_stays_with_the_most_trusted_copy(db, mon
     rows = [
         (1, "pg-docs", {"name": "pg-docs", "folder": "datasets/inbox/git/postgresql"}),
         (2, "pg-book", {"name": "pg-book", "folder": "datasets/inbox/books/postgresql-internals"}),
-        (3, "sql-interview-questions", {"name": "interview", "reader": "interview"}),
+        (3, "sql-interview-questions", {"name": "interview", "trust": "notes"}),
     ]
     with db.connect() as c:
         c.execute(text("TRUNCATE data_sources CASCADE"))
@@ -50,6 +50,8 @@ def test_a_declared_trust_wins_over_the_origin():
 
     assert source_trust({"folder": "datasets/inbox/books/x"}) == Trust.book
     assert source_trust({"urls": ["https://x/book.PDF"]}) == Trust.book
-    assert source_trust({"reader": "cheatsheets"}) == Trust.notes
+    assert source_trust({"trust": "notes"}) == Trust.notes
+    # a reader is no longer declared, so it says nothing of trust: the notes declare theirs
+    assert source_trust({"reader": "cheatsheets"}) == Trust.official
     assert source_trust({"folder": "datasets/inbox/git/kafka-docs"}) == Trust.official
     assert source_trust({"folder": "datasets/inbox/books/x", "trust": "official"}) == Trust.official

@@ -82,7 +82,7 @@ Activating the named version back or editing the file settles it.
 **`sources_match_their_files`** compares, for every source row, the digest of the declaration the row holds with
 the digest recorded when each variant was cut. The seed writes a source file's declaration onto its row, so a skip list
 or a category tree edited after the cut leaves chunks that no longer follow it; re-indexing the source settles it. The
-digest is taken over the rules, so a comment or a skip's reason moves nothing. Accepting a new run of an indexed source
+digest is taken over the rules, so a comment or a skip's reason moves nothing. The check names the fields a moved source was cut by otherwise (`by skip_paths, markup`), read from the rules each variant was cut by, which the row keeps beside the digest; a variant cut before those were kept names none. Accepting a new run of an indexed source
 fails it the same way: the variants were cut from the run it replaced, and they read as moved until the source is
 indexed again. A row indexed with no declaration fails too; rows cut before digests were kept are counted, not failed.
 

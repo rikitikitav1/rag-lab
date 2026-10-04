@@ -172,13 +172,13 @@ def _own_reader(run: "_Run"):
     from sources.base import Base
     from sources.declaration import Declaration
 
-    if not (run.origin.get("reader") or run.origin.get("markup")) or not run.units:
+    if not (run.origin.get("reader") or Base.reads_beyond_plain(run.origin)) or not run.units:
         return None
     if any(unit[2].engine is not None for unit in run.units):
         return None
     declaration = Declaration.model_validate(run.origin)
     reader = factory._reader(declaration)
-    if reader.read is Base.read and not declaration.markup:
+    if reader.read is Base.read and not Base.reads_beyond_plain(run.origin):
         return None
     instance = reader(run.root, declaration, name=run.source.name)
 
@@ -353,6 +353,8 @@ def _set_up(options: dict):
             "settings_override": options.get("settings") or {},
             "settings_sha256": {t: s[1] for t, s in settings.items()},
             "route_sha256": route_sha,
+            # what the fingerprint was taken over, so a moved route names the knobs that moved
+            "route": reading.route_rules(rule),
             # every piece read by its tool now, no kept reading and no kept piece: a run that measures the tool
             "fresh": fresh,
         }

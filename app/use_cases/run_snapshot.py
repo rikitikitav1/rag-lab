@@ -2,6 +2,7 @@ import config
 import engines
 import llm
 import logging_setup
+import search_scope
 import version
 from engines import answer_parsers, card
 from errors import StandFault
@@ -216,9 +217,8 @@ DISTANCE_DIGITS = 3
 
 # a search's scope as the record keeps it; a whole-corpus search keeps none
 def scope_of(scope) -> dict | None:
-    import db
 
-    scope = db.as_scope(scope)
+    scope = search_scope.as_scope(scope)
     return {"label": scope.label, "sources": list(scope.sources), "version": scope.version} if scope.narrowed else None
 
 

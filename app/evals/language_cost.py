@@ -1,14 +1,13 @@
 """What our own axes charge when the answer comes back in the language it was asked in."""
 
 import config
+import text_language
 from evals.compare import SCHEMA as COMPARE_SCHEMA
 from evals.compare import residencies
 from evals.human_anchor import Refused
 from evals.pools import answered_in_target, by_question, in_corpus_and_answered
 from evals.stats import delta_stats, score_of, tally
-from use_cases import rejudge
-
-import db
+from vocabulary import JUDGE_AXES
 
 # 1 both cuts, the floor, and the comparability of the two arms
 SCHEMA = 1
@@ -37,7 +36,7 @@ def _pairs(before_logs, after_logs) -> list[tuple]:
 def _in_group(name: str, before, after) -> bool:
     if name == DECLARED_FROM_BEFORE:
         return answered_in_target(before) is False
-    return db.detect_language(before.answer or "") != db.detect_language(after.answer or "")
+    return text_language.detect_language(before.answer or "") != text_language.detect_language(after.answer or "")
 
 
 def _axis_deltas(pairs, axis) -> list[float]:
@@ -50,7 +49,7 @@ def _axis_deltas(pairs, axis) -> list[float]:
 
 def _over(pairs) -> dict:
     out = {}
-    for axis in rejudge.AXES:
+    for axis in JUDGE_AXES:
         deltas = _axis_deltas(pairs, axis)
         if not deltas:
             out[axis] = {"n": 0, "unreadable": "no pair carries this axis on both sides"}

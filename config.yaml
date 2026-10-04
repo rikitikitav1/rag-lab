@@ -14,6 +14,8 @@ retrieval:
   limit_keywords: 20            # the same for the text leg
   # not measured: the constant of the paper that introduced RRF, and every run here used it
   rrf_k: 60
+  # not measured: off until its own A/B; on, a text one source holds under several files takes one place
+  collapse_copies_in_source: false
   # AND over every lexeme: OR costs 0.15-0.23 MRR on paraphrases
   # tuned: file=datasets/measurements/2026-08-26_keyword_switch_grid.txt
   keyword:                      # named as a run's record names them
@@ -80,6 +82,7 @@ corpus:
       chunker: rooted
       max_chunk_size: 1024      # characters
       ceiling_on: body
+      merge_tiny_sections_under: 60   # characters of body; a heading with a line under it is not a chunk alone
     # variants that lost are gone; their policy rides in the entry that measured them
 
 fts:

@@ -8,6 +8,7 @@ import logging_setup
 import outcomes
 import prompt_repo
 import token_fields
+import vocabulary
 from engines import answer_parsers
 from errors import StandFault
 from langgraph.graph import END, StateGraph
@@ -203,10 +204,10 @@ def retrieve_node(state: State, config) -> dict:
     corpus = _corpus_calls(calls)
     verdict = policy.verdict([s for c in corpus for s in c[3]], gate) if corpus else None
     if gate.off_topic and corpus:
-        verdict = policy.FallbackReason.off_topic
+        verdict = vocabulary.FallbackReason.off_topic
     ctx["result"].step(
         "retrieve", state["hops"], calls=len(calls), corpus=len(corpus),
-        sources=sum(len(c[3]) for c in corpus), verdict=str(verdict or policy.FallbackReason.none),
+        sources=sum(len(c[3]) for c in corpus), verdict=str(verdict or vocabulary.FallbackReason.none),
         errors=len(errors_seen or {}),
     )
     return {"pending": calls, "coverage": verdict or "", "tool_errors": errors_seen}
@@ -218,18 +219,18 @@ def fallback_node(state: State, config) -> dict:
     gate: policy.Gate = ctx["gate"]
     verdict, corpus = state["coverage"], _corpus_calls(state["pending"])
     update = {}
-    if verdict in (policy.FallbackReason.weak, policy.FallbackReason.off_topic) and (
+    if verdict in (vocabulary.FallbackReason.weak, vocabulary.FallbackReason.off_topic) and (
         gate.drop_weak_context
     ):
         dropped, hits, before = _drop_weak(corpus, state["hops"])
         update["dropped_sources"], update["dropped_hits"] = dropped, hits
         update["dropped_before_emit"] = before
     # the loop recomputes announce per hop and it dies once external is open
-    graded_out = verdict == policy.FallbackReason.graded_out
+    graded_out = verdict == vocabulary.FallbackReason.graded_out
     if gate.announce and not state["external"] and corpus and not graded_out:
         update["announced_text"] = _announce(corpus, gate, ctx["template"])
         update["fallback_announced"] = True
-    if state.get("fallback_reason") == policy.FallbackReason.none:
+    if state.get("fallback_reason") == vocabulary.FallbackReason.none:
         update["fallback_reason"] = verdict
     # a grader that emptied the corpus does not open the way outside, the row refuses instead
     if not state["external"] and ctx["remote"] and not graded_out:
@@ -283,7 +284,7 @@ def _keep_only(call, pieces: list, chunks: list, kept: list) -> bool:
 def _already_doomed(state: State, ctx: dict) -> bool:
     verdict = state.get("coverage")
     return bool(verdict) and ctx["gate"].drop_weak_context and verdict in (
-        policy.FallbackReason.weak, policy.FallbackReason.off_topic
+        vocabulary.FallbackReason.weak, vocabulary.FallbackReason.off_topic
     )
 
 
@@ -323,7 +324,7 @@ def grade_node(state: State, config) -> dict:
     )
     # nothing survived: its own reason, so no report counts it as the gate firing
     if graded_all and not kept_all and not state.get("coverage"):
-        return {"graded_before_emit": plan, "coverage": policy.FallbackReason.graded_out}
+        return {"graded_before_emit": plan, "coverage": vocabulary.FallbackReason.graded_out}
     return {"graded_before_emit": plan}
 
 
@@ -371,11 +372,11 @@ def final_node(state: State, config) -> dict:
     ctx = _ctx(config)
     # the loop forces a final turn only when no turn produced text at all
     if state.get("text"):
-        ctx["result"].step("final", state["hops"], finished_by=str(policy.FinishedBy.answer))
-        return {"finished_by": policy.FinishedBy.answer}
+        ctx["result"].step("final", state["hops"], finished_by=str(vocabulary.FinishedBy.answer))
+        return {"finished_by": vocabulary.FinishedBy.answer}
     # a hop that failed ends the row as failed: a forced answer after it made the row failed and answered at once
     if getattr(ctx["result"], "failed", False):
-        return {"finished_by": policy.FinishedBy.no_answer}
+        return {"finished_by": vocabulary.FinishedBy.no_answer}
     messages = list(state["messages"])
     update = {}
     if not state.get("sources"):
@@ -386,9 +387,9 @@ def final_node(state: State, config) -> dict:
         update["no_evidence_prompted"] = True
     # the forced final is reached two ways, and only one of them is the ceiling
     update["finished_by"] = (
-        policy.FinishedBy.hops_exhausted
+        vocabulary.FinishedBy.hops_exhausted
         if state["hops"] >= ctx["max_hops"]
-        else policy.FinishedBy.no_answer
+        else vocabulary.FinishedBy.no_answer
     )
     log.info("graph.forcing_final", hops=state["hops"], sources=len(state.get("sources", [])))
     started = time.perf_counter()
@@ -483,7 +484,7 @@ def _initial_state(question: str, system: str, external: bool) -> State:
         "hops": 0,
         "nudges": 1,
         "external": external,
-        "fallback_reason": policy.FallbackReason.none,
+        "fallback_reason": vocabulary.FallbackReason.none,
         "fallback_opened": False,
         "fallback_announced": False,
         "no_evidence_prompted": False,
@@ -538,8 +539,8 @@ def invoke(question, system, ctx, result) -> None:
     result.answer_parse = answer_parsers.summarize(state.get("answer_parse") or [])
     result.max_prompt_tokens = state["max_prompt_tokens"]
     result.text = state.get("text") or ""
-    result.finished_by = str(state.get("finished_by") or policy.FinishedBy.answer)
-    result.fallback_reason = state.get("fallback_reason", policy.FallbackReason.none)
+    result.finished_by = str(state.get("finished_by") or vocabulary.FinishedBy.answer)
+    result.fallback_reason = state.get("fallback_reason", vocabulary.FallbackReason.none)
     result.fallback_opened = state.get("fallback_opened", False)
     result.fallback_announced = state.get("fallback_announced", False)
     result.announced_text = state.get("announced_text") or ""
