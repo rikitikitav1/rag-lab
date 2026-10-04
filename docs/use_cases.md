@@ -168,7 +168,7 @@ curl -X POST localhost:8000/v1/experiment -H 'Content-Type: application/json' -d
 
 Four arms, one job, minutes rather than hours: no generation and no judge, only where the
 right chunk landed. `param` names the axis the comparison is reported along and has to be
-one of the axes. The axes are `variant`, `ef_search`, `rerank_top`, `limit_vector`, `limit_keyword`,
+one of the axes. The axes are `variant`, `ef_search` (an arm that names none searches at the served depth), `exact` (true scans every vector, minutes per hundred questions), `rerank_top`, `limit_vector`, `limit_keyword`,
 `distance_threshold` and `source`, plus the keyword switches `keyword_query` (`and`, `or`),
 `keyword_translation` (`off`, `beside`, `replaces`) and `max_term_share` (0 or 0.001..1), which an arm sets
 for its own measuring and writes into its record. `GET /v1/experiment/{id}` returns each arm's hit@k and MRR plus the

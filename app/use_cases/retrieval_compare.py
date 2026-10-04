@@ -40,12 +40,11 @@ class ComparisonPlan:
     job_id: int | None = None
 
 
-# one reading of the arm: derived twice, the label and the depth drift apart
+# one reading of the arm, at the served depth unless it asks for the exact scan (ten seconds a question)
 def depth_of(arm: dict) -> tuple[bool, int]:
     import search_depth
 
-    ef = arm.get("ef_search")
-    return ef is None, ef or search_depth.resolve(arm.get("variant"))
+    return bool(arm.get("exact")), arm.get("ef_search") or search_depth.resolve(arm.get("variant"))
 
 
 # ids win over the set: an experiment fixes its questions before it runs
@@ -359,6 +358,7 @@ AXIS_RULES = {
     "max_term_share": lambda v: (isinstance(v, int | float) and not isinstance(v, bool)
                                  and (v == 0 or TERM_SHARE_FLOOR <= v <= 1)),
     "keyword_aliases": lambda v: isinstance(v, bool),
+    "exact": lambda v: isinstance(v, bool),
 }
 AXIS_LIMITS = {
     "ef_search": "a whole number 1..1000 (what hnsw.ef_search accepts)",
@@ -372,6 +372,7 @@ AXIS_LIMITS = {
     "keyword_translation": "off, beside or replaces",
     "max_term_share": f"0 (off) or a share {TERM_SHARE_FLOOR}..1",
     "keyword_aliases": "true or false",
+    "exact": "true (a scan of every vector) or false",
 }
 
 
@@ -442,7 +443,7 @@ COMPARABLE = (
 # absent is not a difference: it is the value the run had before anyone wrote it down
 ABSENT_MEANS = {"rerank_top": 0}
 # two arms may differ in the axis of record and nothing else; `ef_search` names differ
-AXIS_FIELD = {"ef_search": "search", "keyword_query": "keyword", "keyword_translation": "keyword",
+AXIS_FIELD = {"ef_search": "search", "exact": "search", "keyword_query": "keyword", "keyword_translation": "keyword",
               "max_term_share": "keyword", "keyword_aliases": "keyword"}
 
 

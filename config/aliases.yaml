@@ -109,7 +109,7 @@ aliases:
     canonical: Node.js
     aliases: [node, нода, нодежс, нод жс, node js, nodejs, нодейс, нодовый, ноде, нодка, npm, нпм, нодыжс]
     seen_in: [own]
-    unsure: [нода, ноде, нодка, нодыжс, npm]  # нода also means cluster node; npm is a package manager, kept as a close neighbour
+    unsure: [нода, ноде, нодка, нодыжс, npm, node]  # node and нода also mean a cluster node; npm is a package manager, kept as a close neighbour
   react:
     canonical: React
     aliases: [реакт, reactjs, react js, реактжс, реактовый, реактище, реактик, jsx]

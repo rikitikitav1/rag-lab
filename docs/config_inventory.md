@@ -51,7 +51,7 @@ Seeds, where the database owns the value and the question does not apply: 95.
 | `retrieval.keyword.translation.replaces` | app/config.py default | setting | off; replacing the question's words read ru 0.849 but Russian books 0.871 to 0.671 (datasets/measurements/arc7_keyword_full.json) |  |  |
 | `retrieval.keyword.aliases.enabled` | app/config.py default | setting | off until the jargon subset measures it (owner 04.10) |  |  |
 | `retrieval.keyword.max_term_share` | config.yaml | setting | 0.05 (owner 04.10); at 0.05 a 100-pair probe kept every hit and cut the search threefold; en->ru 0.514 to 0.300 under or, open |  |  |
-| `retrieval.ef_search` | config.yaml | setting | tuned: file=datasets/measurements/recall_ladder_clean_1024.json |  |  |
+| `retrieval.ef_search` | config.yaml | setting | owner 04.10, 200 on clean_big_1024; vector recall@20 0.862 to 0.923 on 200 sample questions, 2 ms more a search on 10 |  |  |
 | `retrieval.filtered_scan` | config.yaml | setting | not measured |  |  |
 | `retrieval.collapse_copies_in_source` | config.yaml | setting | not measured, off until its A/B |  |  |
 | `verdict.criterion_sets` | config/evals.yaml | setting |  |  |  |

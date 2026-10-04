@@ -56,6 +56,7 @@ config:
     how: 0.05 (owner 04.10); at 0.05 a 100-pair probe kept every hit and cut the search threefold; en->ru 0.514 to 0.300 under or, open
   retrieval.ef_search:
     class: setting
+    how: owner 04.10, 200 on clean_big_1024; vector recall@20 0.862 to 0.923 on 200 sample questions, 2 ms more a search on 10
   retrieval.filtered_scan:
     class: setting
     how: not measured

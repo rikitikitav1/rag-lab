@@ -32,9 +32,9 @@ retrieval:
     # candidates hold a word in at most 5% of chunks, ranked by every word; needs count_terms after an index
     max_term_share: 0.05
   # pinned, not auto: auto is a property of the variant, and preflight refuses a stale pin
-  # tuned: file=datasets/measurements/index_cost_clean_1024.json
-  # tuned: file=datasets/measurements/recall_ladder_clean_1024.json
-  ef_search: 100
+  # tuned: file=datasets/measurements/arc7_ef_ladder.json
+  # tuned: file=datasets/measurements/arc7_ef_time.json
+  ef_search: 200
   # not measured: off until recall@10 against exact is read on three filters; sources or a version scan strictly anyway
   filtered_scan: "off"
 rerank:

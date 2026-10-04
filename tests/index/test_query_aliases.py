@@ -12,6 +12,13 @@ def aliases(monkeypatch):
     monkeypatch.setattr(config.settings, "aliases", {k: config.AliasCfg(**v) for k, v in entries.items()})
 
 
+def test_a_short_or_two_word_russian_alias_declines_too(aliases, monkeypatch):
+    entries = {"git": {"canonical": "Git", "aliases": ["гит"]}, "node": {"canonical": "Node.js", "aliases": ["нод жс"]}}
+    monkeypatch.setattr(config.settings, "aliases", {k: config.AliasCfg(**v) for k, v in entries.items()})
+    assert query_aliases.reword("Ветки в гите и в нод жсе")[1] == ["гите=Git", "нод жсе=Node.js"]
+    assert query_aliases.reword("Гитара и гитлер")[1] == []
+
+
 def test_a_russian_alias_is_found_under_its_case_ending(aliases):
     assert query_aliases.reword("Как в постгресе включить vacuum?") == (
         "Как в PostgreSQL включить vacuum?", ["постгресе=PostgreSQL"])

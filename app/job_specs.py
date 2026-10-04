@@ -306,6 +306,18 @@ class LoadQuestions(Spec):
     set_name: SetName
 
 
+class QuestionVariant(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_question_id: int = Field(ge=1)
+    original_text: str = Field(min_length=1, max_length=2000)
+
+
+# accepted questions reworded outside (a jargon subset): a new set, each row under its original's gold
+class LoadVariants(Spec):
+    set_name: SetName
+    rows: list[QuestionVariant] = Field(min_length=1, max_length=5000)
+
+
 class BuildVetoSet(Spec):
     seed: str | int | None = None
     set_name: str | None = None
@@ -420,6 +432,7 @@ SPECS: dict[str, type[Spec]] = {
     "reanchor_questions": ReanchorQuestions,
     "save_questions": SaveQuestions,
     "load_questions": LoadQuestions,
+    "load_variants": LoadVariants,
     "build_veto_set": BuildVetoSet,
     "index_data": IndexData,
     "convert_source": ConvertSource,
@@ -463,6 +476,7 @@ LOADS: dict[str, tuple[Role, ...]] = {
     "reanchor_questions": (),
     "save_questions": (),
     "load_questions": (),
+    "load_variants": (),
     "build_veto_set": (Role.paraphrasing,),
     "index_data": (Role.embedding,),
     # the converter is an engine, not a role: the handler takes the card for it

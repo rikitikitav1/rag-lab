@@ -6,8 +6,8 @@ import config
 
 _TOKEN = re.compile(r"[0-9a-zа-яё][\w+#.-]*[0-9a-zа-яё+#]|[0-9a-zа-яё]", re.IGNORECASE)
 _CYRILLIC = re.compile(r"[а-яё]")
-# a Russian alias takes a case ending (постгресе, кубере); a short stem or a free tail swallows words (рубить, монголия)
-STEM_MIN = 4
+# a Russian alias takes a case ending (гита, постгресе); only case endings, so a free tail swallows no word (рубить)
+STEM_MIN = 3
 CASE_ENDINGS = frozenset(("а", "я", "у", "ю", "е", "и", "ы", "ом", "ем", "ой", "ей", "ою", "ам", "ям", "ами", "ями",
                           "ах", "ях", "ов", "ев"))
 
@@ -46,10 +46,11 @@ def digest() -> str:
     return hashlib.sha256(json.dumps(pairs, ensure_ascii=False).encode()).hexdigest()[:12]
 
 
-def _matches(word: str, token: str, last: bool, unsure: frozenset) -> bool:
+def _matches(word: str, token: str, last: bool, unsure: frozenset, joined: bool = False) -> bool:
     if token == word:
         return True
-    if not last or _CYRILLIC.search(word) is None or len(word) < STEM_MIN or token in unsure:
+    # the last word of a two-word alias declines whatever its length (нод жсе); a lone short one would swallow words
+    if not last or _CYRILLIC.search(word) is None or (len(word) < STEM_MIN and not joined) or token in unsure:
         return False
     # кафка declines as кафке: the final vowel is the ending, not the stem
     stem = word[:-1] if word[-1] in "аяоьй" else word
@@ -67,8 +68,9 @@ def reword(question: str) -> tuple[str, list[str]]:
     while i < len(tokens):
         for n in range(min(longest, len(tokens) - i), 0, -1):
             span = [t.group(0).lower() for t in tokens[i:i + n]]
+            pairs = list(enumerate(span))
             hit = next((name for words, name in table.items() if len(words) == n and all(
-                _matches(w, t, k == n - 1, unsure) for k, (w, t) in enumerate(zip(words, span, strict=True)))), None)
+                _matches(words[k], t, k == n - 1, unsure, n > 1) for k, t in pairs)), None)
             if hit:
                 out += [question[at:tokens[i].start()], hit]
                 fired.append(f"{' '.join(span)}={hit}")

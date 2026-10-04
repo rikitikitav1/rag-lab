@@ -57,3 +57,13 @@ def load_questions(options: dict) -> dict | None:
         job_queue.enqueue("embed_questions", {})
     return {"source": source, "set_name": set_name, "questions_written": written, "pairs_dropped_as_repeats": repeats,
             "pairs_of_gone_sections": len(gone)}
+
+
+@register("load_variants")
+def load_variants(options: dict) -> dict:
+    from use_cases import question_variants
+
+    done = question_variants.load(options["set_name"], options["rows"])
+    if done["questions_written"]:
+        job_queue.enqueue("embed_questions", {})
+    return done

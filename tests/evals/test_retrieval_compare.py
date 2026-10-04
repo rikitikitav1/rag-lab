@@ -296,9 +296,9 @@ def test_every_axis_measure_applies_has_a_rule_and_a_message():
 
     taken = set(inspect.signature(rc.measure).parameters)
     # `ef_search` reaches measure as `ef`, resolved by depth_of; the rest by their own name
-    knobs = {"variant", "ef_search", "limit_vector", "limit_keyword",
+    knobs = {"variant", "ef_search", "exact", "limit_vector", "limit_keyword",
              "distance_threshold", "rerank_top", "source"}
-    unapplied = {k for k in knobs if k not in taken} - {"ef_search"}
+    unapplied = {k for k in knobs if k not in taken} - {"ef_search", "exact"}
     assert not unapplied, f"an axis measure cannot apply is a knob nobody turns: {unapplied}"
     # the keyword switches reach the search through config, set by keyword_settings around measure
     keyword = {"keyword_query", "keyword_translation", "max_term_share", "keyword_aliases"}
@@ -459,3 +459,15 @@ def test_a_measured_row_names_the_aliases_that_fired_on_its_question(monkeypatch
     monkeypatch.setattr(retrieval_compare, "assert_pool", lambda *a: None)
     rows = retrieval_compare.measure(_Searcher(), None, "s", "v", 10, True)
     assert [retrieval_compare._keep(r)["aliases_fired"] for r in rows] == [["k8s=Kubernetes"], None]
+
+
+
+# an arm that names no depth searches as the stand serves, not by a scan of every vector
+def test_an_arm_searches_at_the_served_depth_unless_it_asks_for_the_exact_scan(monkeypatch):
+    import search_depth
+    from use_cases import retrieval_compare
+
+    monkeypatch.setattr(search_depth, "resolve", lambda variant=None, ef=None: 200)
+    assert retrieval_compare.depth_of({}) == (False, 200)
+    assert retrieval_compare.depth_of({"ef_search": 400}) == (False, 400)
+    assert retrieval_compare.depth_of({"exact": True})[0] is True
