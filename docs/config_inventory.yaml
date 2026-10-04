@@ -272,6 +272,9 @@ config:
     class: setting
   intake.quality.auto_accept_ok:
     class: setting
+  intake.quality.agent_knob_rounds:
+    class: setting
+    how: owner decision 04.10, three rounds of an agent's own knobs on one source before a person decides
   intake.engines.docling:
     class: setting
   intake.engines.mineru:
@@ -977,6 +980,14 @@ constant:
     note: the outcome rule a stored row is read by
   app/corpus_keys.py:TERM_SHARE_FLOOR:
     class: code
+  app/use_cases/raw_text.py:MAX_CHARS:
+    class: code
+    note: one chapter fits an agent's window, a whole book does not
+  app/use_cases/raw_text.py:_HEADING:
+    class: code
+  app/query_aliases.py:STEM_MIN:
+    class: code
+    note: a shorter Russian stem would match ordinary words
   app/query_aliases.py:_TOKEN:
     class: code
   app/query_aliases.py:_CYRILLIC:

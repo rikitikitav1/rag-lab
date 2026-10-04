@@ -85,6 +85,8 @@ intake:
     bad_share: 0.2
     # an ok raw source becomes accepted with no person; dirty and bad wait for one
     auto_accept_ok: true
+    # rounds of the agent's own knobs on one source, then a person approves a new knob or refuses the source
+    agent_knob_rounds: 3
   # the engine each tool runs on; its supervisor is asked only whether it is up
   engines: { docling: converter-docling, mineru: converter-mineru }
   # each engine's settings file when a run names none; a loop passes its own as options

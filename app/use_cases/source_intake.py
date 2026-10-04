@@ -67,7 +67,8 @@ def accepted_raw(source: DataSource, reason: str | None) -> dict:
 def promote(source: DataSource, reason: str | None, by: str | None = None) -> str | None:
     raw = source.raw or {}
     earlier = raw.get("folder") if raw.get("candidate") else None
-    source.raw = {**accepted_raw(source, reason), **({"accepted_by": by} if by else {})}
+    knobs = {"accepted_after_knobs": raw["knobs_tried"]} if raw.get("knobs_tried") else {}
+    source.raw = {**accepted_raw(source, reason), **({"accepted_by": by} if by else {}), **knobs}
     source.stage = Stage.accepted
     source.language = source.raw.get("language") or source.language
     # a variant cut from the run this one replaces reads as moved until it is cut again
@@ -88,9 +89,10 @@ def take_run(row: DataSource, run: dict) -> list[str]:
             gone.append(earlier)
         row.raw = {**(row.raw or {}), "candidate": run}
     else:
+        tried = (row.raw or {}).get("knobs_tried")
         row.stage = Stage.raw
         row.language = run["language"]
-        row.raw = run
+        row.raw = {**run, **({"knobs_tried": tried} if tried else {})}
     # the door's refusals bar it, the onboard job that calls this aside
     if run["verdict"] == "ok" and config.settings.intake.quality.auto_accept_ok:
         indexing = index_waiting(row.name) if row.stage == Stage.accepted else None
@@ -130,10 +132,10 @@ def _onboard_waiting(name: str) -> int | None:
 
 
 # each transition checks and changes the row, or raises Final with why not; the door commits and answers
-def accept(source: DataSource, reason: str | None) -> str | None:
+def accept(source: DataSource, reason: str | None, by: str | None = None) -> str | None:
     if refusal := accept_refusal(source, reason, _onboard_waiting(source.name), index_waiting(source.name)):
         raise Final(refusal)
-    return promote(source, reason)
+    return promote(source, reason, by=by)
 
 
 def set_active(source: DataSource, active: bool) -> None:
@@ -143,13 +145,42 @@ def set_active(source: DataSource, active: bool) -> None:
 
 
 def set_intake(source: DataSource, block: dict) -> None:
-    if refusal := intake_refusal(source, _onboard_waiting(source.name)):
+    if refusal := intake_refusal(source, _onboard_waiting(source.name)) or knob_refusal(source):
         raise Final(refusal)
     source.declaration = with_intake(source.declaration, block)
+    _note_knob(source, {"intake": block})
+
+
+def _knob_rounds(raw: dict) -> set:
+    return {k.get("run") for k in raw.get("knobs_tried", [])}
+
+
+# past the agent's rounds a person approves a new knob or refuses the source
+def knob_refusal(source: DataSource) -> str | None:
+    import config
+
+    limit = config.settings.intake.quality.agent_knob_rounds
+    raw = source.raw or {}
+    rounds = _knob_rounds(raw)
+    if raw.get("folder") not in rounds and len(rounds) >= limit:
+        return f"{source.name} had {limit} rounds of knobs; a person approves a new knob or refuses the source"
+    return None
+
+
+# an ok the stand accepts after an agent turned knobs says so on the row: the gate went quiet, nobody looked
+def _note_knob(source: DataSource, knob: dict) -> None:
+    raw = source.raw or {}
+    if not raw:
+        return
+    tried = [*raw.get("knobs_tried", []), {**knob, "run": raw.get("folder"), "verdict_before": raw.get("verdict")}]
+    source.raw = {**raw, "knobs_tried": tried}
 
 
 # the fields of a declaration a door may set in place; the rest go through the source file or a new declaration
-SETTABLE_FIELDS = frozenset({"skip_paths", "markup", "markup_values", "section_root_by_path"})
+KNOB_FIELDS = frozenset({"skip_paths", "markup", "markup_values", "section_root_by_path"})
+# what the agent guessed when it declared, mended before the source is cut: a wrong language picks the wrong OCR
+GUESSED_FIELDS = frozenset({"language", "licence", "categories"})
+SETTABLE_FIELDS = KNOB_FIELDS | GUESSED_FIELDS
 
 
 # declared fields set on the row for its next onboarding or index; an empty value clears one, the declaration checks all
@@ -163,13 +194,24 @@ def set_fields(source: DataSource, fields: dict) -> None:
         raise Final(f"{source.name} has job {queued} queued or running")
     if source.seeded:
         raise Final(f"{source.name} has a source file; set {sorted(fields)} there")
+    knobs = {k: v for k, v in fields.items() if k in KNOB_FIELDS}
+    if knobs and (refusal := knob_refusal(source)):
+        raise Final(refusal)
+    if set(fields) & GUESSED_FIELDS and source.indexed_with:
+        raise Final(f"{source.name} is cut in {sorted(source.indexed_with)}; its language, licence and categories "
+                    "are mended by removing it and declaring it again")
     declared = {k: v for k, v in (source.declaration or {}).items() if k not in fields}
     declared |= {k: v for k, v in fields.items() if v}
     try:
-        Declaration.model_validate(declared)
+        checked = Declaration.model_validate(declared)
     except ValidationError as e:
         raise Refusal("invalid", str(e)) from e
+    if refusal := files.index_refusal(checked):
+        raise Refusal("invalid", refusal)
     source.declaration = declared
+    source.language, source.licence = checked.language, checked.licence
+    if knobs:
+        _note_knob(source, {"fields": knobs})
 
 
 def check_onboard(source: DataSource) -> None:

@@ -562,6 +562,18 @@ CREATE TABLE public.term_frequencies (
 
 
 --
+-- Name: term_frequency_counts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.term_frequency_counts (
+    variant text NOT NULL,
+    chunks integer NOT NULL,
+    newest_chunk integer NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: weights; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -854,6 +866,14 @@ ALTER TABLE ONLY public.term_frequencies
 
 
 --
+-- Name: term_frequency_counts term_frequency_counts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.term_frequency_counts
+    ADD CONSTRAINT term_frequency_counts_pkey PRIMARY KEY (variant);
+
+
+--
 -- Name: weights weights_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1121,4 +1141,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261002000014'),
     ('20261003000015'),
     ('20261003000016'),
-    ('20261004000017');
+    ('20261004000017'),
+    ('20261004000018');

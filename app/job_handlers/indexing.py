@@ -47,6 +47,8 @@ def index_data(options: dict) -> dict:
         # the same dedup bootstrap does: three retries would queue three builds on one lane
         if not job_queue.pending_of_type("build_vector_index", variant=variant):
             job_queue.enqueue("build_vector_index", {"variant": variant})
+    # the rare cut reads shares of what search serves, so a new cut is counted again; a count takes seconds
+    job_queue.enqueue("count_terms", {"variant": variant})
     # a full reindex goes on past a refused source; the refusals stay on the job's row, not only in the log
     cancelled = {"left_by_cancel": result.left} if result.left else {}
     copies = {"lower_copies_dropped": result.lower_copies_dropped} if result.lower_copies_dropped else {}

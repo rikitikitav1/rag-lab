@@ -6,7 +6,7 @@ from config import settings
 from corpus_keys import file_stem
 from job_handlers import onboard
 from job_handlers.base import Final
-from models.corpus import DataSource
+from models.corpus import DataSource, Stage
 from use_cases import intake_fetch, source_intake
 from use_cases.converting import pieces
 
@@ -1012,6 +1012,45 @@ def test_skip_paths_are_set_on_the_row_and_refused_for_a_seeded_or_busy_source(m
     with pytest.raises(Final, match="43"):
         source_intake.set_fields(row, {"skip_paths": ["a/*"]})
 
+
+
+# the agent turns existing knobs for three rounds; the row keeps each with the verdict it met, an ok says it came after
+def test_the_agents_knob_rounds_are_kept_on_the_row_and_stop_at_the_configured_limit(monkeypatch):
+    import config
+
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
+    monkeypatch.setattr(config.settings.intake.quality, "agent_knob_rounds", 2)
+    monkeypatch.setattr(config.settings.intake.quality, "auto_accept_ok", True)
+    row = DataSource(name="book", seeded=False, stage=Stage.raw, declaration={"name": "book", "folder": "inbox/b"},
+                     raw={"folder": "raw/1", "verdict": "dirty"})
+    source_intake.set_intake(row, {"seam_window": 9})
+    source_intake.set_fields(row, {"markup": "hugo"})
+    row.raw = {**row.raw, "folder": "raw/2", "verdict": "dirty"}
+    source_intake.set_intake(row, {"seam_window": 8})
+    assert [(k["run"], k["verdict_before"]) for k in row.raw["knobs_tried"]] == [
+        ("raw/1", "dirty"), ("raw/1", "dirty"), ("raw/2", "dirty")]
+    row.raw = {**row.raw, "folder": "raw/3"}
+    with pytest.raises(Final, match="2 rounds of knobs"):
+        source_intake.set_intake(row, {"seam_window": 7})
+    source_intake.take_run(row, {"folder": "raw/4", "verdict": "ok", "language": "ru"})
+    assert row.stage == Stage.accepted and row.raw["accepted_by"] == "auto"
+    assert len(row.raw["accepted_after_knobs"]) == 3
+
+
+# a language guessed wrong at the declaration picks the wrong OCR; it is mended before the cut, not after
+def test_the_guessed_language_and_categories_are_mended_before_the_cut_and_not_counted_as_knobs(monkeypatch):
+    monkeypatch.setattr(source_intake, "_onboard_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake, "index_waiting", lambda name: None)
+    monkeypatch.setattr(source_intake.files, "index_refusal", lambda declaration: None)
+    row = DataSource(name="book", seeded=False, stage=Stage.raw, language="en", raw={"folder": "raw/1"},
+                     declaration={"name": "book", "folder": "inbox/b", "language": "en", "licence": "MIT"})
+    source_intake.set_fields(row, {"language": "ru", "categories": ["databases"]})
+    assert row.language == "ru" and row.declaration["categories"] == ["databases"]
+    assert "knobs_tried" not in row.raw
+    row.indexed_with = {"v": "abc"}
+    with pytest.raises(Final, match="declaring it again"):
+        source_intake.set_fields(row, {"language": "en"})
 
 def test_declared_fields_are_set_together_refused_by_name_and_checked_whole(monkeypatch):
     from errors import Refusal

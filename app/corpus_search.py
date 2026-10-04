@@ -220,13 +220,16 @@ def filtered_scan(scope: Scope, configured: str, older_held: bool = False) -> st
     return configured
 
 
-# candidates hold a rare word of the query and the full query ranks them: ranking every common-word match took a search
+# candidates hold a rare word the variant holds, the full query ranks them; a typo alone emptied the leg
 def _rare_cut(text_param: str, config_param: str) -> str:
     return f"""AND content_tsv @@ coalesce((
                         SELECT to_tsquery('simple', string_agg(quote_literal(w), ' | '))
                         FROM unnest(tsvector_to_array(to_tsvector(CAST(:{config_param} AS regconfig), :{text_param}))) w
                         LEFT JOIN term_frequencies tf ON tf.variant = :variant AND tf.lexeme = w
                         WHERE coalesce(tf.share, 0) <= :max_term_share
+                          AND (tf.lexeme IS NOT NULL OR EXISTS (
+                              SELECT 1 FROM data_chunks held WHERE held.variant = :variant
+                                AND held.content_tsv @@ to_tsquery('simple', quote_literal(w))))
                     ), q)"""
 
 
@@ -275,7 +278,9 @@ def hybrid_search(
     translated = query_translation.keyword_translation(reworded)
     # the translation replaces the question's words or ranks beside them; a reworded English question ranks there too
     keyword_text = translated if translated and retrieval.keyword.translation.replaces else question
-    third = translated if translated and keyword_text == question else (reworded if fired else None)
+    # under `replaces` the Russian words stay out, the reworded ones too: they reach the search through the translation
+    third = translated if translated and keyword_text == question else (
+        reworded if fired and keyword_text == question else None)
     rare = retrieval.keyword.max_term_share > 0
     cut = _rare_cut("question", "ts_config") if rare else ""
     scope = as_scope(scope)

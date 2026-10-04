@@ -133,6 +133,46 @@ async def refuse_a_taken_run(session, run_name: str) -> None:
         )
 
 
+# accepted questions of a set, and the sources their golds name that are not in search
+async def _set_readiness(session, set_name: str) -> tuple[int, list[str]]:
+    from models import DataSource
+    from models.eval import READ_BY_RUNS
+
+    golds = (await session.scalars(select(Question.gold["file"].astext)
+                                   .where(Question.set_name == set_name, READ_BY_RUNS))).all()
+    named = {(g or "").split("/")[0] for g in golds} - {""}
+    inactive = (await session.scalars(select(DataSource.name).where(DataSource.name.in_(named),
+                                                                     DataSource.active.is_(False)))).all()
+    return len(golds), sorted(inactive)
+
+
+# a set with nothing accepted answers nothing and reads done; a gold in a source out of search scores a miss
+async def refuse_an_unready_set(session, set_name: str) -> None:
+    accepted, inactive = await _set_readiness(session, set_name)
+    if not accepted:
+        raise Refusal("malformed", f"set {set_name} has no accepted question; accept or judge its pairs first")
+    if inactive:
+        raise Refusal("malformed", f"set {set_name} has golds in sources not in search: {inactive}; turn them on")
+
+
+# REST and MCP queue a run through here: a resume reads the run's own options, a new run refuses a taken name
+async def queued_eval_run(session, options: dict):
+    import job_queue
+
+    if options.get("resume"):
+        extra = sorted(set(options) - {"run_name", "resume"})
+        options = await resumed_options(session, options.get("run_name"), extra)
+    job = await job_queue.prepared("eval_run", options)
+    if not options.get("resume"):
+        if options.get("run_name"):
+            await refuse_a_taken_run(session, options["run_name"])
+        if options.get("question_ids"):
+            await refuse_missing_questions(session, options["question_ids"])
+        elif options.get("set_name"):
+            await refuse_an_unready_set(session, options["set_name"])
+    return job
+
+
 # both doors that queue a run resume through here, or /v1/job finished a run on other options
 async def resumed_options(session, run_name: str | None, extra: list[str]) -> dict:
     if not run_name or extra:

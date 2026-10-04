@@ -357,6 +357,8 @@ def test_a_cancelled_index_reports_and_builds_for_the_sources_it_did_cut(monkeyp
         sources=1, chunks=5, refused={}, left=["b", "c"], model="m"))
     monkeypatch.setattr(use_cases.index, "ensure_vector_index", indexed.append)
     monkeypatch.setattr(indexing, "_report_depth", lambda: None)
-    monkeypatch.setattr(indexing.job_queue, "enqueue", lambda kind, opts: queued.append(opts["source"]))
+    monkeypatch.setattr(indexing.job_queue, "enqueue",
+                        lambda kind, opts: queued.append(opts.get("source") or kind))
     out = indexing.index_data({"variant": "v", "_job_id": 1})
-    assert queued == ["a"] and indexed == ["v"] and out["left_by_cancel"] == ["b", "c"] and out["sources"] == 1
+    assert queued == ["a", "count_terms"] and indexed == ["v"]
+    assert out["left_by_cancel"] == ["b", "c"] and out["sources"] == 1

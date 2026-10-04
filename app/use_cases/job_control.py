@@ -57,12 +57,28 @@ def _narrow(scope: Scope) -> tuple:
 def enqueue(type: str, options: dict | None = None, dry_run: bool = False) -> dict:
     if type not in job_specs.SPECS and type not in job_specs.FREE:
         raise Refusal(RefusalKind.invalid, f"no such job type: {type}")
-    # its name and question checks read the base the async way, and only its own door runs them
     if type == "eval_run":
-        raise Refusal(RefusalKind.invalid, "an eval_run is queued by POST /v1/eval/run or POST /v1/job")
+        raise Refusal(RefusalKind.invalid, "an eval_run is queued by enqueue_eval_run, which runs its base checks")
     try:
         if dry_run:
             return {"dry_run": job_queue.dry_run(type, options)}
         return {"job_id": job_queue.enqueue(type, options)}
+    except job_specs.Refused as bad:
+        raise Refusal(RefusalKind.malformed, str(bad)) from bad
+
+
+# the run's name and question checks read the base the async way, as at POST /v1/job
+async def enqueue_eval_run(options: dict, dry_run: bool = False) -> dict:
+    from orm.async_db import session_factory
+    from use_cases.eval_runs import queued_eval_run
+
+    try:
+        async with session_factory() as session:
+            job = await queued_eval_run(session, options)
+            if dry_run:
+                return {"dry_run": job_queue.dry_run("eval_run", job.options)}
+            session.add(job)
+            await session.commit()
+            return {"job_id": job.id}
     except job_specs.Refused as bad:
         raise Refusal(RefusalKind.malformed, str(bad)) from bad

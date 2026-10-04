@@ -10,7 +10,8 @@ import job_queue
 import llm
 import logging_setup
 import query_aliases
-from corpus_keys import HAS_GOLD_SQL, READ_BY_RUNS_SQL, Gold, source_name_of
+from config import KEYWORD_QUERY_MODES
+from corpus_keys import HAS_GOLD_SQL, READ_BY_RUNS_SQL, TERM_SHARE_FLOOR, Gold, source_name_of
 from evals.stats import bootstrap_ci, deltas_over, tally
 from gold_match import heading_text, rank_of_exact_section, rank_of_gold, rank_of_section
 from search_scope import Scope, ScopeRefused
@@ -353,9 +354,10 @@ AXIS_RULES = {
     "distance_threshold": lambda v: isinstance(v, int | float) and not isinstance(v, bool) and 0 <= v <= 2,
     "source": lambda v: isinstance(v, str) and bool(v),
     "variant": lambda v: isinstance(v, str) and v in config.settings.corpus.variants,
-    "keyword_query": lambda v: v in ("and", "or"),
+    "keyword_query": lambda v: v in KEYWORD_QUERY_MODES,
     "keyword_translation": lambda v: v in TRANSLATION_MODES,
-    "max_term_share": lambda v: isinstance(v, int | float) and not isinstance(v, bool) and (v == 0 or 0.001 <= v <= 1),
+    "max_term_share": lambda v: (isinstance(v, int | float) and not isinstance(v, bool)
+                                 and (v == 0 or TERM_SHARE_FLOOR <= v <= 1)),
     "keyword_aliases": lambda v: isinstance(v, bool),
 }
 AXIS_LIMITS = {
@@ -368,7 +370,7 @@ AXIS_LIMITS = {
     "variant": "a variant declared in config",
     "keyword_query": "and or or",
     "keyword_translation": "off, beside or replaces",
-    "max_term_share": "0 (off) or a share 0.001..1",
+    "max_term_share": f"0 (off) or a share {TERM_SHARE_FLOOR}..1",
     "keyword_aliases": "true or false",
 }
 
@@ -376,29 +378,36 @@ AXIS_LIMITS = {
 TRANSLATION_MODES = ("off", "beside", "replaces")
 
 
+# an arm's keyword axis and the config field it sets, with how the axis value becomes the field's
+KEYWORD_AXES = (
+    ("keyword_query", ("query",), lambda v: v),
+    ("keyword_translation", ("translation", "enabled"), lambda v: v != "off"),
+    ("keyword_translation", ("translation", "replaces"), lambda v: v == "replaces"),
+    ("max_term_share", ("max_term_share",), lambda v: v),
+    ("keyword_aliases", ("aliases", "enabled"), lambda v: v),
+)
+
+
+def _holder(path: tuple) -> tuple:
+    node = config.settings.retrieval.keyword
+    for name in path[:-1]:
+        node = getattr(node, name)
+    return node, path[-1]
+
+
 # the keyword switches an arm names, set for its measuring only: the search reads them from config
 @contextlib.contextmanager
 def keyword_settings(arm: dict):
-    kw = config.settings.retrieval.keyword
-    was = (kw.query, kw.translation.enabled, kw.translation.replaces, kw.max_term_share, kw.aliases.enabled)
-    mode = arm.get("keyword_translation")
+    was = [(path, getattr(*_holder(path))) for _, path, _ in KEYWORD_AXES]
     try:
-        if "keyword_query" in arm:
-            object.__setattr__(kw, "query", arm["keyword_query"])
-        if mode is not None:
-            object.__setattr__(kw.translation, "enabled", mode != "off")
-            object.__setattr__(kw.translation, "replaces", mode == "replaces")
-        if "max_term_share" in arm:
-            object.__setattr__(kw, "max_term_share", arm["max_term_share"])
-        if "keyword_aliases" in arm:
-            object.__setattr__(kw.aliases, "enabled", arm["keyword_aliases"])
+        for axis, path, value_of in KEYWORD_AXES:
+            if axis in arm:
+                # the settings are frozen for everyone else; an arm's value passed AXIS_RULES before it got here
+                object.__setattr__(*_holder(path), value_of(arm[axis]))
         yield
     finally:
-        object.__setattr__(kw, "query", was[0])
-        object.__setattr__(kw.translation, "enabled", was[1])
-        object.__setattr__(kw.translation, "replaces", was[2])
-        object.__setattr__(kw, "max_term_share", was[3])
-        object.__setattr__(kw.aliases, "enabled", was[4])
+        for path, value in was:
+            object.__setattr__(*_holder(path), value)
 
 
 # derived, not listed: an axis cannot be admitted without a rule saying what it may hold
@@ -452,6 +461,17 @@ def _switches_of(arm: dict) -> dict:
         return config.keyword_switches()
 
 
+# what a rare cut read its shares over; a stale count refuses the arm rather than measuring another corpus
+def _term_counts(arm: dict, variant: str) -> dict | None:
+    if not _switches_of(arm)["max_term_share"]:
+        return None
+    import term_frequencies
+
+    if why := term_frequencies.stale(variant):
+        raise ValueError(f"{why}: queue count_terms for {variant} before this arm")
+    return term_frequencies.counted(variant)
+
+
 # the shape the script's report writes, so one instrument reads a record and a file
 def arm_procedure(arm: dict, rows: list[dict], dataset: str) -> dict:
     exact, ef = depth_of(arm)
@@ -467,6 +487,7 @@ def arm_procedure(arm: dict, rows: list[dict], dataset: str) -> dict:
         "distance_threshold": arm.get("distance_threshold", NO_THRESHOLD),
         "source": arm.get("source"),
         "keyword": _switches_of(arm),
+        "term_counts": _term_counts(arm, variant),
         "questions": len(rows),
         "questions_hash": ids_hash(r["id"] for r in rows),
         # descriptive, never compared: what cut these rows is not recoverable from them

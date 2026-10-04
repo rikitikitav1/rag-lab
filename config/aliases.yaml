@@ -4,7 +4,7 @@ aliases:
     canonical: PostgreSQL
     aliases: [postgres, pg, пг, постгрес, постгря, постгресс, постгре, постгрескуль, pgsql, psql]
     seen_in: [own, codemu-slang]
-    unsure: 
+    unsure: [psql]
   mssql:
     canonical: Microsoft SQL Server
     aliases: [mssql, ms sql, мс скл, мсскл, sql server, сиквел сервер, мссикль, тсикль, tsql, t-sql, мсск]
@@ -59,7 +59,7 @@ aliases:
     canonical: Ruby
     aliases: [руби, рубин, рубях, рубист, рубишник, рубасы]
     seen_in: [own]
-    unsure: [рубин, рубях]  # рубин is the gem
+    unsure: [рубин, рубях, рубист]  # рубин is the gem
   lua:
     canonical: Lua
     aliases: [луа, лу, луашка, люа, луашный]
@@ -69,7 +69,7 @@ aliases:
     canonical: Python
     aliases: [py, питон, пайтон, питонить, пито, питончик, py3, python3, питонщик, путон, петухон, питухон]
     seen_in: [own, wiki-ru-slang, codemu-slang]
-    unsure: [py, пито, питончик]  # пых is also PHP slang (пыха), do not map to python
+    unsure: [py, пито, питончик, питонщик]  # пых is also PHP slang (пыха), do not map to python
   delphi:
     canonical: Delphi and Free Pascal
     aliases: [дельфи, делфи, дельфин, паскаль, pascal, фрипаскаль, фри паскаль, free pascal, fpc, freepascal, лазарус, lazarus, object pascal, дэльфи, делфя, паскалина, delphi]
@@ -164,7 +164,7 @@ aliases:
     canonical: systemd
     aliases: [systemd, систем д, системд, системди, systemctl, системктл, юнит, unit, journalctl, journald, журналкотл, джорналктл, systemd unit, сервис юнит, сервис]
     seen_in: [own]
-    unsure: [юнит, unit, сервис, сервис юнит, systemctl]  # юнит and сервис are ordinary words
+    unsure: [юнит, unit, сервис, сервис юнит, systemctl, journalctl]  # юнит and сервис are ordinary words
   pgbouncer:
     canonical: PgBouncer
     aliases: [pgbouncer, пгбаунсер, пг баунсер, пгбоунсер, баунсер, бонсер, pgb, pg bouncer, пгбонсер, пуллер, pgpool, пгпул]
@@ -174,7 +174,7 @@ aliases:
     canonical: Linux
     aliases: [линукс, линух, линуха, линуксовый, нуль, ubuntu, убунта, убунту, дебиан, debian, centos, центос, арч, arch linux, rhel, ядро, ядрышко, пингвин, линя, линь, лин]
     seen_in: [own, wiki-ru-slang, wikt-slang, codemu-slang]
-    unsure: [нуль, ядро, ядрышко, пингвин, линя, линь, лин, арч, убунта, убунту, debian]  # distributions are separate products but kept as neighbours; линь is a fish, ядро is a nucleus or core
+    unsure: [нуль, ядро, ядрышко, пингвин, линя, линь, лин, арч, убунта, убунту, debian, ubuntu, centos, rhel, дебиан]  # distributions are separate products but kept as neighbours; линь is a fish, ядро is a nucleus or core
   http:
     canonical: HTTP
     aliases: [http, https, хттп, хттпс, аштитипи, аштитипиэс, хтипи, хтп, rest, рест, ресты, запрос, get запрос, post запрос, статус код, status code, 404, 500, 502, 503, хедер, хедеры, header, headers, кукис, куки, cookie, cookies, тело запроса, curl, курл, каел, постман, postman]

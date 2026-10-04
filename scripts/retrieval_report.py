@@ -51,7 +51,8 @@ def ef_ladder() -> tuple[int, ...]:
     return tuple(search_depth.ladder())
 
 
-KEYWORD_FLAGS = ("keyword_query", "keyword_rank", "keyword_norm", "query_lang")
+# a flag per switch it sets; the switches it leaves alone (translation, aliases, the rare cut) keep the config's value
+KEYWORD_FLAGS = {"query": "keyword_query", "rank": "keyword_rank", "norm": "keyword_norm", "query_lang": "query_lang"}
 
 def recall_gate() -> float:
     return config.settings.verdict.search_depth.recall_gate
@@ -174,7 +175,7 @@ def main() -> int:
         "are read; 0 leaves the fusion alone",
     )
     ap.add_argument("--ef", type=int, default=None, help="hnsw.ef_search for the index runs")
-    ap.add_argument("--keyword-query", choices=("and", "or"))
+    ap.add_argument("--keyword-query", choices=config.KEYWORD_QUERY_MODES)
     ap.add_argument("--limit-keyword", type=int, default=CANDIDATES)
     ap.add_argument("--limit-vector", type=int, default=CANDIDATES)
     ap.add_argument("--distance-threshold", type=float, default=NO_THRESHOLD)
@@ -223,7 +224,7 @@ def main() -> int:
         args.ef = search_depth.resolve(variant_for_depth)
 
     # the flags keep their names; the config names the switches as the record does
-    for switch, flag in zip(config.KEYWORD_SWITCHES, KEYWORD_FLAGS, strict=True):
+    for switch, flag in KEYWORD_FLAGS.items():
         chosen = getattr(args, flag)
         if chosen is not None:
             setattr(config.settings.retrieval.keyword, switch, chosen)

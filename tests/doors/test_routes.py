@@ -292,8 +292,12 @@ def _door_that_queues(monkeypatch, *, rows=0, jobs=()):
     async def _refresh(session, obj):
         return obj
 
+    async def _ready(session, set_name):
+        return 5, []
+
     monkeypatch.setattr(eval_runs, "_rows_of", _rows)
     monkeypatch.setattr(eval_runs, "_eval_runs_named", _named)
+    monkeypatch.setattr(eval_runs, "_set_readiness", _ready)
     monkeypatch.setattr(eval_mod.job_queue, "add_job", _staged(lambda s, t, o: _queued_job(t, o)))
     monkeypatch.setattr(eval_mod, "commit_and_refresh", _refresh)
 
@@ -435,3 +439,60 @@ def test_every_refusal_kind_has_a_status_and_a_misspelt_one_fails_at_once():
     assert set(server.REFUSAL_STATUS) == set(RefusalKind)
     with pytest.raises(ValueError):
         Refusal("taken_twice", "x")
+
+
+# the agent queues a closing run over MCP, so the run's name checks hold there as at POST /v1/job
+def test_the_mcp_door_queues_an_eval_run_with_the_same_name_checks(monkeypatch):
+    import asyncio
+    import contextlib
+    from types import SimpleNamespace
+
+    import job_queue
+    import orm.async_db
+    from errors import Refusal
+    from use_cases import eval_runs, job_control
+
+    added = []
+
+    class _Session:
+        def add(self, job):
+            job.id = 7
+            added.append(job)
+
+        async def commit(self):
+            return None
+
+    async def _prepared(type, options):
+        return SimpleNamespace(type=type, queue="default", options=options)
+
+    rows = {"n": 3}
+
+    async def _rows(session, run_name):
+        return rows["n"]
+
+    async def _named(session, run_name):
+        return []
+
+    monkeypatch.setattr(orm.async_db, "session_factory", lambda: contextlib.nullcontext(_Session()))
+    monkeypatch.setattr(job_queue, "prepared", _prepared)
+    monkeypatch.setattr(eval_runs, "_rows_of", _rows)
+    monkeypatch.setattr(eval_runs, "_eval_runs_named", _named)
+    ready = {"answer": (5, [])}
+
+    async def _ready(session, set_name):
+        return ready["answer"]
+
+    monkeypatch.setattr(eval_runs, "_set_readiness", _ready)
+    with pytest.raises(Refusal, match="pass resume"):
+        asyncio.run(job_control.enqueue_eval_run({"run_name": "r", "set_name": "s"}))
+    rows["n"] = 0
+    assert asyncio.run(job_control.enqueue_eval_run({"run_name": "r", "set_name": "s"}, dry_run=True))["dry_run"]
+    assert added == []
+    assert asyncio.run(job_control.enqueue_eval_run({"run_name": "r", "set_name": "s"})) == {"job_id": 7}
+    # a set with nothing accepted answered nothing and read done; a gold out of search scored a miss
+    ready["answer"] = (0, [])
+    with pytest.raises(Refusal, match="no accepted question"):
+        asyncio.run(job_control.enqueue_eval_run({"run_name": "r2", "set_name": "s"}))
+    ready["answer"] = (40, ["control-book"])
+    with pytest.raises(Refusal, match="not in search: \\['control-book'\\]"):
+        asyncio.run(job_control.enqueue_eval_run({"run_name": "r3", "set_name": "s"}))

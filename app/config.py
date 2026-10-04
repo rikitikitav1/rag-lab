@@ -1,5 +1,5 @@
 import os
-from typing import Literal
+from typing import Literal, get_args
 
 import samplers
 import yaml
@@ -44,9 +44,13 @@ class KeywordAliasesCfg(_Strict):
     enabled: bool = False
 
 
+KeywordQuery = Literal["and", "or"]
+KEYWORD_QUERY_MODES = get_args(KeywordQuery)
+
+
 # named as a run's record names them, so nothing translates between the two
 class KeywordCfg(_Strict):
-    query: str
+    query: KeywordQuery
     rank: str
     norm: int
     query_lang: QueryLanguageRule
@@ -279,6 +283,8 @@ class RawQualityCfg(_Strict):
     layer_band_engines: list[Tool]
     bad_share: float
     auto_accept_ok: bool
+    # rounds of existing knobs an agent tries on one source; past them a person approves a new knob or refuses it
+    agent_knob_rounds: int = Field(ge=0)
 
 
 class IntakeCfg(_Strict):
@@ -453,9 +459,12 @@ class AppConfig(_Strict):
     @field_validator("aliases")
     @classmethod
     def _one_owner_per_alias(cls, value: dict) -> dict:
+        def words(text: str) -> str:
+            return " ".join(text.lower().split())
+
         owners: dict[str, set] = {}
         for name, entry in value.items():
-            for alias in entry.aliases:
+            for alias in {words(a) for a in entry.aliases} | {words(entry.canonical)}:
                 owners.setdefault(alias, set()).add(name)
         shared = {alias: sorted(names) for alias, names in owners.items() if len(names) > 1}
         if shared:

@@ -2,6 +2,15 @@ import pytest
 from use_cases import retrieval_compare as rc
 
 
+# the rare cut's counts live in the base; these tests read the record's shape, not the counts
+@pytest.fixture(autouse=True)
+def counted_terms(monkeypatch):
+    import term_frequencies
+
+    monkeypatch.setattr(term_frequencies, "stale", lambda variant: None)
+    monkeypatch.setattr(term_frequencies, "counted", lambda variant: {"chunks": 10, "newest_chunk": 9})
+
+
 def _row(qid, file_rank=None, section_rank=None, scorable=True):
     return {
         "id": qid,

@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, Literal
 
 import config
@@ -456,11 +457,11 @@ def job(id: Annotated[int, Field(description="Job id.")]) -> dict:
     name="enqueue_job",
     description=(
         "Queue a job of any type with its options, checked as at POST /v1/job. dry_run=true queues nothing and "
-        "returns the options as the handler would read them and the lane. An eval_run is refused here: it is "
-        "queued by POST /v1/eval/run or POST /v1/job, whose name and question checks this door does not run."
+        "returns the options as the handler would read them and the lane. An eval_run gets the same name and "
+        "question checks as at POST /v1/job; options.resume=true answers the rest of a run on its own options."
     ),
 )
-def enqueue_job(
+async def enqueue_job(
     type: Annotated[str, Field(description="Job type, as scripts/surface.py lists them.")],
     options: Annotated[dict | None, Field(description="The type's options.")] = None,
     dry_run: Annotated[bool, Field(description="Check only, queue nothing.")] = False,
@@ -468,7 +469,9 @@ def enqueue_job(
     from use_cases import job_control
 
     try:
-        return job_control.enqueue(type, options, dry_run)
+        if type == "eval_run":
+            return await job_control.enqueue_eval_run(options or {}, dry_run)
+        return await asyncio.to_thread(job_control.enqueue, type, options, dry_run)
     except Refusal as e:
         raise ToolError(f"{e.kind}: {e}") from e
 
@@ -799,9 +802,9 @@ def set_source_active(
 @mcp_ops.tool(
     name="accept_source",
     description=(
-        "Accept a raw source for indexing: the owner's word that its conversion is fit. A bad raw verdict needs "
-        "a `reason`, kept on the row. The index then reads it once a source file names it; it stays out of search "
-        "until set_source_active turns it on."
+        "Accept a raw source for indexing: its conversion is fit to cut. A bad raw verdict needs a `reason`, kept on "
+        "the row. Nothing is queued: index_data reads the accepted row, and it stays out of search until "
+        "set_source_active turns it on."
     ),
 )
 def accept_source(
@@ -811,7 +814,8 @@ def accept_source(
     from use_cases import source_intake
 
     with Session() as session:
-        replaced = _transition(source_intake.accept, _source_named(session, name), reason)
+        # the ops server is the agent's door, so the row says an agent accepted it
+        replaced = _transition(source_intake.accept, _source_named(session, name), reason, "agent")
         session.commit()
         source_intake.drop_folder(replaced, name)
         return {"source": name, "stage": "accepted"}
@@ -849,8 +853,9 @@ def set_source_intake(
         "Set declared fields of a source on its row in place, read by its next onboarding or index, as the REST doors "
         "`PUT /v1/source/{id}/skip_paths|markup|section_roots` do: `skip_paths` (globs under the root), `markup` "
         "(hugo or mdn) with `markup_values` (the site parameters it prints), `section_root_by_path` (a book's heading "
-        "root by file glob). An empty value clears a field. Refused while a job reads the source or a source file "
-        "speaks for it."
+        "root by file glob); and, until the source is cut, the `language`, `licence` and `categories` guessed at "
+        "its declaration. An empty value clears a field. Refused while a job reads the source, a source file speaks "
+        "for it, or the agent's knob rounds are spent."
     ),
 )
 def set_source_fields(
@@ -947,6 +952,31 @@ def remove_question_set(
         return question_set_removal.remove(set_name)
     except Final as e:
         raise ToolError(str(e)) from e
+
+
+@mcp_ops.tool(
+    name="raw_text",
+    description=(
+        "A source's converted markdown before the cut, the text its verdict was read on. With no file: the run's "
+        "files and their sizes. With a file: its text, or one chapter's with `heading` (the first heading holding "
+        "those words, up to the next heading of its level), at most 20000 characters from `offset`; `more` says "
+        "whether text is left."
+    ),
+    annotations={"readOnlyHint": True},
+)
+def raw_text(
+    name: Annotated[str, Field(description="The source's name.")],
+    file: Annotated[str | None, Field(description="A file of the run, as the listing names it.")] = None,
+    heading: Annotated[str | None, Field(description="Words of a heading in that file.")] = None,
+    offset: Annotated[int, Field(description="Characters to skip.", ge=0)] = 0,
+    limit: Annotated[int, Field(description="Max characters (1-20000).", ge=1, le=20000)] = 20000,
+) -> dict:
+    from use_cases import raw_text as raw_text_uc
+
+    try:
+        return raw_text_uc.read(name, file, heading, offset, limit)
+    except Refusal as e:
+        raise ToolError(f"{e.kind}: {e}") from e
 
 
 @mcp_ops.tool(

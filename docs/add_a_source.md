@@ -2,8 +2,8 @@
 
 A source is anything the corpus reads: a PDF book, a scan, a documentation site, a repository of markdown. This page walks one source from its declaration to questions about it, and marks at every step who acts:
 
-- **person**: a decision the stand does not take for you;
-- **agent**: reading and proposing through the MCP tools (an LLM client such as Claude Code); it never accepts a source on its own judgement;
+- **person**: three decisions only: hands the agent a source (a folder or a site; the agent finds its language, licence and category), approves or rejects a new knob the agent proposes, or refuses the source;
+- **agent**: everything else through the MCP tools (an LLM client such as Claude Code): it reads the reports, finds where a source breaks, turns the knobs that already exist on that one source and onboards it again, leaves paths out, accepts a `dirty` or `bad` source with a reason, turns it on, writes and checks its questions and measures it; a knob that does not exist yet it proposes to the person;
 - **stand**: code and config, through a job in the queue.
 
 How a file is converted and how it checks itself is in [intake.md](intake.md); this page is the path around it.
@@ -20,15 +20,38 @@ Every step has a REST route and an MCP tool of the `rag-lab-ops` server ([mcp.md
 | onboard | `POST /v1/source/{id}/onboard` | `onboard_source` | stand (job) |
 | where every source stands, by who it waits for | | `intake_board` | agent reads |
 | one source in a screen | `GET /v1/source/{id}` | `source_trail`, `source` | agent reads |
-| try a knob on a few pages | job `probe_intake` | `probe_intake` | agent proposes |
-| set a source's knobs | `PUT /v1/source/{id}/intake` | `set_source_intake` | person |
-| set a declared field in place | `PUT /v1/source/{id}/skip_paths`, `/markup`, `/section_roots` | `set_source_fields` | person |
-| accept | `POST /v1/source/{id}/accept` | `accept_source` | person, or stand for `ok` |
-| index | job `index_data` | | stand |
-| turn on for search | `PUT /v1/source/{id}` | `set_source_active` | person |
-| remove | `DELETE /v1/source/{id}` | `remove_source` | person |
+| the report's rows, the converted text | | `raw_rows`, `raw_text` | agent reads |
+| try a knob on a few pages | job `probe_intake` | `probe_intake` | agent |
+| set a source's existing knobs | `PUT /v1/source/{id}/intake` | `set_source_intake` | agent |
+| set a declared field in place | `PUT /v1/source/{id}/skip_paths`, `/markup`, `/section_roots` | `set_source_fields` (`skip_paths`, `markup`, `markup_values`, `section_root_by_path`) | agent |
+| accept | `POST /v1/source/{id}/accept` | `accept_source` | agent, or stand for `ok` |
+| index | job `index_data` | `enqueue_job` | stand |
+| turn on for search | `PUT /v1/source/{id}` | `set_source_active` | agent |
+| remove | `DELETE /v1/source/{id}` | `remove_source` | person refuses, agent calls |
+| questions | jobs `generate_questions`, `accept_questions`, `judge_questions`, `anchor_questions`, `embed_questions` | `enqueue_job` | stand, set name by a person |
+| measure | `POST /v1/eval/run` | `preregister`, `enqueue_job`, `run_metrics`, `close_preregistration` | stand, the promise by a person or agent |
+| follow a job | `GET /v1/job/{id}` | `job`, `list_jobs`, `queue_stats` | agent reads |
 
 `intake_board` answers "what waits for whom": every source by stage and verdict, and the ones waiting for a person, for a door or for the queue, each with its next step. `source_trail` shows one source: its stage, verdict and reasons, the files it left out and why, chunks per variant, its last jobs and what waits next.
+
+## The path in MCP calls
+
+![The path from declaration to a measured number, in three lanes: person, agent through MCP, stand through jobs](diagrams/intake_path.drawio.svg)
+
+The same path as one sequence for an agent; the sections below say what each step decides. Each `enqueue_job` answers a job id: read it with `job` until it is `done` rather than waiting in a loop, and read a failed one's `error` before queuing anything after it.
+
+| # | call | what to read in the answer |
+|---|---|---|
+| 1 | `add_source(declaration={"name": "<name>", "folder": "datasets/inbox/books/<name>", "language": "ru", "categories": ["<category>"], "licence": "..."})` | the row, `declared`; a refusal names the field |
+| 2 | `onboard_source(name="<name>")` | the job id |
+| 3 | `source_trail(name="<name>")` | the verdict and its reasons; `dirty` or `bad` go to section 4 with a person |
+| 4 | `accept_source(name="<name>", reason="...")` | skipped when the stand accepted an `ok` itself; a `bad` needs the reason |
+| 5 | `enqueue_job(type="index_data", options={"source": "<name>", "variant": "<served variant>"})` | `lower_copies_dropped` and chunks in the job's result |
+| 6 | `set_source_active(name="<name>", active=true)` | the source answers in search from here; a run over a source left off is refused |
+| 7 | `enqueue_job(type="generate_questions", options={"source": "<name>", "set_name": "<set>"})`, then `accept_questions`, `judge_questions`, `anchor_questions` with the same options, each after the one before is `done` (none queues the next; generation queues `embed_questions` itself) | the pairs kept, refused and left open per job |
+| 8 | `preregister(name="<promise>", ...)`, then `python scripts/preflight_grid.py` in the worker ([preflight.md](preflight.md), no MCP tool) | the promise, written before the run; the preflight's failures, each against its known reason |
+| 9 | `enqueue_job(type="eval_run", options={"run_name": "<run>", "set_name": "<set>", "prereg": "<promise>", "purpose": "closing", "judge": false})`; a measurement with no promise leaves out `prereg` and `purpose` | the job id; a taken run name, a set with nothing accepted or a gold in a source left off are refused |
+| 10 | `run_metrics(run_name="<run>")`, then `close_preregistration(name="<promise>", runs={"arm": "<run>"})` | `hit_at_k` with `n`, and the promise read against its bar |
 
 ## 1. Declare (person or agent)
 
@@ -61,23 +84,23 @@ The report carries a verdict, `ok`, `dirty` or `bad`, computed from the conversi
 - `dirty` and `bad` wait for a person.
 - A source already accepted gets the new run as a candidate beside the one in use. An `ok` candidate replaces it at once, unless an `index_data` job for that source waits in the queue: then it stays a candidate until a person accepts it. Do not queue a re-onboard and an index of the same source in one batch.
 
-## 4. When it comes out dirty or bad (agent reads, person decides)
+## 4. When it comes out dirty or bad (the agent fixes it, a person approves a new knob)
 
 The agent's order of reading:
 
 1. `intake_board`: who waits for a person, with the bad share and the top reasons.
 2. `source_trail <name>`: the reasons, the files left out, the last jobs.
-3. The report next to the source's measurement file: `raw_source_<name>_<date>_sections.json.gz` lists every chapter with its words and the gates it breached. Group the breaching words by folder: in practice the breach sits in one place.
-4. The markdown of the worst places, read in the raw folder.
+3. `raw_rows(name, kind="sections")`: every chapter with its words and the gates it breached (`kind="pieces"` for the conversion's signals per page range). Group the breaching words by folder: in practice the breach sits in one place.
+4. `raw_text(name, file, heading)`: the converted markdown of the worst places, before the cut.
 
-Then one of four outcomes, each a person's decision:
+The agent tries the knobs that already exist first: `probe_intake` on the worst pages (PDF only; its job result holds the defects before and after), then `set_source_intake` or `set_source_fields` (`markup`, `markup_values`, `section_root_by_path`, `skip_paths`) on this source and `onboard_source` again, since a knob is read only by the next onboarding. At most `intake.quality.agent_knob_rounds` (3) rounds: then both doors refuse. Every knob stays on the row with the verdict it met (`knobs_tried`, shown by `source_trail` and `intake_board`), and an `ok` the stand accepts after them carries them as `accepted_after_knobs`. A source with a file under `sources/` takes its knobs in that file, so for it every knob is a person's commit. Then the agent picks one of four outcomes; only the second needs a person:
 
 | what the breach is | what to do | door |
 |---|---|---|
-| a part of the source that is not text worth retrieving (a generated API reference, release notes, a blog) | leave the paths out and onboard again | remove and declare with `skip_paths` |
-| a conversion defect a knob fixes | try the knob on the pages first, then set it on this source | `probe_intake`, then `set_source_intake`, then `onboard_source` |
+| a part of the source that is not text worth retrieving (a generated API reference, release notes, a blog) | leave the paths out and onboard again | `set_source_fields` with `skip_paths`, then `onboard_source` |
+| a conversion defect no existing knob fixes | the agent proposes a new knob with the pages it fixes; a person approves or rejects it | a code change, then the agent's loop above |
 | the source's own shape (a wide table, a tutorial that repeats its code) | accept with the reason | `accept_source` with `reason` |
-| not worth the corpus | remove | `remove_source` |
+| not worth the corpus | the agent proposes, a person refuses the source | `remove_source` |
 
 A knob set on one source stays that source's. Making it a stand default is a separate decision with its own measured run ([intake.md](intake.md), "How a default is chosen").
 
